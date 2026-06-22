@@ -36,6 +36,7 @@ const MAX_AGENT_PANEL_WIDTH = 760;
 const AGENT_PANEL_WIDTH_STORAGE_KEY = "growhtml-agent-panel-width";
 const GROWHTML_CLIPBOARD_TYPE = "application/x-growhtml-selection";
 const GROWHTML_CLIPBOARD_PREFIX = "growhtml-selection:";
+const PDF_FRAME_HEIGHT_STORAGE_PREFIX = "growhtml-pdf-frame-height:";
 const LIGHT_CONTEXT_AROUND_SELECTION_CHARS = 3600;
 const LIGHT_CONTEXT_MAX_HTML_CHARS = 14000;
 const LIGHT_CONTEXT_MAX_CSS_CHARS = 7000;
@@ -240,6 +241,59 @@ body {
   border-color: #dc2626;
   background: #dc2626;
 }
+
+.external-pdf-frame {
+  display: block !important;
+  height: var(--growhtml-pdf-frame-height, 920px);
+  min-height: 520px;
+}
+
+.growhtml-pdf-resize-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 18px;
+  margin: 8px 0 0;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 999px;
+  color: #64748b;
+  font: 700 11px/1 Inter, "Segoe UI", Arial, sans-serif;
+  background: rgba(248, 250, 252, 0.9);
+  cursor: ns-resize;
+  user-select: none;
+}
+
+.growhtml-pdf-resize-handle::before {
+  content: "resize";
+}
+
+body.growhtml-pdf-resizing,
+body.growhtml-pdf-resizing * {
+  cursor: ns-resize !important;
+  user-select: none !important;
+}
+
+.growhtml-imported-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #1f6feb !important;
+}
+
+.growhtml-local-note-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 0 7px;
+  border: 1px solid rgba(34, 197, 94, 0.42);
+  border-radius: 999px;
+  color: #166534;
+  font: 700 11px/1 Inter, "Segoe UI", Arial, sans-serif;
+  background: rgba(220, 252, 231, 0.9);
+  white-space: nowrap;
+}
+
 `;
 
 const PREVIEW_ASSOCIABLE_SELECTOR = [
@@ -1281,6 +1335,60 @@ function makeExternalLocalPath(sourceUrl: string, title: string, existingPaths: 
   return candidate;
 }
 
+function isSameExternalHref(rawHref: string, sourceUrl: string) {
+  const href = rawHref.trim();
+  if (!href) return false;
+  if (href === sourceUrl) return true;
+
+  try {
+    const left = new URL(href);
+    const right = new URL(sourceUrl);
+    left.hash = "";
+    right.hash = "";
+    return left.href === right.href;
+  } catch {
+    return false;
+  }
+}
+
+function markImportedExternalLink(input: {
+  html: string;
+  sourceUrl: string;
+  externalPath: string;
+  externalTitle: string;
+  kind: ImportExternalResponse["kind"];
+}) {
+  const parsed = new DOMParser().parseFromString(input.html, "text/html");
+  let changed = false;
+
+  for (const anchor of Array.from(parsed.body.querySelectorAll<HTMLAnchorElement>("a[href]"))) {
+    const rawHref = anchor.getAttribute("href") ?? "";
+    if (!isSameExternalHref(rawHref, input.sourceUrl)) continue;
+
+    anchor.href = input.externalPath;
+    anchor.setAttribute("href", input.externalPath);
+    anchor.setAttribute("data-growhtml-imported-source", input.sourceUrl);
+    anchor.setAttribute("data-growhtml-imported-kind", input.kind);
+    anchor.setAttribute("title", `已内置到 ${input.externalPath}`);
+    anchor.classList.add("growhtml-imported-link");
+
+    const existingBadge = anchor.querySelector(".growhtml-local-note-badge");
+    if (existingBadge) {
+      existingBadge.textContent = "已内置";
+    } else {
+      anchor.append(" ");
+      const badge = parsed.createElement("span");
+      badge.className = "growhtml-local-note-badge";
+      badge.textContent = "已内置";
+      anchor.appendChild(badge);
+    }
+
+    changed = true;
+  }
+
+  return changed ? parsed.body.innerHTML.trim() : input.html;
+}
+
 function addExternalPageToNotebookCache(input: {
   cache: FolderCachePayload | null;
   currentPath: string;
@@ -1724,6 +1832,47 @@ export default function App() {
     return suffixMatches.length === 1 ? suffixMatches[0] : null;
   }
 
+  function getImportedExternalSourceUrl(page?: FolderPagePayload) {
+    if (!page?.html) return "";
+
+    const parsed = new DOMParser().parseFromString(page.html, "text/html");
+    return parsed.querySelector(".external-note-document")?.getAttribute("data-source-url") ?? "";
+  }
+
+  function findImportedExternalCandidate(sourceUrl: string) {
+    return (
+      folderCandidates.find((candidate) => isSameExternalHref(getImportedExternalSourceUrl(candidate.page), sourceUrl)) ??
+      null
+    );
+  }
+
+  function decorateImportedExternalLinks(document: Document | null | undefined) {
+    if (!document?.body) return;
+    if (document.querySelector(".external-note-document")) return;
+
+    for (const anchor of Array.from(document.querySelectorAll<HTMLAnchorElement>("a[href]"))) {
+      const rawHref = anchor.getAttribute("href") ?? "";
+      if (!/^https?:/i.test(rawHref)) continue;
+
+      const sourceHref = anchor.href;
+      const candidate = findImportedExternalCandidate(sourceHref);
+      if (!candidate) continue;
+
+      anchor.setAttribute("href", candidate.path);
+      anchor.setAttribute("data-growhtml-imported-source", sourceHref);
+      anchor.setAttribute("title", `已内置到 ${candidate.path}`);
+      anchor.classList.add("growhtml-imported-link");
+
+      if (!anchor.querySelector(".growhtml-local-note-badge")) {
+        anchor.append(" ");
+        const badge = document.createElement("span");
+        badge.className = "growhtml-local-note-badge";
+        badge.textContent = "已内置";
+        anchor.appendChild(badge);
+      }
+    }
+  }
+
   function bindDocumentLinks(document: Document | null | undefined) {
     if (!document?.body) return;
 
@@ -1741,6 +1890,11 @@ export default function App() {
       if (/^https?:/i.test(rawHref)) {
         event.preventDefault();
         event.stopPropagation();
+        const importedCandidate = findImportedExternalCandidate(anchor.href);
+        if (importedCandidate) {
+          void openFolderCandidate(importedCandidate);
+          return;
+        }
         openExternalPreview(anchor.href);
         return;
       }
@@ -1911,10 +2065,12 @@ export default function App() {
     previewDocument.body.innerHTML = html;
 
     syncPanelThemeFromDocument(previewDocument);
+    decorateImportedExternalLinks(previewDocument);
     bindDocumentLinks(previewDocument);
     bindPreviewComponentSelection(previewDocument);
     bindPreviewClipboard(previewDocument);
     bindPreviewToolbarActions(previewDocument);
+    bindPreviewPdfResizeHandles(previewDocument);
     previewDocument.body.ondblclick = (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -2007,6 +2163,68 @@ export default function App() {
 
     body.__growhtmlToolbarClick = handleClick;
     body.addEventListener("click", handleClick, true);
+  }
+
+  function getPdfFrameHeightStorageKey(document: Document, frame: HTMLIFrameElement) {
+    const sourceUrl = document.querySelector(".external-note-document")?.getAttribute("data-source-url") ?? "";
+    return `${PDF_FRAME_HEIGHT_STORAGE_PREFIX}${selectedFolderPath || sourceUrl || frame.getAttribute("src") || "current"}`;
+  }
+
+  function bindPreviewPdfResizeHandles(document: Document | null | undefined) {
+    if (!document?.body) return;
+
+    document.querySelectorAll(".growhtml-pdf-resize-handle").forEach((item) => item.remove());
+
+    for (const frame of Array.from(document.querySelectorAll<HTMLIFrameElement>(".external-pdf-frame"))) {
+      const storageKey = getPdfFrameHeightStorageKey(document, frame);
+      const storedHeight = Number(window.localStorage.getItem(storageKey) ?? "");
+      if (Number.isFinite(storedHeight) && storedHeight > 0) {
+        frame.style.height = `${clampNumber(storedHeight, 520, 3200)}px`;
+      }
+
+      const handle = document.createElement("div");
+      handle.className = "growhtml-pdf-resize-handle";
+      handle.setAttribute("contenteditable", "false");
+      handle.setAttribute("role", "separator");
+      handle.setAttribute("aria-orientation", "horizontal");
+      handle.title = "Drag to resize PDF";
+
+      let startY = 0;
+      let startHeight = 0;
+
+      handle.onpointerdown = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        startY = event.clientY;
+        startHeight = frame.getBoundingClientRect().height || 920;
+        handle.setPointerCapture(event.pointerId);
+        document.body.classList.add("growhtml-pdf-resizing");
+      };
+
+      handle.onpointermove = (event) => {
+        if (!handle.hasPointerCapture(event.pointerId)) return;
+
+        event.preventDefault();
+        const nextHeight = clampNumber(startHeight + event.clientY - startY, 520, 3200);
+        frame.style.height = `${nextHeight}px`;
+      };
+
+      const finishResize = (event: PointerEvent) => {
+        if (!handle.hasPointerCapture(event.pointerId)) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        const nextHeight = clampNumber(frame.getBoundingClientRect().height, 520, 3200);
+        frame.style.height = `${nextHeight}px`;
+        window.localStorage.setItem(storageKey, String(Math.round(nextHeight)));
+        handle.releasePointerCapture(event.pointerId);
+        document.body.classList.remove("growhtml-pdf-resizing");
+      };
+
+      handle.onpointerup = finishResize;
+      handle.onpointercancel = finishResize;
+      frame.insertAdjacentElement("afterend", handle);
+    }
   }
 
   function showPreviewDraftToolbar(draft: ProposalPreviewDraft) {
@@ -2616,6 +2834,7 @@ export default function App() {
 
   function enterEditMode() {
     if (modeSwitchingRef.current || modeRef.current === "edit") return;
+    if (currentHtml.includes("external-pdf-frame")) return;
 
     if (previewDraft) {
       clearProposalPreview({ restore: true });
@@ -2693,10 +2912,12 @@ export default function App() {
     if (!previewDocument) return;
 
     syncPanelThemeFromDocument(previewDocument);
+    decorateImportedExternalLinks(previewDocument);
     bindDocumentLinks(previewDocument);
     bindPreviewComponentSelection(previewDocument);
     bindPreviewClipboard(previewDocument);
     bindPreviewToolbarActions(previewDocument);
+    bindPreviewPdfResizeHandles(previewDocument);
     if (previewDraft) schedulePreviewDraftToolbar(previewDraft);
     previewDocument.ondblclick = (event) => {
       event.preventDefault();
@@ -2966,11 +3187,18 @@ export default function App() {
         imported.title,
         folderCache?.pages.map((page) => page.path) ?? [selectedFolderPath || "index.html"]
       );
+      const markedCurrentDocumentHtml = markImportedExternalLink({
+        html: currentDocumentHtml,
+        sourceUrl: imported.sourceUrl || sourceUrl,
+        externalPath,
+        externalTitle: imported.title,
+        kind: imported.kind
+      });
       const nextFolderCache = addExternalPageToNotebookCache({
         cache: folderCache,
         currentPath: selectedFolderPath || "index.html",
         currentTitle: documentTitle,
-        currentHtml: currentDocumentHtml,
+        currentHtml: markedCurrentDocumentHtml,
         currentCss: currentDocumentCss,
         currentShell: currentDocumentShell,
         externalPath,
@@ -3008,6 +3236,7 @@ export default function App() {
   const showPreviewSurface = mode === "preview" || modeTransition === "to-edit";
   const hideEditorSurface = mode === "preview" && modeTransition !== "to-edit";
   const showSelectionActions = screen === "document" && Boolean(selection) && selectionOrigin !== "chat";
+  const isPdfNote = currentHtml.includes("external-pdf-frame");
   previewToolbarActionRef.current = (action: string) => {
     if (action === "apply") {
       void applyPreviewDraft();
@@ -3088,19 +3317,21 @@ export default function App() {
           </button>
           {screen === "document" ? (
             <>
-              <button
-                className="ghost-button"
-                type="button"
-                onClick={() => {
-                  if (mode === "edit") {
-                    leaveEditMode();
-                  } else {
-                    enterEditMode();
-                  }
-                }}
-              >
-                {mode === "edit" ? "预览" : "编辑"}
-              </button>
+              {mode === "edit" || !isPdfNote ? (
+                <button
+                  className="ghost-button"
+                  type="button"
+                  onClick={() => {
+                    if (mode === "edit") {
+                      leaveEditMode();
+                    } else {
+                      enterEditMode();
+                    }
+                  }}
+                >
+                  {mode === "edit" ? "预览" : "编辑"}
+                </button>
+              ) : null}
               <button className="ghost-button" type="button" onClick={() => setScreen("home")}>
                 首页
               </button>

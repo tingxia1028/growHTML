@@ -187,7 +187,8 @@ body {
 
 .external-pdf-frame {
   width: 100%;
-  min-height: 78vh;
+  height: 920px;
+  min-height: 520px;
   border: 1px solid #cbd4ce;
   border-radius: 8px;
   background: #ffffff;
