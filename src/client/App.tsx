@@ -10,6 +10,14 @@ import {
 } from "react";
 import grapesjs, { type Component, type Editor } from "grapesjs";
 import { BookOpenText, FilePenLine, Highlighter, NotebookPen, Sparkles } from "lucide-react";
+import {
+  getDocument as getPdfDocument,
+  GlobalWorkerOptions,
+  TextLayer,
+  type PDFDocumentProxy,
+  type PDFPageProxy
+} from "pdfjs-dist";
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 import type {
   AiProposal,
   AiProposalRequest,
@@ -28,6 +36,8 @@ import type {
   ThreadEntry
 } from "../shared/types";
 
+GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+
 type Status = "idle" | "loading" | "saving" | "applying" | "thinking" | "ready" | "error";
 
 const DEFAULT_AGENT_PANEL_WIDTH = 360;
@@ -37,6 +47,14 @@ const AGENT_PANEL_WIDTH_STORAGE_KEY = "growhtml-agent-panel-width";
 const GROWHTML_CLIPBOARD_TYPE = "application/x-growhtml-selection";
 const GROWHTML_CLIPBOARD_PREFIX = "growhtml-selection:";
 const PDF_FRAME_HEIGHT_STORAGE_PREFIX = "growhtml-pdf-frame-height:";
+const PDF_FRAME_WIDTH_STORAGE_PREFIX = "growhtml-pdf-frame-width:";
+const PDF_ANNOTATION_STORAGE_PREFIX = "growhtml-pdf-annotations:";
+const PDF_PAGE_ZOOM_STORAGE_PREFIX = "growhtml-pdf-page-zoom:";
+const PDFJS_RESOURCE_BASE_URL = "/api/pdfjs";
+const PDF_RENDERER_VERSION = "pdfjs-page-zoom-v3";
+const PDF_MIN_ZOOM = 0.75;
+const PDF_MAX_ZOOM = 3;
+const PDF_ZOOM_STEP = 0.25;
 const LIGHT_CONTEXT_AROUND_SELECTION_CHARS = 3600;
 const LIGHT_CONTEXT_MAX_HTML_CHARS = 14000;
 const LIGHT_CONTEXT_MAX_CSS_CHARS = 7000;
@@ -58,6 +76,36 @@ type ProposalPreviewDraft = {
   selection: SelectionPayload;
   instruction: string;
   replacementHtml: string;
+};
+
+type PdfSelectionPayload = SelectionPayload & {
+  pageNumber?: number;
+};
+
+type PdfAnnotation = {
+  id: string;
+  pageNumber: number;
+  text: string;
+  rects: Array<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  }>;
+};
+
+type PdfSelectionInfo = {
+  text: string;
+  payload: PdfSelectionPayload;
+  annotations: Array<Omit<PdfAnnotation, "id" | "text">>;
+  toolbarLeft: number;
+  toolbarTop: number;
+};
+
+type PreviewMathJax = {
+  startup?: { promise?: Promise<unknown> };
+  typeset?: (elements?: Element[]) => void;
+  typesetPromise?: (elements?: Element[]) => Promise<unknown>;
 };
 
 type SelectionAction = {
@@ -242,10 +290,296 @@ body {
   background: #dc2626;
 }
 
+.external-pdf-panel {
+  width: min(100%, var(--growhtml-pdf-panel-width, 1120px)) !important;
+  max-width: none !important;
+}
+
+.external-pdf-viewport {
+  position: relative;
+  width: 100%;
+  height: var(--growhtml-pdf-frame-height, 1120px);
+  min-height: 680px;
+  border: 1px solid #cbd4ce;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f8fafc;
+}
+
 .external-pdf-frame {
+  position: absolute !important;
+  inset: 0 !important;
   display: block !important;
-  height: var(--growhtml-pdf-frame-height, 920px);
-  min-height: 520px;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+
+.external-note-document-compact {
+  display: block !important;
+  grid-template-columns: none !important;
+  min-height: auto !important;
+}
+
+.external-note-document-compact .external-note-rail {
+  display: none !important;
+}
+
+.external-note-document-compact .external-note-content {
+  min-width: 0 !important;
+  padding: 22px min(4vw, 48px) 42px !important;
+}
+
+.external-note-source {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid #cbd4ce;
+  border-radius: 8px;
+  color: #3b463f;
+  background: #fbfbf8;
+}
+
+.external-note-source strong {
+  display: block;
+  color: #17202a;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.external-note-source span {
+  color: #64756d;
+  font-size: 12px;
+}
+
+.external-note-source a {
+  color: #1f6feb;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.growhtml-pdf-reader {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: auto;
+  padding: 12px 0 42px;
+  background: #e5e7eb;
+  user-select: text;
+}
+
+.growhtml-pdf-controls {
+  position: sticky;
+  top: 8px;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: max-content;
+  margin: 0 auto 12px;
+  padding: 7px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  border-radius: 999px;
+  background: rgba(248, 250, 252, 0.94);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(10px);
+}
+
+.growhtml-pdf-controls button {
+  min-width: 34px;
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px solid #2388ff;
+  border-radius: 999px;
+  color: #ffffff;
+  font: 800 13px/1 Inter, "Segoe UI", Arial, sans-serif;
+  background: #2388ff;
+  cursor: pointer;
+}
+
+.growhtml-pdf-controls button:hover,
+.growhtml-pdf-controls button:focus-visible {
+  border-color: #0f6cd7;
+  background: #0f6cd7;
+  outline: none;
+}
+
+.growhtml-pdf-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.growhtml-pdf-zoom-label {
+  min-width: 54px;
+  color: #0f172a;
+  font: 800 12px/1 Inter, "Segoe UI", Arial, sans-serif;
+  text-align: center;
+}
+
+.growhtml-pdf-loading,
+.growhtml-pdf-error {
+  margin: 18px auto;
+  width: min(720px, calc(100% - 32px));
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  border-radius: 8px;
+  color: #334155;
+  background: #ffffff;
+}
+
+.growhtml-pdf-error {
+  color: #991b1b;
+  border-color: rgba(248, 113, 113, 0.55);
+  background: #fff1f2;
+}
+
+.growhtml-pdf-page {
+  position: relative;
+  margin: 0 auto 18px;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.18);
+  background: #ffffff;
+}
+
+.growhtml-pdf-page canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+}
+
+.growhtml-pdf-text-layer {
+  color-scheme: only light;
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  text-align: initial;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  opacity: 1;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.growhtml-pdf-text-layer :is(span, br) {
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  text-shadow: none !important;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+
+.growhtml-pdf-text-layer > :not(.markedContent),
+.growhtml-pdf-text-layer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.growhtml-pdf-text-layer .markedContent {
+  display: contents;
+}
+
+.growhtml-pdf-text-layer span[role="img"] {
+  cursor: default;
+  user-select: none;
+}
+
+.growhtml-pdf-text-layer * {
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  text-shadow: none !important;
+}
+
+.growhtml-pdf-text-layer span::selection {
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  background: rgba(35, 136, 255, 0.36);
+}
+
+.growhtml-pdf-annotation {
+  position: absolute;
+  z-index: 2;
+  border-radius: 2px;
+  background: rgba(250, 204, 21, 0.34);
+  pointer-events: none;
+}
+
+.growhtml-pdf-selection-toolbar {
+  position: absolute;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.94);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.25);
+}
+
+.growhtml-pdf-selection-toolbar button {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 999px;
+  color: #f8fafc;
+  font: 700 12px/1 Inter, "Segoe UI", Arial, sans-serif;
+  background: rgba(30, 41, 59, 0.86);
+  cursor: pointer;
+}
+
+.growhtml-pdf-selection-toolbar button:hover,
+.growhtml-pdf-selection-toolbar button:focus-visible {
+  color: #ffffff;
+  border-color: #2388ff;
+  background: #2388ff;
+  outline: none;
+}
+
+.growhtml-pdf-selection-toolbar button[data-growhtml-pdf-action="search"] {
+  border-color: rgba(35, 136, 255, 0.75);
+  background: #2388ff;
+}
+
+.growhtml-pdf-selection-toolbar button[data-growhtml-pdf-action="mark"] {
+  border-color: rgba(250, 204, 21, 0.75);
+  color: #172033;
+  background: #facc15;
+}
+
+.growhtml-pdf-selection-toolbar button[data-growhtml-pdf-action="delete"] {
+  border-color: #dc2626;
+  background: #dc2626;
+}
+
+.growhtml-pdf-resize-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 180px);
+  gap: 8px;
+  width: 100%;
+  margin: 8px 0 0;
 }
 
 .growhtml-pdf-resize-handle {
@@ -254,23 +588,39 @@ body {
   justify-content: center;
   width: 100%;
   height: 18px;
-  margin: 8px 0 0;
   border: 1px solid rgba(148, 163, 184, 0.45);
   border-radius: 999px;
   color: #64748b;
   font: 700 11px/1 Inter, "Segoe UI", Arial, sans-serif;
   background: rgba(248, 250, 252, 0.9);
-  cursor: ns-resize;
   user-select: none;
 }
 
-.growhtml-pdf-resize-handle::before {
-  content: "resize";
+.growhtml-pdf-height-handle {
+  cursor: ns-resize;
 }
 
-body.growhtml-pdf-resizing,
-body.growhtml-pdf-resizing * {
+.growhtml-pdf-height-handle::before {
+  content: "height";
+}
+
+.growhtml-pdf-width-handle {
+  cursor: ew-resize;
+}
+
+.growhtml-pdf-width-handle::before {
+  content: "width";
+}
+
+body.growhtml-pdf-resizing-height,
+body.growhtml-pdf-resizing-height * {
   cursor: ns-resize !important;
+  user-select: none !important;
+}
+
+body.growhtml-pdf-resizing-width,
+body.growhtml-pdf-resizing-width * {
+  cursor: ew-resize !important;
   user-select: none !important;
 }
 
@@ -510,6 +860,58 @@ function replaceElementAttributes(element: Element, attrs: Record<string, string
   }
 }
 
+function recreateHeadNodeForCanvas(doc: Document, node: Node): Node | null {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return doc.createTextNode(node.nodeValue ?? "");
+  }
+  if (node.nodeType !== Node.ELEMENT_NODE) return null;
+
+  const element = node as Element;
+  // Recreate <script> elements by hand — scripts brought in via importNode/innerHTML
+  // do not execute, so the runtime they define (e.g. `JN`) would never load.
+  if (element.tagName.toLowerCase() === "script") {
+    const script = doc.createElement("script");
+    for (const attr of Array.from(element.attributes)) {
+      script.setAttribute(attr.name, attr.value);
+    }
+    script.textContent = element.textContent;
+    return script;
+  }
+
+  return doc.importNode(element, true);
+}
+
+function injectShellHeadIntoCanvas(editor: Editor, shell: PageShell) {
+  const canvasDocument = editor.Canvas.getDocument();
+  const head = canvasDocument?.head;
+  if (!head) return;
+
+  const headHtml = normalizeShell(shell).headHtml.trim();
+  // The shell <head> carries runtime libraries (e.g. the chart helper `JN`) that body
+  // scripts depend on. The preview iframe gets these through buildFullHtml, but the editor
+  // canvas does not — so without this every interactive widget throws and renders blank.
+  // Key the injection by a signature so repeat calls with the same shell are no-ops and we
+  // don't re-run the runtime (or re-fetch external scripts like MathJax) needlessly.
+  const signature = `${headHtml.length}:${headHtml.slice(0, 48)}`;
+  if (head.getAttribute("data-growhtml-shell-head") === signature) return;
+
+  for (const node of Array.from(head.querySelectorAll("[data-growhtml-shell-head-node]"))) {
+    node.remove();
+  }
+  head.setAttribute("data-growhtml-shell-head", signature);
+  if (!headHtml) return;
+
+  const parsed = new DOMParser().parseFromString(`<head>${headHtml}</head>`, "text/html");
+  for (const node of Array.from(parsed.head.childNodes)) {
+    const recreated = recreateHeadNodeForCanvas(canvasDocument, node);
+    if (!recreated) continue;
+    if (recreated.nodeType === Node.ELEMENT_NODE) {
+      (recreated as Element).setAttribute("data-growhtml-shell-head-node", "");
+    }
+    head.appendChild(recreated);
+  }
+}
+
 function applyShellToCanvas(editor: Editor, shell: PageShell) {
   const canvasDocument = editor.Canvas.getDocument();
   if (!canvasDocument) return;
@@ -517,6 +919,7 @@ function applyShellToCanvas(editor: Editor, shell: PageShell) {
   const normalized = normalizeShell(shell);
   replaceElementAttributes(canvasDocument.documentElement, normalized.htmlAttrs);
   replaceElementAttributes(canvasDocument.body, normalized.bodyAttrs);
+  injectShellHeadIntoCanvas(editor, normalized);
 }
 
 function applyRawCssToCanvas(editor: Editor, css: string) {
@@ -545,10 +948,12 @@ function applyRawCssToCanvas(editor: Editor, css: string) {
 }
 
 function applyDocumentToEditor(editor: Editor, html: string, css: string, shell: PageShell) {
-  setEditorComponents(editor, html);
-  editor.setStyle(cleanDocumentCss(css));
+  // Inject the shell head (runtime libraries) and CSS before loading the body so that
+  // body scripts can resolve globals like `JN` the moment they execute.
   applyShellToCanvas(editor, shell);
   applyRawCssToCanvas(editor, css);
+  setEditorComponents(editor, html);
+  editor.setStyle(cleanDocumentCss(css));
 }
 
 function safeGetProjectData(editor: Editor) {
@@ -741,6 +1146,82 @@ function stripHtml(value: string) {
   const textarea = document.createElement("textarea");
   textarea.innerHTML = plain;
   return textarea.value;
+}
+
+function escapeHtmlText(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function normalizeLatexEscapes(value: string) {
+  if (!value.includes("\\\\")) return value;
+
+  return value
+    .replace(/\\\\([()[\]])/g, "\\$1")
+    .replace(/\\\\(begin|end)\{/g, "\\$1{")
+    .replace(
+      /\\\\(alpha|argmax|argmin|bar|beta|cdot|delta|dfrac|epsilon|exists|exp|forall|frac|gamma|ge|hat|iint|iiint|infty|int|lambda|langle|le|left|ln|log|mathbb|mathbf|mathit|mathrm|max|min|mu|nabla|neq|nu|omega|Omega|oint|operatorname|partial|phi|Pi|pi|prod|propto|psi|qquad|quad|rangle|rho|right|sigma|Sigma|sim|sqrt|sum|text|tfrac|theta|Theta|tilde|times|varepsilon|varphi)\b/g,
+      "\\$1"
+    );
+}
+
+function normalizeLatexEscapesInHtml(html: string) {
+  if (!html.includes("\\\\")) return html;
+
+  const parsed = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+  const ignoredSelector = "pre, code, script, style, textarea, kbd, samp";
+  const walker = parsed.createTreeWalker(parsed.body, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement;
+      return parent?.closest(ignoredSelector) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  let changed = false;
+  let node = walker.nextNode();
+
+  while (node) {
+    const nextText = normalizeLatexEscapes(node.nodeValue ?? "");
+    if (nextText !== node.nodeValue) {
+      node.nodeValue = nextText;
+      changed = true;
+    }
+    node = walker.nextNode();
+  }
+
+  return changed ? parsed.body.innerHTML.trim() : html;
+}
+
+function normalizeProposalMath(proposal: AiProposal): AiProposal {
+  const summary = normalizeLatexEscapes(proposal.summary);
+  const replacementHtml = normalizeLatexEscapesInHtml(proposal.replacementHtml);
+
+  if (summary === proposal.summary && replacementHtml === proposal.replacementHtml) {
+    return proposal;
+  }
+
+  return {
+    ...proposal,
+    summary,
+    replacementHtml
+  };
+}
+
+function normalizeThreadEntryMath(entry: ThreadEntry): ThreadEntry {
+  const summary = normalizeLatexEscapes(entry.summary);
+  const proposal = entry.proposal ? normalizeProposalMath(entry.proposal) : entry.proposal;
+
+  if (summary === entry.summary && proposal === entry.proposal) {
+    return entry;
+  }
+
+  return {
+    ...entry,
+    summary,
+    proposal
+  };
 }
 
 function normalizeSearchText(value: string) {
@@ -1209,6 +1690,33 @@ async function rewriteDomResourceUrls(document: Document, baseDir: string, fileI
   }
 }
 
+// Folder-imported pages may reference local scripts (e.g. <script src="assets/app.js">) that
+// power interactive canvas/JS widgets. Relative paths can't resolve inside the preview iframe's
+// srcDoc, so — mirroring how CSS/images are inlined — we replace each local <script src> with an
+// inline <script> carrying the file's contents, keeping the page self-contained. Remote scripts
+// (CDN, data:, protocol-relative) are skipped via resolveFilePath and load over the network.
+async function inlineLocalScripts(document: Document, baseDir: string, fileIndex: Map<string, File>) {
+  for (const element of Array.from(document.querySelectorAll<HTMLScriptElement>("script[src]"))) {
+    const src = element.getAttribute("src");
+    if (!src) continue;
+
+    const resolvedPath = resolveFilePath(baseDir, src, fileIndex);
+    const file = resolvedPath ? fileIndex.get(resolvedPath.toLowerCase()) : null;
+    if (!file) continue;
+
+    const code = await file.text();
+    const inline = document.createElement("script");
+    for (const attr of Array.from(element.attributes)) {
+      // Drop src (now inlined) and defer/async — they have no effect on inline scripts, and
+      // dropping them keeps inline execution in document order so dependencies load first.
+      if (attr.name === "src" || attr.name === "defer" || attr.name === "async") continue;
+      inline.setAttribute(attr.name, attr.value);
+    }
+    inline.textContent = code;
+    element.replaceWith(inline);
+  }
+}
+
 async function prepareFolderHtml(files: File[], htmlFile: File) {
   const fileIndex = makeFileIndex(files);
   const htmlPath = normalizeRelativePath(getRelativePath(htmlFile));
@@ -1242,6 +1750,7 @@ async function prepareFolderHtml(files: File[], htmlFile: File) {
   }
 
   await rewriteDomResourceUrls(parsed, htmlBaseDir, fileIndex);
+  await inlineLocalScripts(parsed, htmlBaseDir, fileIndex);
 
   return {
     html: parsed.body.innerHTML.trim() || raw,
@@ -1387,6 +1896,110 @@ function markImportedExternalLink(input: {
   }
 
   return changed ? parsed.body.innerHTML.trim() : input.html;
+}
+
+function normalizePdfNoteHtml(html: string) {
+  if (!html.includes("external-pdf")) return { html, changed: false };
+
+  const parsed = new DOMParser().parseFromString(html, "text/html");
+  let changed = false;
+
+  for (const panel of Array.from(parsed.body.querySelectorAll<HTMLElement>(".external-pdf-panel"))) {
+    const article = panel.closest(".external-note-document") as HTMLElement | null;
+    const rail = article?.querySelector<HTMLElement>(".external-note-rail") ?? null;
+    const railTitle = rail?.querySelector("h1")?.textContent?.trim() ?? "";
+    const railLink = rail?.querySelector<HTMLAnchorElement>("a[href]") ?? null;
+    const sourceUrl = article?.getAttribute("data-source-url") ?? railLink?.getAttribute("href") ?? "";
+    const metaText = rail?.querySelector(".external-note-meta")?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+    const sizeText = metaText.match(/\b\d+(?:\.\d+)?\s*(?:MB|KB|GB)\b/i)?.[0] ?? "";
+
+    if (article && !article.classList.contains("external-note-document-compact")) {
+      article.classList.add("external-note-document-compact");
+      changed = true;
+    }
+
+    if (rail) {
+      rail.remove();
+      changed = true;
+    }
+
+    for (const callout of Array.from(panel.querySelectorAll(".external-note-callout"))) {
+      callout.remove();
+      changed = true;
+    }
+
+    const existingViewport = panel.querySelector<HTMLElement>(".external-pdf-viewport");
+    const existingFrame = panel.querySelector<HTMLIFrameElement>("iframe.external-pdf-frame");
+    const malformedFrame = existingViewport?.querySelector<HTMLElement>(".external-pdf-frame:not(iframe)") ?? null;
+    const title = existingFrame?.getAttribute("title") ?? railTitle ?? "PDF";
+
+    if (!panel.querySelector(".external-note-source")) {
+      const source = parsed.createElement("div");
+      source.className = "external-note-source";
+      source.setAttribute("contenteditable", "false");
+
+      const label = parsed.createElement("div");
+      const strong = parsed.createElement("strong");
+      strong.textContent = title;
+      const meta = parsed.createElement("span");
+      meta.textContent = sizeText ? `Local PDF · ${sizeText}` : "Local PDF";
+      label.append(strong, meta);
+      source.appendChild(label);
+
+      if (sourceUrl) {
+        const anchor = parsed.createElement("a");
+        anchor.href = sourceUrl;
+        anchor.setAttribute("href", sourceUrl);
+        anchor.textContent = "source";
+        source.appendChild(anchor);
+      }
+
+      panel.insertBefore(source, panel.firstChild);
+      changed = true;
+    }
+
+    if (existingViewport && existingFrame?.parentElement === existingViewport && !malformedFrame) {
+      continue;
+    }
+
+    const nestedFrame =
+      panel.querySelector<HTMLIFrameElement>(".external-pdf-frame iframe[src]") ??
+      panel.querySelector<HTMLIFrameElement>("iframe[src]");
+    const frameLike = panel.querySelector<HTMLElement>(".external-pdf-frame");
+    const src =
+      existingFrame?.getAttribute("src") ??
+      nestedFrame?.getAttribute("src") ??
+      frameLike?.getAttribute("src") ??
+      "";
+
+    if (!src) continue;
+
+    const frame = parsed.createElement("iframe");
+    frame.className = "external-pdf-frame";
+    frame.setAttribute("src", src);
+    frame.setAttribute(
+      "title",
+      existingFrame?.getAttribute("title") ??
+        nestedFrame?.getAttribute("title") ??
+        railTitle ??
+        "PDF"
+    );
+
+    const viewport = parsed.createElement("div");
+    viewport.className = "external-pdf-viewport";
+    viewport.appendChild(frame);
+
+    const replaceTarget = existingViewport ?? frameLike ?? nestedFrame;
+    if (replaceTarget) {
+      replaceTarget.replaceWith(viewport);
+      changed = true;
+    }
+  }
+
+  return {
+    html: changed ? parsed.body.innerHTML.trim() : html,
+    changed
+  };
 }
 
 function addExternalPageToNotebookCache(input: {
@@ -1562,6 +2175,48 @@ function restoreDocumentScroll(document: Document | null | undefined, snapshot: 
   document.defaultView?.scrollTo({ top, left: 0, behavior: "instant" as ScrollBehavior });
 }
 
+function scheduleMathJaxTypeset(document: Document | null | undefined, attempt = 0) {
+  if (!document?.body) return;
+
+  const previewWindow = document.defaultView as (Window & { MathJax?: PreviewMathJax }) | null;
+  const mathJax = previewWindow?.MathJax;
+  const canTypeset =
+    typeof mathJax?.typesetPromise === "function" || typeof mathJax?.typeset === "function" || !!mathJax?.startup?.promise;
+
+  if (!mathJax || !canTypeset) {
+    if (attempt < 8) {
+      window.setTimeout(() => scheduleMathJaxTypeset(document, attempt + 1), 160);
+    }
+    return;
+  }
+
+  const runTypeset = () => {
+    try {
+      if (typeof mathJax.typesetPromise === "function") {
+        void mathJax.typesetPromise([document.body]).catch(() => undefined);
+        return;
+      }
+      if (typeof mathJax.typeset === "function") {
+        mathJax.typeset([document.body]);
+      }
+    } catch {
+      // Math rendering is best-effort; the document should stay readable if MathJax is unavailable.
+    }
+  };
+
+  if (mathJax.startup?.promise) {
+    void mathJax.startup.promise.then(runTypeset).catch(() => undefined);
+    return;
+  }
+
+  if (previewWindow) {
+    previewWindow.setTimeout(runTypeset, 0);
+    return;
+  }
+
+  window.setTimeout(runTypeset, 0);
+}
+
 export default function App() {
   const editorRef = useRef<Editor | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1589,6 +2244,10 @@ export default function App() {
   const [threads, setThreads] = useState<Record<AiProvider, string | null>>({
     claude: null,
     codex: null
+  });
+  const [newSessionByProvider, setNewSessionByProvider] = useState<Record<AiProvider, boolean>>({
+    claude: false,
+    codex: false
   });
   const [history, setHistory] = useState<ThreadEntry[]>([]);
   const [selection, setSelection] = useState<SelectionPayload | null>(null);
@@ -1637,6 +2296,7 @@ export default function App() {
   }, [provider, status]);
 
   const currentThreadId = threads[provider];
+  const startNewSession = newSessionByProvider[provider];
   const chatEntries = useMemo(() => [...history].reverse(), [history]);
   const latestHistoryId = history[0]?.id ?? "";
   const externalPreviewBlocked = externalPreviewUrl ? isKnownIframeBlockedUrl(externalPreviewUrl) : false;
@@ -1671,6 +2331,15 @@ export default function App() {
       top: element.scrollHeight,
       left: 0,
       behavior
+    });
+  }
+
+  function focusInstructionComposer() {
+    window.requestAnimationFrame(() => {
+      instructionInputRef.current?.focus();
+      const length = instructionInputRef.current?.value.length ?? 0;
+      instructionInputRef.current?.setSelectionRange(length, length);
+      scrollChatLogToBottom("smooth");
     });
   }
 
@@ -2034,7 +2703,8 @@ export default function App() {
   }
 
   function syncPreviewSrcDoc(html: string, css: string, shell: PageShell) {
-    setPreviewSrcDoc(buildFullHtml(html, css, shell, PREVIEW_RUNTIME_CSS));
+    const normalizedHtml = normalizeLatexEscapesInHtml(normalizePdfNoteHtml(html).html);
+    setPreviewSrcDoc(buildFullHtml(normalizedHtml, css, shell, PREVIEW_RUNTIME_CSS));
   }
 
   function patchPreviewDocument(
@@ -2062,7 +2732,7 @@ export default function App() {
     replaceElementAttributes(previewDocument.documentElement, normalized.htmlAttrs);
     replaceElementAttributes(previewDocument.body, normalized.bodyAttrs);
     styleElement.textContent = `${cleanCss}\n${PREVIEW_RUNTIME_CSS}`;
-    previewDocument.body.innerHTML = html;
+    previewDocument.body.innerHTML = normalizeLatexEscapesInHtml(normalizePdfNoteHtml(html).html);
 
     syncPanelThemeFromDocument(previewDocument);
     decorateImportedExternalLinks(previewDocument);
@@ -2076,6 +2746,7 @@ export default function App() {
       event.stopPropagation();
       enterEditMode();
     };
+    scheduleMathJaxTypeset(previewDocument);
 
     window.requestAnimationFrame(() => {
       if (snapshot) {
@@ -2170,60 +2841,671 @@ export default function App() {
     return `${PDF_FRAME_HEIGHT_STORAGE_PREFIX}${selectedFolderPath || sourceUrl || frame.getAttribute("src") || "current"}`;
   }
 
+  function getPdfFrameWidthStorageKey(document: Document, frame: HTMLIFrameElement) {
+    const sourceUrl = document.querySelector(".external-note-document")?.getAttribute("data-source-url") ?? "";
+    return `${PDF_FRAME_WIDTH_STORAGE_PREFIX}${selectedFolderPath || sourceUrl || frame.getAttribute("src") || "current"}`;
+  }
+
+  function getPdfPageZoomStorageKey(document: Document, frame: HTMLIFrameElement) {
+    const sourceUrl = document.querySelector(".external-note-document")?.getAttribute("data-source-url") ?? "";
+    return `${PDF_PAGE_ZOOM_STORAGE_PREFIX}${selectedFolderPath || sourceUrl || frame.getAttribute("src") || "current"}`;
+  }
+
+  function readPdfPageZoom(storageKey: string) {
+    const stored = Number(window.localStorage.getItem(storageKey) ?? "");
+    return Number.isFinite(stored) && stored > 0 ? clampNumber(stored, PDF_MIN_ZOOM, PDF_MAX_ZOOM) : 1;
+  }
+
+  function writePdfPageZoom(storageKey: string, zoom: number) {
+    window.localStorage.setItem(storageKey, String(clampNumber(zoom, PDF_MIN_ZOOM, PDF_MAX_ZOOM)));
+  }
+
+  function getPdfAnnotationStorageKey(document: Document, frame: HTMLIFrameElement) {
+    const sourceUrl = document.querySelector(".external-note-document")?.getAttribute("data-source-url") ?? "";
+    return `${PDF_ANNOTATION_STORAGE_PREFIX}${selectedFolderPath || sourceUrl || frame.getAttribute("src") || "current"}`;
+  }
+
+  function readPdfAnnotations(storageKey: string): PdfAnnotation[] {
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(storageKey) ?? "[]") as PdfAnnotation[];
+      if (!Array.isArray(parsed)) return [];
+
+      return parsed.filter(
+        (annotation) =>
+          annotation &&
+          typeof annotation.id === "string" &&
+          typeof annotation.pageNumber === "number" &&
+          typeof annotation.text === "string" &&
+          Array.isArray(annotation.rects)
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  function writePdfAnnotations(storageKey: string, annotations: PdfAnnotation[]) {
+    window.localStorage.setItem(storageKey, JSON.stringify(annotations.slice(-300)));
+  }
+
+  function findPdfAnnotationMarkerAtPoint(reader: HTMLElement, clientX: number, clientY: number) {
+    const markers = Array.from(reader.querySelectorAll<HTMLElement>(".growhtml-pdf-annotation"));
+    return markers.reverse().find((marker) => {
+      const rect = marker.getBoundingClientRect();
+      return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+    });
+  }
+
+  function showPdfAnnotationDeleteToolbar(
+    document: Document,
+    reader: HTMLElement,
+    frame: HTMLIFrameElement,
+    marker: HTMLElement
+  ) {
+    const annotationId = marker.dataset.growhtmlPdfAnnotationId;
+    if (!annotationId) return;
+
+    document.querySelectorAll(".growhtml-pdf-selection-toolbar").forEach((item) => item.remove());
+
+    const markerRect = marker.getBoundingClientRect();
+    const win = document.defaultView;
+    const scrollX = win?.scrollX ?? document.documentElement.scrollLeft;
+    const scrollY = win?.scrollY ?? document.documentElement.scrollTop;
+    const toolbar = document.createElement("div");
+    toolbar.className = "growhtml-pdf-selection-toolbar";
+    toolbar.setAttribute("contenteditable", "false");
+    toolbar.style.left = `${Math.max(8, markerRect.left + scrollX)}px`;
+    toolbar.style.top = `${Math.max(8, markerRect.top + scrollY - 44)}px`;
+
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.textContent = "delete";
+    deleteButton.dataset.growhtmlPdfAction = "delete";
+    deleteButton.onmousedown = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    deleteButton.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const storageKey = getPdfAnnotationStorageKey(document, frame);
+      const nextAnnotations = readPdfAnnotations(storageKey).filter((annotation) => annotation.id !== annotationId);
+      writePdfAnnotations(storageKey, nextAnnotations);
+      renderPdfAnnotations(reader, nextAnnotations);
+      toolbar.remove();
+    };
+
+    toolbar.appendChild(deleteButton);
+    document.body.appendChild(toolbar);
+  }
+
+  function renderPdfAnnotations(reader: HTMLElement, annotations: PdfAnnotation[]) {
+    reader.querySelectorAll(".growhtml-pdf-annotation").forEach((item) => item.remove());
+
+    for (const annotation of annotations) {
+      const page = reader.querySelector<HTMLElement>(
+        `.growhtml-pdf-page[data-page-number="${annotation.pageNumber}"]`
+      );
+      if (!page) continue;
+
+      for (const rect of annotation.rects) {
+        const marker = page.ownerDocument.createElement("div");
+        marker.className = "growhtml-pdf-annotation";
+        marker.dataset.growhtmlPdfAnnotationId = annotation.id;
+        marker.title = `${annotation.text}\nClick to delete highlight`;
+        marker.style.left = `${clampNumber(rect.left, 0, 1) * 100}%`;
+        marker.style.top = `${clampNumber(rect.top, 0, 1) * 100}%`;
+        marker.style.width = `${clampNumber(rect.width, 0, 1) * 100}%`;
+        marker.style.height = `${clampNumber(rect.height, 0, 1) * 100}%`;
+        page.appendChild(marker);
+      }
+    }
+  }
+
+  function makePdfSelectionPayload(text: string, pageNumber: number): PdfSelectionPayload {
+    return {
+      componentId: null,
+      aiId: null,
+      label: `PDF page ${pageNumber} selection`,
+      tagName: "pdf",
+      selectedHtml: `<blockquote data-growhtml-pdf-page="${pageNumber}">${escapeHtmlText(text)}</blockquote>`,
+      pageNumber
+    };
+  }
+
+  function getPdfSelectionInfo(document: Document): PdfSelectionInfo | null {
+    const selected = document.getSelection();
+    if (!selected || selected.isCollapsed || !selected.rangeCount) return null;
+
+    const text = selected.toString().replace(/\s+/g, " ").trim();
+    if (!text) return null;
+
+    const range = selected.getRangeAt(0);
+    const reader =
+      elementFromNode(range.commonAncestorContainer)?.closest(".growhtml-pdf-reader") ??
+      elementFromNode(selected.anchorNode)?.closest(".growhtml-pdf-reader") ??
+      elementFromNode(selected.focusNode)?.closest(".growhtml-pdf-reader");
+    if (!reader) return null;
+
+    const clientRects = Array.from(range.getClientRects()).filter((rect) => rect.width > 1 && rect.height > 1);
+    if (!clientRects.length) return null;
+
+    const pages = Array.from(reader.querySelectorAll<HTMLElement>(".growhtml-pdf-page"));
+    const grouped = new Map<number, PdfAnnotation["rects"]>();
+
+    for (const page of pages) {
+      const pageRect = page.getBoundingClientRect();
+      const pageNumber = Number(page.dataset.pageNumber ?? "");
+      if (!Number.isFinite(pageNumber) || pageRect.width <= 0 || pageRect.height <= 0) continue;
+
+      const rects: PdfAnnotation["rects"] = [];
+      for (const rect of clientRects) {
+        const left = Math.max(rect.left, pageRect.left);
+        const right = Math.min(rect.right, pageRect.right);
+        const top = Math.max(rect.top, pageRect.top);
+        const bottom = Math.min(rect.bottom, pageRect.bottom);
+        if (right - left < 2 || bottom - top < 2) continue;
+
+        rects.push({
+          left: (left - pageRect.left) / pageRect.width,
+          top: (top - pageRect.top) / pageRect.height,
+          width: (right - left) / pageRect.width,
+          height: (bottom - top) / pageRect.height
+        });
+      }
+
+      if (rects.length) grouped.set(pageNumber, rects);
+    }
+
+    const firstPageNumber = grouped.keys().next().value as number | undefined;
+    if (!firstPageNumber) return null;
+
+    const firstRect = clientRects[0];
+    const win = document.defaultView;
+    const scrollX = win?.scrollX ?? document.documentElement.scrollLeft;
+    const scrollY = win?.scrollY ?? document.documentElement.scrollTop;
+
+    return {
+      text,
+      payload: makePdfSelectionPayload(text, firstPageNumber),
+      annotations: Array.from(grouped.entries()).map(([pageNumber, rects]) => ({ pageNumber, rects })),
+      toolbarLeft: Math.max(8, firstRect.left + scrollX),
+      toolbarTop: Math.max(8, firstRect.top + scrollY - 44)
+    };
+  }
+
+  function activatePdfSelection(info: PdfSelectionInfo) {
+    setSelection(info.payload);
+    setSelectionOrigin("preview");
+    setCopiedContextVisible(true);
+    setProposal(null);
+    setError("");
+  }
+
+  function startPdfSelectionDiscussion(info: PdfSelectionInfo, draftInstruction = "") {
+    activatePdfSelection(info);
+    if (draftInstruction) {
+      setInstruction((current) => (current.trim() ? current : draftInstruction));
+    }
+    focusInstructionComposer();
+  }
+
+  function showPdfSelectionToolbar(document: Document, info: PdfSelectionInfo, frame: HTMLIFrameElement, reader: HTMLElement) {
+    document.querySelectorAll(".growhtml-pdf-selection-toolbar").forEach((item) => item.remove());
+
+    const toolbar = document.createElement("div");
+    toolbar.className = "growhtml-pdf-selection-toolbar";
+    toolbar.setAttribute("contenteditable", "false");
+    toolbar.style.left = `${info.toolbarLeft}px`;
+    toolbar.style.top = `${info.toolbarTop}px`;
+
+    const makeButton = (label: string, action: string) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.dataset.growhtmlPdfAction = action;
+      button.onmousedown = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      };
+      return button;
+    };
+
+    const copyButton = makeButton("copy", "copy");
+    const discussButton = makeButton("discuss", "discuss");
+    const searchButton = makeButton("search", "search");
+    const markButton = makeButton("mark", "mark");
+
+    copyButton.onclick = () => {
+      startPdfSelectionDiscussion(info);
+      void window.navigator.clipboard?.writeText(info.text).catch(() => undefined);
+    };
+
+    discussButton.onclick = () => {
+      startPdfSelectionDiscussion(info);
+    };
+
+    searchButton.onclick = () => {
+      startPdfSelectionDiscussion(
+        info,
+        `搜索并解释这段 PDF 选区，结合我接下来补充的要求：`
+      );
+    };
+
+    markButton.onclick = () => {
+      const storageKey = getPdfAnnotationStorageKey(document, frame);
+      const nextAnnotations = [
+        ...readPdfAnnotations(storageKey),
+        ...info.annotations.map((annotation) => ({
+          id: `pdf-mark-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+          text: info.text,
+          ...annotation
+        }))
+      ];
+      writePdfAnnotations(storageKey, nextAnnotations);
+      renderPdfAnnotations(reader, nextAnnotations);
+      startPdfSelectionDiscussion(info);
+    };
+
+    toolbar.append(copyButton, discussButton, searchButton, markButton);
+    document.body.appendChild(toolbar);
+  }
+
+  function bindPdfSelectionActions(document: Document, reader: HTMLElement, frame: HTMLIFrameElement) {
+    if (reader.dataset.growhtmlPdfSelectionBound === "true") return;
+
+    reader.dataset.growhtmlPdfSelectionBound = "true";
+    const win = document.defaultView ?? window;
+
+    const scheduleToolbar = () => {
+      win.setTimeout(() => {
+        const info = getPdfSelectionInfo(document);
+        if (!info) return;
+        showPdfSelectionToolbar(document, info, frame, reader);
+      }, 0);
+    };
+
+    const showDeleteToolbar = (event: MouseEvent) => {
+      if ((event.target as Element | null)?.closest?.(".growhtml-pdf-selection-toolbar, .growhtml-pdf-controls")) {
+        return;
+      }
+
+      const currentSelection = document.getSelection();
+      if (currentSelection && !currentSelection.isCollapsed && currentSelection.toString().trim()) return;
+
+      const marker = findPdfAnnotationMarkerAtPoint(reader, event.clientX, event.clientY);
+      if (!marker) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      showPdfAnnotationDeleteToolbar(document, reader, frame, marker);
+    };
+
+    reader.addEventListener("mouseup", scheduleToolbar);
+    reader.addEventListener("keyup", scheduleToolbar);
+    reader.addEventListener("touchend", scheduleToolbar);
+    reader.addEventListener("click", showDeleteToolbar);
+    document.addEventListener("selectionchange", () => {
+      const current = document.getSelection();
+      if (!current || current.isCollapsed || !current.toString().trim()) {
+        document.querySelectorAll(".growhtml-pdf-selection-toolbar").forEach((item) => item.remove());
+      }
+    });
+  }
+
+  async function renderPdfPage(
+    document: Document,
+    pdf: PDFDocumentProxy,
+    pageNumber: number,
+    targetWidth: number
+  ) {
+    const page: PDFPageProxy = await pdf.getPage(pageNumber);
+    const baseViewport = page.getViewport({ scale: 1 });
+    const scale = targetWidth / baseViewport.width;
+    const viewport = page.getViewport({ scale });
+    const pageElement = document.createElement("div");
+    pageElement.className = "growhtml-pdf-page";
+    pageElement.dataset.pageNumber = String(pageNumber);
+    pageElement.style.width = `${viewport.width}px`;
+    pageElement.style.height = `${viewport.height}px`;
+
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) throw new Error("Cannot create PDF canvas context");
+
+    const outputScale = document.defaultView?.devicePixelRatio || window.devicePixelRatio || 1;
+    canvas.width = Math.floor(viewport.width * outputScale);
+    canvas.height = Math.floor(viewport.height * outputScale);
+    canvas.style.width = `${viewport.width}px`;
+    canvas.style.height = `${viewport.height}px`;
+
+    const textLayerElement = document.createElement("div");
+    textLayerElement.className = "textLayer growhtml-pdf-text-layer";
+
+    pageElement.append(canvas, textLayerElement);
+    await page.render({
+      canvas: null,
+      canvasContext: context,
+      viewport,
+      transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined
+    }).promise;
+
+    const textLayer = new TextLayer({
+      container: textLayerElement,
+      textContentSource: page.streamTextContent({ includeMarkedContent: true }),
+      viewport
+    });
+    await textLayer.render();
+
+    return pageElement;
+  }
+
+  function createPdfZoomControls(
+    document: Document,
+    frame: HTMLIFrameElement,
+    viewport: HTMLElement,
+    zoom: number
+  ) {
+    const controls = document.createElement("div");
+    controls.className = "growhtml-pdf-controls";
+    controls.setAttribute("contenteditable", "false");
+
+    const zoomKey = getPdfPageZoomStorageKey(document, frame);
+    const applyZoom = (nextZoom: number) => {
+      writePdfPageZoom(zoomKey, nextZoom);
+      void renderPdfJsReader(document, frame, viewport, { force: true, preserveScrollRatio: true });
+    };
+
+    const makeButton = (label: string, title: string, onClick: () => void, disabled = false) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.title = title;
+      button.disabled = disabled;
+      button.onmousedown = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      };
+      button.onclick = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onClick();
+      };
+      return button;
+    };
+
+    const zoomOut = makeButton(
+      "-",
+      "Zoom out",
+      () => applyZoom(zoom - PDF_ZOOM_STEP),
+      zoom <= PDF_MIN_ZOOM + 0.001
+    );
+    const zoomIn = makeButton(
+      "+",
+      "Zoom in",
+      () => applyZoom(zoom + PDF_ZOOM_STEP),
+      zoom >= PDF_MAX_ZOOM - 0.001
+    );
+    const fit = makeButton("fit", "Fit page width", () => applyZoom(1), Math.abs(zoom - 1) < 0.001);
+
+    const label = document.createElement("span");
+    label.className = "growhtml-pdf-zoom-label";
+    label.textContent = `${Math.round(zoom * 100)}%`;
+
+    controls.append(zoomOut, label, zoomIn, fit);
+    return controls;
+  }
+
+  async function renderPdfJsReader(
+    document: Document,
+    frame: HTMLIFrameElement,
+    viewport: HTMLElement,
+    options: { force?: boolean; preserveScrollRatio?: boolean } = {}
+  ) {
+    const src = frame.getAttribute("src") ?? "";
+    if (!src) return;
+
+    const renderedWidth = Math.round(viewport.clientWidth || viewport.getBoundingClientRect().width || 1120);
+    const zoomStorageKey = getPdfPageZoomStorageKey(document, frame);
+    const zoom = readPdfPageZoom(zoomStorageKey);
+    const existing = viewport.querySelector<HTMLElement>(".growhtml-pdf-reader");
+    const topRatio =
+      options.preserveScrollRatio && existing && existing.scrollHeight > existing.clientHeight
+        ? existing.scrollTop / Math.max(1, existing.scrollHeight - existing.clientHeight)
+        : 0;
+    const leftRatio =
+      options.preserveScrollRatio && existing && existing.scrollWidth > existing.clientWidth
+        ? existing.scrollLeft / Math.max(1, existing.scrollWidth - existing.clientWidth)
+        : 0;
+    if (
+      !options.force &&
+      existing?.dataset.growhtmlPdfSrc === src &&
+      existing.dataset.growhtmlPdfVersion === PDF_RENDERER_VERSION &&
+      existing.dataset.growhtmlPdfReady === "true" &&
+      Math.abs(Number(existing.dataset.growhtmlPdfZoom ?? "1") - zoom) < 0.001 &&
+      Math.abs(Number(existing.dataset.growhtmlPdfRenderedWidth ?? "0") - renderedWidth) < 24
+    ) {
+      renderPdfAnnotations(existing, readPdfAnnotations(getPdfAnnotationStorageKey(document, frame)));
+      bindPdfSelectionActions(document, existing, frame);
+      return;
+    }
+
+    const token = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    viewport.dataset.growhtmlPdfRenderToken = token;
+    frame.style.setProperty("display", "none", "important");
+    frame.setAttribute("aria-hidden", "true");
+
+    const reader = existing ?? document.createElement("div");
+    reader.className = "growhtml-pdf-reader";
+    reader.dataset.growhtmlPdfSrc = src;
+    reader.dataset.growhtmlPdfVersion = PDF_RENDERER_VERSION;
+    reader.dataset.growhtmlPdfRenderedWidth = String(renderedWidth);
+    reader.dataset.growhtmlPdfZoom = String(zoom);
+    reader.dataset.growhtmlPdfReady = "false";
+    reader.replaceChildren(
+      createPdfZoomControls(document, frame, viewport, zoom),
+      (() => {
+        const loading = document.createElement("div");
+        loading.className = "growhtml-pdf-loading";
+        loading.textContent = "Loading PDF text layer...";
+        return loading;
+      })()
+    );
+    if (!existing) {
+      viewport.insertBefore(reader, frame);
+    }
+
+    let pdf: PDFDocumentProxy | null = null;
+    const loadingTask = getPdfDocument({
+      url: src,
+      cMapUrl: `${PDFJS_RESOURCE_BASE_URL}/cmaps/`,
+      cMapPacked: true,
+      disableFontFace: false,
+      iccUrl: `${PDFJS_RESOURCE_BASE_URL}/iccs/`,
+      ownerDocument: document as HTMLDocument,
+      standardFontDataUrl: `${PDFJS_RESOURCE_BASE_URL}/standard_fonts/`,
+      useSystemFonts: true,
+      useWorkerFetch: true,
+      wasmUrl: `${PDFJS_RESOURCE_BASE_URL}/wasm/`
+    });
+    try {
+      pdf = await loadingTask.promise;
+      if (viewport.dataset.growhtmlPdfRenderToken !== token) {
+        await loadingTask.destroy();
+        return;
+      }
+
+      reader.replaceChildren();
+      reader.appendChild(createPdfZoomControls(document, frame, viewport, zoom));
+      const targetWidth = clampNumber((renderedWidth - 48) * zoom, 420, 3600);
+      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+        if (viewport.dataset.growhtmlPdfRenderToken !== token) {
+          await loadingTask.destroy();
+          return;
+        }
+
+        const pageElement = await renderPdfPage(document, pdf, pageNumber, targetWidth);
+        reader.appendChild(pageElement);
+      }
+
+      reader.dataset.growhtmlPdfReady = "true";
+      reader.dataset.growhtmlPdfZoom = String(zoom);
+      renderPdfAnnotations(reader, readPdfAnnotations(getPdfAnnotationStorageKey(document, frame)));
+      bindPdfSelectionActions(document, reader, frame);
+      if (options.preserveScrollRatio) {
+        reader.scrollTop = topRatio * Math.max(0, reader.scrollHeight - reader.clientHeight);
+        reader.scrollLeft = leftRatio * Math.max(0, reader.scrollWidth - reader.clientWidth);
+      }
+    } catch (err) {
+      if (viewport.dataset.growhtmlPdfRenderToken !== token) return;
+      const message = err instanceof Error ? err.message : "unknown error";
+      const error = document.createElement("div");
+      error.className = "growhtml-pdf-error";
+      error.textContent = `PDF text selection failed: ${message}`;
+      reader.replaceChildren(createPdfZoomControls(document, frame, viewport, zoom), error);
+    }
+  }
+
   function bindPreviewPdfResizeHandles(document: Document | null | undefined) {
     if (!document?.body) return;
 
+    const normalized = normalizePdfNoteHtml(document.body.innerHTML);
+    if (normalized.changed) {
+      document.body.innerHTML = normalized.html;
+    }
+
+    document.querySelectorAll(".growhtml-pdf-resize-controls").forEach((item) => item.remove());
     document.querySelectorAll(".growhtml-pdf-resize-handle").forEach((item) => item.remove());
 
-    for (const frame of Array.from(document.querySelectorAll<HTMLIFrameElement>(".external-pdf-frame"))) {
-      const storageKey = getPdfFrameHeightStorageKey(document, frame);
-      const storedHeight = Number(window.localStorage.getItem(storageKey) ?? "");
-      if (Number.isFinite(storedHeight) && storedHeight > 0) {
-        frame.style.height = `${clampNumber(storedHeight, 520, 3200)}px`;
+    for (const frame of Array.from(document.querySelectorAll<HTMLIFrameElement>("iframe.external-pdf-frame"))) {
+      let viewport = frame.closest(".external-pdf-viewport") as HTMLElement | null;
+      if (!viewport) {
+        viewport = document.createElement("div");
+        viewport.className = "external-pdf-viewport";
+        frame.parentElement?.insertBefore(viewport, frame);
+        viewport.appendChild(frame);
       }
 
-      const handle = document.createElement("div");
-      handle.className = "growhtml-pdf-resize-handle";
-      handle.setAttribute("contenteditable", "false");
-      handle.setAttribute("role", "separator");
-      handle.setAttribute("aria-orientation", "horizontal");
-      handle.title = "Drag to resize PDF";
+      const panel = (viewport.closest(".external-pdf-panel") ?? viewport.parentElement) as HTMLElement | null;
+      if (!panel) continue;
+
+      const heightStorageKey = getPdfFrameHeightStorageKey(document, frame);
+      const widthStorageKey = getPdfFrameWidthStorageKey(document, frame);
+      const storedHeight = Number(window.localStorage.getItem(heightStorageKey) ?? "");
+      const storedWidth = Number(window.localStorage.getItem(widthStorageKey) ?? "");
+      const currentHeight = viewport.getBoundingClientRect().height || frame.getBoundingClientRect().height || 1120;
+      const initialHeight = Number.isFinite(storedHeight) && storedHeight > 0 ? storedHeight : currentHeight;
+      viewport.style.height = `${clampNumber(initialHeight, 680, 3600)}px`;
+      panel.style.maxWidth = "none";
+      panel.style.width = `${clampNumber(
+        Number.isFinite(storedWidth) && storedWidth > 0 ? storedWidth : panel.getBoundingClientRect().width || 1120,
+        520,
+        Math.max(680, Math.min(2200, document.documentElement.clientWidth - 32))
+      )}px`;
+      frame.style.width = "100%";
+      frame.style.height = "100%";
+      frame.style.minHeight = "0";
+      frame.style.setProperty("display", "none", "important");
+      if (Number.isFinite(storedHeight) && storedHeight > 0) {
+        viewport.style.height = `${clampNumber(storedHeight, 680, 3600)}px`;
+      }
+
+      void renderPdfJsReader(document, frame, viewport);
+
+      const controls = document.createElement("div");
+      controls.className = "growhtml-pdf-resize-controls";
+      controls.setAttribute("contenteditable", "false");
+
+      const heightHandle = document.createElement("div");
+      heightHandle.className = "growhtml-pdf-resize-handle growhtml-pdf-height-handle";
+      heightHandle.setAttribute("contenteditable", "false");
+      heightHandle.setAttribute("role", "separator");
+      heightHandle.setAttribute("aria-orientation", "horizontal");
+      heightHandle.title = "Drag to resize PDF height";
+
+      const widthHandle = document.createElement("div");
+      widthHandle.className = "growhtml-pdf-resize-handle growhtml-pdf-width-handle";
+      widthHandle.setAttribute("contenteditable", "false");
+      widthHandle.setAttribute("role", "separator");
+      widthHandle.setAttribute("aria-orientation", "vertical");
+      widthHandle.title = "Drag to resize PDF width";
+
+      controls.append(heightHandle, widthHandle);
 
       let startY = 0;
       let startHeight = 0;
 
-      handle.onpointerdown = (event) => {
+      heightHandle.onpointerdown = (event) => {
         event.preventDefault();
         event.stopPropagation();
         startY = event.clientY;
-        startHeight = frame.getBoundingClientRect().height || 920;
-        handle.setPointerCapture(event.pointerId);
-        document.body.classList.add("growhtml-pdf-resizing");
+        startHeight = viewport.getBoundingClientRect().height || 1120;
+        heightHandle.setPointerCapture(event.pointerId);
+        document.body.classList.add("growhtml-pdf-resizing-height");
       };
 
-      handle.onpointermove = (event) => {
-        if (!handle.hasPointerCapture(event.pointerId)) return;
+      heightHandle.onpointermove = (event) => {
+        if (!heightHandle.hasPointerCapture(event.pointerId)) return;
 
         event.preventDefault();
-        const nextHeight = clampNumber(startHeight + event.clientY - startY, 520, 3200);
-        frame.style.height = `${nextHeight}px`;
+        const nextHeight = clampNumber(startHeight + event.clientY - startY, 680, 3600);
+        viewport.style.height = `${nextHeight}px`;
       };
 
-      const finishResize = (event: PointerEvent) => {
-        if (!handle.hasPointerCapture(event.pointerId)) return;
+      const finishHeightResize = (event: PointerEvent) => {
+        if (!heightHandle.hasPointerCapture(event.pointerId)) return;
 
         event.preventDefault();
         event.stopPropagation();
-        const nextHeight = clampNumber(frame.getBoundingClientRect().height, 520, 3200);
-        frame.style.height = `${nextHeight}px`;
-        window.localStorage.setItem(storageKey, String(Math.round(nextHeight)));
-        handle.releasePointerCapture(event.pointerId);
-        document.body.classList.remove("growhtml-pdf-resizing");
+        const nextHeight = clampNumber(viewport.getBoundingClientRect().height, 680, 3600);
+        viewport.style.height = `${nextHeight}px`;
+        window.localStorage.setItem(heightStorageKey, String(Math.round(nextHeight)));
+        heightHandle.releasePointerCapture(event.pointerId);
+        document.body.classList.remove("growhtml-pdf-resizing-height");
       };
 
-      handle.onpointerup = finishResize;
-      handle.onpointercancel = finishResize;
-      frame.insertAdjacentElement("afterend", handle);
+      let startX = 0;
+      let startWidth = 0;
+
+      widthHandle.onpointerdown = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        startX = event.clientX;
+        startWidth = panel.getBoundingClientRect().width || 1120;
+        widthHandle.setPointerCapture(event.pointerId);
+        document.body.classList.add("growhtml-pdf-resizing-width");
+      };
+
+      widthHandle.onpointermove = (event) => {
+        if (!widthHandle.hasPointerCapture(event.pointerId)) return;
+
+        event.preventDefault();
+        const maxWidth = Math.max(680, Math.min(2200, document.documentElement.clientWidth - 32));
+        const nextWidth = clampNumber(startWidth + event.clientX - startX, 520, maxWidth);
+        panel.style.maxWidth = "none";
+        panel.style.width = `${nextWidth}px`;
+      };
+
+      const finishWidthResize = (event: PointerEvent) => {
+        if (!widthHandle.hasPointerCapture(event.pointerId)) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        const maxWidth = Math.max(680, Math.min(2200, document.documentElement.clientWidth - 32));
+        const nextWidth = clampNumber(panel.getBoundingClientRect().width, 520, maxWidth);
+        panel.style.maxWidth = "none";
+        panel.style.width = `${nextWidth}px`;
+        window.localStorage.setItem(widthStorageKey, String(Math.round(nextWidth)));
+        void renderPdfJsReader(document, frame, viewport, { force: true, preserveScrollRatio: true });
+        widthHandle.releasePointerCapture(event.pointerId);
+        document.body.classList.remove("growhtml-pdf-resizing-width");
+      };
+
+      heightHandle.onpointerup = finishHeightResize;
+      heightHandle.onpointercancel = finishHeightResize;
+      widthHandle.onpointerup = finishWidthResize;
+      widthHandle.onpointercancel = finishWidthResize;
+      viewport.insertAdjacentElement("afterend", controls);
     }
   }
 
@@ -2252,14 +3534,52 @@ export default function App() {
     `;
     previewDocument.body.appendChild(toolbar);
 
-    const rect = target.getBoundingClientRect();
     const win = previewDocument.defaultView;
-    const scrollX = win?.scrollX ?? previewDocument.documentElement.scrollLeft;
-    const scrollY = win?.scrollY ?? previewDocument.documentElement.scrollTop;
-    const left = Math.max(8, rect.left + scrollX);
-    const top = Math.max(8, rect.top + scrollY - 48);
-    toolbar.style.left = `${left}px`;
-    toolbar.style.top = `${top}px`;
+
+    const positionToolbar = () => {
+      const rect = target.getBoundingClientRect();
+      const scrollX = win?.scrollX ?? previewDocument.documentElement.scrollLeft;
+      const scrollY = win?.scrollY ?? previewDocument.documentElement.scrollTop;
+      const toolbarHeight = toolbar.offsetHeight || 42;
+      const targetTop = rect.top + scrollY;
+      const targetBottom = rect.bottom + scrollY;
+      const left = Math.max(8, rect.left + scrollX);
+      let top = targetTop - toolbarHeight - 6;
+
+      // Keep the controls next to the *visible* part of the change: if the change starts
+      // above the fold, slide the toolbar down so the ✓ stays beside what the user sees
+      // instead of stranded at the top of a tall replaced block.
+      if (top < scrollY + 8 && targetBottom > scrollY + 8) {
+        top = Math.min(scrollY + 8, targetBottom - toolbarHeight - 6);
+      }
+
+      toolbar.style.left = `${left}px`;
+      toolbar.style.top = `${Math.max(8, top)}px`;
+    };
+
+    positionToolbar();
+
+    if (win) {
+      const tracked = win as Window & { __growhtmlToolbarReposition?: EventListener };
+      if (tracked.__growhtmlToolbarReposition) {
+        win.removeEventListener("scroll", tracked.__growhtmlToolbarReposition, true);
+        win.removeEventListener("resize", tracked.__growhtmlToolbarReposition, true);
+      }
+      const reposition: EventListener = () => {
+        if (!toolbar.isConnected) {
+          win.removeEventListener("scroll", reposition, true);
+          win.removeEventListener("resize", reposition, true);
+          if (tracked.__growhtmlToolbarReposition === reposition) {
+            tracked.__growhtmlToolbarReposition = undefined;
+          }
+          return;
+        }
+        positionToolbar();
+      };
+      tracked.__growhtmlToolbarReposition = reposition;
+      win.addEventListener("scroll", reposition, true);
+      win.addEventListener("resize", reposition, true);
+    }
 
     bindPreviewToolbarActions(previewDocument);
     return true;
@@ -2316,6 +3636,15 @@ export default function App() {
       height: "100%",
       storageManager: false,
       fromElement: false,
+      parser: {
+        optionsHtml: {
+          // GrapesJS 默认会剥掉 <script> 和内联事件属性，导致可交互图在编辑态被删、
+          // 退出后保存的也是无脚本版本。开启这几项以在编辑往返中保留脚本与交互。
+          allowScripts: true,
+          allowUnsafeAttr: true,
+          allowUnsafeAttrValue: true
+        }
+      },
       selectorManager: { componentFirst: true },
       panels: {
         defaults: []
@@ -2373,7 +3702,7 @@ export default function App() {
       .getDocument()
       .then((doc) => {
         const shell = normalizeShell(doc.shell);
-        const html = cleanEditorHtml(doc.html);
+        const html = cleanEditorHtml(normalizeLatexEscapesInHtml(doc.html));
         const css = cleanDocumentCss(doc.css);
         currentCssRef.current = css;
         pageShellRef.current = shell;
@@ -2410,17 +3739,18 @@ export default function App() {
     setError("");
 
     try {
+      const html = normalizeLatexEscapesInHtml(input.html);
       const css = cleanDocumentCss(input.css);
-      const nextFolderCache = updateFolderCachePage(folderCache, selectedFolderPath, input.html, css, pageShell);
+      const nextFolderCache = updateFolderCachePage(folderCache, selectedFolderPath, html, css, pageShell);
       const saved = await persistDocument({
-        html: input.html,
+        html,
         css,
         shell: pageShell,
         projectData: input.projectData,
         folderCache: nextFolderCache ?? undefined
       });
       currentCssRef.current = css;
-      setCurrentHtml(input.html);
+      setCurrentHtml(html);
       setCurrentCss(css);
       if (nextFolderCache !== folderCache) setFolderCache(nextFolderCache);
       if (saved) setStatus("ready");
@@ -2484,14 +3814,15 @@ export default function App() {
 
     const shell = normalizeShell({ ...input.shell, title: input.title || input.shell.title });
     const css = cleanDocumentCss(input.css);
+    const html = normalizeLatexEscapesInHtml(input.html);
     currentCssRef.current = css;
     pageShellRef.current = shell;
 
     setDocumentTitle(shell.title);
     setPageShell(shell);
-    setCurrentHtml(input.html);
+    setCurrentHtml(html);
     setCurrentCss(css);
-    syncPreviewSrcDoc(input.html, css, shell);
+    syncPreviewSrcDoc(html, css, shell);
     if (input.folderCache !== undefined) setFolderCache(input.folderCache);
     setSelection(null);
     setSelectionOrigin(null);
@@ -2504,7 +3835,7 @@ export default function App() {
     setScreen("document");
 
     await api.saveDocument({
-      html: input.html,
+      html,
       css,
       shell,
       projectData: input.projectData ?? safeGetProjectData(editor),
@@ -2575,28 +3906,33 @@ export default function App() {
         provider,
         instruction: trimmed,
         selection: freshSelection,
+        startNewSession,
         document: lightweightDocument
       });
+      const normalizedProposal = normalizeProposalMath(response.proposal);
+      const normalizedHistory = response.history.map(normalizeThreadEntryMath);
 
-      const nextHistory = response.history.map((entry, index) =>
+      const nextHistory = normalizedHistory.map((entry, index) =>
         index === 0
           ? {
               ...entry,
               selection: entry.selection ?? freshSelection,
-              proposal: entry.proposal ?? response.proposal,
-              summary: entry.summary || response.proposal.summary,
-              sources: entry.sources.length ? entry.sources : response.proposal.sources
+              proposal: entry.proposal ?? normalizedProposal,
+              summary: entry.summary || normalizedProposal.summary,
+              sources: entry.sources.length ? entry.sources : normalizedProposal.sources
             }
           : entry
       );
 
+      const shouldPreviewProposal = freshSelection.tagName !== "pdf" && Boolean(nextHistory[0]?.proposal?.replacementHtml.trim());
       setThreads(response.threads);
-      setProposal(response.proposal);
+      setNewSessionByProvider((current) => ({ ...current, [provider]: false }));
+      setProposal(shouldPreviewProposal ? normalizedProposal : null);
       setHistory(nextHistory);
       setPendingTurn(null);
       setInstruction("");
       setStatus("ready");
-      if (nextHistory[0]?.proposal) {
+      if (shouldPreviewProposal && nextHistory[0]?.proposal) {
         previewProposal(nextHistory[0]);
       }
     } catch (err) {
@@ -2629,7 +3965,8 @@ export default function App() {
   }
 
   function getProposalContext(entry?: ThreadEntry) {
-    const activeProposal = entry?.proposal ?? proposal;
+    const rawProposal = entry?.proposal ?? proposal;
+    const activeProposal = rawProposal ? normalizeProposalMath(rawProposal) : null;
     const instructionText = entry?.instruction ?? instruction;
 
     return {
@@ -2796,13 +4133,14 @@ export default function App() {
       const resolved = resolveProposalHtml(editor, context);
 
       const applyHtmlChange = async (nextHtml: string, preserveScroll: boolean) => {
+        const normalizedNextHtml = normalizeLatexEscapesInHtml(nextHtml);
         currentCssRef.current = resolved.css;
         if (mode === "edit") {
-          applyDocumentToEditor(editor, nextHtml, resolved.css, pageShell);
-        } else if (!patchPreviewDocument(nextHtml, resolved.css, pageShell, { preserveScroll })) {
-          syncPreviewSrcDoc(nextHtml, resolved.css, pageShell);
+          applyDocumentToEditor(editor, normalizedNextHtml, resolved.css, pageShell);
+        } else if (!patchPreviewDocument(normalizedNextHtml, resolved.css, pageShell, { preserveScroll })) {
+          syncPreviewSrcDoc(normalizedNextHtml, resolved.css, pageShell);
         }
-        setCurrentHtml(nextHtml);
+        setCurrentHtml(normalizedNextHtml);
         setCurrentCss(resolved.css);
         setProposal(null);
         setInstruction("");
@@ -2810,9 +4148,15 @@ export default function App() {
         setSelection(null);
         setSelectionOrigin(null);
         setCopiedContextVisible(false);
-        const nextFolderCache = updateFolderCachePage(folderCache, selectedFolderPath, nextHtml, resolved.css, pageShell);
+        const nextFolderCache = updateFolderCachePage(
+          folderCache,
+          selectedFolderPath,
+          normalizedNextHtml,
+          resolved.css,
+          pageShell
+        );
         const saved = await persistDocument({
-          html: nextHtml,
+          html: normalizedNextHtml,
           css: resolved.css,
           shell: pageShell,
           projectData: safeGetProjectData(editor),
@@ -2918,6 +4262,7 @@ export default function App() {
     bindPreviewClipboard(previewDocument);
     bindPreviewToolbarActions(previewDocument);
     bindPreviewPdfResizeHandles(previewDocument);
+    scheduleMathJaxTypeset(previewDocument);
     if (previewDraft) schedulePreviewDraftToolbar(previewDraft);
     previewDocument.ondblclick = (event) => {
       event.preventDefault();
@@ -2992,13 +4337,23 @@ export default function App() {
     cacheOverride: FolderCachePayload | null = folderCache
   ) {
     pendingImportHashRef.current = normalizeHashTarget(hashTarget);
-    const nextFolderCache = cacheOverride ? { ...cacheOverride, selectedPath: page.path } : null;
-    setSelectedFolderPath(page.path);
+    const normalizedPageHtml = normalizePdfNoteHtml(page.html);
+    const pageToOpen = normalizedPageHtml.changed ? { ...page, html: normalizedPageHtml.html } : page;
+    const nextFolderCache = cacheOverride
+      ? {
+          ...cacheOverride,
+          selectedPath: pageToOpen.path,
+          pages: cacheOverride.pages.map((item) =>
+            getRelativePathKey(item.path) === getRelativePathKey(pageToOpen.path) ? pageToOpen : item
+          )
+        }
+      : null;
+    setSelectedFolderPath(pageToOpen.path);
     await savePreparedDocument({
-      title: page.title || page.shell.title || page.path,
-      html: page.html,
-      css: page.css,
-      shell: normalizeShell({ ...page.shell, title: page.shell.title || page.title || page.path }),
+      title: pageToOpen.title || pageToOpen.shell.title || pageToOpen.path,
+      html: pageToOpen.html,
+      css: pageToOpen.css,
+      shell: normalizeShell({ ...pageToOpen.shell, title: pageToOpen.shell.title || pageToOpen.title || pageToOpen.path }),
       folderCache: nextFolderCache
     });
   }
@@ -3420,6 +4775,25 @@ export default function App() {
         <aside className="agent-panel" style={agentPanelStyle}>
           <section className="panel-section chat-header">
             <p className="section-label">AI</p>
+            <div className="session-row">
+              <div className={`session-mode-state${startNewSession ? " session-mode-state-new" : ""}`}>
+                {startNewSession ? "New session on next send" : "Continue current session"}
+              </div>
+              <button
+                className={`session-mode-button${startNewSession ? " session-mode-button-active" : ""}`}
+                type="button"
+                onClick={() =>
+                  setNewSessionByProvider((current) => ({
+                    ...current,
+                    [provider]: !current[provider]
+                  }))
+                }
+                disabled={status === "thinking"}
+                title={startNewSession ? "Continue current session" : "Start a new AI session on the next send"}
+              >
+                {startNewSession ? "Continue" : "New"}
+              </button>
+            </div>
             <div className="thread-id">{currentThreadId ? currentThreadId : "未创建会话"}</div>
           </section>
 

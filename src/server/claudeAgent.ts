@@ -27,7 +27,7 @@ export async function createAiProposal(
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
   const thread = await loadThread();
   const prompt = buildHtmlProposalPrompt(request);
-  let sessionId = thread.claudeThreadId;
+  let sessionId = request.startNewSession ? null : thread.claudeThreadId;
   let proposal: AiProposal | null = null;
   const pathToClaudeCodeExecutable = resolveClaudeExecutable();
 

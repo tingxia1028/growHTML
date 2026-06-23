@@ -19,6 +19,7 @@
     "grapesjs": "latest",
     "grapesjs-preset-webpage": "latest",
     "lucide-react": "^1.21.0",
+    "pdfjs-dist": "^6.0.227",
     "react": "latest",
     "react-dom": "latest"
   },

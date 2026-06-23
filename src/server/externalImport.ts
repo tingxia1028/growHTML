@@ -120,6 +120,12 @@ body {
   grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
 }
 
+.external-note-document-compact {
+  display: block;
+  grid-template-columns: none;
+  min-height: auto;
+}
+
 .external-note-rail {
   position: sticky;
   top: 0;
@@ -169,10 +175,19 @@ body {
   padding: 42px min(6vw, 72px);
 }
 
+.external-note-document-compact .external-note-content {
+  padding: 22px min(4vw, 48px) 42px;
+}
+
 .external-page-body,
 .external-pdf-panel {
   max-width: 980px;
   margin: 0 auto;
+}
+
+.external-pdf-panel {
+  width: min(100%, 1120px);
+  max-width: none;
 }
 
 .external-page-body img,
@@ -185,13 +200,23 @@ body {
   color: #1f6feb;
 }
 
-.external-pdf-frame {
+.external-pdf-viewport {
+  position: relative;
   width: 100%;
-  height: 920px;
-  min-height: 520px;
+  height: 1120px;
+  min-height: 680px;
   border: 1px solid #cbd4ce;
   border-radius: 8px;
+  overflow: hidden;
   background: #ffffff;
+}
+
+.external-pdf-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
 }
 
 .external-note-callout {
@@ -201,6 +226,38 @@ body {
   border-radius: 8px;
   color: #3b463f;
   background: #fbfbf8;
+}
+
+.external-note-source {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid #cbd4ce;
+  border-radius: 8px;
+  color: #3b463f;
+  background: #fbfbf8;
+}
+
+.external-note-source strong {
+  display: block;
+  color: #17202a;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.external-note-source span {
+  color: #64756d;
+  font-size: 12px;
+}
+
+.external-note-source a {
+  color: #1f6feb;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  text-align: right;
 }
 
 @media (max-width: 900px) {
@@ -267,18 +324,13 @@ function buildPdfImport(input: {
     summary: "已把 PDF 内置成本地阅读页，并加入笔记区。PDF 原生页面的逐字标注需要后续文本层转换。",
     css: baseDocumentCss(),
     html: `
-<article class="external-note-document" data-source-url="${escapeHtml(input.url)}">
-  <aside class="external-note-rail">
-    <h1>${escapeHtml(input.title)}</h1>
-    <p class="external-note-meta">本地 PDF 笔记<br /><a href="${escapeHtml(input.url)}">${escapeHtml(input.url)}</a></p>
-    <div class="external-note-list">
-      <div class="external-note-card" contenteditable="true">写 PDF 摘要、页码索引或问题。</div>
-      <div class="external-note-card" contenteditable="true">把 PDF 中复制出的文字贴到右侧 AI，可搜索后生成旁注或标注卡片。</div>
-    </div>
-  </aside>
+<article class="external-note-document external-note-document-compact" data-source-url="${escapeHtml(input.url)}">
   <main class="external-note-content">
     <section class="external-pdf-panel">
-      <div class="external-note-callout">PDF 已保存到当前 HTML 内部。浏览器原生 PDF 查看器里的文字不能直接被 GrowHTML 改写；建议把关键句复制到右侧 AI，生成笔记卡或悬浮标注。</div>
+      <div class="external-note-source" contenteditable="false">
+        <div><strong>${escapeHtml(input.title)}</strong><span>Local PDF</span></div>
+        <a href="${escapeHtml(input.url)}">source</a>
+      </div>
       <iframe class="external-pdf-frame" src="${dataUrl}" title="${escapeHtml(input.title)}"></iframe>
     </section>
   </main>
@@ -300,19 +352,16 @@ function buildLocalPdfImport(input: {
       "PDF downloaded into the local GrowHTML notebook. The note shell is editable; native PDF text can be searched and copied into the AI panel.",
     css: baseDocumentCss(),
     html: `
-<article class="external-note-document" data-source-url="${escapeHtml(input.url)}">
-  <aside class="external-note-rail">
-    <h1>${escapeHtml(input.title)}</h1>
-    <p class="external-note-meta">Local PDF note<br /><a href="${escapeHtml(input.url)}">${escapeHtml(input.url)}</a><br />${Math.round(input.byteLength / 1024 / 1024)} MB</p>
-    <div class="external-note-list">
-      <div class="external-note-card" contenteditable="true">Write PDF summary, page index, open questions, or reading notes here.</div>
-      <div class="external-note-card" contenteditable="true">Use the PDF viewer search for quick lookup. Copy important sentences into the right AI panel to create note cards or hover annotations.</div>
-    </div>
-  </aside>
+<article class="external-note-document external-note-document-compact" data-source-url="${escapeHtml(input.url)}">
   <main class="external-note-content">
     <section class="external-pdf-panel">
-      <div class="external-note-callout">The PDF file is saved locally and opened below. Native PDF search works in the viewer; GrowHTML can edit this note shell and AI-generated note cards. In-place PDF highlights need a PDF.js text layer, which is a separate renderer step.</div>
-      <iframe class="external-pdf-frame" src="${escapeHtml(input.assetUrl)}" title="${escapeHtml(input.title)}"></iframe>
+      <div class="external-note-source" contenteditable="false">
+        <div><strong>${escapeHtml(input.title)}</strong><span>Local PDF · ${Math.round(input.byteLength / 1024 / 1024)} MB</span></div>
+        <a href="${escapeHtml(input.url)}">source</a>
+      </div>
+      <div class="external-pdf-viewport">
+        <iframe class="external-pdf-frame" src="${escapeHtml(input.assetUrl)}" title="${escapeHtml(input.title)}"></iframe>
+      </div>
     </section>
   </main>
 </article>`.trim()

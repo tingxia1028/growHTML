@@ -785,6 +785,54 @@ body.is-resizing-agent-panel iframe {
   padding: 9px 10px;
 }
 
+.session-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.session-mode-state {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--doc-panel-color, #24272b) 18%, transparent);
+  border-radius: 8px;
+  color: color-mix(in srgb, var(--doc-panel-color, #24272b) 72%, transparent);
+  font-size: 12px;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--doc-panel-card, #ffffff) 92%, transparent);
+}
+
+.session-mode-state-new {
+  color: #ffffff;
+  border-color: #2388ff;
+  background: #2388ff;
+}
+
+.session-mode-button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #2388ff;
+  border-radius: 8px;
+  color: #ffffff;
+  font-weight: 800;
+  background: #2388ff;
+  cursor: pointer;
+}
+
+.session-mode-button:hover,
+.session-mode-button:focus-visible,
+.session-mode-button-active {
+  border-color: #16a34a;
+  background: #16a34a;
+  outline: none;
+}
+
+.session-mode-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
 .history-list {
   display: grid;
   gap: 8px;

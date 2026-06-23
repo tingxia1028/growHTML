@@ -69,6 +69,7 @@ export type AiProposalRequest = {
   provider: AiProvider;
   instruction: string;
   selection: SelectionPayload;
+  startNewSession?: boolean;
   document: {
     html: string;
     css: string;

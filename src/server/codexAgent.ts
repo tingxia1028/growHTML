@@ -6,6 +6,7 @@ import path from "node:path";
 import type { AiProposal, AiProposalRequest, AiProposalResponse } from "../shared/types";
 import { buildHtmlProposalPrompt, proposalSchema } from "./proposalPrompt";
 import { appendHistory, loadThread, setThreadId } from "./storage";
+import { cleanCodexStderr, formatCodexFailure } from "./codexWarnings";
 
 type CodexRunResult = {
   finalMessage: string;
@@ -165,14 +166,14 @@ async function runCodex(input: {
 
   try {
     if (exitCode !== 0) {
-      throw new Error(stderr || stdout || `codex exited with code ${exitCode}`);
+      throw new Error(formatCodexFailure({ stderr, stdout, exitCode }));
     }
 
     const finalMessage = await readFile(outputPath, "utf8");
     return {
       finalMessage,
       threadId: extractThreadIdFromJsonl(stdout) ?? input.sessionId,
-      stderr
+      stderr: cleanCodexStderr(stderr)
     };
   } finally {
     await rm(schemaPath, { force: true });
@@ -185,7 +186,7 @@ export async function createCodexProposal(
   cwd: string
 ): Promise<AiProposalResponse> {
   const thread = await loadThread();
-  const sessionId = thread.codexThreadId;
+  const sessionId = request.startNewSession ? null : thread.codexThreadId;
   const prompt = buildHtmlProposalPrompt(request);
   const result = await runCodex({ prompt, cwd, sessionId, enableSearch: shouldEnableSearch(request.instruction) });
   const proposal = parseProposal(result.finalMessage);

@@ -8,6 +8,7 @@ import type {
   GenerateDocumentRequest,
   GenerateDocumentResponse
 } from "../shared/types";
+import { formatCodexFailure } from "./codexWarnings";
 import { getDocumentWorkspace } from "./storage";
 
 const documentSchema = {
@@ -202,7 +203,7 @@ async function generateWithCodex(prompt: string): Promise<GenerateDocumentRespon
 
   try {
     if (exitCode !== 0) {
-      throw new Error(stderr || stdout || `codex exited with code ${exitCode}`);
+      throw new Error(formatCodexFailure({ stderr, stdout, exitCode }));
     }
     return parseGeneratedDocument(await readFile(outputPath, "utf8"));
   } finally {
