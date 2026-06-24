@@ -279,6 +279,8 @@ type Command = {
 
 **P3 完成判据**：`App.tsx` 不再有 `sourceType===` / `kind===` 分支；新增一个 view 只需注册。
 
+> **落地（P3.1–P3.4 已完成）**：见 `workspace-runtime.md`。`App.tsx` = `<FocusProvider><WorkspaceProvider><WorkspaceShell layout={threePane}/></WorkspaceProvider></FocusProvider>`，无面板 JSX、无 per-surface reader 分支（reader 分发收进 `readerForSource`，节点状态收进 `WorkspaceContext`）。三个内置 view：`library` / `source.viewer` / `study`（`study` 本轮保持单 view，未拆分——拆分会动到 e2e 依赖的 `.study-panel > .chat-box`/`.terminal-box` 结构）。闸门：tsc 干净 · vitest 208（+8 新增）· web e2e 9 · electron e2e 7，全绿且**未改任何 e2e selector**。
+
 ### P4 — NoteType 插件（content: unknown）+ 媒体/Asset 笔记（与 P3 可并行）
 
 | # | 任务 | 交付 | 自测 |
