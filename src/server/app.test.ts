@@ -102,6 +102,65 @@ describe("vault server API", () => {
     expect(reverted.body.patch.status).toBe("reverted");
   });
 
+  it("ingests an image and creates a geometric image_region anchor (no text needed)", async () => {
+    // 1x1 PNG is enough — the server stores bytes and the anchor is geometric.
+    const pngBase64 =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    const source = (
+      await request(app)
+        .post("/api/sources/image")
+        .send({ title: "Diagram", dataBase64: pngBase64, mimeType: "image/png" })
+        .expect(201)
+    ).body.source;
+    expect(source.sourceType).toBe("image");
+    expect(source.mimeType).toBe("image/png");
+
+    const anchor = (
+      await request(app)
+        .post("/api/anchors")
+        .send({ sourceId: source.id, anchorKind: "image_region", rect: [0.1, 0.2, 0.3, 0.4] })
+        .expect(201)
+    ).body.anchor;
+    expect(anchor.anchorKind).toBe("image_region");
+    expect(anchor.rect).toEqual([0.1, 0.2, 0.3, 0.4]);
+    expect(anchor.quote).toBe("");
+
+    // image_region without a rect is rejected.
+    await request(app)
+      .post("/api/anchors")
+      .send({ sourceId: source.id, anchorKind: "image_region" })
+      .expect(400);
+  });
+
+  it("creates a hybrid pdf_selection anchor carrying both quote and rect", async () => {
+    const pdfBase64 = Buffer.from("%PDF-1.4\n%minimal\n").toString("base64");
+    const source = (
+      await request(app).post("/api/sources/pdf").send({ title: "Paper", dataBase64: pdfBase64 }).expect(201)
+    ).body.source;
+
+    const anchor = (
+      await request(app)
+        .post("/api/anchors")
+        .send({
+          sourceId: source.id,
+          anchorKind: "pdf_selection",
+          page: 2,
+          quote: "render thread",
+          rect: [0.05, 0.1, 0.4, 0.08]
+        })
+        .expect(201)
+    ).body.anchor;
+    expect(anchor.page).toBe(2);
+    expect(anchor.quote).toBe("render thread");
+    expect(anchor.rect).toEqual([0.05, 0.1, 0.4, 0.08]);
+
+    // A pdf_selection with neither quote nor rect is rejected.
+    await request(app)
+      .post("/api/anchors")
+      .send({ sourceId: source.id, anchorKind: "pdf_selection", page: 1 })
+      .expect(400);
+  });
+
   it("returns conflict when applying a drifted patch", async () => {
     const source = (
       await request(app).post("/api/sources/html").send({ title: "Render Thread", content: fixtureHtmlBody }).expect(201)

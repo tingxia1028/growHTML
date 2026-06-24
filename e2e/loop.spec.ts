@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { makeTextPdf } from "./fixtures/pdf";
+import { makePng } from "./fixtures/image";
 
 // Click-driven self-test of the full no-AI loop, driving the real running app:
 // import → click selection → create anchor → save note → create patch → apply
@@ -114,6 +115,43 @@ test("marginalia mode: notes lay out in a side gutter, leaving the text uncovere
   expect(cBox!.x).toBeGreaterThan(pBox!.x + pBox!.width - 2);
   // The anchored text is still highlighted inline so you can see what's noted.
   await expect(reader.locator('[data-study-id="mg-p"]')).toHaveClass(/sv-annotated/);
+});
+
+test("annotate an image: drag a region → note → box overlay + shared note card", async ({ page }) => {
+  await page.goto("/");
+
+  await page.locator('.image-import-box input[type="file"]').setInputFiles({
+    name: "diagram.png",
+    mimeType: "image/png",
+    buffer: makePng(240, 160)
+  });
+
+  await expect(page.locator(".reader-header h2")).toHaveText("diagram");
+  const img = page.locator(".image-reader-stage img");
+  await expect(img).toBeVisible();
+  const box = (await img.boundingBox())!;
+
+  // Drag a rectangular region on the image.
+  await page.mouse.move(box.x + 40, box.y + 30);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 170, box.y + 120, { steps: 8 });
+  await page.mouse.up();
+
+  // The region auto-fills the AI Chat "source" with a placeholder label.
+  await expect(page.locator(".chat-source")).toContainText("Image region");
+
+  await page.locator(".composer-input").fill("Region note.");
+  await page.getByRole("button", { name: "Save Note" }).click();
+  await expect(page.locator(".note-list")).toContainText("Region note.");
+
+  // The stored region paints as a box on the image, and hovering it floats the
+  // SAME shared note card the HTML/PDF readers use (decoupled presentation).
+  const region = page.locator(".image-region-layer .sv-image-region");
+  await expect(region).toBeVisible();
+  await region.hover();
+  const card = page.locator("#sv-note-card.sv-note-card-show");
+  await expect(card).toBeVisible();
+  await expect(card).toContainText("Region note.");
 });
 
 test("rich note form: a flashcard note renders as a flip card", async ({ page }) => {

@@ -617,6 +617,68 @@ textarea {
   background: #ffffff;
 }
 
+.pdf-region-box {
+  position: absolute;
+  border: 2px solid #f0a500;
+  background: rgba(240, 165, 0, 0.16);
+  border-radius: 3px;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.image-reader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  overflow: auto;
+  padding: 12px;
+}
+
+.image-reader-stage {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+  user-select: none;
+}
+
+.image-reader-stage img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+.image-region-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.sv-image-region {
+  position: absolute;
+  border: 2px solid #f0a500;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+/* More specific than .sv-annotated so a region shows the image through it. */
+.sv-image-region.sv-annotated {
+  background: rgba(240, 165, 0, 0.16);
+  box-shadow: none;
+}
+
+.image-region-live {
+  position: absolute;
+  border: 2px dashed #e0a800;
+  background: rgba(240, 165, 0, 0.12);
+  pointer-events: none;
+}
+
+.image-reader-hint {
+  margin: 0;
+  color: #66756a;
+  font-size: 12px;
+}
+
 .reader-header-actions {
   display: flex;
   align-items: center;

@@ -66,5 +66,6 @@ export type AnchorKind = z.infer<typeof anchorKindSchema>;
 export type HtmlSelectionAnchor = z.infer<typeof htmlSelectionAnchorSchema>;
 export type WebTextQuoteAnchor = z.infer<typeof webTextQuoteAnchorSchema>;
 export type PdfSelectionAnchor = z.infer<typeof pdfSelectionAnchorSchema>;
+export type ImageRegionAnchor = z.infer<typeof imageRegionAnchorSchema>;
 export type AnchorRecord = z.infer<typeof anchorSchema>;
 

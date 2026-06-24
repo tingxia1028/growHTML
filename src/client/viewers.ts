@@ -4,7 +4,7 @@
 // note overlay) applies. New viewers (webview, PDF.js text layer, …) register
 // here instead of adding `sourceType === "x"` branches throughout the UI.
 
-export type SourceViewerKind = "html" | "file" | "webview" | "pdfjs";
+export type SourceViewerKind = "html" | "file" | "webview" | "pdfjs" | "image";
 
 export type SourceViewer = {
   id: string;
@@ -17,6 +17,7 @@ export type SourceViewer = {
 const viewers: SourceViewer[] = [
   { id: "html", sourceTypes: ["html", "webpage", "markdown"], kind: "html", htmlPipeline: true },
   { id: "pdf", sourceTypes: ["pdf"], kind: "pdfjs", htmlPipeline: false },
+  { id: "image", sourceTypes: ["image"], kind: "image", htmlPipeline: false },
   { id: "web-live", sourceTypes: ["web_live"], kind: "webview", htmlPipeline: false }
 ];
 

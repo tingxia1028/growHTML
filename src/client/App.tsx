@@ -16,6 +16,8 @@ import { getSourceViewer } from "./viewers";
 import { decorateAnnotations, getHtmlAnnotationMode, setHtmlAnnotationMode, type HtmlAnnotationMode } from "./annotations";
 import { WebviewReader, type WebSelection } from "./WebviewReader";
 import { PdfReader, type PdfSelection } from "./PdfReader";
+import { ImageReader } from "./ImageReader";
+import type { NormRect } from "./regionSelect";
 import { TerminalPanel } from "./TerminalPanel";
 
 const NOTE_CONTENT_TYPES = ["markdown", "mindmap", "flashcard", "mermaid", "markmap"] as const;
@@ -56,9 +58,20 @@ type PdfAnchor = {
   quote: string;
   contextBefore: string;
   contextAfter: string;
+  rect?: [number, number, number, number];
 };
 
-type AnyAnchor = HtmlAnchor | WebAnchor | PdfAnchor;
+type ImageAnchor = {
+  id: string;
+  sourceId: string;
+  anchorKind: "image_region";
+  rect: [number, number, number, number];
+  quote: string;
+  contextBefore: string;
+  contextAfter: string;
+};
+
+type AnyAnchor = HtmlAnchor | WebAnchor | PdfAnchor | ImageAnchor;
 
 type NoteRecord = {
   id: string;
@@ -91,12 +104,14 @@ type SelectionDraft = {
   text: string;
   studyId: string;
   selector: string;
-  kind?: "html" | "web" | "pdf";
+  kind?: "html" | "web" | "pdf" | "image";
   prefix?: string;
   suffix?: string;
   page?: number;
   // For web selections: the URL of the tab/page the selection was made on.
   url?: string;
+  // For geometric selections (image regions, PDF figures): normalized rect.
+  rect?: [number, number, number, number];
 };
 
 type Status = "idle" | "loading" | "saving" | "error";
@@ -124,6 +139,9 @@ const api = {
   async ingestPdf(input: { title: string; dataBase64: string; originalPath?: string }) {
     return postJson<{ source: SourceRecord }>("/api/sources/pdf", input);
   },
+  async ingestImage(input: { title: string; dataBase64: string; mimeType: string; originalPath?: string }) {
+    return postJson<{ source: SourceRecord }>("/api/sources/image", input);
+  },
   async rendered(sourceId: string) {
     return getJson<{ source: SourceRecord; content: string }>(`/api/sources/${sourceId}/rendered`);
   },
@@ -141,11 +159,12 @@ const api = {
   },
   async createAnchor(input: {
     sourceId: string;
-    anchorKind?: "html_selection" | "web_text_quote" | "pdf_selection";
+    anchorKind?: "html_selection" | "web_text_quote" | "pdf_selection" | "image_region";
     studyId?: string;
     selector?: string;
     normalizedUrl?: string;
     page?: number;
+    rect?: [number, number, number, number];
     quote: string;
     contextBefore?: string;
     contextAfter?: string;
@@ -281,7 +300,20 @@ export default function App() {
     () =>
       anchors
         .filter((item): item is PdfAnchor => item.anchorKind === "pdf_selection")
-        .map((item) => ({ id: item.id, page: item.page, quote: item.quote, note: noteTextByAnchorId.get(item.id) ?? "" })),
+        .map((item) => ({
+          id: item.id,
+          page: item.page,
+          quote: item.quote,
+          rect: item.rect,
+          note: noteTextByAnchorId.get(item.id) ?? ""
+        })),
+    [anchors, noteTextByAnchorId]
+  );
+  const imageAnchors = useMemo(
+    () =>
+      anchors
+        .filter((item): item is ImageAnchor => item.anchorKind === "image_region")
+        .map((item) => ({ id: item.id, rect: item.rect, note: noteTextByAnchorId.get(item.id) ?? "" })),
     [anchors, noteTextByAnchorId]
   );
   const activePatches = useMemo(
@@ -389,6 +421,29 @@ export default function App() {
       setStatus("idle");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to import PDF");
+      setStatus("error");
+    }
+  }
+
+  async function importImage(file: File) {
+    setStatus("saving");
+    setError("");
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+      const originalPath = window.studyVault?.getPathForFile?.(file) || undefined;
+      const response = await api.ingestImage({
+        title: file.name.replace(/\.[^.]+$/, "") || file.name,
+        dataBase64: btoa(binary),
+        mimeType: file.type || "image/png",
+        originalPath
+      });
+      await loadSources();
+      setActiveSourceId(response.source.id);
+      setStatus("idle");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to import image");
       setStatus("error");
     }
   }
@@ -515,8 +570,24 @@ export default function App() {
           anchorKind: "pdf_selection" as const,
           page: selection.page ?? 1,
           quote: selection.text,
+          // Hybrid: keep the geometric rect alongside the text quote.
+          rect: selection.rect,
           contextBefore: selection.prefix ?? "",
           contextAfter: selection.suffix ?? ""
+        };
+      } else if (selection.kind === "image") {
+        if (!selection.rect) {
+          setStatus("idle");
+          return null;
+        }
+        input = {
+          sourceId: activeSource.id,
+          anchorKind: "image_region" as const,
+          rect: selection.rect,
+          // Geometric anchor: no text. The selection's label is UI-only.
+          quote: "",
+          contextBefore: "",
+          contextAfter: ""
         };
       } else {
         input = {
@@ -565,7 +636,20 @@ export default function App() {
       kind: "pdf",
       prefix: pdfSelection.prefix,
       suffix: pdfSelection.suffix,
-      page: pdfSelection.page
+      page: pdfSelection.page,
+      rect: pdfSelection.rect
+    });
+    setAnchor(null);
+  }
+
+  function captureImageRegion(rect: NormRect) {
+    const pct = (n: number) => Math.round(n * 100);
+    setSelection({
+      text: `Image region @ ${pct(rect[0])}%,${pct(rect[1])}% (${pct(rect[2])}%×${pct(rect[3])}%)`,
+      studyId: "",
+      selector: "",
+      kind: "image",
+      rect
     });
     setAnchor(null);
   }
@@ -774,6 +858,22 @@ export default function App() {
             }}
           />
         </section>
+
+        <section className="image-import-box">
+          <div className="panel-title">
+            <FilePlus2 size={16} />
+            Import Image
+          </div>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void importImage(file);
+              event.target.value = "";
+            }}
+          />
+        </section>
       </aside>
 
       <main className="reader-panel">
@@ -808,6 +908,12 @@ export default function App() {
             fileUrl={`/api/sources/${activeSource.id}/file`}
             anchors={pdfAnchors}
             onSelection={capturePdfSelection}
+          />
+        ) : activeSource && activeViewer.kind === "image" ? (
+          <ImageReader
+            fileUrl={`/api/sources/${activeSource.id}/file`}
+            anchors={imageAnchors}
+            onRegion={captureImageRegion}
           />
         ) : activeSource && activeViewer.kind === "file" ? (
           <iframe className="pdf-reader" title="PDF reader" src={`/api/sources/${activeSource.id}/file`} />

@@ -7,6 +7,7 @@ import { ingestWebpageFromUrl } from "../adapters/web/ingest";
 import { ingestWebLiveSource } from "../adapters/web/liveSource";
 import { createWebTextQuoteAnchor } from "../adapters/web/anchor";
 import { createPdfSelectionAnchor } from "../adapters/pdf/anchor";
+import { createImageRegionAnchor } from "../adapters/image/anchor";
 import { createEntityId } from "../core/ids";
 import {
   noteKindSchema,
@@ -52,14 +53,29 @@ const ingestPdfRequestSchema = z.object({
   originalPath: z.string().min(1).optional()
 });
 
+const ingestImageRequestSchema = z.object({
+  title: z.string().min(1),
+  dataBase64: z.string().min(1),
+  mimeType: z.string().min(1).default("image/png"),
+  originalPath: z.string().min(1).optional()
+});
+
+const rectSchema = z.tuple([z.number(), z.number(), z.number(), z.number()]);
+
 const createAnchorRequestSchema = z.object({
   sourceId: z.string().min(1),
-  anchorKind: z.enum(["html_selection", "web_text_quote", "pdf_selection"]).default("html_selection"),
+  anchorKind: z
+    .enum(["html_selection", "web_text_quote", "pdf_selection", "image_region"])
+    .default("html_selection"),
   studyId: z.string().min(1).optional(),
   selector: z.string().min(1).optional(),
   normalizedUrl: z.string().min(1).optional(),
   page: z.number().int().positive().optional(),
-  quote: z.string().min(1),
+  // Normalized region [x, y, w, h] for geometric anchors (image regions, PDF
+  // figures). Optional for pdf_selection (hybrid hint), required for image_region.
+  rect: rectSchema.optional(),
+  // Empty allowed: geometric anchors locate by rect, not text.
+  quote: z.string().default(""),
   contextBefore: z.string().default(""),
   contextAfter: z.string().default("")
 });
@@ -183,6 +199,29 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
     }
   });
 
+  app.post("/api/sources/image", async (req, res, next) => {
+    try {
+      const input = ingestImageRequestSchema.parse(req.body);
+      const data = Buffer.from(input.dataBase64, "base64");
+      if (data.length === 0) {
+        res.status(400).json({ error: "Provided image data is empty" });
+        return;
+      }
+
+      const source = await ingestBinarySource(vault, {
+        title: input.title,
+        data,
+        sourceType: "image",
+        mimeType: input.mimeType,
+        createdBy: "user",
+        metadata: input.originalPath ? { originalPath: input.originalPath } : undefined
+      });
+      res.status(201).json({ source });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // Serve the raw stored bytes (used by the PDF reader and any binary source).
   app.get("/api/sources/:sourceId/file", async (req, res, next) => {
     try {
@@ -241,11 +280,33 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
         return;
       }
 
+      if (input.anchorKind === "image_region") {
+        if (!input.rect) {
+          res.status(400).json({ error: "image_region anchors require a rect" });
+          return;
+        }
+        const imageAnchor = createImageRegionAnchor({
+          sourceId: source.id,
+          rect: input.rect,
+          quote: input.quote,
+          contextBefore: input.contextBefore,
+          contextAfter: input.contextAfter,
+          createdBy: "user"
+        });
+        await vault.stores.anchors.upsert(imageAnchor);
+        res.status(201).json({ anchor: imageAnchor });
+        return;
+      }
+
       if (input.anchorKind === "web_text_quote") {
         const normalizedUrl =
           input.normalizedUrl ?? (source.metadata?.normalizedUrl as string | undefined);
         if (!normalizedUrl) {
           res.status(400).json({ error: "web_text_quote anchors require a normalizedUrl" });
+          return;
+        }
+        if (!input.quote) {
+          res.status(400).json({ error: "web_text_quote anchors require a quote" });
           return;
         }
         const webAnchor = createWebTextQuoteAnchor({
@@ -266,10 +327,17 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
           res.status(400).json({ error: "pdf_selection anchors require a page" });
           return;
         }
+        // Hybrid: text quote (if any) + an optional geometric rect, so a passage
+        // can be re-found by text and a figure by its box.
+        if (!input.quote && !input.rect) {
+          res.status(400).json({ error: "pdf_selection anchors require a quote or a rect" });
+          return;
+        }
         const pdfAnchor = createPdfSelectionAnchor({
           sourceId: source.id,
           page: input.page,
           quote: input.quote,
+          rect: input.rect,
           contextBefore: input.contextBefore,
           contextAfter: input.contextAfter,
           createdBy: "user"
@@ -281,6 +349,10 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
 
       if (!input.studyId) {
         res.status(400).json({ error: "html_selection anchors require a studyId" });
+        return;
+      }
+      if (!input.quote) {
+        res.status(400).json({ error: "html_selection anchors require a quote" });
         return;
       }
       const anchor = createHtmlSelectionAnchor({

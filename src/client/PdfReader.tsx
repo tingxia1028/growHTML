@@ -3,11 +3,12 @@ import * as pdfjsLib from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 import "pdfjs-dist/web/pdf_viewer.css";
 import { applyHighlight, clearAnnotations, ensureAnnotationLayer } from "./annotationLayer";
+import { denormalizeRect, normalizeRect, type NormRect } from "./regionSelect";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
-export type PdfSelection = { page: number; exact: string; prefix: string; suffix: string };
-export type PdfAnchorMark = { id?: string; page: number; quote: string; note?: string };
+export type PdfSelection = { page: number; exact: string; prefix: string; suffix: string; rect?: NormRect };
+export type PdfAnchorMark = { id?: string; page: number; quote: string; note?: string; rect?: NormRect };
 
 type PdfReaderProps = {
   fileUrl: string;
@@ -32,18 +33,37 @@ export function PdfReader({ fileUrl, anchors, onSelection }: PdfReaderProps) {
     if (!container) return;
     ensureAnnotationLayer(document);
     container.querySelectorAll(".pdf-anchor-hit").forEach((el) => el.classList.remove("pdf-anchor-hit"));
+    container.querySelectorAll(".pdf-region-box").forEach((el) => el.remove());
     clearAnnotations(container);
     for (const anchor of anchorsRef.current) {
-      const pageEl = container.querySelector(`.pdf-page[data-page="${anchor.page}"] .textLayer`);
-      if (!pageEl) continue;
-      for (const span of Array.from(pageEl.querySelectorAll("span"))) {
-        const text = span.textContent ?? "";
-        if (text && anchor.quote.includes(text.trim()) && text.trim().length > 1) {
-          // Keep .pdf-anchor-hit for the visual; add the shared highlight + note
-          // card (same layer the HTML reader and webview guest use).
-          span.classList.add("pdf-anchor-hit");
-          applyHighlight(span, anchor.note ?? "", anchor.id);
+      const pageDiv = container.querySelector<HTMLElement>(`.pdf-page[data-page="${anchor.page}"]`);
+      const pageEl = pageDiv?.querySelector(".textLayer");
+      let matchedText = false;
+      if (pageEl && anchor.quote) {
+        for (const span of Array.from(pageEl.querySelectorAll("span"))) {
+          const text = span.textContent ?? "";
+          if (text && anchor.quote.includes(text.trim()) && text.trim().length > 1) {
+            // Keep .pdf-anchor-hit for the visual; add the shared highlight + note
+            // card (same layer the HTML reader and webview guest use).
+            span.classList.add("pdf-anchor-hit");
+            applyHighlight(span, anchor.note ?? "", anchor.id);
+            matchedText = true;
+          }
         }
+      }
+      // Geometric fallback: if the text couldn't be re-found (or this is a
+      // figure anchor with no text), draw the stored rect as a box. This is the
+      // "more reliable route" — a box doesn't depend on the text layer matching.
+      if (!matchedText && anchor.rect && pageDiv) {
+        const box = document.createElement("div");
+        box.className = "pdf-region-box";
+        const px = denormalizeRect(anchor.rect, pageDiv.clientWidth, pageDiv.clientHeight);
+        box.style.left = `${px.left}px`;
+        box.style.top = `${px.top}px`;
+        box.style.width = `${px.width}px`;
+        box.style.height = `${px.height}px`;
+        applyHighlight(box, anchor.note ?? "", anchor.id);
+        pageDiv.appendChild(box);
       }
     }
   }
@@ -64,6 +84,7 @@ export function PdfReader({ fileUrl, anchors, onSelection }: PdfReaderProps) {
         const pageDiv = document.createElement("div");
         pageDiv.className = "pdf-page";
         pageDiv.dataset.page = String(pageNum);
+        pageDiv.style.position = "relative";
         pageDiv.style.width = `${viewport.width}px`;
         pageDiv.style.height = `${viewport.height}px`;
 
@@ -104,7 +125,23 @@ export function PdfReader({ fileUrl, anchors, onSelection }: PdfReaderProps) {
       const prefix = index >= 0 ? pageText.slice(Math.max(0, index - CONTEXT), index) : "";
       const suffix = index >= 0 ? pageText.slice(index + exact.length, index + exact.length + CONTEXT) : "";
 
-      onSelectionRef.current({ page, exact, prefix, suffix });
+      // Hybrid: also capture the selection's geometric box (normalized to the
+      // page) so the anchor can be re-found by rect if the text match fails.
+      let rect: NormRect | undefined;
+      const pageRect = pageEl?.getBoundingClientRect();
+      if (pageRect && pageRect.width > 0 && pageRect.height > 0) {
+        const sel = range.getBoundingClientRect();
+        rect = normalizeRect(
+          sel.left - pageRect.left,
+          sel.top - pageRect.top,
+          sel.right - pageRect.left,
+          sel.bottom - pageRect.top,
+          pageRect.width,
+          pageRect.height
+        );
+      }
+
+      onSelectionRef.current({ page, exact, prefix, suffix, rect });
     };
     container.addEventListener("mouseup", onMouseUp);
 
