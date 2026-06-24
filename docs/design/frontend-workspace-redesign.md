@@ -305,6 +305,8 @@ type Command = {
 
 **P5 完成判据**：可以"选中原文→抽成 concept→另一处原文 link 到同一 concept→在 concept inspector 看到两处来源"。
 
+> **落地（手动范围）**：见 `concept-relation-ui.md`。本轮按确认范围只做**手动** link/inspector/list（不做 AI 抽取、不做图谱）：新增 `concept.list` pane（list + 新建表单 + inspector host，作为 `studyVaultLayout` = `threePane` + 1 个 additive 节点，`threePane` 保持原样）、InspectorRegistry（`targetType→render`，注册 concept/relation inspector）、命令 `concept.create` / `concept.link-note` / `relation.create`，以及新 API `PATCH /api/notes/:id`（把已有 note link 到 concept）。note↔concept 采用 inspector 里"挑一条已有 note → Link note"的 UX（端到端打通）。闸门：tsc 干净 · vitest 223（+15）· web e2e 10（9 既有 + 新 concept 测试）· electron e2e 7，全绿且**未改任何既有 e2e selector**。
+
 ### P6 — 布局持久化 + Dock（最后 / 可选）
 
 | # | 任务 | 交付 | 自测 |

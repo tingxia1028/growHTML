@@ -114,6 +114,15 @@ export type WorkspaceContextValue = {
   /** The selected text in a reply, or the full reply if nothing is highlighted. */
   selectedTextOr(fullContent: string): string;
   changePatchStatus(patch: PatchRecord, nextStatus: "applied" | "reverted" | "rejected"): Promise<void>;
+
+  // —— concepts / relations ——
+  // A monotonically-increasing token bumped whenever a concept/relation/link command
+  // mutates entity data. Concept views watch it to re-fetch (they own their own list
+  // + detail state via the entity client, so the context stays the single seam
+  // without ballooning with concept-specific data).
+  conceptsVersion: number;
+  /** Bump `conceptsVersion` after a direct entity mutation (e.g. delete relation). */
+  refreshConcepts(): void;
 };
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -136,6 +145,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [patchHtml, setPatchHtml] = useState("");
   const [importUrl, setImportUrl] = useState("");
   const [folderRoot, setFolderRoot] = useState<string | null>(null);
+  const [conceptsVersion, setConceptsVersion] = useState(0);
 
   // Native file/folder dialogs come from the Electron preload; absent in a browser.
   const canOpenLocal = typeof window !== "undefined" && !!window.studyVault?.openFile;
@@ -398,7 +408,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         onNoteCreated: () => void refreshAnnotations(),
         onPatchCreated: () => void refreshAnnotations(),
         onChatHistory: (history) => setChatMessages(history),
-        onAssistantMessage: (message) => setChatMessages((items) => [...items, message])
+        onAssistantMessage: (message) => setChatMessages((items) => [...items, message]),
+        // A new concept / changed link / new-or-deleted relation: bump the token so
+        // concept views re-fetch, and refresh the source's notes so a freshly linked
+        // note's conceptIds show up in the study panel too.
+        onConceptChanged: () => {
+          setConceptsVersion((value) => value + 1);
+          void refreshAnnotations();
+        },
+        onRelationChanged: () => setConceptsVersion((value) => value + 1)
       }
     }),
     [focus, activeSourceId, chatMessages, buildChatContext, refreshAnnotations]
@@ -442,6 +460,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     },
     [activeSource, loadSourceWorkspace]
   );
+
+  const refreshConcepts = useCallback(() => setConceptsVersion((value) => value + 1), []);
 
   // Whether the composer's primary action is available, via the command itself.
   const composerCommandId = composerMode === "ask" ? "anchor.ask-ai" : "anchor.add-note";
@@ -508,7 +528,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       submitComposer,
       dispatch,
       selectedTextOr,
-      changePatchStatus
+      changePatchStatus,
+      conceptsVersion,
+      refreshConcepts
     }),
     [
       focus,
@@ -548,7 +570,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       submitComposer,
       dispatch,
       selectedTextOr,
-      changePatchStatus
+      changePatchStatus,
+      conceptsVersion,
+      refreshConcepts
     ]
   );
 

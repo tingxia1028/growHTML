@@ -10,7 +10,7 @@
 
 body {
   margin: 0;
-  min-width: 1120px;
+  min-width: 1460px;
   min-height: 100vh;
   color: #202124;
   background: #f4f1ea;
@@ -28,12 +28,13 @@ button {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr) 380px;
+  grid-template-columns: 300px minmax(0, 1fr) 380px 340px;
   height: 100vh;
 }
 
 .library-panel,
-.study-panel {
+.study-panel,
+.concept-panel {
   min-width: 0;
   overflow: auto;
   padding: 18px;
@@ -42,8 +43,171 @@ button {
 }
 
 .study-panel {
+  border-right: 1px solid #d8d2c6;
+  border-left: 1px solid #d8d2c6;
+}
+
+/* —— Concept / relation pane (P5) ————————————————————————————————————— */
+.concept-panel {
   border-right: 0;
   border-left: 1px solid #d8d2c6;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.concept-create {
+  display: grid;
+  gap: 8px;
+}
+
+.concept-create-btn.icon-button {
+  margin-top: 0;
+}
+
+.concept-list {
+  margin-top: 4px;
+  display: grid;
+  gap: 8px;
+}
+
+.concept-item {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd7cc;
+  border-radius: 8px;
+  background: #ffffff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.concept-item.active {
+  border-color: #2f6f64;
+  background: #edf6f3;
+}
+
+.concept-item-name {
+  font-weight: 700;
+}
+
+.concept-item-desc {
+  color: #68706a;
+  font-size: 12px;
+}
+
+.concept-inspector-host {
+  margin-top: 8px;
+  border-top: 1px solid #e2dccd;
+  padding-top: 12px;
+}
+
+.concept-inspector,
+.relation-inspector {
+  display: grid;
+  gap: 14px;
+}
+
+.concept-inspector-head p {
+  margin: 0 0 4px;
+  color: #66756a;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.concept-inspector-name {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.concept-aliases {
+  margin-top: 4px;
+  color: #5b6058;
+  font-size: 12px;
+}
+
+.concept-description {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.concept-section {
+  display: grid;
+  gap: 8px;
+}
+
+.concept-note-item {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid #ddd7cc;
+  border-radius: 8px;
+  background: #ffffff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.concept-note-item.active {
+  border-color: #2f6f64;
+  background: #edf6f3;
+}
+
+.concept-note-item strong {
+  font-size: 11px;
+  color: #66756a;
+  text-transform: uppercase;
+}
+
+.concept-link-note,
+.concept-create-relation {
+  display: grid;
+  gap: 6px;
+}
+
+.concept-link-note-btn.icon-button,
+.concept-create-relation-btn.icon-button {
+  margin-top: 0;
+}
+
+.concept-relation-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.concept-relation-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.concept-relation-kind {
+  background: #efe9dc;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.concept-relation-delete.link-button {
+  margin-top: 0;
+  flex: 0 0 auto;
+  color: #9a948a;
+}
+
+.concept-relation-delete.link-button:hover {
+  color: #b3261e;
+}
+
+.relation-delete.icon-button {
+  margin-top: 0;
 }
 
 .brand-block p,

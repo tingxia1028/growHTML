@@ -32,7 +32,10 @@ function baseCtx(over: Partial<CommandContext> = {}): CommandContext {
     client: {
       createNote: vi.fn(async () => ({ note: { id: "note_1" } as never })),
       createPatch: vi.fn(async () => ({ patch: { id: "patch_1" } as never })),
-      chat: vi.fn(async () => ({ message: { role: "assistant" as const, content: "hi" }, provider: "mock" }))
+      chat: vi.fn(async () => ({ message: { role: "assistant" as const, content: "hi" }, provider: "mock" })),
+      createConcept: vi.fn(async () => ({ concept: { id: "concept_1" } as never })),
+      updateNote: vi.fn(async () => ({ note: { id: "note_1" } as never })),
+      createRelation: vi.fn(async () => ({ relation: { id: "rel_1" } as never }))
     },
     sourceId: "src_1",
     payload: {},
@@ -114,6 +117,77 @@ describe("command: anchor.ask-ai", () => {
   it("is unavailable without an active source", () => {
     expect(
       getCommand("anchor.ask-ai")!.isAvailable(baseCtx({ payload: { text: "q" }, sourceId: undefined }))
+    ).toBe(false);
+  });
+});
+
+describe("command: concept.create", () => {
+  it("creates a concept with name + description and reports it", async () => {
+    const onConceptChanged = vi.fn();
+    const ctx = baseCtx({
+      payload: { conceptName: "Render Thread", conceptDescription: "The UE render thread" },
+      actions: { onConceptChanged }
+    });
+    const ran = await runCommand("concept.create", ctx);
+    expect(ran).toBe(true);
+    expect(ctx.client.createConcept).toHaveBeenCalledWith({
+      name: "Render Thread",
+      description: "The UE render thread"
+    });
+    expect(onConceptChanged).toHaveBeenCalledOnce();
+  });
+
+  it("is unavailable with a blank name", () => {
+    expect(getCommand("concept.create")!.isAvailable(baseCtx({ payload: { conceptName: "  " } }))).toBe(false);
+  });
+});
+
+describe("command: concept.link-note", () => {
+  it("appends the concept to the note's existing links (no duplicates)", async () => {
+    const onConceptChanged = vi.fn();
+    const ctx = baseCtx({
+      payload: { noteId: "note_1", conceptId: "concept_2", noteConceptIds: ["concept_1"] },
+      actions: { onConceptChanged }
+    });
+    await runCommand("concept.link-note", ctx);
+    expect(ctx.client.updateNote).toHaveBeenCalledWith("note_1", { conceptIds: ["concept_1", "concept_2"] });
+    expect(onConceptChanged).toHaveBeenCalledOnce();
+  });
+
+  it("is idempotent when the link already exists", async () => {
+    const ctx = baseCtx({ payload: { noteId: "note_1", conceptId: "concept_1", noteConceptIds: ["concept_1"] } });
+    await runCommand("concept.link-note", ctx);
+    expect(ctx.client.updateNote).toHaveBeenCalledWith("note_1", { conceptIds: ["concept_1"] });
+  });
+
+  it("is unavailable without both a note and a concept", () => {
+    expect(getCommand("concept.link-note")!.isAvailable(baseCtx({ payload: { noteId: "note_1" } }))).toBe(false);
+    expect(getCommand("concept.link-note")!.isAvailable(baseCtx({ payload: { conceptId: "concept_1" } }))).toBe(false);
+  });
+});
+
+describe("command: relation.create", () => {
+  it("creates a concept→concept relation with the chosen kind", async () => {
+    const onRelationChanged = vi.fn();
+    const ctx = baseCtx({
+      payload: { fromConceptId: "concept_1", toConceptId: "concept_2", relationKind: "depends_on" },
+      actions: { onRelationChanged }
+    });
+    await runCommand("relation.create", ctx);
+    expect(ctx.client.createRelation).toHaveBeenCalledWith({
+      from: { type: "concept", id: "concept_1" },
+      to: { type: "concept", id: "concept_2" },
+      relationKind: "depends_on",
+      label: undefined
+    });
+    expect(onRelationChanged).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a self-relation (same from/to)", () => {
+    expect(
+      getCommand("relation.create")!.isAvailable(
+        baseCtx({ payload: { fromConceptId: "c1", toConceptId: "c1", relationKind: "related" } })
+      )
     ).toBe(false);
   });
 });

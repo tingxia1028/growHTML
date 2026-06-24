@@ -469,6 +469,47 @@ describe("vault server API", () => {
     expect(byConcept.body.notes[0].id).toBe(note.id);
   });
 
+  it("links an EXISTING note to a concept via PATCH /api/notes/:id", async () => {
+    const source = (
+      await request(app).post("/api/sources/html").send({ title: "Doc", content: fixtureHtmlBody }).expect(201)
+    ).body.source;
+    const concept = (await request(app).post("/api/concepts").send({ name: "Render Thread" }).expect(201)).body.concept;
+
+    // A note created with no concept link.
+    const note = (
+      await request(app)
+        .post("/api/notes")
+        .send({ sourceId: source.id, contentType: "markdown", content: "Loose note." })
+        .expect(201)
+    ).body.note;
+    expect(note.conceptIds).toEqual([]);
+
+    // PATCH attaches the concept; the note then back-references in the concept detail.
+    const linked = await request(app)
+      .patch(`/api/notes/${note.id}`)
+      .send({ conceptIds: [concept.id] })
+      .expect(200);
+    expect(linked.body.note.conceptIds).toEqual([concept.id]);
+
+    const detail = await request(app).get(`/api/concepts/${concept.id}`).expect(200);
+    expect(detail.body.notes.map((n: { id: string }) => n.id)).toContain(note.id);
+  });
+
+  it("returns 404 patching a missing note, 400 for an empty body", async () => {
+    await request(app).patch("/api/notes/note_does_not_exist").send({ conceptIds: [] }).expect(404);
+    // A note exists, but the body carries neither conceptIds nor anchorIds → 400.
+    const source = (
+      await request(app).post("/api/sources/html").send({ title: "Doc", content: fixtureHtmlBody }).expect(201)
+    ).body.source;
+    const note = (
+      await request(app)
+        .post("/api/notes")
+        .send({ sourceId: source.id, contentType: "markdown", content: "x" })
+        .expect(201)
+    ).body.note;
+    await request(app).patch(`/api/notes/${note.id}`).send({}).expect(400);
+  });
+
   it("creates and deletes relations between concepts", async () => {
     const a = (await request(app).post("/api/concepts").send({ name: "Render Thread" }).expect(201)).body.concept;
     const b = (await request(app).post("/api/concepts").send({ name: "Game Thread" }).expect(201)).body.concept;

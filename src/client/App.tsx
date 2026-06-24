@@ -9,13 +9,13 @@
 import { FocusProvider } from "./focus/FocusContext";
 import { WorkspaceProvider } from "./workspace/WorkspaceContext";
 import { WorkspaceShell } from "./workspace/WorkspaceShell";
-import { threePane } from "./workspace/presets";
+import { studyVaultLayout } from "./workspace/presets";
 
 export default function App() {
   return (
     <FocusProvider>
       <WorkspaceProvider>
-        <WorkspaceShell layout={threePane} />
+        <WorkspaceShell layout={studyVaultLayout} />
       </WorkspaceProvider>
     </FocusProvider>
   );

@@ -13,8 +13,11 @@ import { Fragment } from "react";
 import type { WorkspaceLayout } from "../data/entityClient";
 import { renderNode } from "./viewRegistry";
 import { useWorkspace } from "./WorkspaceContext";
-// Side-effect import: registers the library / source.viewer / study view plugins.
+// Side-effect imports: register the built-in view plugins.
+//   ./views        → library / source.viewer / study (the original three panes)
+//   ./conceptViews → concept.list (the P5 concept/relation pane)
 import "./views";
+import "./conceptViews";
 
 export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
   const ctx = useWorkspace();

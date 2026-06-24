@@ -100,6 +100,18 @@ const createNoteRequestSchema = z.object({
   content: z.unknown()
 });
 
+// Partial note update — used by the manual concept-linking UI to attach/detach a
+// note to concepts (and, if needed, anchors) after creation. Content itself is not
+// editable here; only the attachment arrays. At least one field must be present.
+const updateNoteRequestSchema = z
+  .object({
+    conceptIds: z.array(z.string().min(1)).optional(),
+    anchorIds: z.array(z.string().min(1)).optional()
+  })
+  .refine((input) => input.conceptIds !== undefined || input.anchorIds !== undefined, {
+    message: "note update requires conceptIds or anchorIds"
+  });
+
 const createPatchRequestSchema = z.object({
   sourceId: z.string().min(1),
   anchorId: z.string().min(1),
@@ -525,6 +537,30 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
           (!sourceId || note.sourceId === sourceId)
       );
       res.json({ notes });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Patch a note's attachments (concept/anchor links). The manual concept UI uses
+  // this to link an EXISTING note to a concept (its conceptIds gain the concept id),
+  // so the note then back-references in `GET /api/concepts/:id`. Unknown id → 404.
+  app.patch("/api/notes/:noteId", async (req, res, next) => {
+    try {
+      const input = updateNoteRequestSchema.parse(req.body);
+      const existing = await vault.stores.notes.get(req.params.noteId);
+      if (!existing) {
+        res.status(404).json({ error: "Note not found" });
+        return;
+      }
+      const note = noteSchema.parse({
+        ...existing,
+        conceptIds: input.conceptIds ?? existing.conceptIds,
+        anchorIds: input.anchorIds ?? existing.anchorIds,
+        updatedAt: new Date().toISOString()
+      });
+      await vault.stores.notes.upsert(note);
+      res.json({ note });
     } catch (error) {
       next(error);
     }

@@ -41,6 +41,16 @@ describe("entityClient", () => {
     });
   });
 
+  it("patches a note's concept links", async () => {
+    const calls = mockFetch({ note: { id: "note_x" } });
+    await entityClient.updateNote("note_x", { conceptIds: ["concept_1"] });
+    expect(calls[0]).toMatchObject({
+      url: "/api/notes/note_x",
+      method: "PATCH",
+      body: { conceptIds: ["concept_1"] }
+    });
+  });
+
   it("builds entity-oriented query URLs", async () => {
     const calls = mockFetch({ notes: [] });
     await entityClient.notesByConcept("concept_1");

@@ -21,3 +21,15 @@ export const threePane: WorkspaceLayout = {
     { id: "study", kind: "study" }
   ]
 };
+
+// The app's default layout (P5): the original three panes PLUS the concept/relation
+// pane on the right. It is `threePane` extended with one additive node, so the
+// library/reader/study DOM is byte-for-byte unchanged (existing e2e selectors hold)
+// and the new pane simply renders to the right of them. `threePane` is kept as the
+// pristine 3-pane reference (used by the shell guardrail test).
+export const studyVaultLayout: WorkspaceLayout = {
+  ...threePane,
+  id: "study-vault",
+  name: "Study Vault",
+  nodes: [...threePane.nodes, { id: "concepts", kind: "concept.list" }]
+};

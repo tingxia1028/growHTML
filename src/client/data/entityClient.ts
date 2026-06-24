@@ -220,6 +220,10 @@ export const entityClient = {
   notes(sourceId: string) {
     return getJson<{ notes: NoteRecord[] }>(`/api/sources/${sourceId}/notes`);
   },
+  /** All notes (no filter) — the entity-oriented endpoint with no query. */
+  allNotes() {
+    return getJson<{ notes: NoteRecord[] }>("/api/notes");
+  },
   notesByConcept(conceptId: string) {
     return getJson<{ notes: NoteRecord[] }>(`/api/notes?conceptId=${encodeURIComponent(conceptId)}`);
   },
@@ -228,6 +232,10 @@ export const entityClient = {
   },
   createNote(input: CreateNoteInput) {
     return sendJson<{ note: NoteRecord }>("POST", "/api/notes", input);
+  },
+  /** Patch a note's attachments (concept/anchor links) after creation. */
+  updateNote(noteId: string, input: { conceptIds?: string[]; anchorIds?: string[] }) {
+    return sendJson<{ note: NoteRecord }>("PATCH", `/api/notes/${noteId}`, input);
   },
 
   // —— Patches ——

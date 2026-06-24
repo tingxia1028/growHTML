@@ -7,9 +7,12 @@
 import type {
   ChatContext,
   ChatMessage,
+  ConceptRecord,
   EntityClient,
+  NodeRef,
   NoteRecord,
-  PatchRecord
+  PatchRecord,
+  RelationRecord
 } from "../data/entityClient";
 import type { FocusContextValue } from "../focus/FocusContext";
 
@@ -18,19 +21,42 @@ export type CommandActions = {
   onPatchCreated?(patch: PatchRecord): void;
   onChatHistory?(messages: ChatMessage[]): void;
   onAssistantMessage?(message: ChatMessage): void;
+  /** A concept was created or a note↔concept link changed. */
+  onConceptChanged?(concept?: ConceptRecord): void;
+  /** A relation was created or deleted. */
+  onRelationChanged?(relation?: RelationRecord): void;
 };
 
 export type CommandContext = {
   focus: FocusContextValue;
-  client: Pick<EntityClient, "createNote" | "createPatch" | "chat">;
+  client: Pick<
+    EntityClient,
+    "createNote" | "createPatch" | "chat" | "createConcept" | "updateNote" | "createRelation"
+  >;
   /** The source the user is currently reading, if any. */
   sourceId?: string;
-  /** Per-invocation inputs (composer text, patch body, …). */
+  /** Per-invocation inputs (composer text, patch body, concept/relation fields…). */
   payload: {
     text?: string;
     contentType?: string;
     newContent?: string;
     oldText?: string;
+    // —— concept / relation ——
+    /** New concept name (concept.create). */
+    conceptName?: string;
+    /** New concept description (concept.create). */
+    conceptDescription?: string;
+    /** The note to (un)link (concept.link-note). */
+    noteId?: string;
+    /** Its current concept links, so link-note can append without dropping others. */
+    noteConceptIds?: string[];
+    /** The concept a note is linked to / a relation endpoint (concept.link-note, relation.create). */
+    conceptId?: string;
+    /** relation.create endpoints + kind. */
+    fromConceptId?: string;
+    toConceptId?: string;
+    relationKind?: string;
+    relationLabel?: string;
   };
   /** Current chat history (for ask-ai). */
   chatMessages?: ChatMessage[];
@@ -38,6 +64,8 @@ export type CommandContext = {
   chatContext?: ChatContext;
   actions: CommandActions;
 };
+
+const conceptRef = (id: string): NodeRef => ({ type: "concept", id });
 
 export type Command = {
   id: string;
@@ -106,6 +134,67 @@ const createPatch: Command = {
   }
 };
 
+// —— Concept / Relation (manual) —————————————————————————————————————————
+// These are the manual P5 actions. They collaborate only through the entity client
+// + the action callbacks, exactly like the anchor commands.
+
+const createConcept: Command = {
+  id: "concept.create",
+  title: "New Concept",
+  group: "concept",
+  isAvailable: (ctx) => !!ctx.payload.conceptName?.trim(),
+  run: async (ctx) => {
+    const name = ctx.payload.conceptName?.trim();
+    if (!name) return;
+    const description = ctx.payload.conceptDescription?.trim();
+    const { concept } = await ctx.client.createConcept({
+      name,
+      description: description || undefined
+    });
+    ctx.actions.onConceptChanged?.(concept);
+  }
+};
+
+const linkNote: Command = {
+  id: "concept.link-note",
+  title: "Link Note to Concept",
+  group: "concept",
+  // Needs a note to link and a concept to link it to.
+  isAvailable: (ctx) => !!ctx.payload.noteId && !!ctx.payload.conceptId,
+  run: async (ctx) => {
+    const { noteId, conceptId } = ctx.payload;
+    if (!noteId || !conceptId) return;
+    // Append to the note's existing concept links (idempotent — don't duplicate).
+    const current = ctx.payload.noteConceptIds ?? [];
+    const next = current.includes(conceptId) ? current : [...current, conceptId];
+    await ctx.client.updateNote(noteId, { conceptIds: next });
+    ctx.actions.onConceptChanged?.();
+  }
+};
+
+const createRelation: Command = {
+  id: "relation.create",
+  title: "Create Relation",
+  group: "relation",
+  // Two distinct concepts + a relation kind (no self-relations).
+  isAvailable: (ctx) =>
+    !!ctx.payload.fromConceptId &&
+    !!ctx.payload.toConceptId &&
+    ctx.payload.fromConceptId !== ctx.payload.toConceptId &&
+    !!ctx.payload.relationKind,
+  run: async (ctx) => {
+    const { fromConceptId, toConceptId, relationKind, relationLabel } = ctx.payload;
+    if (!fromConceptId || !toConceptId || !relationKind || fromConceptId === toConceptId) return;
+    const { relation } = await ctx.client.createRelation({
+      from: conceptRef(fromConceptId),
+      to: conceptRef(toConceptId),
+      relationKind,
+      label: relationLabel?.trim() || undefined
+    });
+    ctx.actions.onRelationChanged?.(relation);
+  }
+};
+
 const registry = new Map<string, Command>();
 
 export function registerCommand(command: Command): void {
@@ -128,4 +217,5 @@ export async function runCommand(id: string, ctx: CommandContext): Promise<boole
   return true;
 }
 
-for (const command of [askAi, addNote, createPatch]) registerCommand(command);
+for (const command of [askAi, addNote, createPatch, createConcept, linkNote, createRelation])
+  registerCommand(command);
