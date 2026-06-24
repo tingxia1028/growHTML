@@ -3,29 +3,53 @@
 // highlights stored anchors the host sends back. Reuses the unit-tested
 // textQuote helpers so the selector logic is trustworthy.
 import { ipcRenderer } from "electron";
-import { createTextQuoteSelector } from "../src/adapters/web/textQuote";
 import { clearAnnotations, ensureAnnotationLayer, highlightQuote } from "../src/client/annotationLayer";
 
 type WebAnchorMsg = { id?: string; quote: string; contextBefore: string; contextAfter: string; note?: string };
 
+const CONTEXT = 32;
+
+// Build prefix/suffix context by collapsing a clone of the selection range to its
+// start (resp. end) and extending it to the surrounding text. This is robust to the
+// selection's start/end containers being ELEMENTS rather than text nodes — e.g. a
+// selectNodeContents() selection (or a paragraph-spanning drag), whose startOffset/
+// endOffset are CHILD-NODE indices, not character offsets. The earlier code sliced
+// the container's textContent by those offsets, so an element-level selection
+// collapsed to a single character ("P" instead of the whole passage). We take the
+// exact text straight from the range (always correct) and read context off the DOM.
+function contextAround(range: Range, side: "before" | "after"): string {
+  try {
+    const probe = range.cloneRange();
+    probe.collapse(side === "before");
+    const root = range.commonAncestorContainer;
+    const rootEl = (root.nodeType === Node.ELEMENT_NODE ? root : root.parentNode) as Element | null;
+    if (!rootEl) return "";
+    if (side === "before") {
+      // From the start of the common ancestor up to the selection start.
+      probe.setStart(rootEl, 0);
+      return probe.toString().slice(-CONTEXT);
+    }
+    // From the selection end to the end of the common ancestor.
+    probe.setEnd(rootEl, rootEl.childNodes.length);
+    return probe.toString().slice(0, CONTEXT);
+  } catch {
+    return "";
+  }
+}
+
 function reportSelection() {
   const selection = window.getSelection();
   if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+  // The exact selected text — taken from the selection itself, never re-sliced by
+  // node offsets (which are child indices when the container is an element).
   const exact = selection.toString();
   if (!exact.trim()) return;
 
   const range = selection.getRangeAt(0);
-  const container = range.startContainer;
-  const text = container.textContent ?? exact;
-  const start = range.startOffset;
-  const end =
-    range.startContainer === range.endContainer ? range.endOffset : Math.min(text.length, start + exact.length);
-  const selector = createTextQuoteSelector(text, start, end);
-
   ipcRenderer.sendToHost("sv:selection", {
-    exact: selector.exact || exact,
-    prefix: selector.prefix,
-    suffix: selector.suffix
+    exact,
+    prefix: contextAround(range, "before"),
+    suffix: contextAround(range, "after")
   });
 }
 

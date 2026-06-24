@@ -61,6 +61,35 @@ describe("buildAnchorInput", () => {
     });
   });
 
+  it("omits normalizedUrl for a web draft whose url is blank/whitespace (live-HTML bug)", () => {
+    // Regression: webview.getURL() can return "" before the guest attaches. A blank
+    // string is NOT nullish, so `draft.url ?? draft.normalizedUrl` used to keep it →
+    // the request carried `normalizedUrl: ""`, which (a) fails the server's
+    // z.string().min(1) → 400 and (b) blocks the server's metadata.normalizedUrl
+    // fallback (again "" isn't nullish). The fix coalesces blank → undefined so the
+    // server falls back to the source's stored normalizedUrl and the anchor is made.
+    for (const url of ["", "   "]) {
+      const draft: AnchorDraft = { mode: "quote", sourceId: "src_live", kind: "web", quote: "render thread", url };
+      const input = buildAnchorInput(draft);
+      expect(input.anchorKind).toBe("web_text_quote");
+      expect(input.normalizedUrl).toBeUndefined();
+    }
+    // Likewise when neither url nor normalizedUrl is set.
+    const noUrl: AnchorDraft = { mode: "quote", sourceId: "src_live", kind: "web", quote: "x" };
+    expect(buildAnchorInput(noUrl).normalizedUrl).toBeUndefined();
+  });
+
+  it("trims a web draft's url before using it as normalizedUrl", () => {
+    const draft: AnchorDraft = {
+      mode: "quote",
+      sourceId: "src_1",
+      kind: "web",
+      quote: "q",
+      url: "  https://example.com/post  "
+    };
+    expect(buildAnchorInput(draft).normalizedUrl).toBe("https://example.com/post");
+  });
+
   it("maps a pdf quote draft with its page", () => {
     const draft: AnchorDraft = { mode: "quote", sourceId: "src_1", kind: "pdf", quote: "x", page: 3 };
     expect(buildAnchorInput(draft)).toMatchObject({ anchorKind: "pdf_selection", page: 3, quote: "x" });

@@ -138,7 +138,6 @@ export function WebviewReader({ url, sourceId, anchors, onSelect }: WebviewReade
       webview.setAttribute("plugins", ""); // inline PDF viewer
       webview.style.width = "100%";
       webview.style.height = "100%";
-      container.appendChild(webview);
       webviews.current.set(tab.id, webview);
 
       // Shared paint-back wiring: push stored anchors into the guest (highlights +
@@ -149,7 +148,10 @@ export function WebviewReader({ url, sourceId, anchors, onSelect }: WebviewReade
       // Shared selection capture: attaches the guest preload + translates
       // sv:selection into a web quote draft keyed by the page url it was made on.
       // The extra handler covers the one channel only the tabbed live reader owns
-      // (link → new tab).
+      // (link → new tab). The preload attribute MUST be set before the guest starts
+      // loading (i.e. before appendChild below); otherwise the live page loads with
+      // NO selection-capture preload and selections never reach the host (so no chip,
+      // no anchor) — the bug LocalHtmlReader already avoided by binding pre-append.
       bindWebviewSelection(
         webview,
         (selection, pageUrl) => {
@@ -188,6 +190,12 @@ export function WebviewReader({ url, sourceId, anchors, onSelect }: WebviewReade
           syncNav(webview);
         }
       });
+
+      // Attach LAST: appending starts the guest loading, so the preload attribute
+      // (set above by bindWebviewSelection) and every listener must already be in
+      // place. Otherwise the guest can load before the preload attaches → no
+      // selection capture.
+      container.appendChild(webview);
     }
 
     for (const [id, webview] of [...webviews.current]) {

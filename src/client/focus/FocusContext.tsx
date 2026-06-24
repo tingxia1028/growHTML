@@ -82,10 +82,18 @@ export function buildAnchorInput(draft: AnchorDraft): CreateAnchorInput {
   }
 
   if (draft.kind === "web") {
+    // The url a web/local-HTML draft is keyed by comes from webview.getURL(), which
+    // can be an empty/whitespace string before the guest finishes attaching (and a
+    // blank `??` operand is NOT nullish, so it would survive as `normalizedUrl: ""`).
+    // An empty normalizedUrl then (a) fails the server's z.string().min(1) → 400 and
+    // (b) blocks the server's `?? source.metadata.normalizedUrl` fallback (again, ""
+    // isn't nullish) — so the anchor is never created. Coalesce blank → undefined so
+    // an unknown page url falls back to the source's stored normalizedUrl instead.
+    const url = (draft.url ?? draft.normalizedUrl ?? "").trim();
     return {
       sourceId: draft.sourceId,
       anchorKind: "web_text_quote",
-      normalizedUrl: draft.url ?? draft.normalizedUrl,
+      normalizedUrl: url || undefined,
       quote: draft.quote,
       contextBefore: draft.prefix ?? "",
       contextAfter: draft.suffix ?? ""
