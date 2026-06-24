@@ -68,7 +68,7 @@ The mechanisms stay different — that's irreducible; only the **contract** unif
 | --- | --- | --- | --- | --- |
 | **DOM** | `surfaces/DomReader.tsx` | `iframe[title="Source reader"]` (srcDoc) | Owns the iframe's `contentDocument`; listens for `selectionchange`/`mouseup`/`click`/`keyup` and emits `AnchorDraft{mode:"quote",kind:"html",studyId,…}`. | Paints `html_selection` anchors via the `AnnotationRenderer` registry (`annotations.ts` → shared highlight + hover card). |
 | **Webview** | `WebviewReader.tsx` (live web), `LocalHtmlReader.tsx` (local HTML) | a `<webview>` (separate `WebContents`) | Host **can't** reach the guest DOM. A guest preload (`electron/webview-preload.ts`) posts selections over `sv:selection`; the shared `bindWebviewSelection` translates them, then `webSelectionToDraft` emits `AnchorDraft{mode:"quote",kind:"web",url}`. | `toWebAnchorMsgs` maps `web_text_quote` anchors → the guest's paint messages; the shared `bindWebviewAnchors` pushes them over `sv:anchors`; the guest paints via `highlightQuote`. |
-| **Overlay** | `PdfReader.tsx`, `ImageReader.tsx` | host-page pdf.js text layer / `<img>` + overlay | PDF: select text → `AnchorDraft{mode:"quote",kind:"pdf",page,…}`; PDF/image rubber-band → `AnchorDraft{mode:"region",…}` (shared gesture in `surfaces/overlay.ts`). | Paints `pdf_selection` (text highlight or region box) / `image_region` (box) from the `anchors` prop; boxes use the shared `placeRegionBox`. |
+| **Overlay** | `PdfReader.tsx`, `ImageReader.tsx` | host-page pdf.js `PDFViewer` text layer / `<img>` + overlay | PDF: select text → `AnchorDraft{mode:"quote",kind:"pdf",page,…}`; PDF/image rubber-band → `AnchorDraft{mode:"region",…}` (shared gesture in `surfaces/overlay.ts`). | Paints `pdf_selection` (text highlight or region box) / `image_region` (box) from the `anchors` prop; boxes use the shared `placeRegionBox`. |
 | _native `file` iframe_ | — | `iframe[title="PDF reader"]` | **cannot annotate** (Chromium-rendered code/word/transcript). No `anchors`/`onSelect`. | — |
 
 ### Webview surfaces: shared layer (`src/client/selection/webviewSelection.ts`)
@@ -118,7 +118,8 @@ type AnchorDraft = QuoteAnchorDraft | RegionAnchorDraft;
 
 ### Region capture gesture (shared: `src/client/surfaces/overlay.ts`)
 
-- **PDF** (`PdfReader`): a `Text | Region` toggle in the reader toolbar. In **Region** mode the text layer is click-through and dragging on a page draws a marquee; on release `normalizeDragRect` produces the normalized rect `[x,y,w,h]` (0..1 within that page) + page → a `pdf_selection` region (empty quote).
+- **PDF** (`PdfReader`): renders with pdf.js's own ready-made **`PDFViewer`** component (`pdfjs-dist/web/pdf_viewer.mjs` — wired with an `EventBus` + `PDFLinkService`), which owns **virtualized scrolling, zoom, search, page nav** *and* the selectable text layer. The scroll root is an `overflow:auto`, absolutely-positioned container (PDFViewer asserts the container is absolutely positioned) wrapping the `.pdfViewer` div; on `pagesinit` we set `currentScaleValue = "page-width"` so it fits and scrolls. (This replaced an earlier hand-rolled eager-render loop that had lost its scroll wheel.) A `Text | Region` toggle lives in the reader toolbar. In **Region** mode the text layer is click-through and dragging on a page draws a marquee; on release `normalizeDragRect` produces the normalized rect `[x,y,w,h]` (0..1 within that page) + page → a `pdf_selection` region (empty quote).
+  - **Painting survives virtualization:** PDFViewer only materializes a `.page[data-page-number="N"]` (with its `.textLayer`) once that page scrolls into view, so anchors are **(re)painted on every `pagerendered`**, after `scalechanging` (zoom re-lays-out the text layer), and whenever the `anchors` prop changes — painting only onto the pages currently present; each page repaints itself as it renders. The repaint is idempotent (it clears its own marks first). Region boxes are placed with the rect **normalized to the page box** (percent offsets), so they stay correct across zoom.
 - **Image** (`ImageReader`): images render as a host-page `<img>` (viewer kind `image`, not the native `file` iframe). Dragging rubber-bands a rect → an `image_region` anchor.
 - `isRealRegion` rejects sub-threshold stray clicks; `placeRegionBox` draws a saved region as an absolutely-positioned box that hooks the shared note card (`applyHighlight`).
 - **Local HTML / live web region selection is intentionally deferred** — text-quote is sufficient there this round.
@@ -154,6 +155,7 @@ Real tests only. "Verified e2e" = driven through the running app; "unit" = vites
 | Webview — quote (read) | unit (`webSelectionToDraft`, `normalizeWebSelection`, `bindWebviewSelection`) + **e2e** wiring | `selection/webviewSelection.test.ts`; `e2e-electron/{webview,local-html}.spec.ts` |
 | Webview — paint (write) | unit (`toWebAnchorMsgs`, `bindWebviewAnchors` send behavior; guest `highlightQuote`) + **e2e SCREENSHOT** | `selection/webviewSelection.test.ts`, `annotationDom.test.ts`; `e2e-electron/local-html-highlight.spec.ts` |
 | Overlay — region gesture | unit (`normalizeDragRect`, `isRealRegion`, `placeRegionBox`) | `surfaces/overlay.test.ts` |
+| PDF — scroll (PDFViewer) | **e2e (web)** — scroll container scrolls + a later page pages in | `e2e/regions.spec.ts` |
 | PDF — quote / region | **e2e (web)** + unit (mapping) | `e2e/regions.spec.ts`, `FocusContext.test.ts`, `app.test.ts` |
 | image — region | **e2e (web)** | `e2e/regions.spec.ts` |
 | native file (code/word) | routing invariant **e2e (web)** | `e2e/regions.spec.ts` (image uses ImageReader, never the native iframe) |
@@ -187,6 +189,8 @@ direction is covered by the screenshot above. We never fake a passing assertion.
 ### Gate (this change)
 
 `npx tsc --noEmit` clean · `npm test` (vitest) **198** green · `npx playwright test
---config=playwright.config.ts` **5** green · `npx playwright test
---config=playwright.electron.config.ts` **5** green (incl. the local-HTML highlight
-SCREENSHOT). The web e2e vault is wiped before each run by `e2e/global-setup.ts`.
+--config=playwright.config.ts` **7** green (incl. the PDFViewer **scroll** regression
++ PDF quote + PDF region against the new `.page[data-page-number]`/`.textLayer` DOM) ·
+`npx playwright test --config=playwright.electron.config.ts` **5** green (incl. the
+local-HTML highlight SCREENSHOT). The web e2e vault is wiped before each run by
+`e2e/global-setup.ts`.

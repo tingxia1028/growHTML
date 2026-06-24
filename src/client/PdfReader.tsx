@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ScanLine, TextCursor } from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
+import { EventBus, PDFLinkService, PDFViewer } from "pdfjs-dist/web/pdf_viewer.mjs";
 import workerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 import "pdfjs-dist/web/pdf_viewer.css";
 import { applyHighlight, clearAnnotations, ensureAnnotationLayer } from "./annotationLayer";
@@ -18,24 +19,34 @@ type PdfReaderProps = SurfaceReaderProps & {
 
 const CONTEXT = 32;
 
-// PDF surface adapter — one of the two OVERLAY readers. Renders a PDF with PDF.js
-// (canvas + a selectable text layer) so PDFs can be annotated like HTML:
+// PDF surface adapter — one of the two OVERLAY readers. Renders a PDF with pdf.js's
+// own ready-made `PDFViewer` component (virtualized scrolling + zoom + search + a
+// selectable text layer) so PDFs can be annotated like HTML, while the viewer owns
+// scrolling/paging (the previous hand-rolled eager-render loop had lost its scroll):
 //   READ : select text → AnchorDraft { mode:"quote", kind:"pdf", page, quote, … }
 //          OR rubber-band a region → AnchorDraft { mode:"region", kind:"pdf", rect }.
 //   WRITE: paint pdf_selection anchors from the `anchors` prop — a text highlight
 //          (match the quote in the text layer) or, when the anchor carries a rect,
 //          a region box. Both hook the shared note card via applyHighlight.
-// The selection→draft mapping and box-draw used to live in App; they're here now,
-// so the host drives this reader with the same anchors/onSelect contract as the
-// DOM and webview surfaces.
+//
+// PDFViewer VIRTUALIZES pages: a `.page[data-page-number="N"]` (with its `.textLayer`)
+// only exists in the DOM once that page has scrolled into view and rendered. So we
+// (re)paint anchors on every `pagerendered`, after `scalechanging` (zoom re-lays-out
+// the text layer), and whenever the `anchors` prop changes — painting only onto the
+// pages currently present; pages repaint themselves as they render.
 export function PdfReader({ fileUrl, sourceId, anchors, onSelect }: PdfReaderProps) {
+  // The outer scroll root PDFViewer drives (must be absolutely positioned — PDFViewer
+  // asserts this) and the inner `.pdfViewer` it fills with pages.
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const viewerElRef = useRef<HTMLDivElement | null>(null);
+  const viewerRef = useRef<PDFViewer | null>(null);
+
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
   const sourceIdRef = useRef(sourceId);
   sourceIdRef.current = sourceId;
   // Only the pdf_selection anchors are ours to paint; keep the live subset in a ref
-  // so the once-bound render loop / repaint effect always see the latest.
+  // so the event-driven repaint handlers always see the latest.
   const anchorsRef = useRef(anchorsOfKind(anchors, "pdf_selection"));
   anchorsRef.current = anchorsOfKind(anchors, "pdf_selection");
 
@@ -45,18 +56,22 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect }: PdfReaderPro
   const regionModeRef = useRef(regionMode);
   regionModeRef.current = regionMode;
 
+  // Paint every pdf_selection anchor onto whichever pages are CURRENTLY rendered.
+  // Idempotent: it first clears its own marks so repaints (page render, zoom, anchor
+  // change) don't stack. Pages not yet virtualized in get painted when they render.
   function highlightAnchors() {
-    const container = containerRef.current;
-    if (!container) return;
+    const viewerEl = viewerElRef.current;
+    if (!viewerEl) return;
     ensureAnnotationLayer(document);
-    container.querySelectorAll(".pdf-anchor-hit").forEach((el) => el.classList.remove("pdf-anchor-hit"));
-    container.querySelectorAll(".pdf-region-box").forEach((el) => el.remove());
-    clearAnnotations(container);
+    viewerEl.querySelectorAll(".pdf-anchor-hit").forEach((el) => el.classList.remove("pdf-anchor-hit"));
+    viewerEl.querySelectorAll(".pdf-region-box").forEach((el) => el.remove());
+    clearAnnotations(viewerEl);
     for (const anchor of anchorsRef.current) {
-      const pageEl = container.querySelector(`.pdf-page[data-page="${anchor.page}"]`) as HTMLElement | null;
-      if (!pageEl) continue;
+      const pageEl = viewerEl.querySelector(`.page[data-page-number="${anchor.page}"]`) as HTMLElement | null;
+      if (!pageEl) continue; // page not rendered yet — repainted on its pagerendered
 
       // Region anchor: draw a box at its normalized rect (no text to highlight).
+      // Normalized 0..1 coords survive zoom because the box is sized in percentages.
       if (anchor.rect) {
         const box = document.createElement("div");
         box.className = "pdf-region-box";
@@ -79,44 +94,44 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect }: PdfReaderPro
     }
   }
 
+  // Build the PDFViewer once per document, wire its events, and bind the
+  // selection / region gestures onto the scroll root.
   useEffect(() => {
-    let cancelled = false;
     const container = containerRef.current;
-    if (!container || !fileUrl) return;
-    container.innerHTML = "";
+    const viewerEl = viewerElRef.current;
+    if (!container || !viewerEl || !fileUrl) return;
 
-    void (async () => {
-      const pdf = await pdfjsLib.getDocument({ url: fileUrl }).promise;
-      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
+    const eventBus = new EventBus();
+    const linkService = new PDFLinkService({ eventBus });
+    const viewer = new PDFViewer({ container, viewer: viewerEl, eventBus, linkService });
+    linkService.setViewer(viewer);
+    viewerRef.current = viewer;
+
+    // Fit the page width once the viewer knows the page geometry, so it scrolls.
+    eventBus.on("pagesinit", () => {
+      viewer.currentScaleValue = "page-width";
+    });
+    // Pages are virtualized — (re)paint anchors as each page renders, and after a
+    // zoom re-lays-out the text layer. Both fire often; highlightAnchors is idempotent.
+    eventBus.on("pagerendered", () => highlightAnchors());
+    eventBus.on("scalechanging", () => highlightAnchors());
+
+    const loadingTask = pdfjsLib.getDocument({ url: fileUrl });
+    let cancelled = false;
+    loadingTask.promise.then(
+      (pdf) => {
         if (cancelled) return;
-        const page = await pdf.getPage(pageNum);
-        const viewport = page.getViewport({ scale: 1.3 });
-
-        const pageDiv = document.createElement("div");
-        pageDiv.className = "pdf-page";
-        pageDiv.dataset.page = String(pageNum);
-        pageDiv.style.width = `${viewport.width}px`;
-        pageDiv.style.height = `${viewport.height}px`;
-
-        const canvas = document.createElement("canvas");
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        const context = canvas.getContext("2d");
-        pageDiv.appendChild(canvas);
-
-        const textLayerDiv = document.createElement("div");
-        textLayerDiv.className = "textLayer";
-        pageDiv.appendChild(textLayerDiv);
-        container.appendChild(pageDiv);
-
-        if (context) await page.render({ canvasContext: context, viewport, canvas }).promise;
-        const textContent = await page.getTextContent();
-        const textLayer = new pdfjsLib.TextLayer({ textContentSource: textContent, container: textLayerDiv, viewport });
-        await textLayer.render();
+        viewer.setDocument(pdf);
+        linkService.setDocument(pdf, null);
+      },
+      () => {
+        /* load error — leave the viewer empty */
       }
-      if (!cancelled) highlightAnchors();
-    })();
+    );
 
+    // —— Text selection → quote draft ——
+    // Read the live selection, find the enclosing rendered page, and emit a quote
+    // draft with surrounding context taken from that page's text layer.
     const onMouseUp = () => {
       if (regionModeRef.current) return; // region mode handles its own gesture
       const selection = window.getSelection();
@@ -129,9 +144,10 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect }: PdfReaderPro
         range.startContainer.nodeType === Node.ELEMENT_NODE
           ? (range.startContainer as Element)
           : range.startContainer.parentElement;
-      const pageEl = startEl?.closest(".pdf-page") as HTMLElement | null;
-      const page = pageEl ? Number(pageEl.dataset.page) : 1;
-      const pageText = (pageEl?.querySelector(".textLayer")?.textContent ?? "").replace(/\s+/g, " ");
+      const pageEl = startEl?.closest(".page") as HTMLElement | null;
+      if (!pageEl || !viewerEl.contains(pageEl)) return; // selection outside the viewer
+      const page = Number(pageEl.dataset.pageNumber) || 1;
+      const pageText = (pageEl.querySelector(".textLayer")?.textContent ?? "").replace(/\s+/g, " ");
       const index = pageText.indexOf(exact);
       const prefix = index >= 0 ? pageText.slice(Math.max(0, index - CONTEXT), index) : "";
       const suffix = index >= 0 ? pageText.slice(index + exact.length, index + exact.length + CONTEXT) : "";
@@ -150,8 +166,9 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect }: PdfReaderPro
     container.addEventListener("mouseup", onMouseUp);
 
     // —— Region (rubber-band) gesture ——
-    // While in region mode, dragging on a page draws a marquee; on release the
-    // normalized rect (0..1 within that page) + page number become a region draft.
+    // While in region mode, dragging on a rendered page draws a marquee; on release
+    // the normalized rect (0..1 within that page) + page number become a region draft.
+    // Rect is normalized to the page box so it stays correct across zoom.
     let dragPage: HTMLElement | null = null;
     let startX = 0;
     let startY = 0;
@@ -160,8 +177,8 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect }: PdfReaderPro
     const onMouseDown = (event: MouseEvent) => {
       if (!regionModeRef.current || event.button !== 0) return;
       const target = event.target as Element | null;
-      const pageEl = target?.closest(".pdf-page") as HTMLElement | null;
-      if (!pageEl) return;
+      const pageEl = target?.closest(".page") as HTMLElement | null;
+      if (!pageEl || !viewerEl.contains(pageEl)) return;
       event.preventDefault();
       dragPage = pageEl;
       const rect = pageEl.getBoundingClientRect();
@@ -195,7 +212,7 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect }: PdfReaderPro
       marquee = null;
       dragPage = null;
       if (!isRealRegion(rect, start, current)) return; // ignore stray clicks
-      const page = Number(pageEl.dataset.page) || 1;
+      const page = Number(pageEl.dataset.pageNumber) || 1;
       const draft: AnchorDraft = {
         mode: "region",
         sourceId: sourceIdRef.current,
@@ -212,13 +229,20 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect }: PdfReaderPro
 
     return () => {
       cancelled = true;
+      loadingTask.destroy().catch(() => {});
       container.removeEventListener("mouseup", onMouseUp);
       container.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", finishDrag);
+      viewer.cleanup();
+      // Release the document (runtime accepts null to clear; the .d.ts omits it).
+      viewer.setDocument(null as unknown as Parameters<typeof viewer.setDocument>[0]);
+      linkService.setDocument(null);
+      viewerRef.current = null;
     };
   }, [fileUrl]);
 
+  // Repaint when the anchors prop changes (the per-page handlers cover virtualization).
   useEffect(() => {
     highlightAnchors();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -246,10 +270,14 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect }: PdfReaderPro
           Region
         </button>
       </div>
-      <div
-        ref={containerRef}
-        className={`pdf-reader-canvas${regionMode ? " region-mode" : ""}`}
-      />
+      {/* PDFViewer requires its scroll container to be absolutely positioned, so it
+          fills this relatively-positioned viewport. The inner `.pdfViewer` is the
+          element PDFViewer appends `.page`s into. */}
+      <div className="pdf-reader-viewport">
+        <div ref={containerRef} className={`pdf-reader-canvas${regionMode ? " region-mode" : ""}`}>
+          <div ref={viewerElRef} className="pdfViewer" />
+        </div>
+      </div>
     </div>
   );
 }

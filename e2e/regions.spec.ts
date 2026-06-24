@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext, type Locator } from "@playwright/test";
-import { makeTextPdf } from "./fixtures/pdf";
+import { makeTextPdf, makeMultiPageTextPdf } from "./fixtures/pdf";
 import { makeGradientPng } from "./fixtures/image";
 
 // Region (geometric) anchoring against the REAL running app, web mode. Covers the
@@ -49,13 +49,77 @@ async function saveNote(page: import("@playwright/test").Page, text: string) {
   await expect(page.locator(".note-list")).toContainText(text);
 }
 
+// THE SCROLL REGRESSION. The previous hand-rolled pdf.js renderer lost its scroll
+// wheel; the fix swaps in pdf.js's own virtualized PDFViewer. Seed a tall multi-page
+// PDF, scroll the viewer's scroll container, and assert (a) scrollTop actually moved
+// AND (b) a later page (page 2) gets rendered/visible by the virtualizer — i.e. the
+// scroll root really scrolls and pages page in.
+test("pdf scroll: the PDFViewer scroll container scrolls and pages later content in", async ({ page, request }) => {
+  // Many pages → the scroll container is taller than the viewport, so it must scroll.
+  const texts = Array.from({ length: 8 }, (_, i) => `Scroll regression page ${i + 1} content line.`);
+  const data = makeMultiPageTextPdf(texts).toString("base64");
+  const res = await request.post(`${SERVER}/api/sources/pdf`, {
+    data: { title: `Scroll PDF ${Date.now()}`, dataBase64: data }
+  });
+  expect(res.ok(), `seed pdf failed: ${res.status()}`).toBeTruthy();
+  const source = (await res.json()).source as { id: string };
+
+  await page.goto("/");
+  await page.locator(".source-item-open").filter({ hasText: source.id }).click();
+
+  // Page 1 renders first.
+  const scroller = page.locator(".pdf-reader-canvas");
+  await expect(page.locator('.pdfViewer .page[data-page-number="1"]')).toBeVisible({ timeout: 20_000 });
+
+  // The scroll container is overflowing (content taller than the box).
+  const overflow = await scroller.evaluate((el) => el.scrollHeight - el.clientHeight);
+  expect(overflow, "PDF content should overflow the scroll container").toBeGreaterThan(50);
+
+  // Scroll the container down and assert scrollTop actually advanced.
+  const before = await scroller.evaluate((el) => el.scrollTop);
+  await scroller.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+  await expect.poll(async () => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(before);
+
+  // The virtualizer pages later content in: page 2 (or beyond) becomes rendered.
+  await expect(page.locator('.pdfViewer .page[data-page-number="2"]')).toBeVisible({ timeout: 20_000 });
+});
+
+// PDF TEXT selection → quote draft (read direction), against the new PDFViewer text
+// layer. Selecting text in page 1's .textLayer must surface a text quote in the chip.
+test("pdf quote: selecting text in the PDFViewer text layer → quote source chip", async ({ page, request }) => {
+  const source = await seedPdf(request, `Quote PDF ${Date.now()}`);
+  await page.goto("/");
+  await page.locator(".source-item-open").filter({ hasText: source.id }).click();
+
+  // Wait for the text layer to render some selectable spans on page 1.
+  const textLayer = page.locator('.pdfViewer .page[data-page-number="1"] .textLayer');
+  await expect(textLayer).toBeVisible({ timeout: 20_000 });
+  await expect.poll(async () => textLayer.locator("span").count(), { timeout: 20_000 }).toBeGreaterThan(0);
+
+  // Select all the text in the page's text layer (a real DOM Selection), then fire
+  // mouseup so the reader reads the selection and emits a quote draft.
+  await textLayer.evaluate((layer) => {
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    const range = document.createRange();
+    range.selectNodeContents(layer);
+    sel?.addRange(range);
+    layer.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  });
+
+  // The source chip shows the selected quote text (not "Region selected").
+  const chip = page.locator(".chat-source .chat-source-quote");
+  await expect(chip).toBeVisible();
+  await expect(chip).toContainText("Region figure self-test", { timeout: 10_000 });
+});
+
 test("pdf region: rubber-band a figure → pdf_selection anchor with rect + region box", async ({ page, request }) => {
   const source = await seedPdf(request, `Region PDF ${Date.now()}`);
   await page.goto("/");
   await page.locator(".source-item-open").filter({ hasText: source.id }).click();
 
-  // Wait for PDF.js to render a page in the host canvas.
-  const pageEl = page.locator(".pdf-page").first();
+  // Wait for PDFViewer to render a page in the host canvas.
+  const pageEl = page.locator('.pdfViewer .page[data-page-number="1"]').first();
   await expect(pageEl).toBeVisible({ timeout: 20_000 });
 
   // Switch to Region mode and rubber-band a rectangle over the page.
