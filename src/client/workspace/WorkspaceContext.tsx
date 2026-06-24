@@ -28,6 +28,7 @@ import {
   type SourceRecord
 } from "../data/entityClient";
 import { useFocus, draftQuoteText, type FocusContextValue } from "../focus/FocusContext";
+import { createDefaultContent, isTextContentType } from "../notes/noteTypeRegistry";
 import { getSourceViewer, type SourceViewer } from "../viewers";
 import { getCommand, runCommand, type CommandContext } from "../commands/registry";
 import type { PaintAnchor } from "../surfaces/types";
@@ -96,6 +97,11 @@ export type WorkspaceContextValue = {
   setComposerMode(mode: "ask" | "note"): void;
   noteContentType: string;
   setNoteContentType(type: string): void;
+  /** Structured note draft for object content types (flashcard/quiz/image/…). */
+  noteContent: unknown;
+  setNoteContent(content: unknown): void;
+  /** Save the structured `noteContent` as a note (object content types). */
+  submitNoteContent(): void;
   chatInput: string;
   setChatInput(text: string): void;
   patchHtml: string;
@@ -138,6 +144,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [notes, setNotes] = useState<NoteRecord[]>([]);
   const [patches, setPatches] = useState<PatchRecord[]>([]);
   const [noteContentType, setNoteContentType] = useState<string>("markdown");
+  // Structured draft for OBJECT content types (flashcard/quiz/image/…). Seeded from
+  // the type's core `createDefault()` whenever the type changes; string types ignore
+  // it (they author through the shared text textarea). Initialized lazily so a
+  // string default doesn't seed it.
+  const [noteContent, setNoteContent] = useState<unknown>(undefined);
   const [composerMode, setComposerMode] = useState<"ask" | "note">("ask");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
@@ -475,6 +486,23 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     void dispatch(composerCommandId, { text, contentType: noteContentType });
   }, [composerDisabled, chatInput, dispatch, composerCommandId, noteContentType]);
 
+  // Switching the note type re-seeds the structured draft from the NEW type's core
+  // default (object types only; string types author through the text textarea and
+  // leave the draft undefined). Keeps the editor showing a valid blank value.
+  const changeNoteContentType = useCallback((type: string) => {
+    setNoteContentType(type);
+    setNoteContent(isTextContentType(type) ? undefined : createDefaultContent(type));
+  }, []);
+
+  // Save the structured draft as a note (object content types). Sends the `content`
+  // object verbatim — the plugin's editor already shaped it; the server re-validates
+  // it against the core spec. After save, re-seed a fresh blank draft of the type.
+  const submitNoteContent = useCallback(() => {
+    void dispatch("anchor.add-note", { content: noteContent, contentType: noteContentType }).then(() =>
+      setNoteContent(createDefaultContent(noteContentType))
+    );
+  }, [dispatch, noteContent, noteContentType]);
+
   // The chip / patch text uses the focused passage's quote — empty for region
   // drafts (a region has no text, but the chip still shows a "Region selected" hint
   // below so the user knows there IS a focus).
@@ -514,7 +542,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       composerMode,
       setComposerMode,
       noteContentType,
-      setNoteContentType,
+      setNoteContentType: changeNoteContentType,
+      noteContent,
+      setNoteContent,
+      submitNoteContent,
       chatInput,
       setChatInput,
       patchHtml,
@@ -560,6 +591,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       chatMessages,
       composerMode,
       noteContentType,
+      changeNoteContentType,
+      noteContent,
+      submitNoteContent,
       chatInput,
       patchHtml,
       showTerminal,

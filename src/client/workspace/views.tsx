@@ -24,18 +24,31 @@ import {
   X
 } from "lucide-react";
 import { renderNoteContent } from "../../adapters/notes/render";
-import { isDiagramType } from "../../adapters/notes/diagrams";
-import { DiagramNote } from "../DiagramNote";
 import { TerminalPanel } from "../TerminalPanel";
 import { FileTree, baseName } from "../FileTree";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
-import { noteText } from "./WorkspaceContext";
 import { readerForSource } from "./readerForSource";
+import {
+  getNoteType,
+  isTextContentType,
+  listNoteTypes
+} from "../notes/noteTypeRegistry";
+// Side-effect import: registers the 12 built-in client NoteType plugins so the note
+// list + composer can render/edit every content type through the registry.
+import { InertNote } from "../notes/builtinNoteTypes";
 
-// Composer note types are limited to string-content types for now. Structured
-// types (mindmap/flashcard/quiz) get dedicated editors in the NoteType plugins
-// phase; until then their content can't be authored as free text.
-const NOTE_CONTENT_TYPES = ["markdown", "mermaid", "markmap"] as const;
+// The composer's note-type picker lists EVERY registered client NoteType, sorted so
+// markdown leads (it stays the default — the existing composer e2e types a markdown
+// note). Adding a type = registering a plugin; this list follows automatically.
+function noteTypeOptions(): { contentType: string; label: string }[] {
+  const all = listNoteTypes().map((plugin) => ({
+    contentType: plugin.contentType,
+    label: plugin.label ?? plugin.contentType
+  }));
+  return all.sort((a, b) =>
+    a.contentType === "markdown" ? -1 : b.contentType === "markdown" ? 1 : a.contentType.localeCompare(b.contentType)
+  );
+}
 
 // —— library → the `.library-panel` aside (sources list, Open file/folder, URL import).
 function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
@@ -210,6 +223,9 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
     submitComposer,
     noteContentType,
     setNoteContentType,
+    noteContent,
+    setNoteContent,
+    submitNoteContent,
     composerDisabled,
     notes,
     patchHtml,
@@ -288,19 +304,29 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
         </div>
 
         {/* One composer: toggle whether the text is sent to the AI or saved as a
-            note. Enter submits the current mode; Shift+Enter inserts a newline. */}
-        <textarea
-          className="composer-input"
-          value={chatInput}
-          placeholder={composerMode === "ask" ? "Ask the AI about this passage…" : "Write a note about this passage…"}
-          onChange={(event) => setChatInput(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              submitComposer();
-            }
-          }}
-        />
+            note. Enter submits the current mode; Shift+Enter inserts a newline.
+            STRING note types (markdown/plain-text/mermaid/markmap) and "ask" author
+            through this shared textarea — this is the path the existing e2e drive.
+            OBJECT note types (flashcard/quiz/image/…) hide it and render the chosen
+            type's structured `edit()` editor below instead. */}
+        {composerMode === "ask" || isTextContentType(noteContentType) ? (
+          <textarea
+            className="composer-input"
+            value={chatInput}
+            placeholder={composerMode === "ask" ? "Ask the AI about this passage…" : "Write a note about this passage…"}
+            onChange={(event) => setChatInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                submitComposer();
+              }
+            }}
+          />
+        ) : (
+          <div className="composer-note-editor">
+            {getNoteType(noteContentType)?.edit({ content: noteContent, onChange: setNoteContent }) ?? null}
+          </div>
+        )}
         <div className="composer-actions">
           <div className="composer-mode" role="tablist" aria-label="Composer mode">
             <button
@@ -326,41 +352,55 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
               value={noteContentType}
               onChange={(event) => setNoteContentType(event.target.value)}
             >
-              {NOTE_CONTENT_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {type}
+              {noteTypeOptions().map((option) => (
+                <option key={option.contentType} value={option.contentType}>
+                  {option.label}
                 </option>
               ))}
             </select>
           ) : null}
-          <button
-            className="icon-button primary composer-submit"
-            type="button"
-            onClick={submitComposer}
-            disabled={composerDisabled}
-            title={composerMode === "ask" ? "Send to AI (Enter)" : "Save note (Enter)"}
-          >
-            {composerMode === "ask" ? <Send size={16} /> : <NotebookPen size={16} />}
-            {composerMode === "ask" ? "Send" : "Save Note"}
-          </button>
+          {/* Save routes by content shape: STRING types submit the textarea via
+              submitComposer (the existing path, gated by composerDisabled); OBJECT
+              types submit the structured draft via submitNoteContent (always
+              enabled — the editor seeds a valid blank value). */}
+          {composerMode === "note" && !isTextContentType(noteContentType) ? (
+            <button
+              className="icon-button primary composer-submit"
+              type="button"
+              onClick={submitNoteContent}
+              title="Save note"
+            >
+              <NotebookPen size={16} />
+              Save Note
+            </button>
+          ) : (
+            <button
+              className="icon-button primary composer-submit"
+              type="button"
+              onClick={submitComposer}
+              disabled={composerDisabled}
+              title={composerMode === "ask" ? "Send to AI (Enter)" : "Save note (Enter)"}
+            >
+              {composerMode === "ask" ? <Send size={16} /> : <NotebookPen size={16} />}
+              {composerMode === "ask" ? "Send" : "Save Note"}
+            </button>
+          )}
         </div>
 
         {notes.length ? (
           <div className="record-list note-list">
             {notes.map((note) => {
               const contentType = note.contentType ?? "markdown";
-              const text = noteText(note.content);
+              // Each note renders through its registered client NoteType plugin
+              // (content decoupled from renderer). An UNKNOWN type (no plugin) falls
+              // back to inert, escaped text so a foreign note can't crash the list.
+              const plugin = getNoteType(contentType);
               return (
                 <article key={note.id} className="record-card">
                   <strong>{contentType}</strong>
-                  {isDiagramType(contentType) ? (
-                    <DiagramNote contentType={contentType} content={text} />
-                  ) : (
-                    <div
-                      className="note-rendered"
-                      dangerouslySetInnerHTML={{ __html: renderNoteContent(contentType, text).html }}
-                    />
-                  )}
+                  {plugin
+                    ? plugin.render({ content: note.content, note })
+                    : <InertNote content={note.content} />}
                 </article>
               );
             })}

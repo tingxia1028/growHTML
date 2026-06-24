@@ -630,6 +630,124 @@ button {
   color: #4a4f48;
 }
 
+/* —— Structured note editors (composer) + renderers (note list) ———————————— */
+.composer-note-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.note-edit-field,
+.note-edit-text {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #d8d2c6;
+  border-radius: 6px;
+  background: #ffffff;
+  font: inherit;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.note-edit-text {
+  min-height: 64px;
+  resize: vertical;
+}
+
+.note-edit-flashcard,
+.note-edit-quiz,
+.note-edit-code,
+.note-edit-media {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.quiz-option-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.quiz-option-row .note-edit-field {
+  flex: 1 1 auto;
+}
+
+.quiz-add-option {
+  align-self: flex-start;
+}
+
+.media-chosen {
+  color: #66756a;
+  word-break: break-all;
+}
+
+/* Quiz render — question, options (the answer marked), optional explanation. */
+.sv-quiz-question {
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.sv-quiz-options {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.sv-quiz-answer {
+  font-weight: 700;
+  color: #2f7d54;
+}
+
+.sv-quiz-explanation {
+  margin-top: 4px;
+  color: #66756a;
+  font-style: italic;
+}
+
+/* Code-snippet render. */
+.sv-code-pre {
+  margin: 0;
+  padding: 8px;
+  background: #1f2622;
+  color: #e6e3da;
+  border-radius: 6px;
+  overflow: auto;
+  font-size: 12.5px;
+}
+
+/* Media render — image/audio/video + caption. */
+.sv-media-img,
+.sv-media-video {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+.sv-media-audio {
+  width: 100%;
+}
+
+.sv-media-caption {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #66756a;
+}
+
+.sv-media-empty {
+  color: #8a8f88;
+  font-style: italic;
+}
+
+/* html-sandbox render — isolated, scriptless iframe. */
+.sv-sandbox-frame {
+  width: 100%;
+  min-height: 120px;
+  border: 1px solid #e2dccd;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
 .chat-source {
   display: flex;
   align-items: center;

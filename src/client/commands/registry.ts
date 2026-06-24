@@ -39,6 +39,13 @@ export type CommandContext = {
   payload: {
     text?: string;
     contentType?: string;
+    /**
+     * Structured note content (object) for non-text note types (flashcard, quiz,
+     * image, …). When present it is the note's content verbatim and takes
+     * precedence over `text` (which is the markdown/plain-text path). The core spec
+     * for `contentType` has already validated it client-side before dispatch.
+     */
+    content?: unknown;
     newContent?: string;
     oldText?: string;
     // —— concept / relation ——
@@ -90,16 +97,25 @@ const askAi: Command = {
   }
 };
 
+// True when the payload carries note content — either non-empty text (the
+// markdown/plain-text path) or a defined structured `content` object (flashcard,
+// quiz, image, …). Structured editors always supply `content`, even when "empty"
+// (e.g. a blank flashcard), so its mere presence is what enables Save.
+const hasNoteContent = (payload: CommandContext["payload"]): boolean =>
+  payload.content !== undefined || !!payload.text?.trim();
+
 const addNote: Command = {
   id: "anchor.add-note",
   title: "Add Note",
   group: "anchor",
   // A note can be anchored or standalone, so a source OR a focus is enough.
   isAvailable: (ctx) =>
-    !!ctx.payload.text?.trim() && (!!ctx.sourceId || !!ctx.focus.anchor || !!ctx.focus.draft),
+    hasNoteContent(ctx.payload) && (!!ctx.sourceId || !!ctx.focus.anchor || !!ctx.focus.draft),
   run: async (ctx) => {
-    const text = ctx.payload.text?.trim();
-    if (!text) return;
+    if (!hasNoteContent(ctx.payload)) return;
+    // Structured content (object) wins; otherwise the note is the trimmed text.
+    const content = ctx.payload.content !== undefined ? ctx.payload.content : ctx.payload.text?.trim();
+    if (content === undefined) return;
     // Materialize the current selection into an anchor if there is one (else save
     // the note unanchored).
     const anchor = await ctx.focus.materializeAnchor();
@@ -107,7 +123,7 @@ const addNote: Command = {
       sourceId: ctx.sourceId,
       anchorIds: anchor ? [anchor.id] : [],
       contentType: ctx.payload.contentType ?? "markdown",
-      content: text
+      content
     });
     ctx.actions.onNoteCreated?.(note);
   }
