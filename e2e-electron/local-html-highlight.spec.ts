@@ -331,46 +331,7 @@ test("local HTML: a saved note paints a VISIBLE highlight inside the webview (pi
     `[local-html highlight] yellow before=${yellowBefore} after=${yellowAfter}; changed px in passage=${changed}`
   );
 
-  // 4) Hover note-card (BEST EFFORT). Mouse events DO route into the webview, so
-  //    hovering the highlighted text should surface the shared floating note card
-  //    (#sv-note-card) just below the line. Card timing can be flaky across Electron
-  //    versions, so we LOG the outcome and don't fail the suite on it — the highlight
-  //    assertions above are the must-pass coverage, and the card's hover/show logic
-  //    is unit-covered in src/client/annotationDom.test.ts. We detect the card by a
-  //    before/after pixel diff in the band BELOW the highlighted line (the card opens
-  //    there), which is robust without hand-tuning a panel color.
-  try {
-    // The card opens at/just below the highlighted line; sample a tall band starting
-    // at the line so we catch it whether it overlaps or sits under the text.
-    const cardRect = toDevice({
-      x: region.x,
-      y: region.y + 40,
-      width: region.width,
-      height: Math.min(260, region.height - 40)
-    });
-    const preHover = decode(await page.screenshot());
-    // Drive the host mouse onto the highlighted text. mouse.move with steps emits
-    // intermediate moves so the guest's mouseover fires; coords are CSS px.
-    await page.mouse.move(region.x + 5, region.y + 5);
-    await page.mouse.move(region.x + region.width / 2, region.y + 54, { steps: 8 });
-    let cardDiff = 0;
-    const cardAppeared = await expect
-      .poll(
-        async () => {
-          const shot = decode(await page.screenshot());
-          cardDiff = diffPixelsInRect(preHover, shot, cardRect);
-          return cardDiff;
-        },
-        { timeout: 4000 }
-      )
-      // The card is a sizeable panel; its appearance changes many pixels in the band.
-      .toBeGreaterThan(500)
-      .then(() => true)
-      .catch(() => false);
-    // eslint-disable-next-line no-console
-    console.log(`[local-html highlight] hover note-card observable: ${cardAppeared} (diff px in band=${cardDiff})`);
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.log(`[local-html highlight] hover note-card check skipped: ${(err as Error).message}`);
-  }
+  // The hover note-card is verified deterministically (mouseover dispatched inside
+  // the guest + #sv-note-card DOM readback) in e2e-electron/viewer-flows.spec.ts;
+  // this spec covers the highlight paint (pixels) above.
 });
