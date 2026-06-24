@@ -174,7 +174,24 @@ function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
 // —— source.viewer → the `.reader-panel` main: header + the active source's reader.
 // The per-surface reader if/else lives in `readerForSource`, not here.
 function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
-  const { activeSource, status, error, paintAnchors, focus, renderedHtml } = ctx;
+  const {
+    activeSource,
+    activeViewer,
+    activeFilePath,
+    status,
+    error,
+    paintAnchors,
+    focus,
+    renderedHtml,
+    annotationMode,
+    setAnnotationMode
+  } = ctx;
+
+  // The Floating ↔ Margin note toggle is scoped to the DOM-iframe HTML reader —
+  // the one surface the AnnotationRenderer registry paints into (decorateAnnotations).
+  // That's exactly the imported-HTML pipeline that ISN'T a local file (local HTML uses
+  // the webview, which keeps its own painting). Mirrors readerForSource's DomReader gate.
+  const showAnnotToggle = activeViewer.htmlPipeline && !activeFilePath;
 
   return (
     <main className="reader-panel">
@@ -183,7 +200,19 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
           <p>{activeSource?.sourceType ?? "source"}</p>
           <h2>{activeSource?.title ?? "Open or import a source"}</h2>
         </div>
-        <span className={`status-pill status-${status}`}>{status}</span>
+        <div className="reader-header-actions">
+          {showAnnotToggle ? (
+            <button
+              type="button"
+              className="annot-mode-toggle"
+              onClick={() => setAnnotationMode(annotationMode === "margin" ? "floating" : "margin")}
+              title="Toggle how notes are shown: a card on hover, or persistent cards in the side margin"
+            >
+              {annotationMode === "margin" ? "Notes: Margin" : "Notes: Floating"}
+            </button>
+          ) : null}
+          <span className={`status-pill status-${status}`}>{status}</span>
+        </div>
       </header>
 
       {error ? <div className="error-box">{error}</div> : null}
@@ -197,7 +226,8 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
         source: activeSource,
         anchors: paintAnchors,
         onSelect: focus.setDraft,
-        renderedHtml
+        renderedHtml,
+        annotationMode
       })}
     </main>
   );

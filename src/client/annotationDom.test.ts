@@ -4,8 +4,11 @@ import {
   applyHighlight,
   clampGeom,
   clearAnnotations,
+  clearMarginNotes,
   ensureAnnotationLayer,
   highlightQuote,
+  packColumn,
+  paintMarginNotes,
   readCardGeom,
   writeCardGeom
 } from "./annotationLayer";
@@ -108,6 +111,96 @@ describe("card geometry persistence", () => {
     expect(card.style.left).toBe("300px");
     expect(card.style.top).toBe("200px");
     expect(card.style.width).toBe("250px");
+  });
+});
+
+describe("packColumn (marginalia stacking)", () => {
+  it("keeps cards at their desired tops when they don't collide", () => {
+    expect(packColumn([{ top: 0, height: 20 }, { top: 100, height: 20 }], 8, 0)).toEqual([0, 100]);
+  });
+
+  it("pushes overlapping cards down by height + gap, preserving order", () => {
+    expect(packColumn([{ top: 0, height: 20 }, { top: 5, height: 20 }, { top: 10, height: 20 }], 4, 0)).toEqual([
+      0, 24, 48
+    ]);
+  });
+
+  it("respects minTop and handles out-of-order input", () => {
+    // Second item wants top 0 but the column starts at 50.
+    expect(packColumn([{ top: 200, height: 20 }, { top: 0, height: 20 }], 5, 50)).toEqual([200, 50]);
+  });
+
+  it("compacts upward when the column overflows maxBottom", () => {
+    const tops = packColumn([{ top: 90, height: 20 }, { top: 95, height: 20 }], 5, 0, 100);
+    // Both must fit within [0,100]: bottom item ends at 100, top item above it.
+    expect(tops[1] + 20).toBeLessThanOrEqual(100);
+    expect(tops[0] + 20 + 5).toBeLessThanOrEqual(tops[1]);
+  });
+});
+
+describe("paintMarginNotes", () => {
+  it("builds a gutter with one card per item, reserves body space, draws connectors", () => {
+    document.body.innerHTML = '<p id="a">one</p><p id="b">two</p>';
+    paintMarginNotes(document, [
+      { element: document.getElementById("a")!, noteText: "**first**", key: "k1" },
+      { element: document.getElementById("b")!, noteText: "second", key: "k2" }
+    ]);
+    expect(document.body.classList.contains("sv-annot-margin")).toBe(true);
+    const cards = document.querySelectorAll("#sv-margin-layer .sv-margin-note");
+    expect(cards).toHaveLength(2);
+    // Markdown is rendered (not raw): the first note becomes a <strong>.
+    expect(cards[0].querySelector("strong")?.textContent).toBe("first");
+    expect(cards[0].getAttribute("data-sv-key")).toBe("k1");
+    expect(document.querySelectorAll("#sv-margin-connectors path")).toHaveLength(2);
+  });
+
+  it("clearMarginNotes removes the gutter and the reserved padding marker", () => {
+    document.body.innerHTML = '<p id="a">one</p>';
+    paintMarginNotes(document, [{ element: document.getElementById("a")!, noteText: "n", key: "k" }]);
+    clearMarginNotes(document);
+    expect(document.getElementById("sv-margin-layer")).toBeNull();
+    expect(document.getElementById("sv-margin-connectors")).toBeNull();
+    expect(document.body.classList.contains("sv-annot-margin")).toBe(false);
+  });
+
+  it("decorateAnnotations in margin mode lays notes into the gutter", () => {
+    // Our decorateAnnotations takes mode in the context (the React layer threads it),
+    // rather than module-level state; the WorkspaceContext owns the persisted mode.
+    document.body.innerHTML = '<p data-study-id="s1">Hello world</p>';
+    decorateAnnotations(document, {
+      anchors: [{ id: "a1", anchorKind: "html_selection", studyId: "s1", quote: "Hello world" }],
+      notes: [{ anchorIds: ["a1"], content: "margin note" }],
+      mode: "margin"
+    });
+    expect(document.querySelector("#sv-margin-layer .sv-margin-note")?.textContent).toContain("margin note");
+    // The element is still highlighted inline so the reader sees what's annotated.
+    expect(document.querySelector('[data-study-id="s1"]')?.classList.contains("sv-annotated")).toBe(true);
+  });
+
+  it("repaints idempotently: re-decorating margin mode keeps a single gutter", () => {
+    document.body.innerHTML = '<p data-study-id="s1">Hello world</p>';
+    const ctx = {
+      anchors: [{ id: "a1", anchorKind: "html_selection", studyId: "s1", quote: "Hello world" }],
+      notes: [{ anchorIds: ["a1"], content: "margin note" }],
+      mode: "margin" as const
+    };
+    decorateAnnotations(document, ctx);
+    decorateAnnotations(document, ctx);
+    expect(document.querySelectorAll("#sv-margin-layer").length).toBe(1);
+    expect(document.querySelectorAll("#sv-margin-layer .sv-margin-note").length).toBe(1);
+  });
+
+  it("toggling margin → floating clears the gutter (default stays floating)", () => {
+    document.body.innerHTML = '<p data-study-id="s1">Hello world</p>';
+    const anchors = [{ id: "a1", anchorKind: "html_selection", studyId: "s1", quote: "Hello world" }];
+    const notes = [{ anchorIds: ["a1"], content: "margin note" }];
+    decorateAnnotations(document, { anchors, notes, mode: "margin" });
+    expect(document.getElementById("sv-margin-layer")).not.toBeNull();
+    // No mode → defaults to floating; the gutter must be gone, highlight remains.
+    decorateAnnotations(document, { anchors, notes });
+    expect(document.getElementById("sv-margin-layer")).toBeNull();
+    expect(document.body.classList.contains("sv-annot-margin")).toBe(false);
+    expect(document.querySelector('[data-study-id="s1"]')?.classList.contains("sv-annotated")).toBe(true);
   });
 });
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { decorateAnnotations } from "../annotations";
+import { decorateAnnotations, type HtmlAnnotationMode } from "../annotations";
 import type { AnchorDraft } from "../focus/FocusContext";
 import { anchorsOfKind, type PaintAnchor, type SurfaceReaderProps } from "./types";
 
@@ -22,6 +22,9 @@ type DomReaderProps = SurfaceReaderProps & {
   srcDoc: string;
   // The active source id — stamped onto emitted drafts.
   sourceId: string;
+  // How notes are presented: "floating" hover card (default) or "margin" gutter.
+  // Threaded from the workspace so the reader-header toggle repaints this surface.
+  mode?: HtmlAnnotationMode;
 };
 
 const CONTEXT = 32;
@@ -32,9 +35,10 @@ const CONTEXT = 32;
 const boundSelectionDocuments = new WeakSet<Document>();
 
 // Translate the host paintAnchors into the AnnotationRenderer registry's shape and
-// paint the html_selection ones onto the reader document (highlight + note card).
-// Exported pure-ish so the paint contract can be unit-tested with a jsdom Document.
-export function paintDomAnchors(doc: Document, anchors: PaintAnchor[]): void {
+// paint the html_selection ones onto the reader document (highlight + note card,
+// or — in "margin" mode — gutter cards). Exported pure-ish so the paint contract
+// can be unit-tested with a jsdom Document.
+export function paintDomAnchors(doc: Document, anchors: PaintAnchor[], mode: HtmlAnnotationMode = "floating"): void {
   const htmlAnchors = anchorsOfKind(anchors, "html_selection");
   decorateAnnotations(doc, {
     // The registry re-keys notes under their anchor id; we synthesize one note per
@@ -47,7 +51,8 @@ export function paintDomAnchors(doc: Document, anchors: PaintAnchor[]): void {
       contextBefore: anchor.contextBefore,
       contextAfter: anchor.contextAfter
     })),
-    notes: htmlAnchors.map((anchor) => ({ anchorIds: [anchor.id], content: anchor.note }))
+    notes: htmlAnchors.map((anchor) => ({ anchorIds: [anchor.id], content: anchor.note })),
+    mode
   });
 }
 
@@ -93,7 +98,7 @@ export function readDomSelection(doc: Document, sourceId: string, event?: Event)
   };
 }
 
-export function DomReader({ srcDoc, sourceId, anchors, onSelect }: DomReaderProps) {
+export function DomReader({ srcDoc, sourceId, anchors, onSelect, mode = "floating" }: DomReaderProps) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   // Keep the latest callback + state in refs so the once-per-document listeners
   // (bound on load) always see current values.
@@ -101,13 +106,15 @@ export function DomReader({ srcDoc, sourceId, anchors, onSelect }: DomReaderProp
   onSelectRef.current = onSelect;
   const sourceIdRef = useRef(sourceId);
   sourceIdRef.current = sourceId;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   // Bind selection capture + paint when the iframe document is ready. Called from
   // onLoad (fresh document) and re-runnable for the initial paint.
   function bindFrame() {
     const doc = frameRef.current?.contentDocument;
     if (!doc) return;
-    paintDomAnchors(doc, anchors);
+    paintDomAnchors(doc, anchors, modeRef.current);
     if (boundSelectionDocuments.has(doc)) return;
 
     const onSelection = (event?: Event) => {
@@ -121,12 +128,13 @@ export function DomReader({ srcDoc, sourceId, anchors, onSelect }: DomReaderProp
     doc.addEventListener("keyup", onSelection);
   }
 
-  // Re-paint whenever the anchor set or the document changes.
+  // Re-paint whenever the anchor set, the document, or the note-presentation mode
+  // changes — so toggling Floating ↔ Margin re-decorates this surface immediately.
   useEffect(() => {
     const doc = frameRef.current?.contentDocument;
-    if (doc) paintDomAnchors(doc, anchors);
+    if (doc) paintDomAnchors(doc, anchors, mode);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [anchors, srcDoc]);
+  }, [anchors, srcDoc, mode]);
 
   return <iframe ref={frameRef} title="Source reader" srcDoc={srcDoc} onLoad={bindFrame} />;
 }

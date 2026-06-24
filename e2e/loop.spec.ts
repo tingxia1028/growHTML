@@ -75,6 +75,52 @@ test("no-AI study loop: select → note → patch → apply → revert → persi
   await expect(reader.locator(".sv-annotated").first()).toBeVisible();
 });
 
+test("marginalia: toggle Notes Floating ↔ Margin lays the note card in the gutter", async ({ page, request }) => {
+  const title = `E2E Margin ${Date.now()}`;
+  const body = "<article><p>A marginalia passage about the render loop and study notes.</p></article>";
+  const noteText = "This note lives in the gutter.";
+
+  await seedHtmlSource(request, title, body);
+  await page.goto("/");
+  await page.locator(".source-item-open", { hasText: title }).click();
+  await expect(page.locator(".reader-header h2")).toHaveText(title);
+
+  // Select a passage → save a note, so a highlight + note exist to lay out.
+  const reader = page.frameLocator(READER);
+  await reader.getByText("marginalia passage", { exact: false }).click();
+  await expect(page.locator(".chat-source")).toContainText("marginalia passage");
+  await page.locator(".mode-tab", { hasText: "Note" }).click();
+  await page.locator(".composer-input").fill(noteText);
+  await page.getByRole("button", { name: "Save Note" }).click();
+  await expect(page.locator(".note-list")).toContainText(noteText);
+
+  // Default is Floating: the toggle says so, and there's no gutter in the reader.
+  const toggle = page.locator(".annot-mode-toggle");
+  await expect(toggle).toHaveText("Notes: Floating");
+  await expect(reader.locator("#sv-margin-layer")).toHaveCount(0);
+
+  // Switch to Margin → a persistent card with the note text appears in the gutter,
+  // a dashed leader connects it to the anchor, and the body reserves right padding.
+  await toggle.click();
+  await expect(toggle).toHaveText("Notes: Margin");
+  const marginCard = reader.locator("#sv-margin-layer .sv-margin-note").first();
+  await expect(marginCard).toBeVisible();
+  await expect(marginCard).toContainText("This note lives in the gutter");
+  await expect(reader.locator("#sv-margin-connectors path")).toHaveCount(1);
+  await expect(reader.locator("body.sv-annot-margin")).toHaveCount(1);
+
+  // Toggle back to Floating → the gutter cards are gone; the inline highlight stays
+  // and the floating hover card still works (hover shows it).
+  await toggle.click();
+  await expect(toggle).toHaveText("Notes: Floating");
+  await expect(reader.locator("#sv-margin-layer")).toHaveCount(0);
+  await expect(reader.locator("body.sv-annot-margin")).toHaveCount(0);
+  const annotated = reader.locator(".sv-annotated").first();
+  await expect(annotated).toBeVisible();
+  await annotated.hover();
+  await expect(reader.locator("#sv-note-card.sv-note-card-show")).toBeVisible();
+});
+
 test("AI chat: ask about a passage → reply → save reply as a note", async ({ page, request }) => {
   const title = `E2E AI ${Date.now()}`;
   const body = "<article><p>A passage about render threads and study notes.</p></article>";

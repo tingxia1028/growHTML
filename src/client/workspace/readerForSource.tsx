@@ -14,6 +14,7 @@ import type { ReactNode } from "react";
 import type { AnchorDraft } from "../focus/FocusContext";
 import type { PaintAnchor } from "../surfaces/types";
 import type { SourceRecord } from "../data/entityClient";
+import type { HtmlAnnotationMode } from "../annotations";
 import { getSourceViewer } from "../viewers";
 import { WebviewReader } from "../WebviewReader";
 import { PdfReader } from "../PdfReader";
@@ -40,12 +41,14 @@ export type ReaderArgs = {
   onSelect: (draft: AnchorDraft) => void;
   /** Rendered HTML for the imported-HTML pipeline (DomReader srcDoc). */
   renderedHtml: string;
+  /** Note-presentation mode for the DOM HTML reader (floating ↔ margin gutter). */
+  annotationMode: HtmlAnnotationMode;
 };
 
 // Resolve the reader for the active source. Returns the empty-state placeholder when
 // there's nothing to show (no source, or an HTML-pipeline source whose render hasn't
 // arrived yet) — the SAME fallbacks the old inline switch produced.
-export function readerForSource({ source, anchors, onSelect, renderedHtml }: ReaderArgs): ReactNode {
+export function readerForSource({ source, anchors, onSelect, renderedHtml, annotationMode }: ReaderArgs): ReactNode {
   if (!source) {
     return <div className="empty-reader">Select a source to start.</div>;
   }
@@ -97,7 +100,13 @@ export function readerForSource({ source, anchors, onSelect, renderedHtml }: Rea
   }
   if (viewer.htmlPipeline && renderedHtml) {
     return (
-      <DomReader srcDoc={renderedHtml} sourceId={source.id} anchors={anchors} onSelect={onSelect} />
+      <DomReader
+        srcDoc={renderedHtml}
+        sourceId={source.id}
+        anchors={anchors}
+        onSelect={onSelect}
+        mode={annotationMode}
+      />
     );
   }
   return <div className="empty-reader">Select a source to start.</div>;

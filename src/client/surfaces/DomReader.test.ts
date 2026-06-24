@@ -91,4 +91,20 @@ describe("paintDomAnchors", () => {
     paintDomAnchors(document, anchors); // repaint must not duplicate
     expect(document.querySelectorAll(".sv-annotated").length).toBe(1);
   });
+
+  it("defaults to floating (no gutter); margin mode lays cards into the gutter", () => {
+    document.body.innerHTML = '<p data-study-id="s1">Hello world</p>';
+    const anchors = [anchor({ studyId: "s1", quote: "Hello world", note: "margin note" })];
+
+    // Default (floating): inline highlight only, no margin layer.
+    paintDomAnchors(document, anchors);
+    expect(document.querySelector('[data-study-id="s1"]')?.classList.contains("sv-annotated")).toBe(true);
+    expect(document.getElementById("sv-margin-layer")).toBeNull();
+
+    // Margin: a gutter card carrying the note text appears; flipping back clears it.
+    paintDomAnchors(document, anchors, "margin");
+    expect(document.querySelector("#sv-margin-layer .sv-margin-note")?.textContent).toContain("margin note");
+    paintDomAnchors(document, anchors, "floating");
+    expect(document.getElementById("sv-margin-layer")).toBeNull();
+  });
 });

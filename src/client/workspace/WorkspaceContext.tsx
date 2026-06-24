@@ -32,6 +32,11 @@ import { createDefaultContent, isTextContentType } from "../notes/noteTypeRegist
 import { getSourceViewer, type SourceViewer } from "../viewers";
 import { getCommand, runCommand, type CommandContext } from "../commands/registry";
 import type { PaintAnchor } from "../surfaces/types";
+import {
+  persistAnnotationMode,
+  readStoredAnnotationMode,
+  type HtmlAnnotationMode
+} from "../annotations";
 
 export type Status = "idle" | "loading" | "saving" | "error";
 
@@ -77,6 +82,10 @@ export type WorkspaceContextValue = {
   paintAnchors: PaintAnchor[];
   /** Patches scoped to the focused anchor (or all when nothing is focused). */
   activePatches: PatchRecord[];
+  /** How the DOM-iframe HTML reader presents notes (floating card ↔ side gutter).
+      localStorage-persisted; the reader-header toggle flips it, DomReader repaints. */
+  annotationMode: HtmlAnnotationMode;
+  setAnnotationMode(mode: HtmlAnnotationMode): void;
 
   // —— opening / importing ——
   canOpenLocal: boolean;
@@ -157,6 +166,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [importUrl, setImportUrl] = useState("");
   const [folderRoot, setFolderRoot] = useState<string | null>(null);
   const [conceptsVersion, setConceptsVersion] = useState(0);
+  // Note-presentation mode for the DOM HTML reader. Seeded from localStorage so the
+  // choice survives reloads; the setter mirrors it back to storage.
+  const [annotationMode, setAnnotationModeState] = useState<HtmlAnnotationMode>(readStoredAnnotationMode);
 
   // Native file/folder dialogs come from the Electron preload; absent in a browser.
   const canOpenLocal = typeof window !== "undefined" && !!window.studyVault?.openFile;
@@ -474,6 +486,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const refreshConcepts = useCallback(() => setConceptsVersion((value) => value + 1), []);
 
+  // Flip the note-presentation mode and persist the choice (so it survives reload).
+  const setAnnotationMode = useCallback((mode: HtmlAnnotationMode) => {
+    setAnnotationModeState(mode);
+    persistAnnotationMode(mode);
+  }, []);
+
   // Whether the composer's primary action is available, via the command itself.
   const composerCommandId = composerMode === "ask" ? "anchor.ask-ai" : "anchor.add-note";
   const composerCtx = commandContext({ text: chatInput, contentType: noteContentType });
@@ -527,6 +545,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       patches,
       paintAnchors,
       activePatches,
+      annotationMode,
+      setAnnotationMode,
       canOpenLocal,
       folderRoot,
       setFolderRoot,
@@ -579,6 +599,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       patches,
       paintAnchors,
       activePatches,
+      annotationMode,
+      setAnnotationMode,
       canOpenLocal,
       folderRoot,
       activeFilePath,

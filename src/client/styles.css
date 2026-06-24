@@ -1050,6 +1050,29 @@ textarea {
   background: #ffffff;
 }
 
+.reader-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.annot-mode-toggle {
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid #d8d2c6;
+  background: #fffdf5;
+  color: #5c5340;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.annot-mode-toggle:hover {
+  border-color: #e0a800;
+  background: #fdf4d6;
+}
+
 .status-pill {
   min-width: 72px;
   padding: 6px 9px;
