@@ -83,6 +83,39 @@ test("no-AI study loop: select → anchor → note → patch → apply → rever
   await expect(reader.locator('[data-study-id="e2e-p"]')).toHaveClass(/sv-annotated/);
 });
 
+test("marginalia mode: notes lay out in a side gutter, leaving the text uncovered", async ({ page }) => {
+  const title = `E2E Margin ${Date.now()}`;
+  const sourceHtml =
+    '<article data-study-id="mg-root"><p data-study-id="mg-p">Margin layout target paragraph.</p></article>';
+
+  await page.goto("/");
+  await page.locator("section.import-box input").fill(title);
+  await page.locator("section.import-box textarea").fill(sourceHtml);
+  await page.locator("section.import-box").getByRole("button", { name: "Import" }).click();
+  await expect(page.locator(".reader-header h2")).toHaveText(title);
+
+  const reader = page.frameLocator('iframe[title="Source reader"]');
+  await reader.locator('[data-study-id="mg-p"]').click();
+  await page.locator(".composer-input").fill("Gutter note.");
+  await page.getByRole("button", { name: "Save Note" }).click();
+  await expect(page.locator(".note-list")).toContainText("Gutter note.");
+
+  // Switch the presentation mode to margin: a persistent card appears in the
+  // gutter (not a hover card), the body reserves right padding, and the card
+  // sits to the RIGHT of the paragraph (original text position left clear).
+  await page.getByRole("button", { name: "Notes: Floating" }).click();
+  const card = reader.locator("#sv-margin-layer .sv-margin-note");
+  await expect(card).toBeVisible();
+  await expect(card).toContainText("Gutter note.");
+  await expect(reader.locator("body")).toHaveClass(/sv-annot-margin/);
+
+  const pBox = await reader.locator('[data-study-id="mg-p"]').boundingBox();
+  const cBox = await card.boundingBox();
+  expect(cBox!.x).toBeGreaterThan(pBox!.x + pBox!.width - 2);
+  // The anchored text is still highlighted inline so you can see what's noted.
+  await expect(reader.locator('[data-study-id="mg-p"]')).toHaveClass(/sv-annotated/);
+});
+
 test("rich note form: a flashcard note renders as a flip card", async ({ page }) => {
   const title = `E2E Rich ${Date.now()}`;
   const sourceHtml = [

@@ -13,7 +13,7 @@ import { renderNoteContent } from "../adapters/notes/render";
 import { isDiagramType } from "../adapters/notes/diagrams";
 import { DiagramNote } from "./DiagramNote";
 import { getSourceViewer } from "./viewers";
-import { decorateAnnotations } from "./annotations";
+import { decorateAnnotations, getHtmlAnnotationMode, setHtmlAnnotationMode, type HtmlAnnotationMode } from "./annotations";
 import { WebviewReader, type WebSelection } from "./WebviewReader";
 import { PdfReader, type PdfSelection } from "./PdfReader";
 import { TerminalPanel } from "./TerminalPanel";
@@ -240,6 +240,7 @@ export default function App() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [showTerminal, setShowTerminal] = useState(false);
+  const [annotMode, setAnnotMode] = useState<HtmlAnnotationMode>(getHtmlAnnotationMode());
   const [patchHtml, setPatchHtml] = useState("");
   const [importTitle, setImportTitle] = useState("Manual Import Demo");
   const [importHtml, setImportHtml] = useState(demoHtml);
@@ -304,7 +305,14 @@ export default function App() {
     const doc = frameRef.current?.contentDocument;
     if (doc) decorateNotes(doc);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notes, anchors, renderedHtml]);
+  }, [notes, anchors, renderedHtml, annotMode]);
+
+  // Switch the HTML reader's note presentation (floating card ↔ side gutter).
+  function toggleAnnotMode() {
+    const next: HtmlAnnotationMode = annotMode === "margin" ? "floating" : "margin";
+    setHtmlAnnotationMode(next);
+    setAnnotMode(next);
+  }
 
   async function loadSources() {
     setStatus("loading");
@@ -774,7 +782,17 @@ export default function App() {
             <p>{activeSource?.sourceType ?? "source"}</p>
             <h2>{activeSource?.title ?? "Open or import a source"}</h2>
           </div>
-          <span className={`status-pill status-${status}`}>{status}</span>
+          <div className="reader-header-actions">
+            <button
+              type="button"
+              className="annot-mode-toggle"
+              onClick={toggleAnnotMode}
+              title="Toggle how notes are shown: a card on hover, or persistent cards in the side margin"
+            >
+              {annotMode === "margin" ? "Notes: Margin" : "Notes: Floating"}
+            </button>
+            <span className={`status-pill status-${status}`}>{status}</span>
+          </div>
         </header>
 
         {error ? <div className="error-box">{error}</div> : null}

@@ -91,7 +91,58 @@ export const ANNOTATION_CSS = `
   padding: 0 3px;
   border-radius: 3px;
 }
-.sv-note-card-body hr { border: 0; border-top: 1px solid #e6dcc0; margin: 8px 0; }`;
+.sv-note-card-body hr { border: 0; border-top: 1px solid #e6dcc0; margin: 8px 0; }
+
+/* --- Marginalia mode: persistent cards in a right-hand gutter --- */
+.sv-annot-margin { padding-right: 312px; box-sizing: border-box; }
+#sv-margin-layer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 300px;
+  pointer-events: none;
+  z-index: 2147482000;
+}
+#sv-margin-connectors {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 2147481999;
+}
+.sv-margin-connectors-path {
+  fill: none;
+  stroke: #e0a800;
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+}
+.sv-margin-note {
+  position: absolute;
+  right: 6px;
+  width: 286px;
+  box-sizing: border-box;
+  pointer-events: auto;
+  border-radius: 8px;
+  background: #fffdf5;
+  color: #202124;
+  border: 1px solid #e6c463;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  font: 13px/1.5 Inter, "Segoe UI", Arial, sans-serif;
+  transition: top 0.12s ease;
+}
+.sv-margin-note-body {
+  padding: 7px 10px;
+  max-height: 240px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.sv-margin-note-body > :first-child { margin-top: 0; }
+.sv-margin-note-body > :last-child { margin-bottom: 0; }
+.sv-margin-note-body p { margin: 4px 0; }
+.sv-margin-note-body ul,
+.sv-margin-note-body ol { margin: 4px 0; padding-left: 18px; }
+.sv-margin-note-body code { background: #efe9dc; padding: 0 3px; border-radius: 3px; }`;
 
 // Cross-realm-safe "is this node (or an ancestor) a match" — the reader doc /
 // guest page is a different realm, so `instanceof Element` is unreliable;
@@ -253,7 +304,11 @@ function wireNoteCard(doc: Document): void {
     ro.observe(card);
   }
 
+  // In marginalia mode the notes live in the gutter, so the hover card is off.
+  const marginActive = () => doc.body?.classList.contains("sv-annot-margin") ?? false;
+
   doc.addEventListener("mouseover", (event) => {
+    if (marginActive()) return;
     const target = closestMatch(event.target, ".sv-annotated");
     if (target && !pinned) show(target);
   });
@@ -265,6 +320,7 @@ function wireNoteCard(doc: Document): void {
   card.addEventListener("mouseleave", hide);
   closeBtn.addEventListener("click", dismiss);
   doc.addEventListener("click", (event) => {
+    if (marginActive()) return;
     const target = closestMatch(event.target, ".sv-annotated");
     if (target) {
       pinned = !pinned;
@@ -353,4 +409,135 @@ export function highlightQuote(doc: Document, selector: TextQuoteSelector, noteT
     node = walker.nextNode();
   }
   return false;
+}
+
+// --- Marginalia layout -------------------------------------------------------
+// Place note cards in a side gutter, each near its anchor's vertical position
+// but never overlapping. Pure + deterministic so the stacking is unit-testable
+// independently of the DOM (jsdom can't measure real geometry).
+export interface ColumnItem {
+  /** Desired top (the anchor's y); cards drift down from here to avoid overlap. */
+  top: number;
+  height: number;
+}
+
+// Two-pass label placement: greedily stack downward from `minTop`, then — if the
+// column overflows `maxBottom` — compact upward from the bottom. Returns the
+// resolved top for each item, in the SAME order as the input.
+export function packColumn(items: ColumnItem[], gap: number, minTop: number, maxBottom?: number): number[] {
+  const order = items.map((_, i) => i).sort((a, b) => items[a].top - items[b].top);
+  const placed = new Array<number>(items.length).fill(minTop);
+
+  let cursor = minTop;
+  for (const i of order) {
+    const top = Math.max(items[i].top, cursor);
+    placed[i] = top;
+    cursor = top + items[i].height + gap;
+  }
+
+  if (maxBottom !== undefined && order.length) {
+    const last = order[order.length - 1];
+    const overflow = placed[last] + items[last].height - maxBottom;
+    if (overflow > 0) {
+      let bottomCursor = maxBottom;
+      for (let k = order.length - 1; k >= 0; k -= 1) {
+        const i = order[k];
+        const top = Math.max(minTop, Math.min(placed[i], bottomCursor - items[i].height));
+        placed[i] = top;
+        bottomCursor = top - gap;
+      }
+    }
+  }
+  return placed;
+}
+
+export interface MarginItem {
+  element: Element;
+  noteText: string;
+  key?: string;
+}
+
+const MARGIN_LAYER_ID = "sv-margin-layer";
+const MARGIN_CONNECTORS_ID = "sv-margin-connectors";
+
+// Remove the gutter, its cards, the connector overlay, and the reserved padding.
+export function clearMarginNotes(doc: Document): void {
+  doc.getElementById(MARGIN_LAYER_ID)?.remove();
+  doc.getElementById(MARGIN_CONNECTORS_ID)?.remove();
+  if (doc.body) {
+    doc.body.classList.remove("sv-annot-margin");
+    doc.body.style.position = doc.body.dataset.svPrevPosition ?? "";
+    delete doc.body.dataset.svPrevPosition;
+  }
+}
+
+// Lay out the given anchored elements' notes as persistent cards in a right-hand
+// gutter, vertically near each anchor, collision-resolved, leaving the original
+// content uncovered (the body reserves right padding). A dashed SVG connector
+// links each card back to its anchor. Re-runnable (clears first).
+export function paintMarginNotes(doc: Document, items: MarginItem[]): void {
+  if (!doc.body) return;
+  clearMarginNotes(doc);
+  if (!items.length) return;
+
+  const body = doc.body;
+  const view = doc.defaultView;
+  body.classList.add("sv-annot-margin");
+  // Absolute children need a positioned ancestor; remember/restore the prior value.
+  const computedPos = view?.getComputedStyle(body).position ?? "static";
+  if (computedPos === "static") {
+    body.dataset.svPrevPosition = body.style.position;
+    body.style.position = "relative";
+  }
+
+  const bodyRect = body.getBoundingClientRect();
+  const contentHeight = Math.max(body.scrollHeight, view?.innerHeight ?? 0);
+
+  const layer = doc.createElement("div");
+  layer.id = MARGIN_LAYER_ID;
+  layer.style.height = `${contentHeight}px`;
+
+  const svgNs = "http://www.w3.org/2000/svg";
+  const connectors = doc.createElementNS(svgNs, "svg");
+  connectors.id = MARGIN_CONNECTORS_ID;
+  connectors.setAttribute("width", `${bodyRect.width}`);
+  connectors.setAttribute("height", `${contentHeight}`);
+
+  // First pass: create cards at their desired tops and measure heights.
+  const placedCards = items.map(({ element, noteText, key }) => {
+    const card = doc.createElement("div");
+    card.className = "sv-margin-note";
+    if (key) card.setAttribute("data-sv-key", key);
+    const cardBody = doc.createElement("div");
+    cardBody.className = "sv-margin-note-body";
+    cardBody.innerHTML = renderNoteContent("markdown", noteText).html;
+    card.appendChild(cardBody);
+    layer.appendChild(card);
+    const elRect = element.getBoundingClientRect();
+    return { card, desiredTop: elRect.top - bodyRect.top, anchorMidY: elRect.top - bodyRect.top + elRect.height / 2 };
+  });
+  body.appendChild(layer);
+
+  const tops = packColumn(
+    placedCards.map(({ card, desiredTop }) => ({ top: Math.max(0, desiredTop), height: card.offsetHeight || 60 })),
+    10,
+    0,
+    contentHeight
+  );
+
+  // Gutter starts where the layer sits (body width minus the layer width).
+  const gutterLeft = bodyRect.width - layer.offsetWidth;
+  placedCards.forEach(({ card, anchorMidY }, i) => {
+    card.style.top = `${tops[i]}px`;
+    const cardMidY = tops[i] + (card.offsetHeight || 60) / 2;
+    const path = doc.createElementNS(svgNs, "path");
+    path.setAttribute("class", "sv-margin-connectors-path");
+    // Elbow: out from the gutter edge, across, to the anchor's mid-line.
+    path.setAttribute(
+      "d",
+      `M ${gutterLeft} ${cardMidY} L ${gutterLeft - 16} ${cardMidY} L ${gutterLeft - 16} ${anchorMidY} L ${gutterLeft - 28} ${anchorMidY}`
+    );
+    connectors.appendChild(path);
+  });
+  body.appendChild(connectors);
 }
