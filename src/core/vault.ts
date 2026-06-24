@@ -6,6 +6,7 @@ import { nodeStorage } from "./storage/nodeStorage";
 
 export const studyDirName = ".study";
 export const sourcesDirName = "sources";
+export const assetsDirName = "assets";
 export const exportsDirName = "exports";
 export const manifestFileName = "manifest.json";
 export const pluginSettingsFileName = "plugin-settings.json";
@@ -15,6 +16,7 @@ export type VaultPaths = {
   rootDir: string;
   studyDir: string;
   sourcesDir: string;
+  assetsDir: string;
   exportsDir: string;
   manifestPath: string;
   pluginSettingsPath: string;
@@ -41,6 +43,7 @@ function getVaultPaths(rootDir: string): VaultPaths {
     rootDir: resolvedRoot,
     studyDir,
     sourcesDir: path.join(resolvedRoot, sourcesDirName),
+    assetsDir: path.join(resolvedRoot, assetsDirName),
     exportsDir: path.join(resolvedRoot, exportsDirName),
     manifestPath: path.join(studyDir, manifestFileName),
     pluginSettingsPath: path.join(studyDir, pluginSettingsFileName)
@@ -86,6 +89,7 @@ export async function openVault(input?: {
 
   await storage.ensureDir(paths.studyDir);
   await storage.ensureDir(paths.sourcesDir);
+  await storage.ensureDir(paths.assetsDir);
   await storage.ensureDir(paths.exportsDir);
 
   const manifest = await ensureManifest(storage, paths, input?.name);

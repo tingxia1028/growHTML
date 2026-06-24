@@ -15,9 +15,16 @@ describe("SourceViewer registry", () => {
     expect(getSourceViewer("html").id).toBe("html");
     expect(getSourceViewer("webpage").htmlPipeline).toBe(true);
     expect(getSourceViewer("markdown").kind).toBe("html");
+    // PDFs render via PDF.js (host-page canvas + text layer) so they can be
+    // text-selected AND region-marked.
     expect(getSourceViewer("pdf").id).toBe("pdf");
     expect(getSourceViewer("pdf").kind).toBe("pdfjs");
     expect(getSourceViewer("pdf").htmlPipeline).toBe(false);
+    // Images render in a dedicated host-page viewer for region marking.
+    expect(getSourceViewer("image").id).toBe("image");
+    expect(getSourceViewer("image").kind).toBe("image");
+    // Other native files (code/word) still use the generic iframe.
+    expect(getSourceViewer("code").kind).toBe("file");
   });
 
   it("falls back to the HTML viewer for unknown types", () => {

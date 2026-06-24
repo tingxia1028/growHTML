@@ -3,8 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { entityFileNames } from "./store/entities";
-import { appendLogFileNames, exportsDirName, manifestFileName, openVault, sourcesDirName, studyDirName } from "./vault";
+import { assetsDirName, appendLogFileNames, exportsDirName, manifestFileName, openVault, sourcesDirName, studyDirName } from "./vault";
 import { vaultManifestSchema } from "./schema";
+import { fixtureAsset } from "./fixtures/golden";
 
 let tempDir = "";
 
@@ -22,6 +23,7 @@ describe("openVault", () => {
 
     await expect(access(path.join(tempDir, studyDirName))).resolves.toBeUndefined();
     await expect(access(path.join(tempDir, sourcesDirName))).resolves.toBeUndefined();
+    await expect(access(path.join(tempDir, assetsDirName))).resolves.toBeUndefined();
     await expect(access(path.join(tempDir, exportsDirName))).resolves.toBeUndefined();
     await expect(access(path.join(tempDir, studyDirName, manifestFileName))).resolves.toBeUndefined();
 
@@ -35,6 +37,10 @@ describe("openVault", () => {
 
     expect(vault.manifest.name).toBe("Test Vault");
     expect(await vault.stores.sources.list()).toEqual([]);
+    expect(await vault.stores.assets.list()).toEqual([]);
+
+    await vault.stores.assets.upsert(fixtureAsset);
+    expect(await vault.stores.assets.get(fixtureAsset.id)).toEqual(fixtureAsset);
   });
 
   it("preserves an existing manifest", async () => {

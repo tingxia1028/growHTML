@@ -18,6 +18,14 @@ describe("entity ids", () => {
     expect(getEntityKindFromId("unknown_01ARZ3NDEKTSV4RRFFQ69G5FAV")).toBeNull();
   });
 
+  it("supports asset ids", () => {
+    const assetId = createEntityId("asset");
+
+    expect(isEntityId("asset", assetId)).toBe(true);
+    expect(getEntityKindFromId(assetId)).toBe("asset");
+    expect(isEntityId("note", assetId)).toBe(false);
+  });
+
   it("generates unique ids", () => {
     const ids = new Set(Array.from({ length: 100 }, () => createEntityId("anchor")));
 

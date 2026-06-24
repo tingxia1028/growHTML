@@ -7,19 +7,26 @@ import { ingestWebpageFromUrl } from "../adapters/web/ingest";
 import { ingestWebLiveSource } from "../adapters/web/liveSource";
 import { createWebTextQuoteAnchor } from "../adapters/web/anchor";
 import { createPdfSelectionAnchor } from "../adapters/pdf/anchor";
+import { createImageRegionAnchor } from "../adapters/image/anchor";
 import { createEntityId } from "../core/ids";
 import {
-  noteKindSchema,
+  conceptSchema,
+  nodeRefSchema,
   noteSchema,
   patchActionSchema,
   patchSchema,
+  relationKindSchema,
+  relationSchema,
   type AnchorRecord,
   type HtmlSelectionAnchor,
   type PatchRecord,
   type PatchStatus
 } from "../core/schema";
+import { getNoteContentSpec, parseNoteContent } from "../core/notes/contentTypes";
+import { importLocalAsset, readAssetBytes } from "../core/store/assets";
 import type { StudyVault } from "../core/vault";
 import {
+  deleteSource,
   ingestBinarySource,
   ingestHtmlSource,
   listSources,
@@ -27,6 +34,8 @@ import {
   readSourceFile
 } from "../core/store/sources";
 import { chatRequestSchema, createModelProvider, type ModelProvider } from "../ai";
+import { readFile } from "node:fs/promises";
+import { ingestLocalFile, listDirectory, mimeForPath } from "./localFiles";
 
 export type CreateAppOptions = {
   vault: StudyVault;
@@ -52,26 +61,43 @@ const ingestPdfRequestSchema = z.object({
   originalPath: z.string().min(1).optional()
 });
 
-const createAnchorRequestSchema = z.object({
-  sourceId: z.string().min(1),
-  anchorKind: z.enum(["html_selection", "web_text_quote", "pdf_selection"]).default("html_selection"),
-  studyId: z.string().min(1).optional(),
-  selector: z.string().min(1).optional(),
-  normalizedUrl: z.string().min(1).optional(),
-  page: z.number().int().positive().optional(),
-  quote: z.string().min(1),
-  contextBefore: z.string().default(""),
-  contextAfter: z.string().default("")
+const ingestImageRequestSchema = z.object({
+  title: z.string().min(1),
+  dataBase64: z.string().min(1),
+  mimeType: z.string().min(1).default("image/png"),
+  originalPath: z.string().min(1).optional()
 });
 
+const createAnchorRequestSchema = z
+  .object({
+    sourceId: z.string().min(1),
+    anchorKind: z
+      .enum(["html_selection", "web_text_quote", "pdf_selection", "image_region"])
+      .default("html_selection"),
+    studyId: z.string().min(1).optional(),
+    selector: z.string().min(1).optional(),
+    normalizedUrl: z.string().min(1).optional(),
+    page: z.number().int().positive().optional(),
+    // Geometric region [x, y, w, h] (0..1) for figures / scanned pages / images.
+    rect: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional(),
+    // Quote is optional now: a region anchor has no text. Text kinds still require
+    // a non-empty quote OR a rect (enforced below).
+    quote: z.string().default(""),
+    contextBefore: z.string().default(""),
+    contextAfter: z.string().default("")
+  })
+  // An anchor must carry SOMETHING to locate it: a non-empty quote or a rect.
+  .refine((input) => input.quote.trim().length > 0 || !!input.rect, {
+    message: "anchor requires a non-empty quote or a rect"
+  });
+
 const createNoteRequestSchema = z.object({
-  sourceId: z.string().min(1),
-  anchorId: z.string().min(1).optional(),
-  noteKind: noteKindSchema.default("annotation"),
-  contentType: z.string().min(1).optional(),
-  title: z.string().optional(),
-  question: z.string().optional(),
-  content: z.string().min(1)
+  sourceId: z.string().min(1).optional(),
+  anchorIds: z.array(z.string().min(1)).default([]),
+  conceptIds: z.array(z.string().min(1)).default([]),
+  contentType: z.string().min(1).default("markdown"),
+  // Shape validated per-type by the NoteContentSpec, not here.
+  content: z.unknown()
 });
 
 const createPatchRequestSchema = z.object({
@@ -86,6 +112,42 @@ const createPatchRequestSchema = z.object({
 const updatePatchRequestSchema = z.object({
   status: z.enum(["pending", "accepted", "rejected", "applied", "reverted"])
 });
+
+const createConceptRequestSchema = z.object({
+  name: z.string().min(1),
+  aliases: z.array(z.string().min(1)).default([]),
+  description: z.string().default(""),
+  tags: z.array(z.string().min(1)).default([]),
+  confidence: z.number().min(0).max(1).optional()
+});
+
+const createRelationRequestSchema = z.object({
+  from: nodeRefSchema,
+  to: nodeRefSchema,
+  relationKind: relationKindSchema,
+  label: z.string().optional(),
+  confidence: z.number().min(0).max(1).optional()
+});
+
+// Workspace layout is UI state, not a core entity: stored as a single JSON file
+// in the vault and validated only structurally.
+const workspaceNodeSchema = z.object({
+  id: z.string().min(1),
+  kind: z.string().min(1),
+  params: z.record(z.string(), z.unknown()).optional()
+});
+const workspaceLayoutSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  mode: z.enum(["dock", "canvas"]),
+  nodes: z.array(workspaceNodeSchema),
+  layout: z.unknown()
+});
+const workspaceStateSchema = z.object({
+  activeLayoutId: z.string(),
+  layouts: z.array(workspaceLayoutSchema)
+});
+const emptyWorkspaceState = { activeLayoutId: "", layouts: [] };
 
 // `conflict` is system-set (never requested); other transitions follow a minimal state machine.
 const patchTransitions: Record<PatchStatus, readonly PatchStatus[]> = {
@@ -119,6 +181,19 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
   app.get("/api/sources", async (_req, res, next) => {
     try {
       res.json({ sources: await listSources(vault) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/sources/:sourceId", async (req, res, next) => {
+    try {
+      const removed = await deleteSource(vault, req.params.sourceId);
+      if (!removed) {
+        res.status(404).json({ error: "Source not found" });
+        return;
+      }
+      res.json({ ok: true });
     } catch (error) {
       next(error);
     }
@@ -177,6 +252,68 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
         createdBy: "user",
         metadata: input.originalPath ? { originalPath: input.originalPath } : undefined
       });
+      res.status(201).json({ source });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Seed an image source from base64 bytes (used by tests / programmatic import).
+  // Images render in the host-page ImageReader so a region can be marked on them.
+  app.post("/api/sources/image", async (req, res, next) => {
+    try {
+      const input = ingestImageRequestSchema.parse(req.body);
+      const data = Buffer.from(input.dataBase64, "base64");
+      if (data.length === 0) {
+        res.status(400).json({ error: "Provided image data is empty" });
+        return;
+      }
+      const source = await ingestBinarySource(vault, {
+        title: input.title,
+        data,
+        sourceType: "image",
+        mimeType: input.mimeType,
+        createdBy: "user",
+        metadata: input.originalPath ? { originalPath: input.originalPath } : undefined
+      });
+      res.status(201).json({ source });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Desktop: serve any local file straight from disk, mirroring its absolute path
+  // in the URL so a local HTML page's relative assets (css/js/images/fonts) resolve
+  // against the same directory. Rendered inside a sandboxed iframe on the client, so
+  // the page can't reach the host app (this is what stops the recursive nesting that
+  // srcDoc rendering caused). CORS is open so sandboxed (null-origin) sub-resources load.
+  app.get(/^\/api\/local\/(.+)/, async (req, res, next) => {
+    try {
+      const absPath = decodeURIComponent((req.params as Record<string, string>)[0]);
+      const data = await readFile(absPath);
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.type(mimeForPath(absPath)).send(data);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Desktop file browser: list a directory's immediate children (lazy tree expand).
+  app.get("/api/fs/list", async (req, res, next) => {
+    try {
+      const dir = z.string().min(1).parse(req.query.path);
+      res.json(await listDirectory(dir));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Desktop: ingest a file the user picked (native dialog) or clicked in the tree.
+  // The server reads it straight off disk by absolute path.
+  app.post("/api/sources/local-file", async (req, res, next) => {
+    try {
+      const { path: filePath } = z.object({ path: z.string().min(1) }).parse(req.body);
+      const source = await ingestLocalFile(vault, filePath);
       res.status(201).json({ source });
     } catch (error) {
       next(error);
@@ -266,9 +403,12 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
           res.status(400).json({ error: "pdf_selection anchors require a page" });
           return;
         }
+        // A pdf anchor is either a text quote or a geometric region (rect, empty
+        // quote). The request schema already guarantees one of them is present.
         const pdfAnchor = createPdfSelectionAnchor({
           sourceId: source.id,
           page: input.page,
+          rect: input.rect,
           quote: input.quote,
           contextBefore: input.contextBefore,
           contextAfter: input.contextAfter,
@@ -279,8 +419,29 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
         return;
       }
 
+      if (input.anchorKind === "image_region") {
+        if (!input.rect) {
+          res.status(400).json({ error: "image_region anchors require a rect" });
+          return;
+        }
+        const imageAnchor = createImageRegionAnchor({
+          sourceId: source.id,
+          rect: input.rect,
+          quote: input.quote,
+          createdBy: "user"
+        });
+        await vault.stores.anchors.upsert(imageAnchor);
+        res.status(201).json({ anchor: imageAnchor });
+        return;
+      }
+
+      // html_selection requires both a studyId and a non-empty quote.
       if (!input.studyId) {
         res.status(400).json({ error: "html_selection anchors require a studyId" });
+        return;
+      }
+      if (!input.quote.trim()) {
+        res.status(400).json({ error: "html_selection anchors require a quote" });
         return;
       }
       const anchor = createHtmlSelectionAnchor({
@@ -311,6 +472,13 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
   app.post("/api/notes", async (req, res, next) => {
     try {
       const input = createNoteRequestSchema.parse(req.body);
+      // Unknown content type → 400 (a plain Error here would otherwise be 500).
+      if (!getNoteContentSpec(input.contentType)) {
+        res.status(400).json({ error: `Unknown note contentType: ${input.contentType}` });
+        return;
+      }
+      // Validate content against its type's spec (ZodError → 400 via handler).
+      const content = parseNoteContent(input.contentType, input.content);
       const now = new Date().toISOString();
       const note = noteSchema.parse({
         id: createEntityId("note"),
@@ -320,13 +488,10 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
         updatedAt: now,
         createdBy: "user",
         sourceId: input.sourceId,
-        anchorId: input.anchorId,
-        noteKind: input.noteKind,
+        anchorIds: input.anchorIds,
+        conceptIds: input.conceptIds,
         contentType: input.contentType,
-        title: input.title,
-        question: input.question,
-        content: input.content,
-        linkedConceptIds: [],
+        content,
         visibility: "private"
       });
 
@@ -341,6 +506,175 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
     try {
       const notes = (await vault.stores.notes.list()).filter((note) => note.sourceId === req.params.sourceId);
       res.json({ notes });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Entity-oriented note query: filter by concept and/or anchor (a note can hang
+  // off several of each). With no filter, returns all notes.
+  app.get("/api/notes", async (req, res, next) => {
+    try {
+      const conceptId = typeof req.query.conceptId === "string" ? req.query.conceptId : undefined;
+      const anchorId = typeof req.query.anchorId === "string" ? req.query.anchorId : undefined;
+      const sourceId = typeof req.query.sourceId === "string" ? req.query.sourceId : undefined;
+      const notes = (await vault.stores.notes.list()).filter(
+        (note) =>
+          (!conceptId || note.conceptIds.includes(conceptId)) &&
+          (!anchorId || note.anchorIds.includes(anchorId)) &&
+          (!sourceId || note.sourceId === sourceId)
+      );
+      res.json({ notes });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // —— Assets ——————————————————————————————————————————————————————————
+  // Desktop: import a local file the user picked, copying it into the vault.
+  app.post("/api/assets/local-file", async (req, res, next) => {
+    try {
+      const { path: filePath } = z.object({ path: z.string().min(1) }).parse(req.body);
+      const asset = await importLocalAsset(vault, filePath, { mimeType: mimeForPath(filePath) });
+      res.status(201).json({ asset });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/assets/:assetId/meta", async (req, res, next) => {
+    try {
+      const asset = await vault.stores.assets.get(req.params.assetId);
+      if (!asset) {
+        res.status(404).json({ error: "Asset not found" });
+        return;
+      }
+      res.json({ asset });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/assets/:assetId", async (req, res, next) => {
+    try {
+      const asset = await vault.stores.assets.get(req.params.assetId);
+      if (!asset) {
+        res.status(404).json({ error: "Asset not found" });
+        return;
+      }
+      res.type(asset.mimeType).send(await readAssetBytes(vault, asset));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // —— Concepts ————————————————————————————————————————————————————————
+  app.get("/api/concepts", async (_req, res, next) => {
+    try {
+      res.json({ concepts: await vault.stores.concepts.list() });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/concepts", async (req, res, next) => {
+    try {
+      const input = createConceptRequestSchema.parse(req.body);
+      const now = new Date().toISOString();
+      const concept = conceptSchema.parse({
+        id: createEntityId("concept"),
+        type: "concept",
+        schemaVersion: 1,
+        createdAt: now,
+        updatedAt: now,
+        createdBy: "user",
+        ...input
+      });
+      await vault.stores.concepts.upsert(concept);
+      res.status(201).json({ concept });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Concept detail with back-references: which notes link it and which relations touch it.
+  app.get("/api/concepts/:conceptId", async (req, res, next) => {
+    try {
+      const concept = await vault.stores.concepts.get(req.params.conceptId);
+      if (!concept) {
+        res.status(404).json({ error: "Concept not found" });
+        return;
+      }
+      const notes = (await vault.stores.notes.list()).filter((note) => note.conceptIds.includes(concept.id));
+      const relations = (await vault.stores.relations.list()).filter(
+        (relation) => relation.from.id === concept.id || relation.to.id === concept.id
+      );
+      res.json({ concept, notes, relations });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // —— Relations ———————————————————————————————————————————————————————
+  app.get("/api/relations", async (_req, res, next) => {
+    try {
+      res.json({ relations: await vault.stores.relations.list() });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/relations", async (req, res, next) => {
+    try {
+      const input = createRelationRequestSchema.parse(req.body);
+      const now = new Date().toISOString();
+      const relation = relationSchema.parse({
+        id: createEntityId("relation"),
+        type: "relation",
+        schemaVersion: 1,
+        createdAt: now,
+        updatedAt: now,
+        createdBy: "user",
+        ...input
+      });
+      await vault.stores.relations.upsert(relation);
+      res.status(201).json({ relation });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/relations/:relationId", async (req, res, next) => {
+    try {
+      const removed = await vault.stores.relations.delete(req.params.relationId);
+      if (!removed) {
+        res.status(404).json({ error: "Relation not found" });
+        return;
+      }
+      res.json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // —— Workspace layout (UI state) —————————————————————————————————————
+  const workspacePath = path.join(vault.paths.studyDir, "workspace.json");
+
+  app.get("/api/workspace", async (_req, res, next) => {
+    try {
+      const text = await vault.storage.readText(workspacePath);
+      const state = text ? workspaceStateSchema.parse(JSON.parse(text)) : emptyWorkspaceState;
+      res.json({ workspace: state });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/workspace", async (req, res, next) => {
+    try {
+      const state = workspaceStateSchema.parse(req.body);
+      await vault.storage.writeTextAtomic(workspacePath, `${JSON.stringify(state, null, 2)}\n`);
+      res.json({ workspace: state });
     } catch (error) {
       next(error);
     }

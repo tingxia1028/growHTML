@@ -1,5 +1,6 @@
 import {
   anchorSchema,
+  assetSchema,
   conceptSchema,
   noteSchema,
   patchSchema,
@@ -55,14 +56,27 @@ export const fixtureNote = noteSchema.parse({
   updatedAt: fixtureTimestamp,
   createdBy: "user",
   sourceId: fixtureSource.id,
-  anchorId: fixtureAnchor.id,
-  noteKind: "explanation",
-  title: "Render Thread explanation",
-  question: "What does the render thread do?",
+  anchorIds: [fixtureAnchor.id],
+  conceptIds: [],
+  contentType: "markdown",
   content: "It prepares commands that describe how the current frame should be rendered.",
-  linkedConceptIds: [],
-  authorId: "local-user",
   visibility: "private"
+});
+
+export const fixtureAsset = assetSchema.parse({
+  id: "asset_01ARZ3NDEKTSV4RRFFQ69G5FB1",
+  type: "asset",
+  schemaVersion: 1,
+  createdAt: fixtureTimestamp,
+  updatedAt: fixtureTimestamp,
+  createdBy: "user",
+  assetType: "image",
+  fileName: "render-thread-diagram.png",
+  mimeType: "image/png",
+  byteSize: 2048,
+  path: "assets/asset_01ARZ3NDEKTSV4RRFFQ69G5FB1.png",
+  contentHash: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  originalPath: "/tmp/render-thread-diagram.png"
 });
 
 export const fixturePatch = patchSchema.parse({
@@ -115,6 +129,7 @@ export const goldenEntities = [
   fixtureNote,
   fixturePatch,
   fixtureConcept,
-  fixtureRelation
+  fixtureRelation,
+  fixtureAsset
 ] as const;
 

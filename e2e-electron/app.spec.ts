@@ -4,7 +4,10 @@ import { _electron as electron, expect, test, type ElectronApplication, type Pag
 
 // Drives the REAL Electron desktop app (its in-process server + served client),
 // not the dev web server. Proves the packaged shell works end to end:
-// import → select → anchor → note → on-document overlay → AI chat.
+// seed HTML → open → select → anchor → note → on-document overlay → AI chat.
+//
+// The current UI has no paste-HTML import box, so we seed a source through the
+// in-process API (the same shape the web e2e uses) and then drive the UI.
 //
 // Run: npm run e2e:electron   (builds client + bundles main/preload first).
 
@@ -28,37 +31,47 @@ test.afterAll(async () => {
   await rm(VAULT, { recursive: true, force: true });
 });
 
-test("desktop app: import → select → anchor → note → overlay → AI chat", async () => {
+test("desktop app: seed → open → select → anchor → note → overlay → AI chat", async () => {
   // The renderer is the same React app, served by the in-process server.
   await expect(page.locator(".brand-block h1")).toHaveText("Sources");
 
   const title = `Desktop ${Date.now()}`;
-  const html = [
-    '<article data-study-id="d-root">',
-    '  <p data-study-id="d-p">Desktop self-test paragraph about render threads.</p>',
-    "</article>"
-  ].join("\n");
+  const body = "<article><section><p>Desktop self-test paragraph about render threads.</p></section></article>";
 
-  await page.locator("section.import-box input").fill(title);
-  await page.locator("section.import-box textarea").fill(html);
-  await page.locator("section.import-box").getByRole("button", { name: "Import" }).click();
+  // Seed via the in-process API (no paste box in the current UI).
+  const sourceId = await page.evaluate(
+    async ({ t, b }) => {
+      const res = await fetch("/api/sources/html", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: t, content: b })
+      });
+      return (await res.json()).source.id as string;
+    },
+    { t: title, b: body }
+  );
+
+  await page.getByRole("button", { name: "Refresh" }).click();
+  await page.locator(".source-item-open").filter({ hasText: sourceId }).click();
   await expect(page.locator(".reader-header h2")).toHaveText(title);
 
-  // Click a paragraph inside the reader iframe → selection auto-fills the chat source.
+  // Select a passage inside the reader iframe → selection auto-fills the chat source.
   const reader = page.frameLocator('iframe[title="Source reader"]');
-  await reader.locator('[data-study-id="d-p"]').click();
+  await reader.getByText("render threads", { exact: false }).click();
   await expect(page.locator(".chat-source")).toContainText("render threads");
 
   // Note — anchor created lazily from the selection on Save (no manual anchor step).
+  await page.locator(".composer-mode .mode-tab", { hasText: "Note" }).click();
   await page.locator(".composer-input").fill("Desktop note.");
   await page.getByRole("button", { name: "Save Note" }).click();
   await expect(page.locator(".note-list")).toContainText("Desktop note.");
 
   // The note paints onto the document as an anchored highlight.
-  await expect(reader.locator('[data-study-id="d-p"]')).toHaveClass(/sv-annotated/);
+  await expect(reader.locator(".sv-annotated").first()).toBeVisible();
 
   // AI chat round-trip via the mock provider.
   const chat = page.locator(".chat-box");
+  await page.locator(".composer-mode .mode-tab", { hasText: "Ask AI" }).click();
   await page.locator(".composer-input").fill("Summarize this.");
   await chat.getByRole("button", { name: "Send" }).click();
   await expect(chat.locator(".chat-assistant").first()).toContainText("Summarize this.");

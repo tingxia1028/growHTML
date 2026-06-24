@@ -16,6 +16,8 @@ interface StudyVaultBridge {
   pty?: StudyVaultPty;
   // Opens a native folder picker; resolves to the chosen path or null if cancelled.
   pickDirectory?(): Promise<string | null>;
+  // Opens a native file picker; resolves to the chosen path or null if cancelled.
+  openFile?(): Promise<string | null>;
   // Resolves a File (from a file input) to its absolute disk path (Electron only).
   getPathForFile?(file: File): string;
 }

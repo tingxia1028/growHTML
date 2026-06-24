@@ -13,8 +13,10 @@ contextBridge.exposeInMainWorld("studyVault", {
   desktop: true,
   platform: process.platform,
   webviewPreloadUrl,
-  // Native folder picker for the AI terminal's working directory.
+  // Native folder picker (AI terminal cwd + "Open Folder" file tree).
   pickDirectory: () => ipcRenderer.invoke("dialog:pickDirectory") as Promise<string | null>,
+  // Native file picker for "Open File"; resolves to the chosen path or null.
+  openFile: () => ipcRenderer.invoke("dialog:openFile") as Promise<string | null>,
   // Resolve a File (from an <input type=file>) back to its absolute disk path so
   // the terminal can default to the directory of the file being read.
   getPathForFile: (file: File) => webUtils.getPathForFile(file),

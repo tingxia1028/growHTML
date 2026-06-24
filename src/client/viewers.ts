@@ -4,7 +4,7 @@
 // note overlay) applies. New viewers (webview, PDF.js text layer, …) register
 // here instead of adding `sourceType === "x"` branches throughout the UI.
 
-export type SourceViewerKind = "html" | "file" | "webview" | "pdfjs";
+export type SourceViewerKind = "html" | "file" | "webview" | "pdfjs" | "image";
 
 export type SourceViewer = {
   id: string;
@@ -16,8 +16,18 @@ export type SourceViewer = {
 
 const viewers: SourceViewer[] = [
   { id: "html", sourceTypes: ["html", "webpage", "markdown"], kind: "html", htmlPipeline: true },
+  { id: "web-live", sourceTypes: ["web_live"], kind: "webview", htmlPipeline: false },
+  // PDFs render via PDF.js (canvas + a selectable text layer) so they can be
+  // annotated like HTML — text-quote selections AND rubber-band region marks over
+  // figures/scanned pages. (A native Chromium iframe can't be overlaid for region
+  // capture, so we render PDFs in the host page instead.)
   { id: "pdf", sourceTypes: ["pdf"], kind: "pdfjs", htmlPipeline: false },
-  { id: "web-live", sourceTypes: ["web_live"], kind: "webview", htmlPipeline: false }
+  // Images render as a host-page <img> with a rubber-band overlay so an area of
+  // the image can be marked as an image_region anchor.
+  { id: "image", sourceTypes: ["image"], kind: "image", htmlPipeline: false },
+  // Everything else is served as-is and rendered natively in an iframe (code/word/
+  // transcript) — these can't be selected/overlaid, which is expected.
+  { id: "file", sourceTypes: ["word", "code", "transcript"], kind: "file", htmlPipeline: false }
 ];
 
 // HTML is the safe default for any unknown/text-ish source.

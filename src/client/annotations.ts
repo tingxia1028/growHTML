@@ -29,7 +29,8 @@ export interface AnnotationAnchor {
 }
 
 export interface AnnotationNote {
-  anchorId?: string;
+  // A note can hang off several anchors; it paints under each one it claims.
+  anchorIds?: string[];
   content: string;
 }
 
@@ -116,12 +117,13 @@ export function groupForRenderer(
 ): AnchorNotes[] {
   const byAnchor = new Map<string, AnchorNotes>();
   for (const note of notes) {
-    if (!note.anchorId) continue;
-    const anchor = anchorById.get(note.anchorId);
-    if (!anchor || !renderer.anchorKinds.includes(anchor.anchorKind)) continue;
-    const entry = byAnchor.get(anchor.id) ?? { anchor, notes: [] };
-    entry.notes.push(note);
-    byAnchor.set(anchor.id, entry);
+    for (const anchorId of note.anchorIds ?? []) {
+      const anchor = anchorById.get(anchorId);
+      if (!anchor || !renderer.anchorKinds.includes(anchor.anchorKind)) continue;
+      const entry = byAnchor.get(anchor.id) ?? { anchor, notes: [] };
+      entry.notes.push(note);
+      byAnchor.set(anchor.id, entry);
+    }
   }
   return [...byAnchor.values()];
 }

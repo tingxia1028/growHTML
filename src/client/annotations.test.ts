@@ -15,7 +15,7 @@ const htmlAnchor = (id: string, studyId: string): AnnotationAnchor => ({
   studyId
 });
 const pdfAnchor = (id: string): AnnotationAnchor => ({ id, anchorKind: "pdf_selection" });
-const note = (anchorId: string, content: string): AnnotationNote => ({ anchorId, content });
+const note = (anchorId: string, content: string): AnnotationNote => ({ anchorIds: [anchorId], content });
 
 function anchorMap(...anchors: AnnotationAnchor[]) {
   return new Map(anchors.map((a) => [a.id, a]));

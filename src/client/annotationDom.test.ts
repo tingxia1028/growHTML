@@ -106,7 +106,7 @@ describe("decorateAnnotations (HTML renderer)", () => {
     document.body.innerHTML = '<p data-study-id="s1">Hello world</p>';
     decorateAnnotations(document, {
       anchors: [{ id: "a1", anchorKind: "html_selection", studyId: "s1", quote: "Hello world" }],
-      notes: [{ anchorId: "a1", content: "note A" }]
+      notes: [{ anchorIds: ["a1"], content: "note A" }]
     });
     const el = document.querySelector('[data-study-id="s1"]');
     expect(el?.classList.contains("sv-annotated")).toBe(true);
@@ -119,7 +119,7 @@ describe("decorateAnnotations (HTML renderer)", () => {
     document.body.innerHTML = '<p data-study-id="CHANGED">Hello world</p>';
     decorateAnnotations(document, {
       anchors: [{ id: "a1", anchorKind: "html_selection", studyId: "s1", quote: "Hello world" }],
-      notes: [{ anchorId: "a1", content: "note A" }]
+      notes: [{ anchorIds: ["a1"], content: "note A" }]
     });
     const mark = document.querySelector('mark[data-sv="1"]');
     expect(mark?.textContent).toBe("Hello world");

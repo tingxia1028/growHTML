@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from "react";
+import {
+  bindWebviewSelection,
+  webviewPreloadUrl,
+  type SelectionWebview,
+  type WebSelection,
+  type WebviewIpcMessage
+} from "./selection/webviewSelection";
 
 export type WebAnchorMsg = { id?: string; quote: string; contextBefore: string; contextAfter: string; note?: string };
-export type WebSelection = { exact: string; prefix: string; suffix: string };
+export type { WebSelection };
 
 type WebviewReaderProps = {
   url: string;
@@ -12,9 +19,9 @@ type WebviewReaderProps = {
 };
 
 // The <webview> element isn't a typed DOM/JSX element; describe just the methods
-// and events we drive so we can cast the imperatively-created element.
-type WebviewElement = HTMLElement & {
-  send: (channel: string, ...args: unknown[]) => void;
+// and events we drive so we can cast the imperatively-created element. `send`/
+// `getURL` come from the shared SelectionWebview surface; the rest drive nav.
+type WebviewElement = SelectionWebview & {
   goBack: () => void;
   goForward: () => void;
   reload: () => void;
@@ -22,10 +29,8 @@ type WebviewElement = HTMLElement & {
   loadURL: (url: string) => Promise<void>;
   canGoBack: () => boolean;
   canGoForward: () => boolean;
-  getURL: () => string;
 };
 
-type IpcMessage = Event & { channel: string; args: unknown[] };
 type Tab = { id: string; url: string; title: string };
 
 function normalizeUrl(input: string): string {
@@ -56,7 +61,7 @@ const nextTabId = () => `tab${(tabCounter += 1)}`;
 // reload/stop + address bar) drives the active tab. The guest preload reports
 // selections and highlights stored anchors per page. Renders a hint outside Electron.
 export function WebviewReader({ url, anchors, onSelection }: WebviewReaderProps) {
-  const preloadUrl = typeof window !== "undefined" ? window.studyVault?.webviewPreloadUrl : undefined;
+  const preloadUrl = webviewPreloadUrl();
 
   const [tabs, setTabs] = useState<Tab[]>([{ id: "tab0", url, title: tabTitle(url) }]);
   const [activeId, setActiveId] = useState("tab0");
@@ -117,7 +122,6 @@ export function WebviewReader({ url, anchors, onSelection }: WebviewReaderProps)
 
       const webview = document.createElement("webview") as WebviewElement;
       webview.setAttribute("src", tab.url);
-      webview.setAttribute("preload", preloadUrl);
       webview.setAttribute("plugins", ""); // inline PDF viewer
       webview.style.width = "100%";
       webview.style.height = "100%";
@@ -131,16 +135,20 @@ export function WebviewReader({ url, anchors, onSelection }: WebviewReaderProps)
           // not ready yet; dom-ready / sv:ready will retry.
         }
       };
-      webview.addEventListener("ipc-message", (event) => {
-        const message = event as IpcMessage;
-        if (message.channel === "sv:selection") {
-          onSelectionRef.current(message.args[0] as WebSelection, webview.getURL());
-        } else if (message.channel === "sv:ready") {
-          sendAnchors();
-        } else if (message.channel === "sv:open-tab") {
-          addTab(String(message.args[0] ?? ""));
+      // Shared selection capture: attaches the guest preload + translates
+      // sv:selection into onSelection. The extra handler covers the channels only
+      // the tabbed live reader uses (anchors-ready, link → new tab).
+      bindWebviewSelection(
+        webview,
+        (selection, pageUrl) => onSelectionRef.current(selection, pageUrl),
+        (message: WebviewIpcMessage) => {
+          if (message.channel === "sv:ready") {
+            sendAnchors();
+          } else if (message.channel === "sv:open-tab") {
+            addTab(String(message.args[0] ?? ""));
+          }
         }
-      });
+      );
       webview.addEventListener("dom-ready", sendAnchors);
 
       const onNavigate = () => {

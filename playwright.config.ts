@@ -6,6 +6,9 @@ const e2eVaultRoot = path.resolve(process.cwd(), ".e2e-vault");
 
 export default defineConfig({
   testDir: "e2e",
+  // Wipe the isolated vault before the dev server boots so each run is deterministic
+  // (the suite seeds its own sources; stale ones break the "first source" default).
+  globalSetup: "./e2e/global-setup.ts",
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,

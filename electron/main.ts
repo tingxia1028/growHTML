@@ -33,7 +33,10 @@ async function createWindow() {
       // contextIsolation (the real boundary) stays on and the renderer has no Node.
       sandbox: false,
       // Enables <webview> for live web-page annotation.
-      webviewTag: true
+      webviewTag: true,
+      // Enables Chromium's built-in PDFium viewer so PDFs render natively (with a
+      // scrollbar, zoom, paging and search) in an <iframe> pointed at the file.
+      plugins: true
     }
   });
 
@@ -59,9 +62,20 @@ app.on("web-contents-created", (_event, contents) => {
   });
 });
 
-// Native folder picker for choosing the AI terminal's working directory.
+// Native folder picker — used both for the AI terminal's working directory and
+// for opening a folder as a browsable file tree in the sidebar.
 ipcMain.handle("dialog:pickDirectory", async () => {
   const options: Electron.OpenDialogOptions = { properties: ["openDirectory"] };
+  const result = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options);
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
+// Native file picker for opening a single local file as a source.
+ipcMain.handle("dialog:openFile", async () => {
+  const options: Electron.OpenDialogOptions = { properties: ["openFile"] };
   const result = mainWindow
     ? await dialog.showOpenDialog(mainWindow, options)
     : await dialog.showOpenDialog(options);

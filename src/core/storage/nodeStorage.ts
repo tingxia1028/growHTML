@@ -70,6 +70,10 @@ export class NodeStorageAdapter implements StorageAdapter {
       await handle.close();
     }
   }
+
+  async deleteFile(filePath: string): Promise<void> {
+    await rm(filePath, { force: true });
+  }
 }
 
 // Shared default instance used everywhere unless a different adapter is injected.

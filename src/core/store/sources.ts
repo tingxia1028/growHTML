@@ -8,7 +8,7 @@ import type { StudyVault } from "../vault";
 export type IngestSourceInput = {
   title: string;
   content: string;
-  sourceType: Extract<SourceType, "html" | "webpage" | "markdown" | "web_live">;
+  sourceType: Extract<SourceType, "html" | "webpage" | "markdown" | "web_live" | "code" | "transcript">;
   mimeType?: string;
   metadata?: Record<string, unknown>;
   createdBy?: CreatedBy;
@@ -135,6 +135,29 @@ export async function ingestHtmlSource(
 
 export async function listSources(vault: StudyVault) {
   return vault.stores.sources.list();
+}
+
+/**
+ * Delete a source: its stored file, the record itself, and the anchors / notes /
+ * patches that hang off it (so nothing is orphaned). Returns false if not found.
+ */
+export async function deleteSource(vault: StudyVault, id: string): Promise<boolean> {
+  const source = await vault.stores.sources.get(id);
+  if (!source) return false;
+
+  try {
+    await vault.storage.deleteFile(resolveSourcePath(vault, source));
+  } catch {
+    // Missing/locked file shouldn't block removing the record from the list.
+  }
+
+  for (const store of [vault.stores.anchors, vault.stores.notes, vault.stores.patches]) {
+    const related = (await store.list()).filter((item) => item.sourceId === id);
+    for (const item of related) await store.delete(item.id);
+  }
+
+  await vault.stores.sources.delete(id);
+  return true;
 }
 
 function resolveSourcePath(vault: StudyVault, source: SourceRecord) {

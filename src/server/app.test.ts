@@ -69,8 +69,8 @@ describe("vault server API", () => {
         .post("/api/notes")
         .send({
           sourceId: source.id,
-          anchorId: anchor.id,
-          noteKind: "annotation",
+          anchorIds: [anchor.id],
+          contentType: "markdown",
           content: "A manual note."
         })
         .expect(201)
@@ -89,7 +89,8 @@ describe("vault server API", () => {
         .expect(201)
     ).body.patch;
 
-    expect(note.anchorId).toBe(anchor.id);
+    expect(note.anchorIds).toEqual([anchor.id]);
+    expect(note.contentType).toBe("markdown");
     expect(patch.status).toBe("pending");
 
     const applied = await request(app).patch(`/api/patches/${patch.id}`).send({ status: "applied" }).expect(200);
@@ -287,8 +288,112 @@ describe("vault server API", () => {
       .expect(400);
   });
 
+  it("creates a pdf_selection REGION anchor (rect, empty quote)", async () => {
+    const pdf = Buffer.from("%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n", "latin1");
+    const source = (
+      await request(app)
+        .post("/api/sources/pdf")
+        .send({ title: "FigDoc", dataBase64: pdf.toString("base64") })
+        .expect(201)
+    ).body.source;
+
+    const anchor = (
+      await request(app)
+        .post("/api/anchors")
+        .send({ sourceId: source.id, anchorKind: "pdf_selection", page: 1, rect: [0.1, 0.2, 0.3, 0.4] })
+        .expect(201)
+    ).body.anchor;
+
+    expect(anchor.anchorKind).toBe("pdf_selection");
+    expect(anchor.page).toBe(1);
+    expect(anchor.rect).toEqual([0.1, 0.2, 0.3, 0.4]);
+    expect(anchor.quote).toBe("");
+  });
+
+  it("creates an image_region anchor from a rect", async () => {
+    // 1x1 transparent PNG.
+    const pngBase64 =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    const source = (
+      await request(app)
+        .post("/api/sources/image")
+        .send({ title: "Pic", dataBase64: pngBase64, mimeType: "image/png" })
+        .expect(201)
+    ).body.source;
+    expect(source.sourceType).toBe("image");
+
+    const anchor = (
+      await request(app)
+        .post("/api/anchors")
+        .send({ sourceId: source.id, anchorKind: "image_region", rect: [0, 0, 0.5, 0.5] })
+        .expect(201)
+    ).body.anchor;
+
+    expect(anchor.anchorKind).toBe("image_region");
+    expect(anchor.rect).toEqual([0, 0, 0.5, 0.5]);
+
+    const list = await request(app).get(`/api/sources/${source.id}/anchors`).expect(200);
+    expect(list.body.anchors[0].anchorKind).toBe("image_region");
+  });
+
+  it("rejects an image_region anchor without a rect", async () => {
+    const pngBase64 =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    const source = (
+      await request(app)
+        .post("/api/sources/image")
+        .send({ title: "Pic2", dataBase64: pngBase64 })
+        .expect(201)
+    ).body.source;
+    await request(app)
+      .post("/api/anchors")
+      .send({ sourceId: source.id, anchorKind: "image_region" })
+      .expect(400);
+  });
+
+  it("rejects an anchor with neither a non-empty quote nor a rect", async () => {
+    const source = (
+      await request(app).post("/api/sources/html").send({ title: "Q", content: fixtureHtmlBody }).expect(201)
+    ).body.source;
+    await request(app)
+      .post("/api/anchors")
+      .send({ sourceId: source.id, anchorKind: "html_selection", studyId: "html-1", selector: "x", quote: "  " })
+      .expect(400);
+  });
+
   it("rejects an empty chat request", async () => {
     await request(app).post("/api/chat").send({ messages: [] }).expect(400);
+  });
+
+  it("validates note content against its content type", async () => {
+    const source = (
+      await request(app).post("/api/sources/html").send({ title: "Doc", content: fixtureHtmlBody }).expect(201)
+    ).body.source;
+
+    // Unknown content type → 400.
+    await request(app)
+      .post("/api/notes")
+      .send({ sourceId: source.id, contentType: "totally-unknown", content: "x" })
+      .expect(400);
+
+    // quiz with <2 options → 400.
+    await request(app)
+      .post("/api/notes")
+      .send({ sourceId: source.id, contentType: "quiz", content: { question: "Q", options: ["one"], answerIndex: 0 } })
+      .expect(400);
+
+    // A valid quiz note → 201, content round-trips.
+    const quiz = (
+      await request(app)
+        .post("/api/notes")
+        .send({
+          sourceId: source.id,
+          contentType: "quiz",
+          content: { question: "Q", options: ["a", "b"], answerIndex: 1 }
+        })
+        .expect(201)
+    ).body.note;
+    expect(quiz.content.answerIndex).toBe(1);
   });
 
   it("serves the built client with an SPA fallback when clientDir is set", async () => {
@@ -305,6 +410,112 @@ describe("vault server API", () => {
     } finally {
       await rm(clientDir, { recursive: true, force: true });
     }
+  });
+
+  it("imports a local file as an asset and serves its bytes", async () => {
+    const assetFile = path.join(tempDir, "diagram.png");
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
+    await writeFile(assetFile, bytes);
+
+    const created = await request(app).post("/api/assets/local-file").send({ path: assetFile }).expect(201);
+    const asset = created.body.asset;
+    expect(asset.assetType).toBe("image");
+    expect(asset.mimeType).toBe("image/png");
+    expect(asset.byteSize).toBe(bytes.length);
+    expect(asset.contentHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+
+    const meta = await request(app).get(`/api/assets/${asset.id}/meta`).expect(200);
+    expect(meta.body.asset.id).toBe(asset.id);
+
+    const served = await request(app)
+      .get(`/api/assets/${asset.id}`)
+      .buffer(true)
+      .parse(binaryParser)
+      .expect(200)
+      .expect("Content-Type", /image\/png/);
+    expect(Buffer.from(served.body).equals(bytes)).toBe(true);
+
+    // Re-importing the same bytes reuses the asset (dedupe by hash).
+    const again = await request(app).post("/api/assets/local-file").send({ path: assetFile }).expect(201);
+    expect(again.body.asset.id).toBe(asset.id);
+  });
+
+  it("creates concepts and links notes, with back-references", async () => {
+    const source = (
+      await request(app).post("/api/sources/html").send({ title: "Doc", content: fixtureHtmlBody }).expect(201)
+    ).body.source;
+
+    const concept = (
+      await request(app)
+        .post("/api/concepts")
+        .send({ name: "Render Thread", aliases: ["UE Render Thread"], tags: ["rendering"] })
+        .expect(201)
+    ).body.concept;
+
+    const note = (
+      await request(app)
+        .post("/api/notes")
+        .send({ sourceId: source.id, conceptIds: [concept.id], contentType: "markdown", content: "Explains it." })
+        .expect(201)
+    ).body.note;
+
+    const detail = await request(app).get(`/api/concepts/${concept.id}`).expect(200);
+    expect(detail.body.concept.name).toBe("Render Thread");
+    expect(detail.body.notes.map((n: { id: string }) => n.id)).toContain(note.id);
+
+    // Entity query: notes by concept.
+    const byConcept = await request(app).get(`/api/notes?conceptId=${concept.id}`).expect(200);
+    expect(byConcept.body.notes).toHaveLength(1);
+    expect(byConcept.body.notes[0].id).toBe(note.id);
+  });
+
+  it("creates and deletes relations between concepts", async () => {
+    const a = (await request(app).post("/api/concepts").send({ name: "Render Thread" }).expect(201)).body.concept;
+    const b = (await request(app).post("/api/concepts").send({ name: "Game Thread" }).expect(201)).body.concept;
+
+    const relation = (
+      await request(app)
+        .post("/api/relations")
+        .send({
+          from: { type: "concept", id: a.id },
+          to: { type: "concept", id: b.id },
+          relationKind: "depends_on"
+        })
+        .expect(201)
+    ).body.relation;
+
+    // The relation surfaces in both concepts' detail back-refs.
+    const detail = await request(app).get(`/api/concepts/${a.id}`).expect(200);
+    expect(detail.body.relations.map((r: { id: string }) => r.id)).toContain(relation.id);
+
+    await request(app).delete(`/api/relations/${relation.id}`).expect(200);
+    await request(app).delete(`/api/relations/${relation.id}`).expect(404);
+  });
+
+  it("persists and returns workspace layout", async () => {
+    const empty = await request(app).get("/api/workspace").expect(200);
+    expect(empty.body.workspace.layouts).toEqual([]);
+
+    const state = {
+      activeLayoutId: "three-pane",
+      layouts: [
+        {
+          id: "three-pane",
+          name: "Three Pane",
+          mode: "dock" as const,
+          nodes: [{ id: "n1", kind: "source.viewer" }],
+          layout: { split: "vertical" }
+        }
+      ]
+    };
+    await request(app).put("/api/workspace").send(state).expect(200);
+
+    const reloaded = await request(app).get("/api/workspace").expect(200);
+    expect(reloaded.body.workspace.activeLayoutId).toBe("three-pane");
+    expect(reloaded.body.workspace.layouts[0].nodes[0].kind).toBe("source.viewer");
+
+    // Structurally invalid state is rejected.
+    await request(app).put("/api/workspace").send({ activeLayoutId: 5 }).expect(400);
   });
 
   it("rejects an invalid patch status transition", async () => {

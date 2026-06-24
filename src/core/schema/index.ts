@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { anchorSchema } from "./anchor";
+import { assetSchema } from "./asset";
 import { conceptSchema } from "./concept";
 import { noteSchema } from "./note";
 import { patchSchema } from "./patch";
@@ -7,6 +8,7 @@ import { relationSchema } from "./relation";
 import { sourceSchema } from "./source";
 
 export * from "./anchor";
+export * from "./asset";
 export * from "./common";
 export * from "./concept";
 export * from "./note";
@@ -21,7 +23,8 @@ export const vaultEntitySchema = z.discriminatedUnion("type", [
   noteSchema,
   patchSchema,
   conceptSchema,
-  relationSchema
+  relationSchema,
+  assetSchema
 ]);
 
 export type VaultEntity = z.infer<typeof vaultEntitySchema>;

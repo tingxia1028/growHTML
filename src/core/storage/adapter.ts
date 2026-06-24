@@ -14,4 +14,6 @@ export interface StorageAdapter {
   /** Durable, all-or-nothing write (no torn files under crash/concurrency). */
   writeTextAtomic(filePath: string, data: string): Promise<void>;
   appendText(filePath: string, data: string): Promise<void>;
+  /** Remove a file; a no-op if it does not exist. */
+  deleteFile(filePath: string): Promise<void>;
 }

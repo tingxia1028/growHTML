@@ -39,4 +39,8 @@ export class MemoryStorageAdapter implements StorageAdapter {
     const existing = await this.readText(filePath);
     this.files.set(filePath, (existing ?? "") + data);
   }
+
+  async deleteFile(filePath: string): Promise<void> {
+    this.files.delete(filePath);
+  }
 }

@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  File,
   FilePlus2,
+  FolderOpen,
   ListRestart,
   NotebookPen,
   RefreshCcw,
   RotateCcw,
   Send,
   Sparkles,
-  TerminalSquare
+  TerminalSquare,
+  Trash2,
+  X
 } from "lucide-react";
 import { renderNoteContent } from "../adapters/notes/render";
 import { isDiagramType } from "../adapters/notes/diagrams";
@@ -15,208 +19,52 @@ import { DiagramNote } from "./DiagramNote";
 import { getSourceViewer } from "./viewers";
 import { decorateAnnotations } from "./annotations";
 import { WebviewReader, type WebSelection } from "./WebviewReader";
-import { PdfReader, type PdfSelection } from "./PdfReader";
+import { PdfReader, type PdfSelection, type PdfRegion } from "./PdfReader";
+import { ImageReader, type ImageRegion } from "./ImageReader";
 import { TerminalPanel } from "./TerminalPanel";
+import { FileTree, baseName } from "./FileTree";
+import { LocalHtmlReader } from "./LocalHtmlReader";
+import {
+  entityClient,
+  type AnyAnchor,
+  type ChatContext,
+  type ChatMessage,
+  type NoteRecord,
+  type PatchRecord,
+  type SourceRecord,
+  type WebAnchor,
+  type PdfAnchor,
+  type ImageAnchor
+} from "./data/entityClient";
+import { FocusProvider, useFocus, draftQuoteText } from "./focus/FocusContext";
+import { getCommand, runCommand, type CommandContext } from "./commands/registry";
 
-const NOTE_CONTENT_TYPES = ["markdown", "mindmap", "flashcard", "mermaid", "markmap"] as const;
-
-type SourceRecord = {
-  id: string;
-  title: string;
-  sourceType: string;
-  path: string;
-  contentHash: string;
-  metadata?: Record<string, unknown>;
-};
-
-type HtmlAnchor = {
-  id: string;
-  sourceId: string;
-  anchorKind: "html_selection";
-  studyId: string;
-  selector: string;
-  quote: string;
-};
-
-type WebAnchor = {
-  id: string;
-  sourceId: string;
-  anchorKind: "web_text_quote";
-  normalizedUrl: string;
-  quote: string;
-  contextBefore: string;
-  contextAfter: string;
-};
-
-type PdfAnchor = {
-  id: string;
-  sourceId: string;
-  anchorKind: "pdf_selection";
-  page: number;
-  quote: string;
-  contextBefore: string;
-  contextAfter: string;
-};
-
-type AnyAnchor = HtmlAnchor | WebAnchor | PdfAnchor;
-
-type NoteRecord = {
-  id: string;
-  sourceId: string;
-  anchorId?: string;
-  noteKind: string;
-  contentType?: string;
-  title?: string;
-  content: string;
-  visibility: string;
-};
-
-type PatchRecord = {
-  id: string;
-  sourceId: string;
-  anchorId: string;
-  action: string;
-  status: "pending" | "accepted" | "rejected" | "applied" | "reverted" | "conflict";
-  oldText: string;
-  newContent: string;
-  summary?: string;
-};
-
-type ChatMessage = {
-  role: "system" | "user" | "assistant";
-  content: string;
-};
-
-type SelectionDraft = {
-  text: string;
-  studyId: string;
-  selector: string;
-  kind?: "html" | "web" | "pdf";
-  prefix?: string;
-  suffix?: string;
-  page?: number;
-  // For web selections: the URL of the tab/page the selection was made on.
-  url?: string;
-};
+// Composer note types are limited to string-content types for now. Structured
+// types (mindmap/flashcard/quiz) get dedicated editors in the NoteType plugins
+// phase; until then their content can't be authored as free text.
+const NOTE_CONTENT_TYPES = ["markdown", "mermaid", "markmap"] as const;
 
 type Status = "idle" | "loading" | "saving" | "error";
 
 const boundSelectionDocuments = new WeakSet<Document>();
 
-const demoHtml = `<article data-study-id="manual-demo-root">
-  <section data-study-id="manual-demo-section">
-    <h1 data-study-id="manual-demo-title">Manual Import Demo</h1>
-    <p data-study-id="manual-demo-p">Select this paragraph to create a study anchor, note, and patch.</p>
-  </section>
-</article>`;
-
-
-const api = {
-  async sources() {
-    return getJson<{ sources: SourceRecord[] }>("/api/sources");
-  },
-  async ingestHtml(input: { title: string; content: string }) {
-    return postJson<{ source: SourceRecord }>("/api/sources/html", input);
-  },
-  async ingestUrl(url: string) {
-    return postJson<{ source: SourceRecord }>("/api/sources/url", { url });
-  },
-  async ingestPdf(input: { title: string; dataBase64: string; originalPath?: string }) {
-    return postJson<{ source: SourceRecord }>("/api/sources/pdf", input);
-  },
-  async rendered(sourceId: string) {
-    return getJson<{ source: SourceRecord; content: string }>(`/api/sources/${sourceId}/rendered`);
-  },
-  async anchors(sourceId: string) {
-    return getJson<{ anchors: AnyAnchor[] }>(`/api/sources/${sourceId}/anchors`);
-  },
-  async ingestWebLive(url: string) {
-    return postJson<{ source: SourceRecord }>("/api/sources/web-live", { url });
-  },
-  async notes(sourceId: string) {
-    return getJson<{ notes: NoteRecord[] }>(`/api/sources/${sourceId}/notes`);
-  },
-  async patches(sourceId: string) {
-    return getJson<{ patches: PatchRecord[] }>(`/api/sources/${sourceId}/patches`);
-  },
-  async createAnchor(input: {
-    sourceId: string;
-    anchorKind?: "html_selection" | "web_text_quote" | "pdf_selection";
-    studyId?: string;
-    selector?: string;
-    normalizedUrl?: string;
-    page?: number;
-    quote: string;
-    contextBefore?: string;
-    contextAfter?: string;
-  }) {
-    return postJson<{ anchor: AnyAnchor }>("/api/anchors", input);
-  },
-  async createNote(input: { sourceId: string; anchorId?: string; content: string; contentType: string }) {
-    return postJson<{ note: NoteRecord }>("/api/notes", {
-      ...input,
-      noteKind: "annotation"
-    });
-  },
-  async chat(input: {
-    messages: ChatMessage[];
-    context?: {
-      sourceTitle?: string;
-      sourceType?: string;
-      location?: string;
-      quote?: string;
-      contextBefore?: string;
-      contextAfter?: string;
-    };
-  }) {
-    return postJson<{ message: ChatMessage; provider: string }>("/api/chat", input);
-  },
-  async createPatch(input: {
-    sourceId: string;
-    anchorId: string;
-    oldText: string;
-    newContent: string;
-  }) {
-    return postJson<{ patch: PatchRecord }>("/api/patches", {
-      ...input,
-      action: "replace_selection"
-    });
-  },
-  async updatePatch(patchId: string, status: "applied" | "reverted" | "rejected") {
-    return patchJson<{ patch: PatchRecord }>(`/api/patches/${patchId}`, { status });
-  }
-};
-
-async function getJson<T>(url: string): Promise<T> {
-  const response = await fetch(url);
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.error ?? `Request failed: ${url}`);
-  return body as T;
+// Note `content` is `unknown` (structured per contentType). For display we want a
+// string: string content passes through; structured content is shown as JSON.
+function noteText(content: unknown): string {
+  return typeof content === "string" ? content : JSON.stringify(content, null, 2);
 }
 
-async function postJson<T>(url: string, input: unknown): Promise<T> {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input)
-  });
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.error ?? `Request failed: ${url}`);
-  return body as T;
+// Build the /api/local URL for a local file, mirroring its absolute path so the
+// page's relative assets resolve against its own directory.
+function localFileUrl(absPath: string): string {
+  const encoded = absPath
+    .replace(/\\/g, "/")
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/");
+  return `/api/local/${encoded}`;
 }
 
-async function patchJson<T>(url: string, input: unknown): Promise<T> {
-  const response = await fetch(url, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input)
-  });
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.error ?? `Request failed: ${url}`);
-  return body as T;
-}
-
-// Return the parent directory of an absolute file path (Windows or POSIX).
 // Empty input → empty string (the terminal then uses the app's default cwd).
 function parentDir(filePath: string): string {
   const normalized = filePath.replace(/[\\/]+$/, "");
@@ -225,44 +73,56 @@ function parentDir(filePath: string): string {
 }
 
 export default function App() {
+  return (
+    <FocusProvider>
+      <Workspace />
+    </FocusProvider>
+  );
+}
+
+function Workspace() {
+  const focus = useFocus();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState("");
   const [sources, setSources] = useState<SourceRecord[]>([]);
   const [activeSourceId, setActiveSourceId] = useState("");
   const [renderedHtml, setRenderedHtml] = useState("");
-  const [selection, setSelection] = useState<SelectionDraft | null>(null);
-  const [anchor, setAnchor] = useState<AnyAnchor | null>(null);
   const [anchors, setAnchors] = useState<AnyAnchor[]>([]);
   const [notes, setNotes] = useState<NoteRecord[]>([]);
   const [patches, setPatches] = useState<PatchRecord[]>([]);
   const [noteContentType, setNoteContentType] = useState<string>("markdown");
+  const [composerMode, setComposerMode] = useState<"ask" | "note">("ask");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [showTerminal, setShowTerminal] = useState(false);
   const [patchHtml, setPatchHtml] = useState("");
-  const [importTitle, setImportTitle] = useState("Manual Import Demo");
-  const [importHtml, setImportHtml] = useState(demoHtml);
   const [importUrl, setImportUrl] = useState("");
+  const [folderRoot, setFolderRoot] = useState<string | null>(null);
+
+  // Native file/folder dialogs come from the Electron preload; absent in a browser.
+  const canOpenLocal = typeof window !== "undefined" && !!window.studyVault?.openFile;
+  const activeFilePath = (sources.find((source) => source.id === activeSourceId)?.metadata?.originalPath as string | undefined) ?? undefined;
 
   const activeSource = sources.find((source) => source.id === activeSourceId) ?? null;
   const activeViewer = getSourceViewer(activeSource?.sourceType);
-  const selectedAnchorId = anchor?.id ?? "";
-  // When the active source is a local file we know the disk path of, default the
-  // AI terminal to that file's folder; otherwise let it use the app's cwd.
+  const selectedAnchorId = focus.anchor?.id ?? "";
   const activeFileDir = parentDir((activeSource?.metadata?.originalPath as string | undefined) ?? "");
-  // Note text per anchor, so the webview guest and PDF reader can show the same
-  // floating note card the HTML reader does.
+
+  // Note text per anchor id, so the webview guest and PDF reader can show the same
+  // floating note card the HTML reader does. A note can be on several anchors.
   const noteTextByAnchorId = useMemo(() => {
     const map = new Map<string, string>();
     for (const note of notes) {
-      if (!note.anchorId) continue;
-      const existing = map.get(note.anchorId);
-      // Joined as markdown (blank line between notes); the card renders it.
-      map.set(note.anchorId, (existing ? `${existing}\n\n` : "") + note.content);
+      const text = noteText(note.content);
+      for (const anchorId of note.anchorIds) {
+        const existing = map.get(anchorId);
+        map.set(anchorId, (existing ? `${existing}\n\n` : "") + text);
+      }
     }
     return map;
   }, [notes]);
+
   const webAnchors = useMemo(
     () =>
       anchors
@@ -280,7 +140,20 @@ export default function App() {
     () =>
       anchors
         .filter((item): item is PdfAnchor => item.anchorKind === "pdf_selection")
-        .map((item) => ({ id: item.id, page: item.page, quote: item.quote, note: noteTextByAnchorId.get(item.id) ?? "" })),
+        .map((item) => ({
+          id: item.id,
+          page: item.page,
+          quote: item.quote,
+          rect: item.rect,
+          note: noteTextByAnchorId.get(item.id) ?? ""
+        })),
+    [anchors, noteTextByAnchorId]
+  );
+  const imageAnchors = useMemo(
+    () =>
+      anchors
+        .filter((item): item is ImageAnchor => item.anchorKind === "image_region")
+        .map((item) => ({ id: item.id, rect: item.rect, note: noteTextByAnchorId.get(item.id) ?? "" })),
     [anchors, noteTextByAnchorId]
   );
   const activePatches = useMemo(
@@ -298,8 +171,7 @@ export default function App() {
     }
   }, [activeSourceId]);
 
-  // Re-paint note annotations onto the reader whenever notes/anchors change
-  // (the iframe is already loaded; on a fresh load bindReaderFrame paints too).
+  // Re-paint note annotations onto the reader whenever notes/anchors change.
   useEffect(() => {
     const doc = frameRef.current?.contentDocument;
     if (doc) decorateNotes(doc);
@@ -310,7 +182,7 @@ export default function App() {
     setStatus("loading");
     setError("");
     try {
-      const response = await api.sources();
+      const response = await entityClient.sources();
       setSources(response.sources);
       setActiveSourceId((current) => current || response.sources[0]?.id || "");
       setStatus("idle");
@@ -324,19 +196,20 @@ export default function App() {
     setStatus("loading");
     setError("");
     try {
-      const viewer = getSourceViewer(sources.find((item) => item.id === sourceId)?.sourceType);
+      const sourceRecord = sources.find((item) => item.id === sourceId);
+      const viewer = getSourceViewer(sourceRecord?.sourceType);
+      const isLocalHtml = viewer.htmlPipeline && !!sourceRecord?.metadata?.originalPath;
       const [rendered, anchorsResponse, notesResponse, patchesResponse] = await Promise.all([
-        viewer.htmlPipeline ? api.rendered(sourceId) : Promise.resolve(null),
-        api.anchors(sourceId),
-        api.notes(sourceId),
-        api.patches(sourceId)
+        viewer.htmlPipeline && !isLocalHtml ? entityClient.rendered(sourceId) : Promise.resolve(null),
+        entityClient.anchors(sourceId),
+        entityClient.notes(sourceId),
+        entityClient.patches(sourceId)
       ]);
       setRenderedHtml(rendered?.content ?? "");
       setAnchors(anchorsResponse.anchors);
       setNotes(notesResponse.notes);
       setPatches(patchesResponse.patches);
-      setSelection(null);
-      setAnchor(null);
+      focus.clear();
       setPatchHtml("");
       setChatMessages([]);
       setChatInput("");
@@ -347,41 +220,22 @@ export default function App() {
     }
   }
 
-  async function importSource() {
-    setStatus("saving");
-    setError("");
+  // Re-fetch anchors/notes/patches after a mutation that may have created a new
+  // anchor (note/patch save), so the painted highlights and lists stay in sync —
+  // without resetting the chat the way a full workspace reload would.
+  async function refreshAnnotations() {
+    if (!activeSourceId) return;
     try {
-      const response = await api.ingestHtml({ title: importTitle, content: importHtml });
-      await loadSources();
-      setActiveSourceId(response.source.id);
-      setStatus("idle");
+      const [anchorsResponse, notesResponse, patchesResponse] = await Promise.all([
+        entityClient.anchors(activeSourceId),
+        entityClient.notes(activeSourceId),
+        entityClient.patches(activeSourceId)
+      ]);
+      setAnchors(anchorsResponse.anchors);
+      setNotes(notesResponse.notes);
+      setPatches(patchesResponse.patches);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to import source");
-      setStatus("error");
-    }
-  }
-
-  async function importPdf(file: File) {
-    setStatus("saving");
-    setError("");
-    try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      let binary = "";
-      for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
-      // Desktop only: capture the file's disk path so the terminal can default to
-      // its folder. Browsers don't expose it, so this is simply omitted there.
-      const originalPath = window.studyVault?.getPathForFile?.(file) || undefined;
-      const response = await api.ingestPdf({
-        title: file.name.replace(/\.pdf$/i, "") || file.name,
-        dataBase64: btoa(binary),
-        originalPath
-      });
-      await loadSources();
-      setActiveSourceId(response.source.id);
-      setStatus("idle");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to import PDF");
-      setStatus("error");
+      setError(err instanceof Error ? err.message : "Failed to refresh");
     }
   }
 
@@ -390,7 +244,7 @@ export default function App() {
     setStatus("saving");
     setError("");
     try {
-      const response = await api.ingestUrl(importUrl.trim());
+      const response = await entityClient.ingestUrl(importUrl.trim());
       await loadSources();
       setActiveSourceId(response.source.id);
       setImportUrl("");
@@ -406,7 +260,7 @@ export default function App() {
     setStatus("saving");
     setError("");
     try {
-      const response = await api.ingestWebLive(importUrl.trim());
+      const response = await entityClient.ingestWebLive(importUrl.trim());
       await loadSources();
       setActiveSourceId(response.source.id);
       setImportUrl("");
@@ -417,12 +271,62 @@ export default function App() {
     }
   }
 
-  // Paint stored notes onto the reader document via the AnnotationRenderer
-  // registry (src/client/annotations.ts) — the pluggable seam where different
-  // sources / anchor kinds (or third-party extensions) register how annotations
-  // are drawn. Idempotent (each renderer clears + repaints).
+  async function openLocalFile(filePath: string) {
+    setStatus("saving");
+    setError("");
+    try {
+      const response = await entityClient.ingestLocalFile(filePath);
+      await loadSources();
+      setActiveSourceId(response.source.id);
+      setStatus("idle");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to open file");
+      setStatus("error");
+    }
+  }
+
+  async function openFileDialog() {
+    const filePath = await window.studyVault?.openFile?.();
+    if (filePath) await openLocalFile(filePath);
+  }
+
+  async function openFolderDialog() {
+    const dir = await window.studyVault?.pickDirectory?.();
+    if (dir) setFolderRoot(dir);
+  }
+
+  async function deleteSourceItem(sourceId: string, title: string) {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(`Remove "${title}"? This also deletes its notes and highlights.`)
+    ) {
+      return;
+    }
+    setStatus("saving");
+    setError("");
+    try {
+      await entityClient.deleteSource(sourceId);
+      if (activeSourceId === sourceId) {
+        setActiveSourceId("");
+        setRenderedHtml("");
+        setNotes([]);
+        setAnchors([]);
+        setPatches([]);
+      }
+      await loadSources();
+      setStatus("idle");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete source");
+      setStatus("error");
+    }
+  }
+
+  // Paint stored notes onto the reader document via the AnnotationRenderer registry.
   function decorateNotes(doc: Document) {
-    decorateAnnotations(doc, { anchors, notes });
+    decorateAnnotations(doc, {
+      anchors,
+      notes: notes.map((note) => ({ anchorIds: note.anchorIds, content: noteText(note.content) }))
+    });
   }
 
   function bindReaderFrame() {
@@ -432,6 +336,7 @@ export default function App() {
     if (boundSelectionDocuments.has(doc)) return;
 
     const readSelection = (event?: Event) => {
+      if (!activeSource) return;
       const selected = doc.getSelection();
       const text = selected?.toString().trim() ?? "";
       const frameNode = doc.defaultView?.Node ?? Node;
@@ -452,24 +357,22 @@ export default function App() {
       const quote = text || target.textContent?.trim() || "";
       if (!quote) return;
 
-      // Capture surrounding context so the anchor can be re-found by text (W3C
-      // TextQuoteSelector) if the study-id is later lost to an edit/re-import.
       const docText = (doc.body?.textContent ?? "").replace(/\s+/g, " ");
       const normalizedQuote = quote.replace(/\s+/g, " ");
       const at = docText.indexOf(normalizedQuote);
       const prefix = at >= 0 ? docText.slice(Math.max(0, at - 32), at) : "";
       const suffix = at >= 0 ? docText.slice(at + normalizedQuote.length, at + normalizedQuote.length + 32) : "";
 
-      const nextSelection = {
-        text: quote,
+      focus.setDraft({
+        mode: "quote",
+        sourceId: activeSource.id,
+        kind: "html",
+        quote,
         studyId,
         selector: `[data-study-id="${studyId.replace(/"/g, '\\"')}"]`,
-        kind: "html" as const,
         prefix,
         suffix
-      };
-      setSelection(nextSelection);
-      setAnchor(null);
+      });
       setPatchHtml(`<p data-study-id="${studyId}">${quote}</p>`);
     };
 
@@ -480,139 +383,77 @@ export default function App() {
     doc.addEventListener("keyup", readSelection);
   }
 
-  // Anchors are created lazily from the current selection the first time one is
-  // needed (saving a note/patch, or saving an AI reply) — there's no manual
-  // "Create Anchor" step. Returns the existing or newly-created anchor, or null.
-  async function ensureAnchor(): Promise<AnyAnchor | null> {
-    if (anchor) return anchor;
-    if (!activeSource || !selection) return null;
-    setStatus("saving");
-    setError("");
-    try {
-      let input;
-      if (selection.kind === "web") {
-        input = {
-          sourceId: activeSource.id,
-          anchorKind: "web_text_quote" as const,
-          // The tab's current URL (multi-tab) falls back to the source's URL.
-          normalizedUrl:
-            selection.url ?? (activeSource.metadata?.normalizedUrl as string | undefined),
-          quote: selection.text,
-          contextBefore: selection.prefix ?? "",
-          contextAfter: selection.suffix ?? ""
-        };
-      } else if (selection.kind === "pdf") {
-        input = {
-          sourceId: activeSource.id,
-          anchorKind: "pdf_selection" as const,
-          page: selection.page ?? 1,
-          quote: selection.text,
-          contextBefore: selection.prefix ?? "",
-          contextAfter: selection.suffix ?? ""
-        };
-      } else {
-        input = {
-          sourceId: activeSource.id,
-          anchorKind: "html_selection" as const,
-          studyId: selection.studyId,
-          selector: selection.selector,
-          quote: selection.text,
-          // Stored so the note survives if the study-id is later lost to an edit.
-          contextBefore: selection.prefix ?? "",
-          contextAfter: selection.suffix ?? ""
-        };
-      }
-      const response = await api.createAnchor(input);
-      setAnchor(response.anchor);
-      setAnchors((items) => [response.anchor, ...items.filter((item) => item.id !== response.anchor.id)]);
-      setStatus("idle");
-      return response.anchor;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create anchor");
-      setStatus("error");
-      return null;
-    }
-  }
-
   function captureWebSelection(webSelection: WebSelection, pageUrl: string) {
-    if (!webSelection.exact?.trim()) return;
-    setSelection({
-      text: webSelection.exact,
-      studyId: "",
-      selector: "",
+    if (!webSelection.exact?.trim() || !activeSource) return;
+    focus.setDraft({
+      mode: "quote",
+      sourceId: activeSource.id,
       kind: "web",
+      quote: webSelection.exact,
       prefix: webSelection.prefix,
       suffix: webSelection.suffix,
       url: pageUrl
     });
-    setAnchor(null);
+  }
+
+  // Local HTML is stored raw (no study-id injection), so its selections can't be
+  // html_selection anchors. Emit them as web_text_quote anchors keyed by the local
+  // file's /api/local URL — reusing the same anchoring infra as live web pages.
+  function captureLocalHtmlSelection(webSelection: WebSelection, pageUrl: string) {
+    if (!webSelection.exact?.trim() || !activeSource) return;
+    const originalPath = activeSource.metadata?.originalPath as string | undefined;
+    focus.setDraft({
+      mode: "quote",
+      sourceId: activeSource.id,
+      kind: "web",
+      quote: webSelection.exact,
+      prefix: webSelection.prefix,
+      suffix: webSelection.suffix,
+      url: originalPath ? localFileUrl(originalPath) : pageUrl
+    });
   }
 
   function capturePdfSelection(pdfSelection: PdfSelection) {
-    if (!pdfSelection.exact?.trim()) return;
-    setSelection({
-      text: pdfSelection.exact,
-      studyId: "",
-      selector: "",
+    if (!pdfSelection.exact?.trim() || !activeSource) return;
+    focus.setDraft({
+      mode: "quote",
+      sourceId: activeSource.id,
       kind: "pdf",
+      quote: pdfSelection.exact,
       prefix: pdfSelection.prefix,
       suffix: pdfSelection.suffix,
       page: pdfSelection.page
     });
-    setAnchor(null);
   }
 
-  async function saveNote() {
-    if (!activeSource || !chatInput.trim()) return;
-    const anchorRecord = await ensureAnchor();
-    if (!anchorRecord) return;
-    setStatus("saving");
-    setError("");
-    try {
-      const response = await api.createNote({
-        sourceId: activeSource.id,
-        anchorId: anchorRecord.id,
-        content: chatInput.trim(),
-        contentType: noteContentType
-      });
-      setNotes((items) => [response.note, ...items]);
-      setChatInput("");
-      setStatus("idle");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save note");
-      setStatus("error");
-    }
+  // Region (rubber-band) captures — a geometric rect, no text. They materialize as
+  // pdf_selection (with a rect, empty quote) / image_region anchors.
+  function capturePdfRegion(region: PdfRegion) {
+    if (!activeSource) return;
+    focus.setDraft({
+      mode: "region",
+      sourceId: activeSource.id,
+      kind: "pdf",
+      rect: region.rect,
+      page: region.page
+    });
   }
 
-  async function savePatch() {
-    if (!activeSource || !selection || !patchHtml.trim()) return;
-    const anchorRecord = await ensureAnchor();
-    if (!anchorRecord) return;
-    setStatus("saving");
-    setError("");
-    try {
-      const response = await api.createPatch({
-        sourceId: activeSource.id,
-        anchorId: anchorRecord.id,
-        oldText: selection.text,
-        newContent: patchHtml.trim()
-      });
-      setPatches((items) => [response.patch, ...items]);
-      setStatus("idle");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save patch");
-      setStatus("error");
-    }
+  function captureImageRegion(region: ImageRegion) {
+    if (!activeSource) return;
+    focus.setDraft({ mode: "region", sourceId: activeSource.id, kind: "image", rect: region.rect });
   }
 
-  // Where the active source lives (URL / file path / page) so the assistant knows
+  // Where the active source lives + the focused passage, so the assistant knows
   // exactly which source + passage a question is about.
-  function buildChatContext() {
+  function buildChatContext(): ChatContext {
     const meta = (activeSource?.metadata ?? {}) as Record<string, unknown>;
     const url = (meta.sourceUrl ?? meta.normalizedUrl) as string | undefined;
     const filePath = meta.originalPath as string | undefined;
-    const anchorLike = anchor as { contextBefore?: string; contextAfter?: string; page?: number } | null;
-    const page = selection?.page ?? anchorLike?.page;
+    const draft = focus.draft;
+    const quoteDraft = draft?.mode === "quote" ? draft : null;
+    const anchorLike = focus.anchor as { contextBefore?: string; contextAfter?: string; page?: number } | null;
+    const page = (draft && "page" in draft ? draft.page : undefined) ?? anchorLike?.page;
     const locationParts: string[] = [];
     if (url) locationParts.push(url);
     else if (filePath) locationParts.push(filePath);
@@ -622,28 +463,39 @@ export default function App() {
       sourceTitle: activeSource?.title,
       sourceType: activeSource?.sourceType,
       location: locationParts.join(" · ") || undefined,
-      quote: selection?.text ?? anchor?.quote,
-      contextBefore: selection?.prefix ?? anchorLike?.contextBefore,
-      contextAfter: selection?.suffix ?? anchorLike?.contextAfter
+      quote: quoteDraft?.quote ?? focus.anchor?.quote,
+      contextBefore: quoteDraft?.prefix ?? anchorLike?.contextBefore,
+      contextAfter: quoteDraft?.suffix ?? anchorLike?.contextAfter
     };
   }
 
-  async function sendChat() {
-    if (!chatInput.trim()) return;
-    const history: ChatMessage[] = [...chatMessages, { role: "user", content: chatInput.trim() }];
-    setChatMessages(history);
-    setChatInput("");
+  // Assemble the shared CommandContext. Commands collaborate through focus, the
+  // entity client, and these action callbacks — never by touching node internals.
+  function commandContext(payload: CommandContext["payload"]): CommandContext {
+    return {
+      focus,
+      client: entityClient,
+      sourceId: activeSourceId || undefined,
+      payload,
+      chatMessages,
+      chatContext: buildChatContext(),
+      actions: {
+        onNoteCreated: () => void refreshAnnotations(),
+        onPatchCreated: () => void refreshAnnotations(),
+        onChatHistory: (history) => setChatMessages(history),
+        onAssistantMessage: (message) => setChatMessages((items) => [...items, message])
+      }
+    };
+  }
+
+  async function dispatch(commandId: string, payload: CommandContext["payload"]) {
     setStatus("saving");
     setError("");
     try {
-      const response = await api.chat({
-        messages: history,
-        context: buildChatContext()
-      });
-      setChatMessages((items) => [...items, response.message]);
+      await runCommand(commandId, commandContext(payload));
       setStatus("idle");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Chat failed");
+      setError(err instanceof Error ? err.message : "Command failed");
       setStatus("error");
     }
   }
@@ -655,33 +507,12 @@ export default function App() {
     return selected || fullContent;
   }
 
-  async function saveAiNote(content: string) {
-    if (!activeSource) return;
-    // Anchor to the current selection if there is one (else save unanchored).
-    const anchorRecord = anchor ?? (selection ? await ensureAnchor() : null);
-    setStatus("saving");
-    setError("");
-    try {
-      const response = await api.createNote({
-        sourceId: activeSource.id,
-        anchorId: anchorRecord?.id,
-        content,
-        contentType: "markdown"
-      });
-      setNotes((items) => [response.note, ...items]);
-      setStatus("idle");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save AI note");
-      setStatus("error");
-    }
-  }
-
   async function changePatchStatus(patch: PatchRecord, nextStatus: "applied" | "reverted" | "rejected") {
     if (!activeSource) return;
     setStatus("saving");
     setError("");
     try {
-      await api.updatePatch(patch.id, nextStatus);
+      await entityClient.updatePatch(patch.id, nextStatus);
       await loadSourceWorkspace(activeSource.id);
       setStatus("idle");
     } catch (err) {
@@ -689,6 +520,24 @@ export default function App() {
       setStatus("error");
     }
   }
+
+  // Whether the composer's primary action is available, via the command itself.
+  const composerCommandId = composerMode === "ask" ? "anchor.ask-ai" : "anchor.add-note";
+  const composerCtx = commandContext({ text: chatInput, contentType: noteContentType });
+  const composerDisabled = !getCommand(composerCommandId)?.isAvailable(composerCtx);
+
+  function submitComposer() {
+    if (composerDisabled) return;
+    const text = chatInput;
+    setChatInput("");
+    void dispatch(composerCommandId, { text, contentType: noteContentType });
+  }
+
+  // The chip / patch text uses the focused passage's quote — empty for region
+  // drafts (a region has no text, but the chip still shows a "Region selected" hint
+  // below so the user knows there IS a focus).
+  const draftQuote = draftQuoteText(focus.draft) || focus.anchor?.quote || "";
+  const hasRegionDraft = focus.draft?.mode === "region";
 
   return (
     <div className="app-shell">
@@ -703,33 +552,70 @@ export default function App() {
           Refresh
         </button>
 
+        <section className="open-box">
+          <div className="panel-title">
+            <FolderOpen size={16} />
+            Open
+          </div>
+          <div className="open-actions">
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => void openFileDialog()}
+              disabled={!canOpenLocal}
+              title={canOpenLocal ? "Open a local file" : "Desktop app only"}
+            >
+              <File size={16} />
+              File
+            </button>
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => void openFolderDialog()}
+              disabled={!canOpenLocal}
+              title={canOpenLocal ? "Open a folder as a file tree" : "Desktop app only"}
+            >
+              <FolderOpen size={16} />
+              Folder
+            </button>
+          </div>
+          {!canOpenLocal ? <small className="tree-hint">Available in the desktop app.</small> : null}
+          {folderRoot ? (
+            <div className="folder-root">
+              <div className="folder-root-head">
+                <span className="folder-root-name" title={folderRoot}>{baseName(folderRoot)}</span>
+                <button className="link-button" type="button" onClick={() => setFolderRoot(null)} title="Close folder">
+                  <X size={14} />
+                </button>
+              </div>
+              <FileTree root={folderRoot} onOpenFile={(filePath) => void openLocalFile(filePath)} activePath={activeFilePath} />
+            </div>
+          ) : null}
+        </section>
+
         <div className="source-list">
           {sources.map((source) => (
-            <button
+            <div
               key={source.id}
               className={`source-item${source.id === activeSourceId ? " active" : ""}`}
-              type="button"
-              onClick={() => setActiveSourceId(source.id)}
             >
-              <span>{source.title}</span>
-              <small>{source.sourceType} · {source.id}</small>
-            </button>
+              <button className="source-item-open" type="button" onClick={() => setActiveSourceId(source.id)}>
+                <span>{source.title}</span>
+                <small>{source.sourceType} · {source.id}</small>
+              </button>
+              <button
+                className="source-item-delete"
+                type="button"
+                title="Remove this document"
+                aria-label="Remove this document"
+                onClick={() => void deleteSourceItem(source.id, source.title)}
+              >
+                <Trash2 size={15} />
+              </button>
+            </div>
           ))}
           {sources.length === 0 ? <div className="empty-state">No sources yet.</div> : null}
         </div>
-
-        <section className="import-box">
-          <div className="panel-title">
-            <FilePlus2 size={16} />
-            Import HTML
-          </div>
-          <input value={importTitle} onChange={(event) => setImportTitle(event.target.value)} />
-          <textarea value={importHtml} onChange={(event) => setImportHtml(event.target.value)} />
-          <button className="icon-button" type="button" onClick={() => void importSource()}>
-            <FilePlus2 size={16} />
-            Import
-          </button>
-        </section>
 
         <section className="url-import-box">
           <div className="panel-title">
@@ -749,22 +635,6 @@ export default function App() {
             <FilePlus2 size={16} />
             Open Live
           </button>
-        </section>
-
-        <section className="pdf-import-box">
-          <div className="panel-title">
-            <FilePlus2 size={16} />
-            Import PDF
-          </div>
-          <input
-            type="file"
-            accept="application/pdf,.pdf"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void importPdf(file);
-              event.target.value = "";
-            }}
-          />
         </section>
       </aside>
 
@@ -790,9 +660,21 @@ export default function App() {
             fileUrl={`/api/sources/${activeSource.id}/file`}
             anchors={pdfAnchors}
             onSelection={capturePdfSelection}
+            onRegion={capturePdfRegion}
+          />
+        ) : activeSource && activeViewer.kind === "image" ? (
+          <ImageReader
+            src={`/api/sources/${activeSource.id}/file`}
+            anchors={imageAnchors}
+            onRegion={captureImageRegion}
           />
         ) : activeSource && activeViewer.kind === "file" ? (
           <iframe className="pdf-reader" title="PDF reader" src={`/api/sources/${activeSource.id}/file`} />
+        ) : activeSource && activeViewer.kind === "html" && activeSource.metadata?.originalPath ? (
+          <LocalHtmlReader
+            src={localFileUrl(activeSource.metadata.originalPath as string)}
+            onSelection={captureLocalHtmlSelection}
+          />
         ) : activeViewer.htmlPipeline && renderedHtml ? (
           <iframe ref={frameRef} title="Source reader" srcDoc={renderedHtml} onLoad={bindReaderFrame} />
         ) : (
@@ -808,28 +690,29 @@ export default function App() {
           </div>
           {/* The passage everything below acts on — auto-filled from the reader
               selection (its anchor is created lazily when you ask or save). */}
-          {selection ? (
+          {draftQuote || hasRegionDraft ? (
             <div className="chat-source">
               <span className="chat-source-label">Source</span>
               <span className="chat-source-quote">
-                {selection.text.replace(/\s+/g, " ").slice(0, 90)}
-                {selection.text.length > 90 ? "…" : ""}
+                {hasRegionDraft && !draftQuote ? (
+                  "Region selected"
+                ) : (
+                  <>
+                    {draftQuote.replace(/\s+/g, " ").slice(0, 90)}
+                    {draftQuote.length > 90 ? "…" : ""}
+                  </>
+                )}
               </span>
               <button
                 type="button"
                 className="chat-source-clear"
                 aria-label="Clear source"
-                onClick={() => {
-                  setSelection(null);
-                  setAnchor(null);
-                }}
+                onClick={() => focus.clear()}
               >
                 ×
               </button>
             </div>
-          ) : (
-            <div className="chat-source chat-source-empty">Select text in the reader to ask about a passage.</div>
-          )}
+          ) : null}
 
           <div className="chat-log">
             {chatMessages.map((message, index) => (
@@ -844,11 +727,15 @@ export default function App() {
                       className="link-button"
                       type="button"
                       title="Save the highlighted part of this reply (or the whole reply if nothing is selected)"
-                      onClick={() => void saveAiNote(selectedTextOr(message.content))}
+                      onClick={() => void dispatch("anchor.add-note", { text: selectedTextOr(message.content), contentType: "markdown" })}
                     >
                       Save selection as note
                     </button>
-                    <button className="link-button" type="button" onClick={() => void saveAiNote(message.content)}>
+                    <button
+                      className="link-button"
+                      type="button"
+                      onClick={() => void dispatch("anchor.add-note", { text: message.content, contentType: "markdown" })}
+                    >
                       Save full reply
                     </button>
                   </div>
@@ -860,37 +747,61 @@ export default function App() {
             ) : null}
           </div>
 
-          {/* One composer: Send it to the AI, or Save it as a note of the chosen type. */}
+          {/* One composer: toggle whether the text is sent to the AI or saved as a
+              note. Enter submits the current mode; Shift+Enter inserts a newline. */}
           <textarea
             className="composer-input"
             value={chatInput}
-            placeholder="Ask the AI about this passage, or write a note…"
+            placeholder={composerMode === "ask" ? "Ask the AI about this passage…" : "Write a note about this passage…"}
             onChange={(event) => setChatInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                submitComposer();
+              }
+            }}
           />
           <div className="composer-actions">
-            <button className="icon-button" type="button" onClick={() => void sendChat()} disabled={!activeSource}>
-              <Send size={16} />
-              Send
-            </button>
-            <select
-              className="note-type-select"
-              value={noteContentType}
-              onChange={(event) => setNoteContentType(event.target.value)}
-            >
-              {NOTE_CONTENT_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
+            <div className="composer-mode" role="tablist" aria-label="Composer mode">
+              <button
+                type="button"
+                className={`mode-tab${composerMode === "ask" ? " active" : ""}`}
+                onClick={() => setComposerMode("ask")}
+              >
+                <Sparkles size={14} />
+                Ask AI
+              </button>
+              <button
+                type="button"
+                className={`mode-tab${composerMode === "note" ? " active" : ""}`}
+                onClick={() => setComposerMode("note")}
+              >
+                <NotebookPen size={14} />
+                Note
+              </button>
+            </div>
+            {composerMode === "note" ? (
+              <select
+                className="note-type-select"
+                value={noteContentType}
+                onChange={(event) => setNoteContentType(event.target.value)}
+              >
+                {NOTE_CONTENT_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            ) : null}
             <button
-              className="icon-button"
+              className="icon-button primary composer-submit"
               type="button"
-              onClick={() => void saveNote()}
-              disabled={!selection && !anchor}
+              onClick={submitComposer}
+              disabled={composerDisabled}
+              title={composerMode === "ask" ? "Send to AI (Enter)" : "Save note (Enter)"}
             >
-              <NotebookPen size={16} />
-              Save Note
+              {composerMode === "ask" ? <Send size={16} /> : <NotebookPen size={16} />}
+              {composerMode === "ask" ? "Send" : "Save Note"}
             </button>
           </div>
 
@@ -898,17 +809,16 @@ export default function App() {
             <div className="record-list note-list">
               {notes.map((note) => {
                 const contentType = note.contentType ?? "markdown";
+                const text = noteText(note.content);
                 return (
                   <article key={note.id} className="record-card">
-                    <strong>
-                      {note.noteKind} · {contentType}
-                    </strong>
+                    <strong>{contentType}</strong>
                     {isDiagramType(contentType) ? (
-                      <DiagramNote contentType={contentType} content={note.content} />
+                      <DiagramNote contentType={contentType} content={text} />
                     ) : (
                       <div
                         className="note-rendered"
-                        dangerouslySetInnerHTML={{ __html: renderNoteContent(contentType, note.content).html }}
+                        dangerouslySetInnerHTML={{ __html: renderNoteContent(contentType, text).html }}
                       />
                     )}
                   </article>
@@ -930,8 +840,8 @@ export default function App() {
             <button
               className="icon-button"
               type="button"
-              onClick={() => void savePatch()}
-              disabled={!selection && !anchor}
+              onClick={() => void dispatch("anchor.create-patch", { newContent: patchHtml, oldText: draftQuote })}
+              disabled={!focus.draft && !focus.anchor}
             >
               <ListRestart size={16} />
               Create Patch
