@@ -154,6 +154,38 @@ test("annotate an image: drag a region → note → box overlay + shared note ca
   await expect(card).toContainText("Region note.");
 });
 
+test("annotate a PDF figure by region: drag a box (no text) → note → box overlay", async ({ page }) => {
+  await page.goto("/");
+
+  await page.locator('.pdf-import-box input[type="file"]').setInputFiles({
+    name: "fig.pdf",
+    mimeType: "application/pdf",
+    buffer: makeTextPdf("Figure region target.")
+  });
+  await expect(page.locator(".reader-header h2")).toHaveText("fig");
+  const pageEl = page.locator(".pdf-reader-canvas .pdf-page").first();
+  await expect(pageEl).toBeVisible({ timeout: 15_000 });
+
+  // Turn on region mode, then drag a box on the page (no text selection).
+  await page.getByRole("button", { name: "Region: off" }).click();
+  const b = (await pageEl.boundingBox())!;
+  await page.mouse.move(b.x + 40, b.y + 40);
+  await page.mouse.down();
+  await page.mouse.move(b.x + 180, b.y + 130, { steps: 8 });
+  await page.mouse.up();
+
+  await expect(page.locator(".chat-source")).toContainText("PDF region");
+  await page.locator(".composer-input").fill("Figure note.");
+  await page.getByRole("button", { name: "Save Note" }).click();
+  await expect(page.locator(".note-list")).toContainText("Figure note.");
+
+  // A rect-only anchor (no quote) renders as a geometric box, hover → shared card.
+  const box = page.locator(".pdf-reader-canvas .pdf-region-box").first();
+  await expect(box).toBeVisible();
+  await box.hover();
+  await expect(page.locator("#sv-note-card.sv-note-card-show")).toContainText("Figure note.");
+});
+
 test("rich note form: a flashcard note renders as a flip card", async ({ page }) => {
   const title = `E2E Rich ${Date.now()}`;
   const sourceHtml = [

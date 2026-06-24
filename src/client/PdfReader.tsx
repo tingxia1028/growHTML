@@ -1,9 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 import "pdfjs-dist/web/pdf_viewer.css";
 import { applyHighlight, clearAnnotations, ensureAnnotationLayer } from "./annotationLayer";
-import { denormalizeRect, normalizeRect, type NormRect } from "./regionSelect";
+import { denormalizeRect, isMeaningfulRegion, normalizeRect, type NormRect } from "./regionSelect";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -27,6 +27,11 @@ export function PdfReader({ fileUrl, anchors, onSelection }: PdfReaderProps) {
   onSelectionRef.current = onSelection;
   const anchorsRef = useRef(anchors);
   anchorsRef.current = anchors;
+  // Region mode: drag a box on a figure (no selectable text) → a rect-only
+  // pdf_selection anchor. The reliable route for images/figures inside a PDF.
+  const [regionMode, setRegionMode] = useState(false);
+  const regionModeRef = useRef(regionMode);
+  regionModeRef.current = regionMode;
 
   function highlightAnchors() {
     const container = containerRef.current;
@@ -108,6 +113,7 @@ export function PdfReader({ fileUrl, anchors, onSelection }: PdfReaderProps) {
     })();
 
     const onMouseUp = () => {
+      if (regionModeRef.current) return; // region drags don't make a text selection
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
       const exact = selection.toString().replace(/\s+/g, " ").trim();
@@ -145,9 +151,56 @@ export function PdfReader({ fileUrl, anchors, onSelection }: PdfReaderProps) {
     };
     container.addEventListener("mouseup", onMouseUp);
 
+    // Region drag: only active while regionMode is on. Drag a box over a page →
+    // normalized rect → rect-only selection (empty quote).
+    const onMouseDown = (event: MouseEvent) => {
+      if (!regionModeRef.current) return;
+      const pageDiv = (event.target as Element)?.closest?.(".pdf-page") as HTMLElement | null;
+      if (!pageDiv || !container.contains(pageDiv)) return;
+      event.preventDefault();
+      const pageRect = pageDiv.getBoundingClientRect();
+      const startX = event.clientX - pageRect.left;
+      const startY = event.clientY - pageRect.top;
+      const liveBox = document.createElement("div");
+      liveBox.className = "pdf-region-live";
+      liveBox.style.left = `${startX}px`;
+      liveBox.style.top = `${startY}px`;
+      pageDiv.appendChild(liveBox);
+
+      const move = (e: MouseEvent) => {
+        const x = e.clientX - pageRect.left;
+        const y = e.clientY - pageRect.top;
+        liveBox.style.left = `${Math.min(startX, x)}px`;
+        liveBox.style.top = `${Math.min(startY, y)}px`;
+        liveBox.style.width = `${Math.abs(x - startX)}px`;
+        liveBox.style.height = `${Math.abs(y - startY)}px`;
+      };
+      const up = (e: MouseEvent) => {
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", up);
+        liveBox.remove();
+        const rect = normalizeRect(
+          startX,
+          startY,
+          e.clientX - pageRect.left,
+          e.clientY - pageRect.top,
+          pageRect.width,
+          pageRect.height
+        );
+        if (isMeaningfulRegion(rect)) {
+          const page = Number(pageDiv.dataset.page) || 1;
+          onSelectionRef.current({ page, exact: "", prefix: "", suffix: "", rect });
+        }
+      };
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", up);
+    };
+    container.addEventListener("mousedown", onMouseDown);
+
     return () => {
       cancelled = true;
       container.removeEventListener("mouseup", onMouseUp);
+      container.removeEventListener("mousedown", onMouseDown);
     };
   }, [fileUrl]);
 
@@ -156,5 +209,19 @@ export function PdfReader({ fileUrl, anchors, onSelection }: PdfReaderProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anchors]);
 
-  return <div ref={containerRef} className="pdf-reader-canvas" />;
+  return (
+    <div className="pdf-reader-wrap">
+      <div className="pdf-reader-toolbar">
+        <button
+          type="button"
+          className={`pdf-region-toggle${regionMode ? " is-active" : ""}`}
+          onClick={() => setRegionMode((on) => !on)}
+          title="Region mode: drag a box on a figure to annotate it (no text needed)"
+        >
+          {regionMode ? "Region: on" : "Region: off"}
+        </button>
+      </div>
+      <div ref={containerRef} className={`pdf-reader-canvas${regionMode ? " region-mode" : ""}`} />
+    </div>
+  );
 }

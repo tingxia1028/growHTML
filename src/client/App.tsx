@@ -112,6 +112,8 @@ type SelectionDraft = {
   url?: string;
   // For geometric selections (image regions, PDF figures): normalized rect.
   rect?: [number, number, number, number];
+  // True when the selection is purely geometric (no real text) — anchor by rect.
+  geometric?: boolean;
 };
 
 type Status = "idle" | "loading" | "saving" | "error";
@@ -569,11 +571,12 @@ export default function App() {
           sourceId: activeSource.id,
           anchorKind: "pdf_selection" as const,
           page: selection.page ?? 1,
-          quote: selection.text,
+          // A region drag is geometric: anchor by rect, with no text quote.
+          quote: selection.geometric ? "" : selection.text,
           // Hybrid: keep the geometric rect alongside the text quote.
           rect: selection.rect,
-          contextBefore: selection.prefix ?? "",
-          contextAfter: selection.suffix ?? ""
+          contextBefore: selection.geometric ? "" : selection.prefix ?? "",
+          contextAfter: selection.geometric ? "" : selection.suffix ?? ""
         };
       } else if (selection.kind === "image") {
         if (!selection.rect) {
@@ -628,16 +631,24 @@ export default function App() {
   }
 
   function capturePdfSelection(pdfSelection: PdfSelection) {
-    if (!pdfSelection.exact?.trim()) return;
+    const hasText = !!pdfSelection.exact?.trim();
+    // A region drag has no text — accept it as long as it carries a rect.
+    if (!hasText && !pdfSelection.rect) return;
+    const pct = (n: number) => Math.round(n * 100);
+    const label =
+      hasText || !pdfSelection.rect
+        ? pdfSelection.exact
+        : `PDF region · p${pdfSelection.page} @ ${pct(pdfSelection.rect[0])}%,${pct(pdfSelection.rect[1])}%`;
     setSelection({
-      text: pdfSelection.exact,
+      text: label,
       studyId: "",
       selector: "",
       kind: "pdf",
-      prefix: pdfSelection.prefix,
-      suffix: pdfSelection.suffix,
+      prefix: hasText ? pdfSelection.prefix : "",
+      suffix: hasText ? pdfSelection.suffix : "",
       page: pdfSelection.page,
-      rect: pdfSelection.rect
+      rect: pdfSelection.rect,
+      geometric: !hasText
     });
     setAnchor(null);
   }
