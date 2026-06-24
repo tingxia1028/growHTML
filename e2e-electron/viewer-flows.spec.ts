@@ -112,26 +112,6 @@ function decode(buffer: Buffer): PngImage {
 
 type Rect = { x: number; y: number; width: number; height: number };
 
-// Count pixels in `rect` that differ meaningfully between two same-size screenshots.
-function diffPixelsInRect(a: PngImage, b: PngImage, rect: Rect): number {
-  const x0 = Math.max(0, Math.floor(rect.x));
-  const y0 = Math.max(0, Math.floor(rect.y));
-  const x1 = Math.min(a.width, b.width, Math.ceil(rect.x + rect.width));
-  const y1 = Math.min(a.height, b.height, Math.ceil(rect.y + rect.height));
-  let changed = 0;
-  for (let y = y0; y < y1; y++) {
-    for (let x = x0; x < x1; x++) {
-      const ia = (a.width * y + x) << 2;
-      const ib = (b.width * y + x) << 2;
-      const dr = Math.abs(a.data[ia] - b.data[ib]);
-      const dg = Math.abs(a.data[ia + 1] - b.data[ib + 1]);
-      const db = Math.abs(a.data[ia + 2] - b.data[ib + 2]);
-      if (dr + dg + db > 40) changed++;
-    }
-  }
-  return changed;
-}
-
 // Count "highlight yellow-ish" pixels (the highlight is rgba(255,213,79,.4) over
 // white ≈ a warm yellow). Same predicate as local-html-highlight.spec.ts.
 function yellowPixelsInRect(png: PngImage, rect: Rect): number {
@@ -272,45 +252,82 @@ async function highlightYellowInPassage(webview: ReturnType<Page["locator"]>): P
   return best;
 }
 
-// BEST EFFORT: hover the highlighted line and look for the shared floating note card
-// (#sv-note-card) appearing just below it, via a before/after pixel diff in that band.
-// The card is painted inside the guest and is timing-flaky across Electron versions
-// (the existing local-html-highlight.spec.ts also only logs it), so we LOG the outcome
-// and return it rather than asserting — the card's hover/show logic is unit-covered in
-// src/client/annotationDom.test.ts. Returns whether a card-sized change was observed.
-async function hoverCardObservable(webview: ReturnType<Page["locator"]>, label: string): Promise<boolean> {
-  try {
-    const dpr = await page.evaluate(() => window.devicePixelRatio || 1);
-    const box = (await webview.boundingBox())!;
-    const cardRect: Rect = {
-      x: box.x * dpr,
-      y: (box.y + 40) * dpr,
-      width: box.width * dpr,
-      height: Math.min(260, box.height - 40) * dpr
-    };
-    const before = decode(await page.screenshot());
-    await page.mouse.move(box.x + 5, box.y + 5);
-    await page.mouse.move(box.x + box.width / 2, box.y + 50, { steps: 8 });
-    let diff = 0;
-    const seen = await expect
-      .poll(
-        async () => {
-          diff = diffPixelsInRect(before, decode(await page.screenshot()), cardRect);
-          return diff;
-        },
-        { timeout: 4000 }
-      )
-      .toBeGreaterThan(500)
-      .then(() => true)
-      .catch(() => false);
-    // eslint-disable-next-line no-console
-    console.log(`[viewer-flows ${label}] hover note-card observable: ${seen} (diff px in band=${diff})`);
-    return seen;
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.log(`[viewer-flows ${label}] hover note-card check skipped: ${(err as Error).message}`);
-    return false;
-  }
+// DETERMINISTIC hover note-card assertion. The card is painted INSIDE the guest, a
+// separate WebContents the host page cannot DOM-query — so the prior "move the host
+// mouse + diff a screenshot" approach never routed a real mouseover into the guest's
+// delegated listener and stayed observable:false. Instead we drive AND read back the
+// card ENTIRELY inside the guest via `webview.executeJavaScript(...)` (the same guest
+// path the selection step uses), which returns serializable values to the host:
+//   1. find the painted highlight (`mark[data-sv="1"].sv-annotated`, carrying
+//      `data-sv-note`) and dispatch a bubbling `mouseover` — the shared layer's
+//      delegated `document` `mouseover` listener runs `show(target)` SYNCHRONOUSLY,
+//      setting `#sv-note-card .sv-note-card-body` and adding `sv-note-card-show`;
+//   2. read back whether `#sv-note-card` has `sv-note-card-show` and its body text.
+// The host then asserts the card IS shown AND its rendered text contains the saved
+// note — a real functional assertion (no screenshot fragility). Returns the readback
+// so the caller can log/assert it. `noteText` is the saved note's text to match.
+type HoverCardState = { found: boolean; shown: boolean; text: string };
+
+async function readHoverCardInGuest(webviewSelector: string): Promise<HoverCardState> {
+  return page
+    .evaluate(async (sel) => {
+      const view = document.querySelector(sel) as
+        | (HTMLElement & { executeJavaScript: (code: string) => Promise<unknown> })
+        | null;
+      if (!view) return { found: false, shown: false, text: "" };
+      const raw = await view.executeJavaScript(
+        "(function(){" +
+          // The painted highlight: a <mark data-sv=\"1\"> that is .sv-annotated and
+          // carries data-sv-note (set by applyHighlight). Hovering it shows the card.
+          "var mark=document.querySelector('mark[data-sv=\\\"1\\\"].sv-annotated')" +
+          "||document.querySelector('.sv-annotated');" +
+          "if(!mark) return JSON.stringify({found:false,shown:false,text:''});" +
+          // Dispatch the bubbling mouseover the delegated document listener expects;
+          // show() adds the class + fills the body synchronously, so we can read now.
+          "mark.dispatchEvent(new MouseEvent('mouseover',{bubbles:true}));" +
+          "var card=document.querySelector('#sv-note-card');" +
+          "var body=card?card.querySelector('.sv-note-card-body'):null;" +
+          "return JSON.stringify({" +
+          "found:true," +
+          "shown:!!card&&card.classList.contains('sv-note-card-show')," +
+          "text:body?(body.textContent||''):''" +
+          "});})()"
+      );
+      try {
+        return JSON.parse(String(raw)) as { found: boolean; shown: boolean; text: string };
+      } catch {
+        return { found: false, shown: false, text: "" };
+      }
+    }, webviewSelector)
+    .catch(() => ({ found: false, shown: false, text: "" }));
+}
+
+// Poll the guest readback until the highlight is present and hovering it shows the
+// card (the highlight may still be painting right after the note save). Asserts the
+// card is shown with the saved note text, and returns the final state for logging.
+async function assertHoverCard(
+  webviewSelector: string,
+  noteText: string,
+  label: string
+): Promise<HoverCardState> {
+  let state: HoverCardState = { found: false, shown: false, text: "" };
+  await expect
+    .poll(
+      async () => {
+        state = await readHoverCardInGuest(webviewSelector);
+        return state.shown && state.text.includes(noteText);
+      },
+      {
+        timeout: 15_000,
+        message: `hovering the ${label} highlight should show #sv-note-card with the saved note text`
+      }
+    )
+    .toBe(true);
+  expect(state.shown, `${label}: #sv-note-card must have class sv-note-card-show on hover`).toBe(true);
+  expect(state.text, `${label}: the note card body must render the saved note text`).toContain(noteText);
+  // eslint-disable-next-line no-console
+  console.log(`[viewer-flows ${label}] hover note-card shown=${state.shown} text=${JSON.stringify(state.text)}`);
+  return state;
 }
 
 test.beforeAll(async () => {
@@ -385,8 +402,10 @@ test("local HTML viewer: select in guest → chip → save note → anchor creat
   // eslint-disable-next-line no-console
   console.log(`[viewer-flows local] anchor=${webAnchor!.anchorKind} highlight yellow px=${yellow}`);
 
-  // STEP 5 (best effort, logged) — hovering the highlight surfaces the note card.
-  await hoverCardObservable(webview, "local");
+  // STEP 5 — hovering the highlight surfaces the shared note card. DETERMINISTIC:
+  // dispatch a bubbling mouseover ON the highlight INSIDE the guest and read back
+  // that #sv-note-card got `sv-note-card-show` and its body rendered the saved note.
+  await assertHoverCard(".local-webview-host webview.local-webview", "Local flow note.", "local");
 });
 
 // ——————————————————————————————————————————————————————————————————————
@@ -443,6 +462,8 @@ test("live HTML viewer: select in guest → chip → save note → anchor create
     `[viewer-flows live] anchor=${webAnchor!.anchorKind} normalizedUrl=${webAnchor!.normalizedUrl} highlight yellow px=${yellow}`
   );
 
-  // STEP 5 (best effort, logged) — hovering the highlight surfaces the note card.
-  await hoverCardObservable(webview, "live");
+  // STEP 5 — hovering the highlight surfaces the shared note card. DETERMINISTIC:
+  // dispatch a bubbling mouseover ON the highlight INSIDE the live guest and read
+  // back that #sv-note-card got `sv-note-card-show` and rendered the saved note.
+  await assertHoverCard(".webview-host webview", "Live flow note.", "live");
 });

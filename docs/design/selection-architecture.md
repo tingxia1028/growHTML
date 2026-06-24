@@ -197,8 +197,8 @@ highlight on the passage**. The matrix below marks each viewer×step:
 | --- | --- | --- | --- | --- | --- |
 | **Imported HTML** (DomReader srcDoc iframe) | ✓ | ✓ `html_selection` | ✓ `.sv-annotated` in iframe | ✓ (host DOM) | `e2e/viewer-flows.spec.ts`, `e2e/loop.spec.ts`, `e2e-electron/app.spec.ts` |
 | **PDF** (pdf.js PDFViewer) | ✓ | ✓ `pdf_selection` (text **and** region) | ✓ `.sv-annotated` / region box | ✓ (host DOM) | `e2e/viewer-flows.spec.ts` (text quote), `e2e/regions.spec.ts` (region) |
-| **Live HTML / web-live** (`<webview>`, WebviewReader) | ✓ (real guest selection) | ✓ `web_text_quote` | ⚠ screenshot pixels | ⚠ screenshot (not observable here) | `e2e-electron/viewer-flows.spec.ts` |
-| **Local HTML / native** (`<webview>`, LocalHtmlReader) | ✓ (real guest selection) | ✓ `web_text_quote` | ⚠ screenshot pixels | ⚠ screenshot (not observable here) | `e2e-electron/viewer-flows.spec.ts`, `e2e-electron/local-html-highlight.spec.ts` |
+| **Live HTML / web-live** (`<webview>`, WebviewReader) | ✓ (real guest selection) | ✓ `web_text_quote` | ⚠ screenshot pixels | ✓ (guest `executeJavaScript` DOM readback) | `e2e-electron/viewer-flows.spec.ts` |
+| **Local HTML / native** (`<webview>`, LocalHtmlReader) | ✓ (real guest selection) | ✓ `web_text_quote` | ⚠ screenshot pixels | ✓ (guest `executeJavaScript` DOM readback) | `e2e-electron/viewer-flows.spec.ts`, `e2e-electron/local-html-highlight.spec.ts` |
 
 Supporting unit + invariant coverage (real tests only):
 
@@ -254,25 +254,52 @@ the UI (observed `highlight yellow px=8373` for each). So the WRITE direction is
 verified both host-triggered (`local-html-highlight.spec.ts`) and via the full
 user-driven flow (`viewer-flows.spec.ts`).
 
-**Hover note-card (best effort):** the specs also move the host mouse over the
-highlight and look for the card via a pixel diff in the band below the line. In this
-environment the card does **not** surface to a screenshot (`hover note-card observable:
-false, diff px=0`) — the specs **log** this and do not fail on it (the card's hover/show
-logic is unit-covered in `annotationDom.test.ts`). The READ direction (a real text
-**selection** inside a guest) **is** now driven from the host via the
-`executeJavaScript` + bubbling-`MouseEvent` technique above and asserted by the host
-chip + created anchor — the earlier "not reliably scriptable" caveat is retired. We
-never fake a passing assertion.
+### Webview hover note-card: verified by guest `executeJavaScript` DOM readback
+
+The hover note-card (the shared `#sv-note-card`) is painted **inside** the guest, so —
+like the highlight — the host page cannot DOM-query it directly. An **earlier** attempt
+moved the **host** mouse over the highlight and looked for the card via a screenshot
+pixel-diff; that never worked (`hover note-card observable: false, diff px=0`) because a
+host `page.mouse.move` does **not** route a `mouseover` into the guest's delegated
+`document` listener — and a screenshot of a not-shown card is no evidence either way.
+
+It is now a **deterministic functional assertion**, driven AND read back **entirely
+inside the guest** via `webview.executeJavaScript(code)` (the same guest path the
+selection step uses), which returns a serializable value to the host:
+
+1. In the guest, find the painted highlight — `mark[data-sv="1"].sv-annotated`
+   (carrying `data-sv-note`, set by `applyHighlight`) — and dispatch a **bubbling**
+   `new MouseEvent('mouseover', { bubbles: true })` on it. The shared layer's delegated
+   `document` `mouseover` listener runs `show(target)` **synchronously**: it sets
+   `#sv-note-card .sv-note-card-body`.innerHTML from the target's `data-sv-note`
+   (rendered markdown) and adds the `sv-note-card-show` class.
+2. Read back, in the same guest call, `{ shown: #sv-note-card has class
+   sv-note-card-show, text: its .sv-note-card-body textContent }` and return it (JSON)
+   to the host.
+3. The host asserts `shown === true` **and** `text` contains the saved note's text.
+
+`e2e-electron/viewer-flows.spec.ts` does this for **both** webview viewers right after
+the highlight paints, and it passes — observed `hover note-card shown=true
+text="Local flow note."` (local HTML) and `shown=true text="Live flow note."` (live
+HTML). So the card's hover/show is now verified through the **real running guest** for
+both surfaces, not just the jsdom unit test in `annotationDom.test.ts` (which remains as
+supporting coverage). The READ direction (a real text **selection** inside a guest) is
+likewise driven from the host via the `executeJavaScript` + bubbling-`MouseEvent`
+technique and asserted by the host chip + created anchor. The earlier "not reliably
+scriptable / not screenshot-observable" caveats are **retired** — and we never fake a
+passing assertion.
 
 ### Gate (this change)
 
-`npx tsc --noEmit` clean · `npm test` (vitest) **200** green (+2: the `buildAnchorInput`
+`npx tsc --noEmit` clean · `npm test` (vitest) **200** green (incl. the `buildAnchorInput`
 blank-url fallback) · `npx playwright test --config=playwright.config.ts` **9** green
-(incl. the new imported-HTML + PDF-text-quote full-flow tests with explicit anchor
+(incl. the imported-HTML + PDF-text-quote full-flow tests with explicit anchor
 assertions) · `npx playwright test --config=playwright.electron.config.ts` **7** green
-(incl. the new live-HTML + local-HTML full-flow tests that drive a REAL guest selection
-→ chip → note → `web_text_quote` anchor → highlight). The web e2e vault is wiped before
-each run by `e2e/global-setup.ts`.
+(the live-HTML + local-HTML full-flow tests drive a REAL guest selection → chip → note →
+`web_text_quote` anchor → highlight, and now also assert the hover note-card via the
+guest `executeJavaScript` DOM readback above — observed `shown=true` with the saved note
+text for both viewers). The web e2e vault is wiped before each run by
+`e2e/global-setup.ts`.
 
 ### Bugs found + fixed this change
 
