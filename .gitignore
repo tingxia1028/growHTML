@@ -1,6 +1,15 @@
 node_modules
 dist
+dist-electron
 data
 .env
 .DS_Store
 *.log
+.e2e-vault
+.e2e-electron-vault*
+.desktop-vault
+.study-vault
+.vault-dev
+test-results
+playwright-report
+
