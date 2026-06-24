@@ -860,58 +860,6 @@ function replaceElementAttributes(element: Element, attrs: Record<string, string
   }
 }
 
-function recreateHeadNodeForCanvas(doc: Document, node: Node): Node | null {
-  if (node.nodeType === Node.TEXT_NODE) {
-    return doc.createTextNode(node.nodeValue ?? "");
-  }
-  if (node.nodeType !== Node.ELEMENT_NODE) return null;
-
-  const element = node as Element;
-  // Recreate <script> elements by hand — scripts brought in via importNode/innerHTML
-  // do not execute, so the runtime they define (e.g. `JN`) would never load.
-  if (element.tagName.toLowerCase() === "script") {
-    const script = doc.createElement("script");
-    for (const attr of Array.from(element.attributes)) {
-      script.setAttribute(attr.name, attr.value);
-    }
-    script.textContent = element.textContent;
-    return script;
-  }
-
-  return doc.importNode(element, true);
-}
-
-function injectShellHeadIntoCanvas(editor: Editor, shell: PageShell) {
-  const canvasDocument = editor.Canvas.getDocument();
-  const head = canvasDocument?.head;
-  if (!head) return;
-
-  const headHtml = normalizeShell(shell).headHtml.trim();
-  // The shell <head> carries runtime libraries (e.g. the chart helper `JN`) that body
-  // scripts depend on. The preview iframe gets these through buildFullHtml, but the editor
-  // canvas does not — so without this every interactive widget throws and renders blank.
-  // Key the injection by a signature so repeat calls with the same shell are no-ops and we
-  // don't re-run the runtime (or re-fetch external scripts like MathJax) needlessly.
-  const signature = `${headHtml.length}:${headHtml.slice(0, 48)}`;
-  if (head.getAttribute("data-growhtml-shell-head") === signature) return;
-
-  for (const node of Array.from(head.querySelectorAll("[data-growhtml-shell-head-node]"))) {
-    node.remove();
-  }
-  head.setAttribute("data-growhtml-shell-head", signature);
-  if (!headHtml) return;
-
-  const parsed = new DOMParser().parseFromString(`<head>${headHtml}</head>`, "text/html");
-  for (const node of Array.from(parsed.head.childNodes)) {
-    const recreated = recreateHeadNodeForCanvas(canvasDocument, node);
-    if (!recreated) continue;
-    if (recreated.nodeType === Node.ELEMENT_NODE) {
-      (recreated as Element).setAttribute("data-growhtml-shell-head-node", "");
-    }
-    head.appendChild(recreated);
-  }
-}
-
 function applyShellToCanvas(editor: Editor, shell: PageShell) {
   const canvasDocument = editor.Canvas.getDocument();
   if (!canvasDocument) return;
@@ -919,7 +867,12 @@ function applyShellToCanvas(editor: Editor, shell: PageShell) {
   const normalized = normalizeShell(shell);
   replaceElementAttributes(canvasDocument.documentElement, normalized.htmlAttrs);
   replaceElementAttributes(canvasDocument.body, normalized.bodyAttrs);
-  injectShellHeadIntoCanvas(editor, normalized);
+  // NOTE: we deliberately do NOT inject the shell <head> (MathJax, the `JN` chart runtime,
+  // etc.) into the editor canvas. Running those here mutates the live DOM (MathJax rewrites
+  // LaTeX into inline SVG), and getEditorHtmlForSave serializes that mutated DOM — which
+  // bakes the rendered SVG into the saved document and destroys the original source. Scripts
+  // are kept in the markup (allowScripts) and run only in the preview iframe, so interactive
+  // charts/math render there without corrupting saves.
 }
 
 function applyRawCssToCanvas(editor: Editor, css: string) {
@@ -948,12 +901,10 @@ function applyRawCssToCanvas(editor: Editor, css: string) {
 }
 
 function applyDocumentToEditor(editor: Editor, html: string, css: string, shell: PageShell) {
-  // Inject the shell head (runtime libraries) and CSS before loading the body so that
-  // body scripts can resolve globals like `JN` the moment they execute.
-  applyShellToCanvas(editor, shell);
-  applyRawCssToCanvas(editor, css);
   setEditorComponents(editor, html);
   editor.setStyle(cleanDocumentCss(css));
+  applyShellToCanvas(editor, shell);
+  applyRawCssToCanvas(editor, css);
 }
 
 function safeGetProjectData(editor: Editor) {
@@ -2236,6 +2187,8 @@ export default function App() {
   const applyingRef = useRef(false);
   const pastedSelectionRef = useRef<SelectionPayload | null>(null);
   const previewToolbarActionRef = useRef<(action: string) => void>(() => undefined);
+  const autoSaveDocumentRef = useRef<() => Promise<void>>(async () => undefined);
+  const editAutoSaveTimerRef = useRef<number | null>(null);
   const [status, setStatus] = useState<Status>("loading");
   const [error, setError] = useState("");
   const [documentTitle, setDocumentTitle] = useState("GrowHTML");
@@ -3679,6 +3632,11 @@ export default function App() {
       setProposal(null);
     });
 
+    // Any edit in the editor (component add/remove/move, text or style change) writes to
+    // disk almost immediately via a short debounce, instead of waiting for the 60s interval
+    // or leaving edit mode.
+    editor.on("update", () => queueEditAutoSave());
+
     editor.on("canvas:load", () => {
       restoreEditorCanvasTheme(editor);
       bindEditorFrameDoubleClick(editor);
@@ -3729,6 +3687,10 @@ export default function App() {
       });
 
     return () => {
+      if (editAutoSaveTimerRef.current !== null) {
+        window.clearTimeout(editAutoSaveTimerRef.current);
+        editAutoSaveTimerRef.current = null;
+      }
       editor.destroy();
       editorRef.current = null;
     };
@@ -3791,6 +3753,23 @@ export default function App() {
       css: currentCss,
       projectData: editor ? safeGetProjectData(editor) : null
     });
+  }
+
+  // Keep a stable handle to the latest autoSaveDocument so editor change events (registered
+  // once) always run with current state instead of a stale closure.
+  autoSaveDocumentRef.current = autoSaveDocument;
+
+  // Persist edits to disk almost immediately. Editor changes fire frequently, so debounce
+  // briefly to batch a burst of edits (e.g. typing) into a single write.
+  function queueEditAutoSave() {
+    if (modeRef.current !== "edit") return;
+    if (editAutoSaveTimerRef.current !== null) {
+      window.clearTimeout(editAutoSaveTimerRef.current);
+    }
+    editAutoSaveTimerRef.current = window.setTimeout(() => {
+      editAutoSaveTimerRef.current = null;
+      void autoSaveDocumentRef.current();
+    }, 700);
   }
 
   useEffect(() => {
