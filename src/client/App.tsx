@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   File,
   FilePlus2,
@@ -17,13 +17,14 @@ import { renderNoteContent } from "../adapters/notes/render";
 import { isDiagramType } from "../adapters/notes/diagrams";
 import { DiagramNote } from "./DiagramNote";
 import { getSourceViewer } from "./viewers";
-import { decorateAnnotations } from "./annotations";
-import { WebviewReader, type WebSelection } from "./WebviewReader";
-import { PdfReader, type PdfSelection, type PdfRegion } from "./PdfReader";
-import { ImageReader, type ImageRegion } from "./ImageReader";
+import { WebviewReader } from "./WebviewReader";
+import { PdfReader } from "./PdfReader";
+import { ImageReader } from "./ImageReader";
 import { TerminalPanel } from "./TerminalPanel";
 import { FileTree, baseName } from "./FileTree";
 import { LocalHtmlReader } from "./LocalHtmlReader";
+import { DomReader } from "./surfaces/DomReader";
+import type { PaintAnchor } from "./surfaces/types";
 import {
   entityClient,
   type AnyAnchor,
@@ -31,10 +32,7 @@ import {
   type ChatMessage,
   type NoteRecord,
   type PatchRecord,
-  type SourceRecord,
-  type WebAnchor,
-  type PdfAnchor,
-  type ImageAnchor
+  type SourceRecord
 } from "./data/entityClient";
 import { FocusProvider, useFocus, draftQuoteText } from "./focus/FocusContext";
 import { getCommand, runCommand, type CommandContext } from "./commands/registry";
@@ -45,8 +43,6 @@ import { getCommand, runCommand, type CommandContext } from "./commands/registry
 const NOTE_CONTENT_TYPES = ["markdown", "mermaid", "markmap"] as const;
 
 type Status = "idle" | "loading" | "saving" | "error";
-
-const boundSelectionDocuments = new WeakSet<Document>();
 
 // Note `content` is `unknown` (structured per contentType). For display we want a
 // string: string content passes through; structured content is shown as JSON.
@@ -82,7 +78,6 @@ export default function App() {
 
 function Workspace() {
   const focus = useFocus();
-  const frameRef = useRef<HTMLIFrameElement | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState("");
   const [sources, setSources] = useState<SourceRecord[]>([]);
@@ -109,8 +104,8 @@ function Workspace() {
   const selectedAnchorId = focus.anchor?.id ?? "";
   const activeFileDir = parentDir((activeSource?.metadata?.originalPath as string | undefined) ?? "");
 
-  // Note text per anchor id, so the webview guest and PDF reader can show the same
-  // floating note card the HTML reader does. A note can be on several anchors.
+  // Note text per anchor id — a note can hang off several anchors, and several
+  // notes can share an anchor (their text is merged for the one hover card).
   const noteTextByAnchorId = useMemo(() => {
     const map = new Map<string, string>();
     for (const note of notes) {
@@ -123,37 +118,25 @@ function Workspace() {
     return map;
   }, [notes]);
 
-  const webAnchors = useMemo(
+  // ONE normalized paint list for the active source: every anchor it has, mapped to
+  // the uniform PaintAnchor shape with its merged note text. The host hands this
+  // SAME list to whichever reader matches the source; each reader filters it to the
+  // anchorKinds it understands and paints those. (Replaces the old per-viewer
+  // webAnchors / pdfAnchors / imageAnchors memos — there is no surface-specific
+  // shaping here anymore.)
+  const paintAnchors = useMemo<PaintAnchor[]>(
     () =>
-      anchors
-        .filter((item): item is WebAnchor => item.anchorKind === "web_text_quote")
-        .map((item) => ({
-          id: item.id,
-          quote: item.quote,
-          contextBefore: item.contextBefore,
-          contextAfter: item.contextAfter,
-          note: noteTextByAnchorId.get(item.id) ?? ""
-        })),
-    [anchors, noteTextByAnchorId]
-  );
-  const pdfAnchors = useMemo(
-    () =>
-      anchors
-        .filter((item): item is PdfAnchor => item.anchorKind === "pdf_selection")
-        .map((item) => ({
-          id: item.id,
-          page: item.page,
-          quote: item.quote,
-          rect: item.rect,
-          note: noteTextByAnchorId.get(item.id) ?? ""
-        })),
-    [anchors, noteTextByAnchorId]
-  );
-  const imageAnchors = useMemo(
-    () =>
-      anchors
-        .filter((item): item is ImageAnchor => item.anchorKind === "image_region")
-        .map((item) => ({ id: item.id, rect: item.rect, note: noteTextByAnchorId.get(item.id) ?? "" })),
+      anchors.map((anchor) => ({
+        id: anchor.id,
+        anchorKind: anchor.anchorKind,
+        quote: "quote" in anchor ? anchor.quote : undefined,
+        contextBefore: "contextBefore" in anchor ? anchor.contextBefore : undefined,
+        contextAfter: "contextAfter" in anchor ? anchor.contextAfter : undefined,
+        studyId: "studyId" in anchor ? anchor.studyId : undefined,
+        page: "page" in anchor ? anchor.page : undefined,
+        rect: "rect" in anchor ? anchor.rect : undefined,
+        note: noteTextByAnchorId.get(anchor.id) ?? ""
+      })),
     [anchors, noteTextByAnchorId]
   );
   const activePatches = useMemo(
@@ -170,13 +153,6 @@ function Workspace() {
       void loadSourceWorkspace(activeSourceId);
     }
   }, [activeSourceId]);
-
-  // Re-paint note annotations onto the reader whenever notes/anchors change.
-  useEffect(() => {
-    const doc = frameRef.current?.contentDocument;
-    if (doc) decorateNotes(doc);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notes, anchors, renderedHtml]);
 
   async function loadSources() {
     setStatus("loading");
@@ -321,128 +297,16 @@ function Workspace() {
     }
   }
 
-  // Paint stored notes onto the reader document via the AnnotationRenderer registry.
-  function decorateNotes(doc: Document) {
-    decorateAnnotations(doc, {
-      anchors,
-      notes: notes.map((note) => ({ anchorIds: note.anchorIds, content: noteText(note.content) }))
-    });
-  }
-
-  function bindReaderFrame() {
-    const doc = frameRef.current?.contentDocument;
-    if (!doc) return;
-    decorateNotes(doc);
-    if (boundSelectionDocuments.has(doc)) return;
-
-    const readSelection = (event?: Event) => {
-      if (!activeSource) return;
-      const selected = doc.getSelection();
-      const text = selected?.toString().trim() ?? "";
-      const frameNode = doc.defaultView?.Node ?? Node;
-      const frameElement = doc.defaultView?.Element ?? Element;
-      const selectedElement =
-        selected && text && selected.rangeCount > 0
-          ? (() => {
-              const node = selected.getRangeAt(0).commonAncestorContainer;
-              return node.nodeType === frameNode.ELEMENT_NODE ? (node as Element) : node.parentElement;
-            })()
-          : null;
-      const eventElement = event?.target instanceof frameElement ? event.target : null;
-      const element = selectedElement ?? eventElement;
-      const target = element?.closest("[data-study-id]");
-      const studyId = target?.getAttribute("data-study-id");
-      if (!target || !studyId) return;
-
-      const quote = text || target.textContent?.trim() || "";
-      if (!quote) return;
-
-      const docText = (doc.body?.textContent ?? "").replace(/\s+/g, " ");
-      const normalizedQuote = quote.replace(/\s+/g, " ");
-      const at = docText.indexOf(normalizedQuote);
-      const prefix = at >= 0 ? docText.slice(Math.max(0, at - 32), at) : "";
-      const suffix = at >= 0 ? docText.slice(at + normalizedQuote.length, at + normalizedQuote.length + 32) : "";
-
-      focus.setDraft({
-        mode: "quote",
-        sourceId: activeSource.id,
-        kind: "html",
-        quote,
-        studyId,
-        selector: `[data-study-id="${studyId.replace(/"/g, '\\"')}"]`,
-        prefix,
-        suffix
-      });
-      setPatchHtml(`<p data-study-id="${studyId}">${quote}</p>`);
-    };
-
-    boundSelectionDocuments.add(doc);
-    doc.addEventListener("selectionchange", readSelection);
-    doc.addEventListener("mouseup", readSelection);
-    doc.addEventListener("click", readSelection);
-    doc.addEventListener("keyup", readSelection);
-  }
-
-  function captureWebSelection(webSelection: WebSelection, pageUrl: string) {
-    if (!webSelection.exact?.trim() || !activeSource) return;
-    focus.setDraft({
-      mode: "quote",
-      sourceId: activeSource.id,
-      kind: "web",
-      quote: webSelection.exact,
-      prefix: webSelection.prefix,
-      suffix: webSelection.suffix,
-      url: pageUrl
-    });
-  }
-
-  // Local HTML is stored raw (no study-id injection), so its selections can't be
-  // html_selection anchors. Emit them as web_text_quote anchors keyed by the local
-  // file's /api/local URL — reusing the same anchoring infra as live web pages.
-  function captureLocalHtmlSelection(webSelection: WebSelection, pageUrl: string) {
-    if (!webSelection.exact?.trim() || !activeSource) return;
-    const originalPath = activeSource.metadata?.originalPath as string | undefined;
-    focus.setDraft({
-      mode: "quote",
-      sourceId: activeSource.id,
-      kind: "web",
-      quote: webSelection.exact,
-      prefix: webSelection.prefix,
-      suffix: webSelection.suffix,
-      url: originalPath ? localFileUrl(originalPath) : pageUrl
-    });
-  }
-
-  function capturePdfSelection(pdfSelection: PdfSelection) {
-    if (!pdfSelection.exact?.trim() || !activeSource) return;
-    focus.setDraft({
-      mode: "quote",
-      sourceId: activeSource.id,
-      kind: "pdf",
-      quote: pdfSelection.exact,
-      prefix: pdfSelection.prefix,
-      suffix: pdfSelection.suffix,
-      page: pdfSelection.page
-    });
-  }
-
-  // Region (rubber-band) captures — a geometric rect, no text. They materialize as
-  // pdf_selection (with a rect, empty quote) / image_region anchors.
-  function capturePdfRegion(region: PdfRegion) {
-    if (!activeSource) return;
-    focus.setDraft({
-      mode: "region",
-      sourceId: activeSource.id,
-      kind: "pdf",
-      rect: region.rect,
-      page: region.page
-    });
-  }
-
-  function captureImageRegion(region: ImageRegion) {
-    if (!activeSource) return;
-    focus.setDraft({ mode: "region", sourceId: activeSource.id, kind: "image", rect: region.rect });
-  }
+  // Pre-fill the "Edit source (patch)" textarea from an HTML-surface selection (the
+  // only surface whose patches replace study-id elements). All selection/paint logic
+  // itself lives in the surface adapters now; this is just the host reacting to the
+  // shared draft to seed an unrelated input.
+  useEffect(() => {
+    const draft = focus.draft;
+    if (draft?.mode === "quote" && draft.kind === "html" && draft.studyId) {
+      setPatchHtml(`<p data-study-id="${draft.studyId}">${draft.quote}</p>`);
+    }
+  }, [focus.draft]);
 
   // Where the active source lives + the focused passage, so the assistant knows
   // exactly which source + passage a question is about.
@@ -649,34 +513,48 @@ function Workspace() {
 
         {error ? <div className="error-box">{error}</div> : null}
 
+        {/* Every reader takes the SAME annotation contract: anchors={paintAnchors}
+            (it filters to the kinds it paints) + onSelect={focus.setDraft} (it emits
+            a normalized AnchorDraft). The only per-reader prop is its source locator.
+            Adding a viewer = mapping its surface here; no capture/paint logic lives
+            in this host. */}
         {activeSource && activeViewer.kind === "webview" ? (
           <WebviewReader
             url={(activeSource.metadata?.sourceUrl as string) ?? ""}
-            anchors={webAnchors}
-            onSelection={captureWebSelection}
+            sourceId={activeSource.id}
+            anchors={paintAnchors}
+            onSelect={focus.setDraft}
           />
         ) : activeSource && activeViewer.kind === "pdfjs" ? (
           <PdfReader
             fileUrl={`/api/sources/${activeSource.id}/file`}
-            anchors={pdfAnchors}
-            onSelection={capturePdfSelection}
-            onRegion={capturePdfRegion}
+            sourceId={activeSource.id}
+            anchors={paintAnchors}
+            onSelect={focus.setDraft}
           />
         ) : activeSource && activeViewer.kind === "image" ? (
           <ImageReader
             src={`/api/sources/${activeSource.id}/file`}
-            anchors={imageAnchors}
-            onRegion={captureImageRegion}
+            sourceId={activeSource.id}
+            anchors={paintAnchors}
+            onSelect={focus.setDraft}
           />
         ) : activeSource && activeViewer.kind === "file" ? (
           <iframe className="pdf-reader" title="PDF reader" src={`/api/sources/${activeSource.id}/file`} />
         ) : activeSource && activeViewer.kind === "html" && activeSource.metadata?.originalPath ? (
           <LocalHtmlReader
             src={localFileUrl(activeSource.metadata.originalPath as string)}
-            onSelection={captureLocalHtmlSelection}
+            sourceId={activeSource.id}
+            anchors={paintAnchors}
+            onSelect={focus.setDraft}
           />
-        ) : activeViewer.htmlPipeline && renderedHtml ? (
-          <iframe ref={frameRef} title="Source reader" srcDoc={renderedHtml} onLoad={bindReaderFrame} />
+        ) : activeSource && activeViewer.htmlPipeline && renderedHtml ? (
+          <DomReader
+            srcDoc={renderedHtml}
+            sourceId={activeSource.id}
+            anchors={paintAnchors}
+            onSelect={focus.setDraft}
+          />
         ) : (
           <div className="empty-reader">Select a source to start.</div>
         )}

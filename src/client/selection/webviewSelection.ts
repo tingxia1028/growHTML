@@ -1,12 +1,21 @@
-// Shared text-selection capture for Electron <webview> surfaces.
+// Shared text-selection capture + anchor painting for Electron <webview> surfaces.
 //
 // A <webview> is a separate WebContents, so the host page can't reach its DOM to
 // listen for selections directly (unlike the srcDoc iframe, whose contentDocument
 // the host owns). Instead a guest preload (electron/webview-preload.ts) runs INSIDE
 // the webview, listens for selections, and posts them back over the `sv:selection`
-// IPC channel as a TextQuoteSelector. Both webview surfaces — WebviewReader (live
-// web) and LocalHtmlReader (local HTML files) — capture selection the same way, so
-// the wiring lives here once instead of being duplicated per reader.
+// IPC channel as a TextQuoteSelector; the host pushes stored anchors back over
+// `sv:anchors` for the guest to paint. Both webview surfaces — WebviewReader (live
+// web) and LocalHtmlReader (local HTML files) — use the same wiring, so it lives
+// here once instead of being duplicated per reader.
+//
+// These are the IPC shapes the guest preload speaks (WebSelection / WebAnchorMsg).
+// The readers bridge them to the uniform surface contract (PaintAnchor in,
+// AnchorDraft out) via the two pure helpers at the bottom of this file, so the
+// guest protocol stays an implementation detail of the webview surface.
+
+import type { AnchorDraft } from "../focus/FocusContext";
+import type { PaintAnchor } from "../surfaces/types";
 
 export type WebSelection = { exact: string; prefix: string; suffix: string };
 
@@ -43,6 +52,10 @@ export type SelectionWebview = HTMLElement & {
 
 // An `ipc-message` event from a <webview> carries a channel + args tuple.
 export type WebviewIpcMessage = Event & { channel: string; args: unknown[] };
+
+// The anchor shape the guest preload paints back as highlights + hover note-cards
+// over the `sv:anchors` channel. Permissive `id` because it's optional in the guest.
+export type WebAnchorMsg = { id?: string; quote: string; contextBefore: string; contextAfter: string; note?: string };
 
 // The preload file:// url the host attaches to each guest webview so it captures
 // selections. Absent outside the desktop app (returns undefined → no capture).
@@ -83,4 +96,82 @@ export function bindWebviewSelection(
   };
   webview.addEventListener("ipc-message", listener);
   return () => webview.removeEventListener("ipc-message", listener);
+}
+
+// Push stored anchors INTO a webview guest so it paints them as highlights + hover
+// note-cards (the paint-back direction; the guest handles `sv:anchors` in
+// electron/webview-preload.ts). This is the mirror of bindWebviewSelection's read
+// direction and is shared so WebviewReader and LocalHtmlReader don't duplicate it.
+//
+// `getAnchors` is a getter (not a snapshot) so the once-bound listeners always send
+// the latest set even though they're attached a single time. We send:
+//   - when the guest reports `sv:ready` (it just loaded and asked for anchors), and
+//   - on `dom-ready` (a fresh document — re-paint after a navigation).
+// `send` can throw before the guest attaches, so each push is guarded; the next
+// ready/dom-ready event retries. Returns a disposer that detaches both listeners.
+//
+// Whenever the anchor set itself changes (e.g. a new note), the caller re-pushes by
+// calling the returned `push` — typically from a React effect keyed on the anchors.
+export function bindWebviewAnchors(
+  webview: SelectionWebview,
+  getAnchors: () => WebAnchorMsg[]
+): { dispose: () => void; push: () => void } {
+  const push = () => {
+    try {
+      webview.send("sv:anchors", getAnchors());
+    } catch {
+      // Guest not ready yet; sv:ready / dom-ready will retry.
+    }
+  };
+  const onReady = (event: Event) => {
+    if ((event as WebviewIpcMessage).channel === "sv:ready") push();
+  };
+  webview.addEventListener("ipc-message", onReady);
+  webview.addEventListener("dom-ready", push);
+  return {
+    push,
+    dispose: () => {
+      webview.removeEventListener("ipc-message", onReady);
+      webview.removeEventListener("dom-ready", push);
+    }
+  };
+}
+
+// —— Bridge: uniform surface contract ⇄ guest IPC shapes ——
+// The webview surface speaks WebSelection/WebAnchorMsg over IPC, but the host
+// drives every reader through the uniform PaintAnchor/AnchorDraft contract. These
+// two pure helpers translate at the boundary, so a webview reader only has to say
+// which URL its drafts are keyed by. Both are unit-tested.
+
+// WRITE side: the host's paintAnchors → the WebAnchorMsg[] the guest paints. Only
+// web_text_quote anchors are paintable in a webview (the others belong to other
+// surfaces); each maps to the guest's quote + context + merged note text.
+export function toWebAnchorMsgs(anchors: PaintAnchor[]): WebAnchorMsg[] {
+  return anchors
+    .filter((anchor) => anchor.anchorKind === "web_text_quote")
+    .map((anchor) => ({
+      id: anchor.id,
+      quote: anchor.quote ?? "",
+      contextBefore: anchor.contextBefore ?? "",
+      contextAfter: anchor.contextAfter ?? "",
+      note: anchor.note
+    }));
+}
+
+// READ side: a guest WebSelection (+ the URL it should be anchored to) → a
+// normalized web quote AnchorDraft. Local HTML is stored raw with no study-ids, so
+// BOTH webview readers emit kind:"web" drafts (→ web_text_quote anchors keyed by a
+// URL); the only difference is the URL — a live tab url vs. a local file's
+// /api/local url — which the reader passes in.
+export function webSelectionToDraft(sourceId: string, selection: WebSelection, url: string): AnchorDraft | null {
+  if (!selection.exact.trim()) return null;
+  return {
+    mode: "quote",
+    sourceId,
+    kind: "web",
+    quote: selection.exact,
+    prefix: selection.prefix,
+    suffix: selection.suffix,
+    url
+  };
 }

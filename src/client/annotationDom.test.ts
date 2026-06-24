@@ -41,6 +41,16 @@ describe("highlightQuote", () => {
     // The second occurrence (preceded by "later ") is the better match.
     expect(mark?.previousSibling?.textContent?.endsWith("later ")).toBe(true);
   });
+
+  it("stamps the anchor id as data-sv-key so the hover card persists per anchor", () => {
+    // The webview guest paints stored anchors via highlightQuote(doc, sel, note, anchor.id).
+    // The id must reach the <mark> as data-sv-key, which keys card geometry persistence.
+    document.body.innerHTML = "<p>Alpha beta gamma delta.</p>";
+    highlightQuote(document, { exact: "beta gamma", prefix: "Alpha ", suffix: " delta" }, "note", "anchor-7");
+    const mark = document.querySelector('mark[data-sv="1"]');
+    expect(mark?.getAttribute("data-sv-key")).toBe("anchor-7");
+    expect(mark?.getAttribute("data-sv-note")).toBe("note");
+  });
 });
 
 describe("clearAnnotations", () => {

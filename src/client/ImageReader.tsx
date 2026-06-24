@@ -1,26 +1,30 @@
 import { useEffect, useRef, useState } from "react";
 import { applyHighlight } from "./annotationLayer";
+import type { AnchorDraft } from "./focus/FocusContext";
+import { anchorsOfKind, type PaintAnchor, type SurfaceReaderProps } from "./surfaces/types";
+import { isRealRegion, normalizeDragRect, type NormalizedRect } from "./surfaces/overlay";
 
-// An image has no text to select, so its only annotation is a geometric REGION:
-// the user rubber-bands a rectangle over the image → a normalized rect [x,y,w,h]
-// (0..1) → an image_region anchor. Rendered as a host-page <img> (not the native
-// `file` iframe) so an overlay can be drawn on top of it. Stored regions are drawn
-// back as boxes that share the same floating note card as every other surface.
-
-export type ImageRegion = { rect: [number, number, number, number] };
-export type ImageAnchorMark = { id?: string; rect: [number, number, number, number]; note?: string };
-
-type ImageReaderProps = {
+type ImageReaderProps = SurfaceReaderProps & {
   src: string;
-  anchors: ImageAnchorMark[];
-  onRegion: (region: ImageRegion) => void;
+  // The active source id — stamped onto emitted drafts.
+  sourceId: string;
 };
 
-export function ImageReader({ src, anchors, onRegion }: ImageReaderProps) {
+// Image surface adapter — the other OVERLAY reader. An image has no text to select,
+// so its only annotation is a geometric REGION: the user rubber-bands a rectangle
+// over the image → AnchorDraft { mode:"region", kind:"image", rect } (READ).
+// Rendered as a host-page <img> (not the native `file` iframe) so an overlay can be
+// drawn on top of it. Stored image_region anchors from the `anchors` prop are drawn
+// back as boxes that share the same floating note card as every other surface
+// (WRITE). It uses the shared overlay rubber-band helpers.
+export function ImageReader({ src, sourceId, anchors, onSelect }: ImageReaderProps) {
   const frameRef = useRef<HTMLDivElement | null>(null);
-  const onRegionRef = useRef(onRegion);
-  onRegionRef.current = onRegion;
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+  const sourceIdRef = useRef(sourceId);
+  sourceIdRef.current = sourceId;
   const [drag, setDrag] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const regions = anchorsOfKind(anchors, "image_region");
 
   function metrics() {
     return frameRef.current?.getBoundingClientRect() ?? null;
@@ -54,19 +58,16 @@ export function ImageReader({ src, anchors, onRegion }: ImageReaderProps) {
       window.removeEventListener("mouseup", onUp);
       setDrag(null);
       const r = metrics();
-      if (!r || r.width === 0 || r.height === 0) return;
-      const curX = Math.max(0, Math.min(r.width, up.clientX - r.left));
-      const curY = Math.max(0, Math.min(r.height, up.clientY - r.top));
-      const w = Math.abs(curX - start.x);
-      const h = Math.abs(curY - start.y);
-      if (w < 6 || h < 6) return; // ignore stray clicks
-      const norm: [number, number, number, number] = [
-        Math.min(start.x, curX) / r.width,
-        Math.min(start.y, curY) / r.height,
-        w / r.width,
-        h / r.height
-      ];
-      onRegionRef.current({ rect: norm });
+      if (!r) return;
+      const current = { x: up.clientX - r.left, y: up.clientY - r.top };
+      if (!isRealRegion(r, start, current)) return; // ignore stray clicks
+      const draft: AnchorDraft = {
+        mode: "region",
+        sourceId: sourceIdRef.current,
+        kind: "image",
+        rect: normalizeDragRect(r, start, current)
+      };
+      onSelectRef.current(draft);
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -76,7 +77,7 @@ export function ImageReader({ src, anchors, onRegion }: ImageReaderProps) {
     <div className="image-reader">
       <div className="image-reader-stage" ref={frameRef} onMouseDown={onMouseDown}>
         <img className="image-reader-img" src={src} alt="" draggable={false} />
-        {anchors.map((anchor, index) => (
+        {regions.map((anchor, index) => (
           <ImageRegionBox key={anchor.id ?? index} anchor={anchor} />
         ))}
         {drag ? (
@@ -92,12 +93,12 @@ export function ImageReader({ src, anchors, onRegion }: ImageReaderProps) {
 
 // A saved region box. Wires the shared note card via applyHighlight so hovering it
 // shows its note exactly like every other annotated surface.
-function ImageRegionBox({ anchor }: { anchor: ImageAnchorMark }) {
+function ImageRegionBox({ anchor }: { anchor: PaintAnchor }) {
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (ref.current) applyHighlight(ref.current, anchor.note ?? "", anchor.id);
+    if (ref.current) applyHighlight(ref.current, anchor.note, anchor.id);
   }, [anchor.note, anchor.id]);
-  const [x, y, w, h] = anchor.rect;
+  const [x, y, w, h] = (anchor.rect ?? [0, 0, 0, 0]) as NormalizedRect;
   return (
     <div
       ref={ref}

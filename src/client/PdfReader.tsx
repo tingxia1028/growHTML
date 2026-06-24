@@ -4,46 +4,43 @@ import * as pdfjsLib from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 import "pdfjs-dist/web/pdf_viewer.css";
 import { applyHighlight, clearAnnotations, ensureAnnotationLayer } from "./annotationLayer";
+import type { AnchorDraft } from "./focus/FocusContext";
+import { anchorsOfKind, type SurfaceReaderProps } from "./surfaces/types";
+import { isRealRegion, normalizeDragRect, placeRegionBox } from "./surfaces/overlay";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
-export type PdfSelection = { page: number; exact: string; prefix: string; suffix: string };
-// A geometric region marked over a page: normalized [x, y, w, h] (0..1).
-export type PdfRegion = { page: number; rect: [number, number, number, number] };
-export type PdfAnchorMark = {
-  id?: string;
-  page: number;
-  quote: string;
-  note?: string;
-  // When present, this anchor is a region (figure/scan) and is drawn as a box
-  // rather than a text highlight.
-  rect?: [number, number, number, number];
-};
-
-type PdfReaderProps = {
+type PdfReaderProps = SurfaceReaderProps & {
   fileUrl: string;
-  anchors: PdfAnchorMark[];
-  onSelection: (selection: PdfSelection) => void;
-  /** Called when the user rubber-bands a region (Region mode). */
-  onRegion?: (region: PdfRegion) => void;
+  // The active source id — stamped onto emitted drafts.
+  sourceId: string;
 };
 
 const CONTEXT = 32;
 
-// Renders a PDF with PDF.js (canvas + selectable text layer) so PDFs can be
-// annotated like HTML: select text → page + TextQuoteSelector → pdf_selection
-// anchor; stored anchors are highlighted by matching their quote in the layer.
-export function PdfReader({ fileUrl, anchors, onSelection, onRegion }: PdfReaderProps) {
+// PDF surface adapter — one of the two OVERLAY readers. Renders a PDF with PDF.js
+// (canvas + a selectable text layer) so PDFs can be annotated like HTML:
+//   READ : select text → AnchorDraft { mode:"quote", kind:"pdf", page, quote, … }
+//          OR rubber-band a region → AnchorDraft { mode:"region", kind:"pdf", rect }.
+//   WRITE: paint pdf_selection anchors from the `anchors` prop — a text highlight
+//          (match the quote in the text layer) or, when the anchor carries a rect,
+//          a region box. Both hook the shared note card via applyHighlight.
+// The selection→draft mapping and box-draw used to live in App; they're here now,
+// so the host drives this reader with the same anchors/onSelect contract as the
+// DOM and webview surfaces.
+export function PdfReader({ fileUrl, sourceId, anchors, onSelect }: PdfReaderProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const onSelectionRef = useRef(onSelection);
-  onSelectionRef.current = onSelection;
-  const onRegionRef = useRef(onRegion);
-  onRegionRef.current = onRegion;
-  const anchorsRef = useRef(anchors);
-  anchorsRef.current = anchors;
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+  const sourceIdRef = useRef(sourceId);
+  sourceIdRef.current = sourceId;
+  // Only the pdf_selection anchors are ours to paint; keep the live subset in a ref
+  // so the once-bound render loop / repaint effect always see the latest.
+  const anchorsRef = useRef(anchorsOfKind(anchors, "pdf_selection"));
+  anchorsRef.current = anchorsOfKind(anchors, "pdf_selection");
 
   // Region (rubber-band) mode: while on, the text layer is click-through and a
-  // drag draws a selection rectangle that becomes an image-style region anchor.
+  // drag draws a selection rectangle that becomes a pdf_selection region anchor.
   const [regionMode, setRegionMode] = useState(false);
   const regionModeRef = useRef(regionMode);
   regionModeRef.current = regionMode;
@@ -61,28 +58,22 @@ export function PdfReader({ fileUrl, anchors, onSelection, onRegion }: PdfReader
 
       // Region anchor: draw a box at its normalized rect (no text to highlight).
       if (anchor.rect) {
-        const [x, y, w, h] = anchor.rect;
         const box = document.createElement("div");
         box.className = "pdf-region-box";
-        box.style.left = `${x * 100}%`;
-        box.style.top = `${y * 100}%`;
-        box.style.width = `${w * 100}%`;
-        box.style.height = `${h * 100}%`;
-        if (anchor.id) box.setAttribute("data-anchor-id", anchor.id);
-        applyHighlight(box, anchor.note ?? "", anchor.id);
+        placeRegionBox(box, anchor.rect, anchor.note, anchor.id);
         pageEl.appendChild(box);
         continue;
       }
 
       const textLayer = pageEl.querySelector(".textLayer");
-      if (!textLayer) continue;
+      if (!textLayer || !anchor.quote) continue;
       for (const span of Array.from(textLayer.querySelectorAll("span"))) {
         const text = span.textContent ?? "";
         if (text && anchor.quote.includes(text.trim()) && text.trim().length > 1) {
           // Keep .pdf-anchor-hit for the visual; add the shared highlight + note
           // card (same layer the HTML reader and webview guest use).
           span.classList.add("pdf-anchor-hit");
-          applyHighlight(span, anchor.note ?? "", anchor.id);
+          applyHighlight(span, anchor.note, anchor.id);
         }
       }
     }
@@ -145,22 +136,26 @@ export function PdfReader({ fileUrl, anchors, onSelection, onRegion }: PdfReader
       const prefix = index >= 0 ? pageText.slice(Math.max(0, index - CONTEXT), index) : "";
       const suffix = index >= 0 ? pageText.slice(index + exact.length, index + exact.length + CONTEXT) : "";
 
-      onSelectionRef.current({ page, exact, prefix, suffix });
+      const draft: AnchorDraft = {
+        mode: "quote",
+        sourceId: sourceIdRef.current,
+        kind: "pdf",
+        quote: exact,
+        prefix,
+        suffix,
+        page
+      };
+      onSelectRef.current(draft);
     };
     container.addEventListener("mouseup", onMouseUp);
 
     // —— Region (rubber-band) gesture ——
     // While in region mode, dragging on a page draws a marquee; on release the
-    // normalized rect (0..1 within that page) + page number become a region.
+    // normalized rect (0..1 within that page) + page number become a region draft.
     let dragPage: HTMLElement | null = null;
     let startX = 0;
     let startY = 0;
     let marquee: HTMLDivElement | null = null;
-
-    const pageMetrics = (pageEl: HTMLElement) => {
-      const rect = pageEl.getBoundingClientRect();
-      return rect;
-    };
 
     const onMouseDown = (event: MouseEvent) => {
       if (!regionModeRef.current || event.button !== 0) return;
@@ -169,7 +164,7 @@ export function PdfReader({ fileUrl, anchors, onSelection, onRegion }: PdfReader
       if (!pageEl) return;
       event.preventDefault();
       dragPage = pageEl;
-      const rect = pageMetrics(pageEl);
+      const rect = pageEl.getBoundingClientRect();
       startX = event.clientX - rect.left;
       startY = event.clientY - rect.top;
       marquee = document.createElement("div");
@@ -181,7 +176,7 @@ export function PdfReader({ fileUrl, anchors, onSelection, onRegion }: PdfReader
 
     const onMouseMove = (event: MouseEvent) => {
       if (!dragPage || !marquee) return;
-      const rect = pageMetrics(dragPage);
+      const rect = dragPage.getBoundingClientRect();
       const curX = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
       const curY = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
       marquee.style.left = `${Math.min(startX, curX)}px`;
@@ -193,26 +188,22 @@ export function PdfReader({ fileUrl, anchors, onSelection, onRegion }: PdfReader
     const finishDrag = (event: MouseEvent) => {
       if (!dragPage || !marquee) return;
       const pageEl = dragPage;
-      const rect = pageMetrics(pageEl);
-      const curX = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
-      const curY = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
-      const x0 = Math.min(startX, curX);
-      const y0 = Math.min(startY, curY);
-      const w = Math.abs(curX - startX);
-      const h = Math.abs(curY - startY);
+      const rect = pageEl.getBoundingClientRect();
+      const start = { x: startX, y: startY };
+      const current = { x: event.clientX - rect.left, y: event.clientY - rect.top };
       marquee.remove();
       marquee = null;
       dragPage = null;
-      // Ignore stray clicks (too small to be a real region).
-      if (w < 6 || h < 6 || rect.width === 0 || rect.height === 0) return;
+      if (!isRealRegion(rect, start, current)) return; // ignore stray clicks
       const page = Number(pageEl.dataset.page) || 1;
-      const norm: [number, number, number, number] = [
-        x0 / rect.width,
-        y0 / rect.height,
-        w / rect.width,
-        h / rect.height
-      ];
-      onRegionRef.current?.({ page, rect: norm });
+      const draft: AnchorDraft = {
+        mode: "region",
+        sourceId: sourceIdRef.current,
+        kind: "pdf",
+        rect: normalizeDragRect(rect, start, current),
+        page
+      };
+      onSelectRef.current(draft);
     };
 
     container.addEventListener("mousedown", onMouseDown);

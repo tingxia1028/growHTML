@@ -1,21 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  bindWebviewAnchors,
   bindWebviewSelection,
+  toWebAnchorMsgs,
+  webSelectionToDraft,
   webviewPreloadUrl,
   type SelectionWebview,
-  type WebSelection,
+  type WebAnchorMsg,
   type WebviewIpcMessage
 } from "./selection/webviewSelection";
+import { anchorsOfKind, type SurfaceReaderProps } from "./surfaces/types";
 
-export type WebAnchorMsg = { id?: string; quote: string; contextBefore: string; contextAfter: string; note?: string };
-export type { WebSelection };
-
-type WebviewReaderProps = {
+type WebviewReaderProps = SurfaceReaderProps & {
   url: string;
-  anchors: WebAnchorMsg[];
-  // The page URL is reported alongside the selection so the anchor records which
-  // tab/page it was made on (tabs can navigate to other URLs).
-  onSelection: (selection: WebSelection, pageUrl: string) => void;
+  // The active source id — stamped onto emitted drafts.
+  sourceId: string;
 };
 
 // The <webview> element isn't a typed DOM/JSX element; describe just the methods
@@ -55,12 +54,19 @@ function tabTitle(url: string): string {
 let tabCounter = 0;
 const nextTabId = () => `tab${(tabCounter += 1)}`;
 
-// Embeds live web pages in Electron <webview>s with Chrome-ish in-app TABS: every
-// link click opens a NEW tab (the guest preload reports navigations as
-// sv:open-tab), so the page you came from is never lost. A nav bar (back/forward/
-// reload/stop + address bar) drives the active tab. The guest preload reports
-// selections and highlights stored anchors per page. Renders a hint outside Electron.
-export function WebviewReader({ url, anchors, onSelection }: WebviewReaderProps) {
+// Live-web webview surface adapter. Embeds live web pages in Electron <webview>s
+// with Chrome-ish in-app TABS: every link click opens a NEW tab (the guest preload
+// reports navigations as sv:open-tab), so the page you came from is never lost. A
+// nav bar (back/forward/reload/stop + address bar) drives the active tab. Renders a
+// hint outside Electron.
+//
+// It conforms to the SAME surface contract as every other reader:
+//   READ : a guest text selection → AnchorDraft { mode:"quote", kind:"web", url } —
+//          keyed by the tab url it was made on (tabs can navigate to other URLs).
+//   WRITE: paint web_text_quote anchors via sv:anchors (shared with LocalHtmlReader).
+// The only real difference from LocalHtmlReader is multi-tab + navbar vs. a single
+// fixed page.
+export function WebviewReader({ url, sourceId, anchors, onSelect }: WebviewReaderProps) {
   const preloadUrl = webviewPreloadUrl();
 
   const [tabs, setTabs] = useState<Tab[]>([{ id: "tab0", url, title: tabTitle(url) }]);
@@ -72,10 +78,14 @@ export function WebviewReader({ url, anchors, onSelection }: WebviewReaderProps)
   const [loading, setLoading] = useState(false);
 
   // Keep latest values in refs so per-webview listeners (bound once) stay correct.
-  const onSelectionRef = useRef(onSelection);
-  onSelectionRef.current = onSelection;
-  const anchorsRef = useRef(anchors);
-  anchorsRef.current = anchors;
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+  const sourceIdRef = useRef(sourceId);
+  sourceIdRef.current = sourceId;
+  // The web_text_quote subset as guest paint messages (the only kind a webview can
+  // paint); kept in a ref so the once-bound pushes always send the current set.
+  const anchorsRef = useRef<WebAnchorMsg[]>(toWebAnchorMsgs(anchorsOfKind(anchors, "web_text_quote")));
+  anchorsRef.current = toWebAnchorMsgs(anchorsOfKind(anchors, "web_text_quote"));
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
   const editingRef = useRef(editingAddress);
@@ -83,6 +93,9 @@ export function WebviewReader({ url, anchors, onSelection }: WebviewReaderProps)
 
   const webviews = useRef(new Map<string, WebviewElement>());
   const containers = useRef(new Map<string, HTMLDivElement>());
+  // Per-tab anchor pushers (from bindWebviewAnchors), so the anchors-changed effect
+  // can re-send into each live webview.
+  const anchorPushers = useRef(new Map<string, () => void>());
   const prevUrl = useRef(url);
 
   const addTab = (rawUrl: string) => {
@@ -128,28 +141,27 @@ export function WebviewReader({ url, anchors, onSelection }: WebviewReaderProps)
       container.appendChild(webview);
       webviews.current.set(tab.id, webview);
 
-      const sendAnchors = () => {
-        try {
-          webview.send("sv:anchors", anchorsRef.current);
-        } catch {
-          // not ready yet; dom-ready / sv:ready will retry.
-        }
-      };
+      // Shared paint-back wiring: push stored anchors into the guest (highlights +
+      // hover note-cards). Handles sv:ready + dom-ready itself; the anchors-changed
+      // effect re-pushes via the returned push fn (which reads the live anchorsRef).
+      const anchorsBinding = bindWebviewAnchors(webview, () => anchorsRef.current);
+      anchorPushers.current.set(tab.id, anchorsBinding.push);
       // Shared selection capture: attaches the guest preload + translates
-      // sv:selection into onSelection. The extra handler covers the channels only
-      // the tabbed live reader uses (anchors-ready, link → new tab).
+      // sv:selection into a web quote draft keyed by the page url it was made on.
+      // The extra handler covers the one channel only the tabbed live reader owns
+      // (link → new tab).
       bindWebviewSelection(
         webview,
-        (selection, pageUrl) => onSelectionRef.current(selection, pageUrl),
+        (selection, pageUrl) => {
+          const draft = webSelectionToDraft(sourceIdRef.current, selection, pageUrl);
+          if (draft) onSelectRef.current(draft);
+        },
         (message: WebviewIpcMessage) => {
-          if (message.channel === "sv:ready") {
-            sendAnchors();
-          } else if (message.channel === "sv:open-tab") {
+          if (message.channel === "sv:open-tab") {
             addTab(String(message.args[0] ?? ""));
           }
         }
       );
-      webview.addEventListener("dom-ready", sendAnchors);
 
       const onNavigate = () => {
         let current = tab.url;
@@ -182,19 +194,15 @@ export function WebviewReader({ url, anchors, onSelection }: WebviewReaderProps)
       if (!tabs.some((tab) => tab.id === id)) {
         webview.remove();
         webviews.current.delete(id);
+        anchorPushers.current.delete(id);
       }
     }
   }, [tabs, preloadUrl]);
 
-  // Re-push anchors to every tab when they change (e.g. after a new note).
+  // Re-push anchors to every tab when they change (e.g. after a new note). Each
+  // push reads the live anchorsRef inside the shared helper.
   useEffect(() => {
-    for (const webview of webviews.current.values()) {
-      try {
-        webview.send("sv:anchors", anchors);
-      } catch {
-        // ignore until ready
-      }
-    }
+    for (const push of anchorPushers.current.values()) push();
   }, [anchors]);
 
   // Reflect the active tab's URL + nav state when switching tabs.

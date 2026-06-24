@@ -1,44 +1,99 @@
-# Selection & Anchoring Architecture
+# Annotation Surface Architecture
 
-How a passage the user picks in a reader becomes a stored **Anchor**, across every
-viewer type and both capture **modes** (text quote + geometric region).
+How a passage the user picks in a reader becomes a stored **Anchor**, and how a
+stored anchor is painted back as a highlight + note card — across every viewer type
+and both capture **modes** (text quote + geometric region).
 
-## Principle: selection is a property of the SURFACE, not the viewer
+## Principle: ONE uniform "annotation surface" contract
 
-A "selection" is captured differently depending on the *rendering surface*, but it
-always flows into ONE sink: `useFocus().setDraft(draft: AnchorDraft)`
-(`src/client/focus/FocusContext.tsx`). Nodes never talk to each other; they collaborate
-through focus. Selecting never writes to storage — the draft is materialized into a real
-Anchor lazily, only when an action needs one (save a note, ask AI, create a patch), via
-`useFocus().materializeAnchor()`.
+Selection (READ) and anchor painting (WRITE) are the two directions of the **same**
+per-surface seam. There are exactly **three** annotation-capable surfaces (plus the
+native `file` iframe, which can't annotate at all). Each surface's *mechanism* is
+irreducibly different — a `contentDocument` the host owns vs. an IPC bridge to a
+separate `WebContents` vs. a host-page canvas/overlay — but the **contract** the host
+drives them through is identical. So the host (`App`/`Workspace`) treats every reader
+the same, and adding a new viewer only means writing one adapter.
 
-There are three selection-capable surfaces (plus one that can't select):
+### The SurfaceReader contract (`src/client/surfaces/types.ts`)
 
-| Surface | DOM location | How selection is captured | Used by |
-| --- | --- | --- | --- |
-| **dom-iframe** | `iframe[title="Source reader"]` (srcDoc) | Host attaches `selectionchange`/`mouseup`/`click`/`keyup` to the iframe's `contentDocument` (`bindReaderFrame` in `App.tsx`) — it owns that document. | Imported HTML / markdown / webpage (the HTML study pipeline) |
-| **electron-webview** | a `<webview>` (separate WebContents) | Host **can't** reach the guest DOM. A guest **preload** (`electron/webview-preload.ts`) runs inside the webview, listens for selections, and posts them to the host over the `sv:selection` IPC channel as a W3C TextQuoteSelector. | live web (`WebviewReader`) **and** local HTML files (`LocalHtmlReader`) |
-| **pdf-text-layer** | pdf.js text layer in the host page (`PdfReader`) | Host listens on its own `.textLayer` (`mouseup`), plus a rubber-band region gesture. | PDFs |
-| **image overlay** | host-page `<img>` + overlay (`ImageReader`) | Rubber-band region gesture (no text). | images |
-| _native `file` iframe_ | `iframe[title="PDF reader"]` | **cannot select** (Chromium-rendered code/word/transcript). No capture — expected. | code / word / transcript |
+Every reader component accepts the **same** two annotation props (plus its own
+source locator: `src` / `url` / `fileUrl` and `sourceId`):
 
-### The unified webview selection layer
+```ts
+type PaintAnchor = {            // normalized "what to draw" (WRITE direction)
+  id: string;
+  anchorKind: "html_selection" | "web_text_quote" | "pdf_selection" | "image_region";
+  quote?: string; contextBefore?: string; contextAfter?: string;
+  studyId?: string;             // html_selection fast-path locator
+  page?: number; rect?: [number, number, number, number];
+  note: string;                 // merged note text for the hover card
+};
+type SurfaceReaderProps = {
+  anchors: PaintAnchor[];                  // WRITE: paint the ones this surface understands (filter by anchorKind)
+  onSelect: (draft: AnchorDraft) => void;  // READ: emit a normalized AnchorDraft (the quote|region union from FocusContext)
+};
+```
 
-Both webview surfaces (live web + local HTML) used to be separate; selection capture
-was duplicated. It now lives once in `src/client/selection/webviewSelection.ts`:
+`anchorsOfKind(anchors, ...kinds)` is the shared filter each adapter uses to take the
+subset it paints.
 
-- `webviewPreloadUrl()` — the guest preload `file://` url (`window.studyVault?.webviewPreloadUrl`), or `undefined` outside the desktop app.
-- `bindWebviewSelection(webview, onSelection, extraHandler?)` — attaches the guest preload to the element and translates its `sv:selection` IPC messages into `onSelection(selection, pageUrl)` calls. Returns a disposer. `extraHandler` lets `WebviewReader` handle the extra channels it owns (`sv:ready`, `sv:open-tab`) on the same single `ipc-message` listener.
-- `normalizeWebSelection(raw)` — pure, unit-tested validation of the cross-IPC payload → `WebSelection | null` (rejects blank/missing/non-object).
+### The host's single orchestration (`src/client/App.tsx`)
 
-`WebviewReader` and `LocalHtmlReader` both call `bindWebviewSelection`; `App.tsx` wires
-each reader's `onSelection` into `focus.setDraft(...)`.
+- It computes **one** normalized `paintAnchors: PaintAnchor[]` memo for the active
+  source — every anchor it has, each carrying its merged note text (from notes) —
+  replacing the old per-viewer `webAnchors` / `pdfAnchors` / `imageAnchors` memos.
+- It renders whichever reader matches the active source's surface, passing the
+  **same** `anchors={paintAnchors}` and `onSelect={focus.setDraft}` to **all** of them.
+- It has **no** per-viewer capture/paint logic. There is no `captureWebSelection`,
+  `capturePdfSelection`, `captureImageRegion`, `captureLocalHtmlSelection`,
+  `bindReaderFrame`, or `decorateNotes` in `App.tsx` — that logic moved **into** each
+  surface adapter. The host's only reaction to a draft is an unrelated convenience:
+  pre-filling the "Edit source (patch)" textarea from an `html` quote draft.
 
-### The bug this fixed
+> **Success test:** `App.tsx` has no surface-specific selection/paint branches.
+> Adding a new viewer needs zero `App` changes beyond mapping `source → reader` in
+> the render switch.
 
-`LocalHtmlReader` (local `.html` files) rendered in a `<webview>` but never attached the
-guest preload, so selecting text did nothing — no source chip, no Ask AI / note. The fix
-gives it the same shared capture path as the live-web webview.
+Selecting never writes to storage — `onSelect` flows into `useFocus().setDraft(draft)`
+(`src/client/focus/FocusContext.tsx`); the draft is materialized into a real Anchor
+lazily, only when an action needs one (save a note, ask AI, create a patch), via
+`useFocus().materializeAnchor()`. `buildAnchorInput(draft)` is the single read-side
+normalization (draft → create-anchor request).
+
+## The three surface adapters
+
+The mechanisms stay different — that's irreducible; only the **contract** unifies.
+
+| Surface | Adapter(s) | DOM location | READ mechanism | WRITE mechanism |
+| --- | --- | --- | --- | --- |
+| **DOM** | `surfaces/DomReader.tsx` | `iframe[title="Source reader"]` (srcDoc) | Owns the iframe's `contentDocument`; listens for `selectionchange`/`mouseup`/`click`/`keyup` and emits `AnchorDraft{mode:"quote",kind:"html",studyId,…}`. | Paints `html_selection` anchors via the `AnnotationRenderer` registry (`annotations.ts` → shared highlight + hover card). |
+| **Webview** | `WebviewReader.tsx` (live web), `LocalHtmlReader.tsx` (local HTML) | a `<webview>` (separate `WebContents`) | Host **can't** reach the guest DOM. A guest preload (`electron/webview-preload.ts`) posts selections over `sv:selection`; the shared `bindWebviewSelection` translates them, then `webSelectionToDraft` emits `AnchorDraft{mode:"quote",kind:"web",url}`. | `toWebAnchorMsgs` maps `web_text_quote` anchors → the guest's paint messages; the shared `bindWebviewAnchors` pushes them over `sv:anchors`; the guest paints via `highlightQuote`. |
+| **Overlay** | `PdfReader.tsx`, `ImageReader.tsx` | host-page pdf.js text layer / `<img>` + overlay | PDF: select text → `AnchorDraft{mode:"quote",kind:"pdf",page,…}`; PDF/image rubber-band → `AnchorDraft{mode:"region",…}` (shared gesture in `surfaces/overlay.ts`). | Paints `pdf_selection` (text highlight or region box) / `image_region` (box) from the `anchors` prop; boxes use the shared `placeRegionBox`. |
+| _native `file` iframe_ | — | `iframe[title="PDF reader"]` | **cannot annotate** (Chromium-rendered code/word/transcript). No `anchors`/`onSelect`. | — |
+
+### Webview surfaces: shared layer (`src/client/selection/webviewSelection.ts`)
+
+Both webview readers share one selection/paint layer so neither duplicates it:
+
+- `webviewPreloadUrl()` — the guest preload `file://` url, or `undefined` outside Electron.
+- `bindWebviewSelection(webview, onSelection, extraHandler?)` — attaches the guest preload + translates `sv:selection` IPC into `onSelection(selection, pageUrl)`. `extraHandler` lets `WebviewReader` own its extra channels (`sv:ready`, `sv:open-tab`) on the same listener.
+- `bindWebviewAnchors(webview, getAnchors)` — pushes anchors over `sv:anchors` on `sv:ready` + `dom-ready`, and returns a `push()` the anchors-changed effect re-calls.
+- `normalizeWebSelection(raw)` — pure validation of the cross-IPC payload.
+- **Bridge to the uniform contract** (pure, unit-tested): `toWebAnchorMsgs(PaintAnchor[]) → WebAnchorMsg[]` (WRITE) and `webSelectionToDraft(sourceId, selection, url) → AnchorDraft` (READ). The guest IPC shapes stay an implementation detail of this surface.
+
+The **only** real difference between the two webview readers is multi-tab + navbar
+(`WebviewReader`) vs. a single fixed page (`LocalHtmlReader`); the URL a draft is
+keyed by is a tab url vs. the file's `/api/local` url, passed in by the reader.
+
+### Local-HTML text-quote anchoring decision
+
+Local HTML is stored **raw** with NO `data-study-id` injection (`src/server/localFiles.ts`)
+— served straight from its original directory via `/api/local/<path>` so its relative
+assets resolve. Therefore its selections **cannot** be `html_selection` anchors (those
+need injected study-ids). Instead both webview readers emit `kind:"web"` quote drafts
+keyed by a URL, so they materialize as `web_text_quote` anchors — reusing the same W3C
+TextQuoteSelector infra (`buildAnchorInput` maps `kind:"web"` → `web_text_quote` with
+`normalizedUrl = url`).
 
 ## Two capture MODES — anchors are not text-only
 
@@ -61,68 +116,77 @@ type AnchorDraft = QuoteAnchorDraft | RegionAnchorDraft;
 | region + pdf | `pdf_selection` | `page, rect, quote:""` |
 | region + image | `image_region` | `rect` (quote empty) |
 
-### Local-HTML text-quote anchoring decision
+### Region capture gesture (shared: `src/client/surfaces/overlay.ts`)
 
-Local HTML is stored **raw** with NO `data-study-id` injection (`src/server/localFiles.ts`)
-— it's served straight from its original directory via `/api/local/<path>` so its relative
-assets resolve. Therefore its selections **cannot** be `html_selection` anchors (those need
-injected study-ids). Instead they are emitted as `kind:"web"` quote drafts keyed by the
-file's local URL (`localFileUrl(originalPath)` in `App.tsx`), so they materialize as
-`web_text_quote` anchors — reusing the same W3C TextQuoteSelector infra as live web pages
-(`buildAnchorInput` maps `kind:"web"` → `web_text_quote` with `normalizedUrl = url`).
-
-### Region capture gesture
-
-- **PDF** (`PdfReader`): a `Text | Region` toggle in the reader toolbar. In **Region** mode the text layer is made click-through and dragging on a page draws a marquee; on release the normalized rect `[x,y,w,h]` (0..1 within that page) + page number become a `pdf_selection` region (empty quote). Text mode keeps the existing text-quote selection.
-- **Image** (`ImageReader`): images render as a host-page `<img>` (a new viewer kind `image`, registered in `src/client/viewers.ts`, instead of the native `file` iframe which can't be overlaid). Dragging anywhere on the image rubber-bands a rect → an `image_region` anchor.
-- Saved regions are drawn back as boxes (`.pdf-region-box` / `.image-region-box`) that hook the same shared floating note card as every other surface (`applyHighlight`).
+- **PDF** (`PdfReader`): a `Text | Region` toggle in the reader toolbar. In **Region** mode the text layer is click-through and dragging on a page draws a marquee; on release `normalizeDragRect` produces the normalized rect `[x,y,w,h]` (0..1 within that page) + page → a `pdf_selection` region (empty quote).
+- **Image** (`ImageReader`): images render as a host-page `<img>` (viewer kind `image`, not the native `file` iframe). Dragging rubber-bands a rect → an `image_region` anchor.
+- `isRealRegion` rejects sub-threshold stray clicks; `placeRegionBox` draws a saved region as an absolutely-positioned box that hooks the shared note card (`applyHighlight`).
 - **Local HTML / live web region selection is intentionally deferred** — text-quote is sufficient there this round.
+
+## Shared presentation (`src/client/annotationLayer.ts`)
+
+Resolving an anchor to a target is each surface's job; the **look** is not. Once an
+adapter has the element + note text it calls `applyHighlight(el, note, key)` (or
+`highlightQuote(doc, selector, note, key)` to re-find by text), and the shared,
+framework-free layer paints the highlight and the single draggable/resizable hover
+**note card** (shown on hover, pinned on click, geometry persisted per anchor id). It
+runs equally in the main document, inside the reader iframe, and injected into the
+webview guest — so adding a viewer never re-implements the card UI.
 
 ## Server API (`src/server/app.ts`)
 
-`createAnchorRequestSchema`:
-- `anchorKind` enum now includes `image_region`.
-- `rect: [number,number,number,number]` optional.
-- `quote` is now optional (defaults `""`); a `.refine()` requires **either** a non-empty quote **or** a rect.
-- `pdf_selection` passes `rect` through (`createPdfSelectionAnchor` already accepts it).
-- `image_region` has a creation path via `createImageRegionAnchor` (`src/adapters/image/anchor.ts`), mirroring the pdf adapter.
-- `POST /api/sources/image` seeds an image source from base64 bytes (parallels `/api/sources/pdf`), used by tests and programmatic import.
+`createAnchorRequestSchema`: `anchorKind` includes `image_region`; `rect` optional;
+`quote` optional (defaults `""`) with a `.refine()` requiring **either** a non-empty
+quote **or** a rect; `pdf_selection` passes `rect` through; `image_region` creates via
+`createImageRegionAnchor` (`src/adapters/image/anchor.ts`). `POST /api/sources/image`
+seeds an image source from base64 bytes (parallels `/api/sources/pdf`).
 
-`entityClient.CreateAnchorInput` gained `rect` + `image_region`; `PdfAnchor` gained optional
-`rect`; new `ImageAnchor` type.
-
-## Test matrix
+## Test matrix (per surface × mode)
 
 Real tests only. "Verified e2e" = driven through the running app; "unit" = vitest.
 
-| Viewer × mode | Coverage | Where |
+| Surface × mode | Coverage | Where |
 | --- | --- | --- |
-| imported HTML — quote | **e2e (web)** | `e2e/loop.spec.ts` (select → chip → note → highlight → patch → persist) |
-| PDF — quote | unit (mapping) + exercised by region e2e harness | `FocusContext.test.ts`, `app.test.ts` (`pdf_selection by page+quote`) |
-| PDF — region | **e2e (web)** | `e2e/regions.spec.ts` (drag region → `pdf_selection` w/ rect + box) |
-| image — region | **e2e (web)** | `e2e/regions.spec.ts` (drag region → `image_region` + box) |
-| native file (code/word) | routing invariant **e2e (web)** | `e2e/regions.spec.ts` (image uses ImageReader, never native iframe; native-file path has no web seed) |
-| live web — quote | **e2e (electron)** wiring + unit | `e2e-electron/webview.spec.ts` (webview + preload), `webviewSelection.test.ts` |
-| local HTML — quote | **e2e (electron)** wiring + unit | `e2e-electron/local-html.spec.ts` (webview + preload attached), `webviewSelection.test.ts`, `FocusContext.test.ts` (local-file web_text_quote mapping) |
-| desktop shell smoke | **e2e (electron)** | `e2e-electron/app.spec.ts` (seed → select → note → overlay → chat) |
-| server anchor API | unit | `app.test.ts` (web/pdf/pdf-region/image-region create; reject empty-quote-without-rect, missing page, missing rect) |
-| sv:selection normalization + binding | unit | `src/client/selection/webviewSelection.test.ts` |
-| buildAnchorInput all modes | unit | `src/client/focus/FocusContext.test.ts` |
+| **contract — filtering** | unit (`anchorsOfKind`) | `src/client/surfaces/types.test.ts` |
+| **contract — read normalization** | unit (`buildAnchorInput`, all 5 mode×kind) | `src/client/focus/FocusContext.test.ts` |
+| DOM — quote (read) | unit (`readDomSelection`: study-id hit, no-hit null, click fallback, selector escaping) + **e2e** | `surfaces/DomReader.test.ts`; `e2e/loop.spec.ts`, `e2e-electron/app.spec.ts` |
+| DOM — paint (write) | unit (`paintDomAnchors`: filters to `html_selection`, merges, idempotent) + **e2e** (`.sv-annotated`) | `surfaces/DomReader.test.ts`; `e2e/loop.spec.ts`, `e2e-electron/app.spec.ts` |
+| Webview — quote (read) | unit (`webSelectionToDraft`, `normalizeWebSelection`, `bindWebviewSelection`) + **e2e** wiring | `selection/webviewSelection.test.ts`; `e2e-electron/{webview,local-html}.spec.ts` |
+| Webview — paint (write) | unit (`toWebAnchorMsgs`, `bindWebviewAnchors` send behavior; guest `highlightQuote`) + **e2e SCREENSHOT** | `selection/webviewSelection.test.ts`, `annotationDom.test.ts`; `e2e-electron/local-html-highlight.spec.ts` |
+| Overlay — region gesture | unit (`normalizeDragRect`, `isRealRegion`, `placeRegionBox`) | `surfaces/overlay.test.ts` |
+| PDF — quote / region | **e2e (web)** + unit (mapping) | `e2e/regions.spec.ts`, `FocusContext.test.ts`, `app.test.ts` |
+| image — region | **e2e (web)** | `e2e/regions.spec.ts` |
+| native file (code/word) | routing invariant **e2e (web)** | `e2e/regions.spec.ts` (image uses ImageReader, never the native iframe) |
+| shared note card | unit (hover/show, geometry persist, clamp) | `annotationDom.test.ts` |
+| server anchor API | unit | `app.test.ts` |
 
-### Documented limitation: webview-guest selection in e2e
+### Webview-guest highlight: verified by SCREENSHOT (pixels)
 
-Playwright **cannot reliably synthesize a real text selection INSIDE an Electron
-`<webview>` guest** — it's a separate WebContents the host page can't script, and
-`executeJavaScript` + a synthetic `mouseup` in the guest does not surface to the host in
-this environment (observed: chip not produced; see the `[local-html] guest selection → chip
-observable: false` log in `e2e-electron/local-html.spec.ts`). So the two webview surfaces
-(live web, local HTML) are covered e2e by asserting the capture **wiring** (the guest
-preload is attached), and the selection → `AnchorDraft` logic is covered by the vitest unit
-tests above. We do not fake a passing selection.
+The webview highlight is painted **inside** the guest, a separate `WebContents` the
+host page cannot DOM-query — DOM-query across the webview boundary isn't available.
+But the guest is **composited into the host window**, so its rendered **pixels** are
+captured by `page.screenshot()`, and the highlight is **host-triggered** (the host
+seeds an anchor+note via the API, opens the source, and pushes `sv:anchors`). So
+`e2e-electron/local-html-highlight.spec.ts` seeds a local HTML source + a
+`web_text_quote` anchor (keyed by its `/api/local` url) + a note, opens it, polls a
+screenshot until the highlight color appears in the passage region, and asserts both
+(A) highlight-yellow pixels appear there and (B) a meaningful pixel diff vs. an
+identical **no-anchor control** page localized to the passage. Observed:
+`yellow before=521 after=14286; changed px in passage=17054` — a clear, large signal.
 
-### Gate
+**Hover note-card (best effort):** the spec also moves the host mouse over the
+highlight and looks for the card via a pixel diff in the band below the line. In this
+environment the card did **not** surface to a screenshot (`hover note-card observable:
+false, diff px=0`) — the spec **logs** this and does not fail on it (the card's
+hover/show logic is unit-covered in `annotationDom.test.ts`). Synthesizing a real text
+**selection** inside a guest still isn't reliably scriptable from the host (see the
+`[local-html] guest selection → chip observable: false` log in `local-html.spec.ts`),
+so the read direction for webviews is covered by wiring + unit tests; the write
+direction is covered by the screenshot above. We never fake a passing assertion.
 
-`npx tsc --noEmit` clean · `npm test` (vitest) green (169) · `npx playwright test
---config=playwright.config.ts` green (5). The web e2e vault is wiped before each run by
-`e2e/global-setup.ts` so a stale accumulated vault can't make the "first source" default
-point at the wrong document.
+### Gate (this change)
+
+`npx tsc --noEmit` clean · `npm test` (vitest) **198** green · `npx playwright test
+--config=playwright.config.ts` **5** green · `npx playwright test
+--config=playwright.electron.config.ts` **5** green (incl. the local-HTML highlight
+SCREENSHOT). The web e2e vault is wiped before each run by `e2e/global-setup.ts`.
