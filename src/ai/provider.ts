@@ -39,6 +39,19 @@ export type ChatResponse = {
   message: ChatMessage;
 };
 
+// A request for STRUCTURED (JSON) generation — used by Product Kit AI commands
+// (e.g. generate a textbook exercise). `sample` is a deterministic, schema-valid
+// object the host supplies so the offline MOCK can echo it (real providers ignore
+// it and actually generate JSON from `messages`). The contentType lets a provider
+// shape its output if it wants; validation against the type's zod schema happens
+// above this boundary.
+export type StructuredRequest = {
+  messages: ChatMessage[];
+  context?: ChatContext;
+  contentType: string;
+  sample?: unknown;
+};
+
 export type ProviderCapabilities = {
   chat: boolean;
   /** True when the provider can run agentic tools (file edits, web, etc.). */
@@ -49,4 +62,11 @@ export interface ModelProvider {
   readonly id: string;
   readonly capabilities: ProviderCapabilities;
   complete(request: ChatRequest): Promise<ChatResponse>;
+  /**
+   * Optional structured-generation path. When present, returns raw JSON TEXT
+   * (parsed + validated against the contentType's schema by the caller). Providers
+   * that don't implement it fall back to `complete()` + JSON extraction. The mock
+   * implements it by echoing `request.sample` for deterministic tests.
+   */
+  completeStructured?(request: StructuredRequest): Promise<{ json: string }>;
 }

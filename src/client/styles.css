@@ -10,7 +10,9 @@
 
 body {
   margin: 0;
-  min-width: 1460px;
+  /* Wide enough for all panes (library + reader + study + concepts + layers) without
+     collapsing the flexible reader; the shell scrolls horizontally on narrower screens. */
+  min-width: 1740px;
   min-height: 100vh;
   color: #202124;
   background: #f4f1ea;
@@ -28,8 +30,26 @@ button {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr) 380px 340px;
+  /* Column widths are driven inline by WorkspaceShell (drag-resizable panes); this
+     is the fallback before the inline style applies. */
+  grid-template-columns: 300px 6px minmax(0, 1fr) 6px 380px 6px 340px;
   height: 100vh;
+}
+
+/* Drag handle between two panes — resizes the neighbouring fixed pane. */
+.col-resize-handle {
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+
+.col-resize-handle:hover,
+.col-resize-handle:active {
+  background: #2f6f64;
+}
+
+.col-resize-gap {
+  background: transparent;
 }
 
 .library-panel,
@@ -210,6 +230,167 @@ button {
   margin-top: 0;
 }
 
+/* —— Study Layer switcher pane (V2) ——————————————————————————————————————— */
+.layer-panel {
+  min-width: 0;
+  overflow: auto;
+  padding: 18px;
+  border-left: 1px solid #d8d2c6;
+  background: #fbfaf7;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.layer-import {
+  display: grid;
+  gap: 8px;
+}
+
+.layer-import-btn.icon-button {
+  margin-top: 0;
+}
+
+.layer-list {
+  display: grid;
+  gap: 8px;
+}
+
+.layer-item {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid #ddd7cc;
+  border-radius: 8px;
+  background: #ffffff;
+  opacity: 0.55; /* a disabled layer reads as muted */
+}
+
+.layer-item.enabled {
+  opacity: 1;
+  border-color: #cfe3dd;
+}
+
+.layer-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.layer-item-title {
+  font-weight: 600;
+}
+
+.layer-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.layer-badge {
+  background: #efe9dc;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #66756a;
+}
+
+.layer-author {
+  font-size: 12px;
+  color: #68706a;
+}
+
+.layer-export-btn.link-button {
+  margin-top: 0;
+  margin-left: auto;
+  color: #2f6f64;
+}
+
+.layer-import-preview {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #cfe3dd;
+  border-radius: 8px;
+  background: #edf6f3;
+}
+
+.layer-preview-head {
+  font-size: 13px;
+}
+
+.layer-preview-stats {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.layer-stat {
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.layer-stat[data-status="matched"] {
+  background: #d6efe3;
+  color: #1f6b4a;
+}
+
+.layer-stat[data-status="fuzzy"] {
+  background: #fbeed2;
+  color: #8a6d1f;
+}
+
+.layer-stat[data-status="unmatched"] {
+  background: #f6dad7;
+  color: #9a3127;
+}
+
+.layer-preview-anchors {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+  max-height: 160px;
+  overflow: auto;
+}
+
+.layer-preview-anchor {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #ffffff;
+}
+
+.layer-preview-anchor[data-status="matched"] .layer-preview-status {
+  color: #1f6b4a;
+}
+
+.layer-preview-anchor[data-status="fuzzy"] .layer-preview-status {
+  color: #8a6d1f;
+}
+
+.layer-preview-anchor[data-status="unmatched"] .layer-preview-status {
+  color: #9a3127;
+}
+
+.layer-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.layer-preview-confirm.icon-button,
+.layer-preview-cancel.link-button {
+  margin-top: 0;
+}
+
 .brand-block p,
 .reader-header p {
   margin: 0 0 6px;
@@ -341,8 +522,8 @@ button {
   flex: 0 0 auto;
 }
 
-/* The viewport is the relatively-positioned flex item; PDFViewer requires its
-   scroll container to be absolutely positioned, so .pdf-reader-canvas fills this. */
+/* The relatively-positioned flex item; the scroll column fills it absolutely so
+   its height is bounded by the viewport (otherwise it grows and never scrolls). */
 .pdf-reader-viewport {
   position: relative;
   flex: 1 1 auto;
@@ -350,14 +531,20 @@ button {
   width: 100%;
 }
 
-/* The scroll root PDFViewer drives (overflow:auto + absolutely positioned). The
-   inner .pdfViewer (from pdf_viewer.css) holds the virtualized .page elements. */
+/* Scroll container for the official pdf.js PDFViewer. It MUST be absolutely
+   positioned (PDFViewer asserts this) and own the scroll; the inner `.pdfViewer`
+   (built by pdf.js, holding the virtualized `.page` elements) handles page layout
+   and centering itself — so we must NOT impose our own flex layout here. */
 .pdf-reader-canvas {
   position: absolute;
   inset: 0;
   overflow: auto;
   background: #555049;
-  padding: 12px 0;
+}
+
+/* pdf.js gives each `.page` its size + white background; add a drop shadow. */
+.pdf-reader-canvas .page {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
 
 /* In region mode the text layer must not eat the drag, and the cursor signals it. */
@@ -592,6 +779,46 @@ button {
   border-radius: 3px;
 }
 
+.note-rendered p,
+.note-rendered ul,
+.note-rendered ol {
+  margin: 4px 0;
+}
+
+.note-rendered ul,
+.note-rendered ol {
+  padding-left: 18px;
+}
+
+.note-rendered blockquote {
+  margin: 4px 0;
+  padding: 2px 0 2px 10px;
+  border-left: 3px solid #c8c1b2;
+  color: #4a4f48;
+}
+
+.note-rendered hr {
+  border: none;
+  border-top: 1px solid #d8d2c4;
+  margin: 8px 0;
+}
+
+.note-rendered .sv-code {
+  background: #2c2a26;
+  color: #f1ece1;
+  padding: 8px 10px;
+  border-radius: 6px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.note-rendered .sv-code code {
+  background: none;
+  padding: 0;
+  white-space: pre;
+}
+
 .note-diagram {
   background: #ffffff;
   border: 1px solid #e2dccd;
@@ -739,6 +966,85 @@ button {
   font-style: italic;
 }
 
+/* —— Textbook Learning Kit — Study Block cards (Product Kit) ————————————————— */
+.tb-card {
+  display: grid;
+  gap: 6px;
+}
+
+.tb-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tb-card-kind {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #66756a;
+}
+
+.tb-card-title {
+  margin: 2px 0;
+  font-size: 15px;
+}
+
+.tb-badge {
+  background: #efe9dc;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #5b6058;
+}
+
+.tb-badge[data-difficulty="hard"],
+.tb-badge[data-mastery="weak"] {
+  background: #f6dad7;
+  color: #9a3127;
+}
+
+.tb-badge[data-difficulty="easy"],
+.tb-badge[data-mastery="mastered"] {
+  background: #d6efe3;
+  color: #1f6b4a;
+}
+
+.tb-section ul,
+.tb-exercise-options {
+  margin: 2px 0;
+  padding-left: 18px;
+}
+
+.tb-section.tb-warn strong {
+  color: #9a3127;
+}
+
+.tb-analogy,
+.tb-exercise-question,
+.tb-exercise-answer,
+.tb-mistake-question,
+.tb-mistake-wrong,
+.tb-mistake-correct {
+  margin: 2px 0;
+  font-size: 13px;
+}
+
+.tb-mistake-wrong strong {
+  color: #9a3127;
+}
+
+.tb-mistake-correct strong {
+  color: #1f6b4a;
+}
+
+/* Structured editors reuse the shared note-edit field styling; stack them. */
+.tb-edit {
+  display: grid;
+  gap: 8px;
+}
+
 /* html-sandbox render — isolated, scriptless iframe. */
 .sv-sandbox-frame {
   width: 100%;
@@ -793,6 +1099,76 @@ button {
   line-height: 1;
   color: #4a6b62;
   padding: 0 2px;
+}
+
+/* Kit selection toolbar — quick actions on the focused passage. */
+.selection-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+
+.selection-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid #cfe3dd;
+  border-radius: 999px;
+  background: #edf6f3;
+  color: #1f5c4f;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.selection-toolbar-btn:hover {
+  background: #ddeee8;
+}
+
+.selection-toolbar-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* Source-level kit actions (Textbook: Review Pack) — same chip look, accent tint. */
+.source-actions-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 4px;
+}
+
+.source-actions-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid #e2d6b8;
+  border-radius: 999px;
+  background: #f7efda;
+  color: #6b551f;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.source-actions-btn:hover {
+  background: #efe4c8;
+}
+
+.source-actions-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* Review Pack card accents. */
+.tb-review-pack {
+  border-left: 3px solid #d8a200;
+}
+
+.tb-review-flashcards {
+  margin: 2px 0 0;
+  padding-left: 18px;
 }
 
 .chat-log {
@@ -1071,6 +1447,22 @@ textarea {
 .annot-mode-toggle:hover {
   border-color: #e0a800;
   background: #fdf4d6;
+}
+
+/* The snapshot sub-mode renders a DomReader iframe inside the tab host; fill it. */
+.webview-host > iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+/* "Open Live" sits at the end of the nav bar on a snapshot tab. */
+.webview-nav .webview-go-live {
+  margin-left: auto;
+  width: auto;
+  padding: 0 10px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .status-pill {

@@ -24,6 +24,9 @@ import {
 } from "../core/schema";
 import { getNoteContentSpec, parseNoteContent } from "../core/notes/contentTypes";
 import { importLocalAsset, readAssetBytes } from "../core/store/assets";
+import { ensureOwnedLayer } from "../core/study-layer/layers";
+import { studyLayerSchema } from "../core/schema";
+import { buildStudyPack, commitImport, parseStudyPack, previewImport } from "./studyLayer";
 import type { StudyVault } from "../core/vault";
 import {
   deleteSource,
@@ -34,8 +37,21 @@ import {
   readSourceFile
 } from "../core/store/sources";
 import { chatRequestSchema, createModelProvider, type ModelProvider } from "../ai";
+import { installServerKits } from "../kits/server";
+import { generateStructuredContent, StructuredGenerationError } from "../kits/structured";
 import { readFile } from "node:fs/promises";
 import { ingestLocalFile, listDirectory, mimeForPath } from "./localFiles";
+
+// Register Product Kit content specs + prompts (React-free) so the API validates
+// kit note content and can run kit structured generation. Idempotent.
+installServerKits();
+
+// Body for POST /api/kits/generate — a kit AI command's structured request.
+const kitGenerateSchema = z.object({
+  promptId: z.string().min(1),
+  contentType: z.string().min(1),
+  input: z.record(z.string(), z.unknown()).optional()
+});
 
 export type CreateAppOptions = {
   vault: StudyVault;
@@ -389,6 +405,9 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
         res.status(404).json({ error: "Source not found" });
         return;
       }
+      // Every new anchor joins this source's "owned" layer (created on first use).
+      const ownedLayer = await ensureOwnedLayer(vault, source);
+      const stampLayer = <T extends { id: string }>(anchor: T) => ({ ...anchor, layerId: ownedLayer.id });
 
       if (input.anchorKind === "web_text_quote") {
         const normalizedUrl =
@@ -405,8 +424,9 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
           contextAfter: input.contextAfter,
           createdBy: "user"
         });
-        await vault.stores.anchors.upsert(webAnchor);
-        res.status(201).json({ anchor: webAnchor });
+        const stamped = stampLayer(webAnchor);
+        await vault.stores.anchors.upsert(stamped);
+        res.status(201).json({ anchor: stamped });
         return;
       }
 
@@ -426,8 +446,9 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
           contextAfter: input.contextAfter,
           createdBy: "user"
         });
-        await vault.stores.anchors.upsert(pdfAnchor);
-        res.status(201).json({ anchor: pdfAnchor });
+        const stamped = stampLayer(pdfAnchor);
+        await vault.stores.anchors.upsert(stamped);
+        res.status(201).json({ anchor: stamped });
         return;
       }
 
@@ -442,8 +463,9 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
           quote: input.quote,
           createdBy: "user"
         });
-        await vault.stores.anchors.upsert(imageAnchor);
-        res.status(201).json({ anchor: imageAnchor });
+        const stamped = stampLayer(imageAnchor);
+        await vault.stores.anchors.upsert(stamped);
+        res.status(201).json({ anchor: stamped });
         return;
       }
 
@@ -465,8 +487,9 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
         contextAfter: input.contextAfter,
         createdBy: "user"
       });
-      await vault.stores.anchors.upsert(anchor);
-      res.status(201).json({ anchor });
+      const stamped = stampLayer(anchor);
+      await vault.stores.anchors.upsert(stamped);
+      res.status(201).json({ anchor: stamped });
     } catch (error) {
       next(error);
     }
@@ -474,7 +497,14 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
 
   app.get("/api/sources/:sourceId/anchors", async (req, res, next) => {
     try {
-      const anchors = (await vault.stores.anchors.list()).filter((anchor) => anchor.sourceId === req.params.sourceId);
+      // Hide anchors that belong to a DISABLED layer. Anchors with no layerId (pre-
+      // layer data) and anchors on enabled layers are always returned.
+      const disabled = new Set(
+        (await vault.stores.layers.list()).filter((layer) => !layer.enabled).map((layer) => layer.id)
+      );
+      const anchors = (await vault.stores.anchors.list()).filter(
+        (anchor) => anchor.sourceId === req.params.sourceId && !(anchor.layerId && disabled.has(anchor.layerId))
+      );
       res.json({ anchors });
     } catch (error) {
       next(error);
@@ -492,6 +522,12 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
       // Validate content against its type's spec (ZodError → 400 via handler).
       const content = parseNoteContent(input.contentType, input.content);
       const now = new Date().toISOString();
+      // A source-attached note joins that source's "owned" layer.
+      let layerId: string | undefined;
+      if (input.sourceId) {
+        const source = await vault.stores.sources.get(input.sourceId);
+        if (source) layerId = (await ensureOwnedLayer(vault, source)).id;
+      }
       const note = noteSchema.parse({
         id: createEntityId("note"),
         type: "note",
@@ -504,7 +540,8 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
         conceptIds: input.conceptIds,
         contentType: input.contentType,
         content,
-        visibility: "private"
+        visibility: "private",
+        layerId
       });
 
       await vault.stores.notes.upsert(note);
@@ -561,6 +598,82 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
       });
       await vault.stores.notes.upsert(note);
       res.json({ note });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // —— Study Layers (share / import anchor+note) ————————————————————————————
+  // List the layers over a source (owned + imported), for the layer switcher.
+  app.get("/api/sources/:sourceId/layers", async (req, res, next) => {
+    try {
+      const layers = (await vault.stores.layers.list()).filter(
+        (layer) => layer.localSourceId === req.params.sourceId
+      );
+      res.json({ layers });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Toggle a layer on/off (enabled) or rename it.
+  const updateLayerRequestSchema = z
+    .object({ enabled: z.boolean().optional(), title: z.string().min(1).optional() })
+    .refine((input) => input.enabled !== undefined || input.title !== undefined, {
+      message: "layer update requires enabled or title"
+    });
+  app.patch("/api/layers/:layerId", async (req, res, next) => {
+    try {
+      const input = updateLayerRequestSchema.parse(req.body);
+      const existing = await vault.stores.layers.get(req.params.layerId);
+      if (!existing) {
+        res.status(404).json({ error: "Layer not found" });
+        return;
+      }
+      const layer = studyLayerSchema.parse({
+        ...existing,
+        enabled: input.enabled ?? existing.enabled,
+        title: input.title ?? existing.title,
+        updatedAt: new Date().toISOString()
+      });
+      await vault.stores.layers.upsert(layer);
+      res.json({ layer });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Export a layer as a portable `.studypack` (local realizations stripped).
+  app.post("/api/layers/:layerId/export", async (req, res, next) => {
+    try {
+      const pack = await buildStudyPack(vault, req.params.layerId);
+      if (!pack) {
+        res.status(404).json({ error: "Layer not found" });
+        return;
+      }
+      res.json({ pack });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Preview an import: match the pack to a local source + rematch every anchor.
+  // Does NOT persist anything.
+  app.post("/api/layers/import/preview", async (req, res, next) => {
+    try {
+      const pack = parseStudyPack(z.object({ pack: z.unknown() }).parse(req.body).pack);
+      res.json({ preview: await previewImport(vault, pack) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Commit an import: create an imported layer + re-located anchors + notes.
+  app.post("/api/layers/import/commit", async (req, res, next) => {
+    try {
+      const body = z.object({ pack: z.unknown(), targetSourceId: z.string().min(1).optional() }).parse(req.body);
+      const pack = parseStudyPack(body.pack);
+      res.status(201).json({ result: await commitImport(vault, pack, { targetSourceId: body.targetSourceId }) });
     } catch (error) {
       next(error);
     }
@@ -801,6 +914,24 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
       const response = await provider.complete(input);
       res.json({ message: response.message, provider: provider.id });
     } catch (error) {
+      next(error);
+    }
+  });
+
+  // Product Kit structured generation: build the kit prompt, generate, validate
+  // against the contentType's NoteContentSpec schema, return the parsed content.
+  // Unknown prompt/contentType or unsatisfiable output → 400 (a client/AI problem,
+  // not a server fault).
+  app.post("/api/kits/generate", async (req, res, next) => {
+    try {
+      const input = kitGenerateSchema.parse(req.body);
+      const content = await generateStructuredContent(provider, input);
+      res.json({ content, provider: provider.id });
+    } catch (error) {
+      if (error instanceof StructuredGenerationError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
       next(error);
     }
   });

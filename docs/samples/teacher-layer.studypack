@@ -1,0 +1,80 @@
+{
+  "packId": "layer_01KVXWM3YC686FS84VWQWTEEG4",
+  "createdAt": "2026-06-24T22:39:44.076Z",
+  "app": "ai-study-vault",
+  "sourceFingerprint": {
+    "contentHash": "sha256:553f7afee02c45116872afd0ed6fbe966b9a13fe5d3a8da439d9833c0fcecdd6",
+    "title": "Textbook Smoke — Cell Biology",
+    "sourceType": "html"
+  },
+  "layer": {
+    "title": "Textbook Smoke — Cell Biology",
+    "visibility": "private"
+  },
+  "anchors": [],
+  "notes": [
+    {
+      "contentType": "textbook.explanation",
+      "content": {
+        "title": "What the cell membrane does",
+        "level": "standard",
+        "explanation": "The membrane is a selective barrier: it decides what gets in and out.",
+        "analogy": "Like a bouncer at a club checking who may enter.",
+        "keyPoints": [
+          "Selective barrier",
+          "Controls transport"
+        ],
+        "commonMisunderstandings": [
+          "It is not a solid wall"
+        ]
+      },
+      "anchorRefs": [],
+      "conceptRefs": []
+    },
+    {
+      "contentType": "textbook.exercise",
+      "content": {
+        "question": "What is the main role of the cell membrane?",
+        "type": "single-choice",
+        "options": [
+          "Energy production",
+          "Selective barrier",
+          "Storing DNA"
+        ],
+        "answer": "Selective barrier",
+        "explanation": "It regulates what enters and leaves the cell.",
+        "difficulty": "easy",
+        "relatedKnowledgePoints": [
+          "transport"
+        ]
+      },
+      "anchorRefs": [],
+      "conceptRefs": []
+    },
+    {
+      "contentType": "textbook.review-pack",
+      "content": {
+        "title": "Review Pack: The Cell",
+        "scope": {
+          "sourceId": "src_01KVXWF55AEFAFTM1ARJK91BC4"
+        },
+        "summary": "Membrane = selective barrier; mitochondria = ATP.",
+        "keyPoints": [
+          "Membrane controls transport"
+        ],
+        "weakPoints": [
+          "Membrane vs mitochondria"
+        ],
+        "flashcards": [
+          {
+            "front": "Cell membrane role?",
+            "back": "Selective barrier"
+          }
+        ],
+        "exercises": []
+      },
+      "anchorRefs": [],
+      "conceptRefs": []
+    }
+  ]
+}

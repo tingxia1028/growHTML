@@ -12,4 +12,5 @@ dist-electron
 .vault-dev
 test-results
 playwright-report
+testinput
 

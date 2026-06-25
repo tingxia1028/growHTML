@@ -1,4 +1,4 @@
-import type { ChatRequest, ChatResponse, ModelProvider } from "./provider";
+import type { ChatRequest, ChatResponse, ModelProvider, StructuredRequest } from "./provider";
 
 // Deterministic, offline provider used for development and as the verified
 // default. It mirrors the shape of a real study assistant (markdown answer that
@@ -32,5 +32,12 @@ export class MockModelProvider implements ModelProvider {
         content: lines.join("\n")
       }
     };
+  }
+
+  // Deterministic structured generation: echo the host-supplied schema-valid
+  // `sample` as JSON. This is what keeps Product Kit AI commands testable offline —
+  // the kit prompt owns the sample, the mock just returns it verbatim.
+  async completeStructured(request: StructuredRequest): Promise<{ json: string }> {
+    return { json: JSON.stringify(request.sample ?? {}) };
   }
 }

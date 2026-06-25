@@ -36,6 +36,11 @@ import {
 // Side-effect import: registers the 12 built-in client NoteType plugins so the note
 // list + composer can render/edit every content type through the registry.
 import { InertNote } from "../notes/builtinNoteTypes";
+import { SelectionToolbar } from "./SelectionToolbar";
+import { SourceActionsToolbar } from "./SourceActionsToolbar";
+// Side-effect import: installs the Product Kits (Textbook Learning Kit, …), which
+// register their note types + domain language into the same registries.
+import "../../kits/clientKits";
 
 // The composer's note-type picker lists EVERY registered client NoteType, sorted so
 // markdown leads (it stays the default — the existing composer e2e types a markdown
@@ -274,6 +279,12 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
           <Sparkles size={16} />
           AI Chat &amp; Notes
         </div>
+        {/* Kit-contributed source-level actions (Textbook: Review Pack). Absent when
+            no kit is installed or no source is open. */}
+        <SourceActionsToolbar
+          visible={!!ctx.activeSource}
+          onRun={(commandId) => void dispatch(commandId, {})}
+        />
         {/* The passage everything below acts on — auto-filled from the reader
             selection (its anchor is created lazily when you ask or save). */}
         {draftQuote || hasRegionDraft ? (
@@ -299,6 +310,13 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
             </button>
           </div>
         ) : null}
+
+        {/* Kit-contributed quick actions on the focused passage (Textbook: Explain /
+            Practice / Mistake). Empty — and absent — when no kit is installed. */}
+        <SelectionToolbar
+          visible={!!focus.draft || !!focus.anchor}
+          onRun={(commandId) => void dispatch(commandId, {})}
+        />
 
         <div className="chat-log">
           {chatMessages.map((message, index) => (
@@ -328,9 +346,6 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
               ) : null}
             </div>
           ))}
-          {chatMessages.length === 0 ? (
-            <div className="empty-state">Ask the assistant, or write a note, about the selected passage.</div>
-          ) : null}
         </div>
 
         {/* One composer: toggle whether the text is sent to the AI or saved as a
