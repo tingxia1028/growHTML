@@ -25,13 +25,23 @@ export type CommandActions = {
   onConceptChanged?(concept?: ConceptRecord): void;
   /** A relation was created or deleted. */
   onRelationChanged?(relation?: RelationRecord): void;
+  /** A study layer changed (toggled / imported) — reload the list + repaint anchors. */
+  onLayersChanged?(): void;
 };
 
 export type CommandContext = {
   focus: FocusContextValue;
   client: Pick<
     EntityClient,
-    "createNote" | "createPatch" | "chat" | "createConcept" | "updateNote" | "createRelation"
+    | "createNote"
+    | "createPatch"
+    | "chat"
+    | "createConcept"
+    | "updateNote"
+    | "createRelation"
+    | "patchLayer"
+    | "generateStructured"
+    | "notes"
   >;
   /** The source the user is currently reading, if any. */
   sourceId?: string;
@@ -64,6 +74,11 @@ export type CommandContext = {
     toConceptId?: string;
     relationKind?: string;
     relationLabel?: string;
+    // —— study layer ——
+    /** The layer to toggle (layer.toggle). */
+    layerId?: string;
+    /** The layer's next enabled state (layer.toggle). */
+    enabled?: boolean;
   };
   /** Current chat history (for ask-ai). */
   chatMessages?: ChatMessage[];
@@ -211,6 +226,24 @@ const createRelation: Command = {
   }
 };
 
+// —— Study Layer ————————————————————————————————————————————————————————
+// Toggling a layer's `enabled` flips whether its anchors are painted. Export and the
+// two-step file import live in the layer.switcher view (file IO + an interactive
+// preview), mirroring how URL-import / file dialogs are view/context actions, not
+// commands. The shared `onLayersChanged` action reloads the list + repaints anchors.
+const toggleLayer: Command = {
+  id: "layer.toggle",
+  title: "Toggle Layer",
+  group: "layer",
+  isAvailable: (ctx) => !!ctx.payload.layerId && typeof ctx.payload.enabled === "boolean",
+  run: async (ctx) => {
+    const { layerId, enabled } = ctx.payload;
+    if (!layerId || typeof enabled !== "boolean") return;
+    await ctx.client.patchLayer(layerId, { enabled });
+    ctx.actions.onLayersChanged?.();
+  }
+};
+
 const registry = new Map<string, Command>();
 
 export function registerCommand(command: Command): void {
@@ -233,5 +266,5 @@ export async function runCommand(id: string, ctx: CommandContext): Promise<boole
   return true;
 }
 
-for (const command of [askAi, addNote, createPatch, createConcept, linkNote, createRelation])
+for (const command of [askAi, addNote, createPatch, createConcept, linkNote, createRelation, toggleLayer])
   registerCommand(command);

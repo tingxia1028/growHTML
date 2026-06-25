@@ -138,6 +138,13 @@ export type WorkspaceContextValue = {
   conceptsVersion: number;
   /** Bump `conceptsVersion` after a direct entity mutation (e.g. delete relation). */
   refreshConcepts(): void;
+
+  // —— study layers ——
+  // Same refresh-token pattern as concepts: the layer switcher watches this to
+  // re-fetch its list. `refreshLayers` ALSO repaints the reader, because toggling /
+  // importing a layer changes which anchors are returned (server filters by enabled).
+  layersVersion: number;
+  refreshLayers(): void;
 };
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -169,6 +176,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // Note-presentation mode for the DOM HTML reader. Seeded from localStorage so the
   // choice survives reloads; the setter mirrors it back to storage.
   const [annotationMode, setAnnotationModeState] = useState<HtmlAnnotationMode>(readStoredAnnotationMode);
+  const [layersVersion, setLayersVersion] = useState(0);
 
   // Native file/folder dialogs come from the Electron preload; absent in a browser.
   const canOpenLocal = typeof window !== "undefined" && !!window.studyVault?.openFile;
@@ -439,7 +447,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           setConceptsVersion((value) => value + 1);
           void refreshAnnotations();
         },
-        onRelationChanged: () => setConceptsVersion((value) => value + 1)
+        onRelationChanged: () => setConceptsVersion((value) => value + 1),
+        // A layer was toggled/imported: bump the token (switcher re-fetches) AND
+        // refresh annotations (the painted highlights follow enabled layers).
+        onLayersChanged: () => {
+          setLayersVersion((value) => value + 1);
+          void refreshAnnotations();
+        }
       }
     }),
     [focus, activeSourceId, chatMessages, buildChatContext, refreshAnnotations]
@@ -491,6 +505,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setAnnotationModeState(mode);
     persistAnnotationMode(mode);
   }, []);
+
+  // Reload the layer switcher (token) AND repaint the reader (enabled layers drive
+  // which anchors the server returns). Used by the switcher after a direct import.
+  const refreshLayers = useCallback(() => {
+    setLayersVersion((value) => value + 1);
+    void refreshAnnotations();
+  }, [refreshAnnotations]);
 
   // Whether the composer's primary action is available, via the command itself.
   const composerCommandId = composerMode === "ask" ? "anchor.ask-ai" : "anchor.add-note";
@@ -581,7 +602,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       selectedTextOr,
       changePatchStatus,
       conceptsVersion,
-      refreshConcepts
+      refreshConcepts,
+      layersVersion,
+      refreshLayers
     }),
     [
       focus,
@@ -628,7 +651,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       selectedTextOr,
       changePatchStatus,
       conceptsVersion,
-      refreshConcepts
+      refreshConcepts,
+      layersVersion,
+      refreshLayers
     ]
   );
 

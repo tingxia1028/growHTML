@@ -21,6 +21,7 @@ export const patchIdSchema = idSchema("patch");
 export const conceptIdSchema = idSchema("concept");
 export const relationIdSchema = idSchema("relation");
 export const assetIdSchema = idSchema("asset");
+export const layerIdSchema = idSchema("layer");
 
 export function recordEnvelopeSchema<TType extends string>(type: TType, id: z.ZodString) {
   return z.object({

@@ -31,5 +31,10 @@ export const studyVaultLayout: WorkspaceLayout = {
   ...threePane,
   id: "study-vault",
   name: "Study Vault",
-  nodes: [...threePane.nodes, { id: "concepts", kind: "concept.list" }]
+  nodes: [
+    ...threePane.nodes,
+    { id: "concepts", kind: "concept.list" },
+    // V2 Study Layer switcher — additive pane (existing DOM untouched), like concepts.
+    { id: "layers", kind: "layer.switcher" }
+  ]
 };

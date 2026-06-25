@@ -1,5 +1,6 @@
 import { createServer, type Server } from "node:http";
 import { openVault } from "../core/vault";
+import { migrateStudyLayers } from "../core/study-layer/layers";
 import { createApp } from "./app";
 
 export type StartServerOptions = {
@@ -22,6 +23,8 @@ export type StartedServer = {
 export async function startServer(options: StartServerOptions = {}): Promise<StartedServer> {
   const host = options.host ?? "127.0.0.1";
   const vault = await openVault();
+  // Backfill the owned-layer membership for any pre-Study-Layer anchors/notes.
+  await migrateStudyLayers(vault);
   const app = createApp({ vault, clientDir: options.clientDir });
   const server = createServer(app);
 

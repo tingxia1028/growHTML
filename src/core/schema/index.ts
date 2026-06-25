@@ -6,6 +6,7 @@ import { noteSchema } from "./note";
 import { patchSchema } from "./patch";
 import { relationSchema } from "./relation";
 import { sourceSchema } from "./source";
+import { studyLayerSchema } from "./study-layer";
 
 export * from "./anchor";
 export * from "./asset";
@@ -15,6 +16,7 @@ export * from "./note";
 export * from "./patch";
 export * from "./relation";
 export * from "./source";
+export * from "./study-layer";
 export * from "./vault";
 
 export const vaultEntitySchema = z.discriminatedUnion("type", [
@@ -24,7 +26,8 @@ export const vaultEntitySchema = z.discriminatedUnion("type", [
   patchSchema,
   conceptSchema,
   relationSchema,
-  assetSchema
+  assetSchema,
+  studyLayerSchema
 ]);
 
 export type VaultEntity = z.infer<typeof vaultEntitySchema>;

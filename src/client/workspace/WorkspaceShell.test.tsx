@@ -77,7 +77,11 @@ describe("WorkspaceShell", () => {
     });
 
     const shell = container.querySelector(".app-shell")!;
-    const panelClasses = Array.from(shell.children).map((child) => child.className);
+    // Panes are interleaved with drag-resize gutters; assert the PANE order, ignoring
+    // the `.col-resize-handle` separators between them.
+    const panelClasses = Array.from(shell.children)
+      .map((child) => child.className)
+      .filter((cls) => !cls.startsWith("col-resize"));
     expect(panelClasses).toEqual(["library-panel", "reader-panel", "study-panel"]);
   });
 });

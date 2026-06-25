@@ -1,0 +1,60 @@
+{
+  "packId": "layer_01KVXRSYPZ3A09M37QTD480YVV",
+  "createdAt": "2026-06-24T21:33:01.024Z",
+  "app": "ai-study-vault",
+  "sourceFingerprint": {
+    "contentHash": "sha256:9ef0a319366ce1607d148be0c690e62da3d67cf23d2793da60cf84f210ecf7dd",
+    "title": "Study Layer Smoke — Rendering Notes",
+    "sourceType": "html"
+  },
+  "layer": {
+    "title": "Alex's rendering highlights",
+    "description": "Shared sample layer for the import smoke test.",
+    "author": {
+      "name": "Alex"
+    },
+    "visibility": "public"
+  },
+  "anchors": [
+    {
+      "refId": "a1",
+      "anchorKind": "html_selection",
+      "quote": "the render thread submits draw commands to the GPU each frame",
+      "contextBefore": "",
+      "contextAfter": ""
+    },
+    {
+      "refId": "a2",
+      "anchorKind": "html_selection",
+      "quote": "The Render Thread Submits Draw Commands",
+      "contextBefore": "",
+      "contextAfter": ""
+    },
+    {
+      "refId": "a3",
+      "anchorKind": "html_selection",
+      "quote": "quantum entanglement of the bytecode interpreter",
+      "contextBefore": "",
+      "contextAfter": ""
+    }
+  ],
+  "notes": [
+    {
+      "contentType": "markdown",
+      "content": "**Key idea:** the render thread is one frame behind.",
+      "anchorRefs": [
+        "a1"
+      ],
+      "conceptRefs": []
+    },
+    {
+      "contentType": "markdown",
+      "content": "Note hanging off the fuzzy + missing anchors.",
+      "anchorRefs": [
+        "a2",
+        "a3"
+      ],
+      "conceptRefs": []
+    }
+  ]
+}

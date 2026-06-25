@@ -106,6 +106,48 @@ export type RelationRecord = {
   confidence?: number;
 };
 
+// —— Study Layers (share / import anchor+note) ——
+export type StudyLayerRecord = {
+  id: string;
+  title: string;
+  description?: string;
+  author?: { id?: string; name?: string };
+  visibility: string;
+  importMode: "owned" | "imported" | "subscribed";
+  enabled: boolean;
+  localSourceId?: string;
+  origin?: { packId?: string; importedAt?: string; sourceLayerId?: string };
+};
+
+// A `.studypack` — only portable fields travel; the importer rebuilds local
+// realizations. Kept loose on the client (the server owns the strict zod schema).
+export type StudyPack = {
+  packId: string;
+  createdAt: string;
+  app?: string;
+  sourceFingerprint: Record<string, unknown>;
+  layer: { title: string; description?: string; author?: { id?: string; name?: string }; visibility?: string };
+  anchors: unknown[];
+  notes: unknown[];
+};
+
+export type MatchStatus = "matched" | "fuzzy" | "unmatched";
+
+export type ImportPreview = {
+  matchedSourceId: string | null;
+  matchedBy: string | null;
+  anchors: Array<{ refId: string; anchorKind: string; status: MatchStatus }>;
+  stats: { matched: number; fuzzy: number; unmatched: number };
+};
+
+export type ImportCommitResult = {
+  layerId: string;
+  sourceId: string | null;
+  createdAnchors: number;
+  importedNotes: number;
+  stats: { matched: number; fuzzy: number; unmatched: number };
+};
+
 export type AssetRecord = {
   id: string;
   assetType: "image" | "audio" | "video" | "file";
@@ -276,6 +318,28 @@ export const entityClient = {
     return sendJson<{ ok: true }>("DELETE", `/api/relations/${relationId}`, undefined);
   },
 
+  // —— Study Layers ——
+  /** Layers over a source (owned + imported), for the layer switcher. */
+  layers(sourceId: string) {
+    return getJson<{ layers: StudyLayerRecord[] }>(`/api/sources/${sourceId}/layers`);
+  },
+  /** Toggle a layer on/off (enabled) or rename it. */
+  patchLayer(layerId: string, input: { enabled?: boolean; title?: string }) {
+    return sendJson<{ layer: StudyLayerRecord }>("PATCH", `/api/layers/${layerId}`, input);
+  },
+  /** Build a portable `.studypack` for a layer (local realizations stripped). */
+  exportLayer(layerId: string) {
+    return sendJson<{ pack: StudyPack }>("POST", `/api/layers/${layerId}/export`, {});
+  },
+  /** Dry-run an import: match the pack to a local source + rematch every anchor. */
+  importPreview(pack: StudyPack) {
+    return sendJson<{ preview: ImportPreview }>("POST", "/api/layers/import/preview", { pack });
+  },
+  /** Commit an import: create an imported layer + re-located anchors + notes. */
+  importCommit(pack: StudyPack, targetSourceId?: string) {
+    return sendJson<{ result: ImportCommitResult }>("POST", "/api/layers/import/commit", { pack, targetSourceId });
+  },
+
   // —— Assets ——
   importAsset(filePath: string) {
     return sendJson<{ asset: AssetRecord }>("POST", "/api/assets/local-file", { path: filePath });
@@ -291,6 +355,14 @@ export const entityClient = {
   // —— Chat ——
   chat(input: { messages: ChatMessage[]; context?: ChatContext }) {
     return sendJson<{ message: ChatMessage; provider: string }>("POST", "/api/chat", input);
+  },
+
+  // —— Kit AI (structured generation) ——
+  // Generate validated structured note content for a Product Kit command (e.g. a
+  // textbook explanation/exercise). Server picks the prompt + validates against the
+  // contentType's schema; returns the parsed content object.
+  generateStructured(input: { promptId: string; contentType: string; input?: Record<string, unknown> }) {
+    return sendJson<{ content: unknown; provider: string }>("POST", "/api/kits/generate", input);
   },
 
   // —— Workspace ——

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { anchorIdSchema, recordEnvelopeSchema, sourceIdSchema } from "./common";
+import { anchorIdSchema, layerIdSchema, recordEnvelopeSchema, sourceIdSchema } from "./common";
 
 export const anchorKindSchema = z.enum([
   "html_selection",
@@ -15,7 +15,14 @@ const anchorEnvelopeSchema = recordEnvelopeSchema("anchor", anchorIdSchema).exte
   // text-based kinds (html/web) re-require it below.
   quote: z.string().default(""),
   contextBefore: z.string().default(""),
-  contextAfter: z.string().default("")
+  contextAfter: z.string().default(""),
+  // Study Layer membership. Optional for backward-compat: anchors written before
+  // layers existed have no layerId and load fine; a migration backfills them onto
+  // each source's auto-created "owned" layer.
+  layerId: layerIdSchema.optional(),
+  // Set only on imported anchors — how confidently the rematch resolver re-located
+  // the portable quote in the importer's local source copy.
+  matchStatus: z.enum(["matched", "fuzzy", "unmatched"]).optional()
 });
 
 export const htmlSelectionAnchorSchema = anchorEnvelopeSchema.extend({

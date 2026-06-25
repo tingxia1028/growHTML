@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   anchorIdSchema,
   conceptIdSchema,
+  layerIdSchema,
   noteIdSchema,
   recordEnvelopeSchema,
   sourceIdSchema,
@@ -30,7 +31,19 @@ export const noteSchema = recordEnvelopeSchema("note", noteIdSchema).extend({
   contentType: noteContentTypeSchema.default("markdown"),
   content: z.unknown(),
 
-  visibility: visibilitySchema.default("private")
+  visibility: visibilitySchema.default("private"),
+
+  // Study Layer membership (optional for backward-compat; migration backfills the
+  // source's "owned" layer onto pre-layer notes).
+  layerId: layerIdSchema.optional(),
+  // Provenance for a note copied out of an imported layer into the user's own.
+  origin: z
+    .object({
+      layerId: layerIdSchema.optional(),
+      noteId: noteIdSchema.optional(),
+      copiedFrom: z.string().optional()
+    })
+    .optional()
 });
 
 export type NoteContentType = z.infer<typeof noteContentTypeSchema>;

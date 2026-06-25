@@ -7,13 +7,15 @@ import {
   patchSchema,
   relationSchema,
   sourceSchema,
+  studyLayerSchema,
   type AnchorRecord,
   type AssetRecord,
   type ConceptRecord,
   type NoteRecord,
   type PatchRecord,
   type RelationRecord,
-  type SourceRecord
+  type SourceRecord,
+  type StudyLayerRecord
 } from "../schema";
 import type { StorageAdapter } from "../storage/adapter";
 import { nodeStorage } from "../storage/nodeStorage";
@@ -26,7 +28,8 @@ export const entityFileNames = {
   patches: "patches.jsonl",
   concepts: "concepts.jsonl",
   relations: "relations.jsonl",
-  assets: "assets.jsonl"
+  assets: "assets.jsonl",
+  layers: "layers.jsonl"
 } as const;
 
 export type EntityStores = {
@@ -37,6 +40,7 @@ export type EntityStores = {
   concepts: SnapshotStore<ConceptRecord>;
   relations: SnapshotStore<RelationRecord>;
   assets: SnapshotStore<AssetRecord>;
+  layers: SnapshotStore<StudyLayerRecord>;
 };
 
 export function createEntityStores(studyDir: string, storage: StorageAdapter = nodeStorage): EntityStores {
@@ -48,7 +52,8 @@ export function createEntityStores(studyDir: string, storage: StorageAdapter = n
     patches: createSnapshotStore({ filePath: filePath(entityFileNames.patches), schema: patchSchema, storage }),
     concepts: createSnapshotStore({ filePath: filePath(entityFileNames.concepts), schema: conceptSchema, storage }),
     relations: createSnapshotStore({ filePath: filePath(entityFileNames.relations), schema: relationSchema, storage }),
-    assets: createSnapshotStore({ filePath: filePath(entityFileNames.assets), schema: assetSchema, storage })
+    assets: createSnapshotStore({ filePath: filePath(entityFileNames.assets), schema: assetSchema, storage }),
+    layers: createSnapshotStore({ filePath: filePath(entityFileNames.layers), schema: studyLayerSchema, storage })
   };
 }
 

@@ -35,7 +35,10 @@ function baseCtx(over: Partial<CommandContext> = {}): CommandContext {
       chat: vi.fn(async () => ({ message: { role: "assistant" as const, content: "hi" }, provider: "mock" })),
       createConcept: vi.fn(async () => ({ concept: { id: "concept_1" } as never })),
       updateNote: vi.fn(async () => ({ note: { id: "note_1" } as never })),
-      createRelation: vi.fn(async () => ({ relation: { id: "rel_1" } as never }))
+      createRelation: vi.fn(async () => ({ relation: { id: "rel_1" } as never })),
+      patchLayer: vi.fn(async () => ({ layer: { id: "layer_1" } as never })),
+      generateStructured: vi.fn(async () => ({ content: {}, provider: "mock" })),
+      notes: vi.fn(async () => ({ notes: [] as never }))
     },
     sourceId: "src_1",
     payload: {},
@@ -189,5 +192,21 @@ describe("command: relation.create", () => {
         baseCtx({ payload: { fromConceptId: "c1", toConceptId: "c1", relationKind: "related" } })
       )
     ).toBe(false);
+  });
+});
+
+describe("command: layer.toggle", () => {
+  it("patches the layer's enabled flag and reports the change", async () => {
+    const onLayersChanged = vi.fn();
+    const ctx = baseCtx({ payload: { layerId: "layer_1", enabled: false }, actions: { onLayersChanged } });
+    const ran = await runCommand("layer.toggle", ctx);
+    expect(ran).toBe(true);
+    expect(ctx.client.patchLayer).toHaveBeenCalledWith("layer_1", { enabled: false });
+    expect(onLayersChanged).toHaveBeenCalledOnce();
+  });
+
+  it("is unavailable without a layerId or a boolean enabled", () => {
+    expect(getCommand("layer.toggle")!.isAvailable(baseCtx({ payload: { layerId: "layer_1" } }))).toBe(false);
+    expect(getCommand("layer.toggle")!.isAvailable(baseCtx({ payload: { enabled: true } }))).toBe(false);
   });
 });
