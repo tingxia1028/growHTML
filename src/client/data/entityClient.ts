@@ -246,6 +246,10 @@ export const entityClient = {
   deleteSource(sourceId: string) {
     return sendJson<{ ok: true }>("DELETE", `/api/sources/${sourceId}`, undefined);
   },
+  /** Merge-patch a source's metadata (e.g. activeKitIds for per-source kit activation). */
+  updateSourceMetadata(sourceId: string, metadata: Record<string, unknown>) {
+    return sendJson<{ source: SourceRecord }>("PATCH", `/api/sources/${sourceId}`, { metadata });
+  },
   rendered(sourceId: string) {
     return getJson<{ source: SourceRecord; content: string }>(`/api/sources/${sourceId}/rendered`);
   },

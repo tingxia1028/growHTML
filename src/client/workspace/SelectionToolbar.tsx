@@ -17,14 +17,16 @@ const ICONS: Record<string, ComponentType<{ size?: number }>> = {
 export type SelectionToolbarProps = {
   /** Show only when there's a passage to act on (a saved anchor or a fresh draft). */
   visible: boolean;
+  /** The active source's effective kit ids — only these kits' actions are shown. */
+  kitIds: readonly string[];
   /** Run a command by id (the host wires this to its dispatch). */
   onRun(commandId: string): void;
   /** Whether a command is currently running (disables the buttons). */
   busy?: boolean;
 };
 
-export function SelectionToolbar({ visible, onRun, busy }: SelectionToolbarProps) {
-  const items = kitSurfaceItems("selection-toolbar");
+export function SelectionToolbar({ visible, kitIds, onRun, busy }: SelectionToolbarProps) {
+  const items = kitSurfaceItems("selection-toolbar", kitIds);
   if (!visible || items.length === 0) return null;
 
   return (

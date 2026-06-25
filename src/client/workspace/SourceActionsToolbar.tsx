@@ -15,12 +15,14 @@ const ICONS: Record<string, ComponentType<{ size?: number }>> = {
 export type SourceActionsToolbarProps = {
   /** Show only when a source is open (source-level actions need one). */
   visible: boolean;
+  /** The active source's effective kit ids — only these kits' actions are shown. */
+  kitIds: readonly string[];
   onRun(commandId: string): void;
   busy?: boolean;
 };
 
-export function SourceActionsToolbar({ visible, onRun, busy }: SourceActionsToolbarProps) {
-  const items = kitSurfaceItems("source-actions");
+export function SourceActionsToolbar({ visible, kitIds, onRun, busy }: SourceActionsToolbarProps) {
+  const items = kitSurfaceItems("source-actions", kitIds);
   if (!visible || items.length === 0) return null;
 
   return (

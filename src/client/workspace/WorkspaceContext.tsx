@@ -37,6 +37,8 @@ import {
   readStoredAnnotationMode,
   type HtmlAnnotationMode
 } from "../annotations";
+import { activeKitIdsForSource, CORE_KIT_ID } from "../../kits/activation";
+import { installedKits } from "../../kits/clientContext";
 
 export type Status = "idle" | "loading" | "saving" | "error";
 
@@ -145,6 +147,16 @@ export type WorkspaceContextValue = {
   // importing a layer changes which anchors are returned (server filters by enabled).
   layersVersion: number;
   refreshLayers(): void;
+
+  // —— product kits (per-source activation) ——
+  // Effective kit ids for the active source (source.metadata.activeKitIds, else the
+  // workspace default). Gates CREATION entry-points only — selection/source toolbars,
+  // the composer type picker, kit commands, language — never rendering.
+  activeKitIds: string[];
+  /** Installed kits (id + display name) for the activation dropdown. */
+  installedKits: { id: string; name: string }[];
+  /** Apply a kit to the active source ("core" = none); persists to its metadata. */
+  setActiveKit(kitId: string): Promise<void>;
 };
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -548,6 +560,26 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const draftQuote = draftQuoteText(focus.draft) || focus.anchor?.quote || "";
   const hasRegionDraft = focus.draft?.mode === "region";
 
+  // Effective kit ids for the active source (per-source activation). Recomputed from
+  // the active source's metadata; rendering is never gated by this.
+  const activeKitIds = useMemo(() => activeKitIdsForSource(activeSource), [activeSource]);
+
+  // Apply a Product Kit to the active source ("core" = none). Persists to
+  // source.metadata.activeKitIds, then reloads sources so the gate recomputes.
+  const setActiveKit = useCallback(
+    async (kitId: string) => {
+      if (!activeSourceId) return;
+      const nextKitIds = kitId === CORE_KIT_ID ? [] : [kitId];
+      try {
+        await entityClient.updateSourceMetadata(activeSourceId, { activeKitIds: nextKitIds });
+        await loadSources();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to set kit");
+      }
+    },
+    [activeSourceId, loadSources]
+  );
+
   const value = useMemo<WorkspaceContextValue>(
     () => ({
       focus,
@@ -604,7 +636,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       conceptsVersion,
       refreshConcepts,
       layersVersion,
-      refreshLayers
+      refreshLayers,
+      activeKitIds,
+      installedKits,
+      setActiveKit
     }),
     [
       focus,
@@ -653,7 +688,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       conceptsVersion,
       refreshConcepts,
       layersVersion,
-      refreshLayers
+      refreshLayers,
+      activeKitIds,
+      setActiveKit
     ]
   );
 

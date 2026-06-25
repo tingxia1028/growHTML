@@ -17,6 +17,7 @@ import {
   patchSchema,
   relationKindSchema,
   relationSchema,
+  sourceSchema,
   type AnchorRecord,
   type HtmlSelectionAnchor,
   type PatchRecord,
@@ -222,6 +223,30 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
         return;
       }
       res.json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Merge-patch a source's metadata. Used by per-source Product Kit activation
+  // (metadata.activeKitIds) — a generic metadata merge so the kit seam never needs
+  // a core schema change. Only metadata is mutable here; identity fields are fixed.
+  const updateSourceRequestSchema = z.object({ metadata: z.record(z.string(), z.unknown()) });
+  app.patch("/api/sources/:sourceId", async (req, res, next) => {
+    try {
+      const input = updateSourceRequestSchema.parse(req.body);
+      const existing = await vault.stores.sources.get(req.params.sourceId);
+      if (!existing) {
+        res.status(404).json({ error: "Source not found" });
+        return;
+      }
+      const source = sourceSchema.parse({
+        ...existing,
+        metadata: { ...existing.metadata, ...input.metadata },
+        updatedAt: new Date().toISOString()
+      });
+      await vault.stores.sources.upsert(source);
+      res.json({ source });
     } catch (error) {
       next(error);
     }

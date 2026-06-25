@@ -1449,6 +1449,23 @@ textarea {
   background: #fdf4d6;
 }
 
+/* Per-source Product Kit selector (reader header). Single-select today; "Core" = none. */
+.kit-select {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid #d8d2c6;
+  background: #fffdf5;
+  color: #5c5340;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.kit-select:hover {
+  border-color: #e0a800;
+}
+
 /* The snapshot sub-mode renders a DomReader iframe inside the tab host; fill it. */
 .webview-host > iframe {
   width: 100%;

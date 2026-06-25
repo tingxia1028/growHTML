@@ -197,5 +197,38 @@ client do the §16 loop (Explain/Practice/Mistake on a passage → Review Pack f
 study-panel action → export the owned layer → import the teacher pack → confirm no Mistake
 block imported).
 
-**Deferred** (flagged): `copy-note-to-mine`, `anchor.rematch` UI (Study Layer V2 backlog),
-full dock layout + layout switcher.
+## Per-source activation
+
+A document chooses which kit(s) apply to it, instead of a kit being globally on. The
+**data is an array** (`source.metadata.activeKitIds: string[]`, the core metadata escape
+hatch — no schema change); the **UI is single-select** today (a "Kit" dropdown in the
+reader header: Core + each installed kit). Set membership drives all gating
+(`itemKitId ∈ activeKitIds`), so enabling multi-kit later is a UI-only change.
+
+- **Effective kit ids** (`src/kits/activation.ts`, pure `effectiveKitIds` + a
+  localStorage-backed default): a source's `activeKitIds` array is authoritative (an
+  empty array = **Core**, no kit); when absent it inherits the **workspace default**
+  (`localStorage["sv-default-kit"]`, initial `textbook-learning`, so existing behaviour —
+  "open a doc and the textbook tools are there" — is preserved). A per-source choice
+  overrides the default.
+- **Gates CREATION/interaction only** — selection toolbar, source-actions, the composer
+  type picker (kit-owned `contentType`s; built-in/core types are always offered), kit
+  commands, and domain language are filtered by the active source's effective kits.
+- **Rendering is NEVER gated** — note-type `render` + content specs stay globally
+  registered, so a kit Study Block (e.g. an imported/shared one, or one created before the
+  doc was switched to Core) always displays regardless of activation. This is what keeps
+  Study Layer sharing/import intact.
+- **Implementation:** `installClientKits` tags every registration with its `kitId`
+  (`kitSurfaceContributions`, `kitNoteTypeOwners`, `kitCommands`); `kitSurfaceItems(slot,
+  kitIds?)` and `noteTypeOwnerKit(contentType)` apply the gate. The host resolves
+  `activeKitIds` from the active source in `WorkspaceContext` and threads it to the
+  toolbars + type picker; `setActiveKit` writes `metadata.activeKitIds` via
+  `PATCH /api/sources/:id` (a new generic metadata merge endpoint) then reloads sources so
+  the gate recomputes. Server is otherwise untouched — content-spec validation, prompts,
+  and layer policy stay global (the API must validate any kit's content regardless of which
+  doc has it active).
+
+**Deferred** (flagged): a workspace-default-kit **settings UI** (the default is hardcoded
+to `textbook-learning` for now; per-source override works); multi-kit activation (data
+already supports it, UI is single-select); `copy-note-to-mine`, `anchor.rematch` UI (Study
+Layer V2 backlog); full dock layout + layout switcher.

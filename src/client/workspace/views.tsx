@@ -38,18 +38,26 @@ import {
 import { InertNote } from "../notes/builtinNoteTypes";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { SourceActionsToolbar } from "./SourceActionsToolbar";
+import { noteTypeOwnerKit } from "../../kits/clientContext";
 // Side-effect import: installs the Product Kits (Textbook Learning Kit, …), which
 // register their note types + domain language into the same registries.
 import "../../kits/clientKits";
 
-// The composer's note-type picker lists EVERY registered client NoteType, sorted so
+// The composer's note-type picker lists the registered client NoteTypes, sorted so
 // markdown leads (it stays the default — the existing composer e2e types a markdown
-// note). Adding a type = registering a plugin; this list follows automatically.
-function noteTypeOptions(): { contentType: string; label: string }[] {
-  const all = listNoteTypes().map((plugin) => ({
-    contentType: plugin.contentType,
-    label: plugin.label ?? plugin.contentType
-  }));
+// note). Kit-owned types are gated by per-source activation: a built-in/core type
+// (no owning kit) is always offered; a kit type only when that kit is active here.
+// (Rendering is NOT gated — only this creation picker is.)
+function noteTypeOptions(activeKitIds: readonly string[]): { contentType: string; label: string }[] {
+  const all = listNoteTypes()
+    .filter((plugin) => {
+      const owner = noteTypeOwnerKit(plugin.contentType);
+      return !owner || activeKitIds.includes(owner);
+    })
+    .map((plugin) => ({
+      contentType: plugin.contentType,
+      label: plugin.label ?? plugin.contentType
+    }));
   return all.sort((a, b) =>
     a.contentType === "markdown" ? -1 : b.contentType === "markdown" ? 1 : a.contentType.localeCompare(b.contentType)
   );
@@ -189,7 +197,10 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
     focus,
     renderedHtml,
     annotationMode,
-    setAnnotationMode
+    setAnnotationMode,
+    activeKitIds,
+    installedKits,
+    setActiveKit
   } = ctx;
 
   // The Floating ↔ Margin note toggle is scoped to the DOM-iframe HTML reader —
@@ -206,6 +217,22 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
           <h2>{activeSource?.title ?? "Open or import a source"}</h2>
         </div>
         <div className="reader-header-actions">
+          {activeSource ? (
+            <select
+              className="kit-select"
+              aria-label="Product Kit"
+              title="Apply a Product Kit to this document (gates create actions; Core = none)"
+              value={activeKitIds[0] ?? "core"}
+              onChange={(event) => void setActiveKit(event.target.value)}
+            >
+              <option value="core">Core</option>
+              {installedKits.map((kit) => (
+                <option key={kit.id} value={kit.id}>
+                  {kit.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
           {showAnnotToggle ? (
             <button
               type="button"
@@ -269,7 +296,8 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
     changePatchStatus,
     showTerminal,
     setShowTerminal,
-    activeFileDir
+    activeFileDir,
+    activeKitIds
   } = ctx;
 
   return (
@@ -283,6 +311,7 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
             no kit is installed or no source is open. */}
         <SourceActionsToolbar
           visible={!!ctx.activeSource}
+          kitIds={activeKitIds}
           onRun={(commandId) => void dispatch(commandId, {})}
         />
         {/* The passage everything below acts on — auto-filled from the reader
@@ -315,6 +344,7 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
             Practice / Mistake). Empty — and absent — when no kit is installed. */}
         <SelectionToolbar
           visible={!!focus.draft || !!focus.anchor}
+          kitIds={activeKitIds}
           onRun={(commandId) => void dispatch(commandId, {})}
         />
 
@@ -397,7 +427,7 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
               value={noteContentType}
               onChange={(event) => setNoteContentType(event.target.value)}
             >
-              {noteTypeOptions().map((option) => (
+              {noteTypeOptions(activeKitIds).map((option) => (
                 <option key={option.contentType} value={option.contentType}>
                   {option.label}
                 </option>
