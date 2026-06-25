@@ -6,9 +6,11 @@ import type { ChatRequest, ChatResponse, ModelProvider, StructuredRequest } from
 // loop is fully self-testable.
 export class MockModelProvider implements ModelProvider {
   readonly id = "mock";
-  readonly capabilities = { chat: true, agentic: false } as const;
+  readonly capabilities = { chat: true, agentic: false, streaming: true } as const;
 
-  async complete(request: ChatRequest): Promise<ChatResponse> {
+  // The deterministic answer text — shared by `complete` and `stream` so the
+  // streamed concatenation is byte-identical to the one-shot reply.
+  private answer(request: ChatRequest): string {
     const lastUser = [...request.messages].reverse().find((message) => message.role === "user");
     const question = lastUser?.content.trim() ?? "";
     const quote = request.context?.quote?.trim();
@@ -25,13 +27,27 @@ export class MockModelProvider implements ModelProvider {
       lines.push("");
       lines.push("- Key idea: " + quote.slice(0, 80));
     }
+    return lines.join("\n");
+  }
 
-    return {
-      message: {
-        role: "assistant",
-        content: lines.join("\n")
-      }
-    };
+  async complete(request: ChatRequest): Promise<ChatResponse> {
+    return { message: { role: "assistant", content: this.answer(request) } };
+  }
+
+  // Deterministic streaming: emit the same answer split into word-ish chunks so a
+  // test can observe progressive arrival yet assert an exact final string. An
+  // optional per-chunk delay (STUDY_VAULT_MOCK_STREAM_DELAY_MS) spaces the chunks
+  // out so a browser e2e can watch the reply fill in; unset (the default, and all
+  // unit tests) streams instantly. The delay never changes the content.
+  async *stream(request: ChatRequest): AsyncIterable<string> {
+    const text = this.answer(request);
+    // Split keeping the whitespace, so concatenating the chunks reproduces `text`.
+    const chunks = text.match(/\S+\s*/g) ?? [text];
+    const delayMs = Number(process.env.STUDY_VAULT_MOCK_STREAM_DELAY_MS ?? 0);
+    for (const chunk of chunks) {
+      if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+      yield chunk;
+    }
   }
 
   // Deterministic structured generation: echo the host-supplied schema-valid

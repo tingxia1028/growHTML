@@ -26,7 +26,9 @@ export default defineConfig({
       url: "http://127.0.0.1:4177/api/health",
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
-      env: { STUDY_VAULT_ROOT: e2eVaultRoot }
+      // Space out mock stream chunks so the streaming-chat spec can observe the
+      // reply arriving progressively (deterministic; content is unchanged).
+      env: { STUDY_VAULT_ROOT: e2eVaultRoot, STUDY_VAULT_MOCK_STREAM_DELAY_MS: "60" }
     },
     {
       command: "npm run dev:client",

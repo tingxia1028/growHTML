@@ -56,6 +56,8 @@ export type ProviderCapabilities = {
   chat: boolean;
   /** True when the provider can run agentic tools (file edits, web, etc.). */
   agentic: boolean;
+  /** True when the provider implements `stream()` for incremental output. */
+  streaming: boolean;
 };
 
 export interface ModelProvider {
@@ -69,4 +71,10 @@ export interface ModelProvider {
    * implements it by echoing `request.sample` for deterministic tests.
    */
   completeStructured?(request: StructuredRequest): Promise<{ json: string }>;
+  /**
+   * Optional streaming chat: yields the assistant reply in text chunks as they are
+   * produced. Callers concatenate the chunks to reconstruct the full message. When
+   * absent, the streaming endpoint falls back to `complete()` emitted as one chunk.
+   */
+  stream?(request: ChatRequest): AsyncIterable<string>;
 }

@@ -82,7 +82,7 @@ function turnPrompt(request: ChatRequest, firstTurn: boolean): string {
 // manually against an authenticated CLI.
 export class ClaudeCliProvider implements ModelProvider {
   readonly id = "claude-cli";
-  readonly capabilities = { chat: true, agentic: true } as const;
+  readonly capabilities = { chat: true, agentic: true, streaming: false } as const;
 
   private readonly command: string;
   private readonly subscriptionMode: boolean;

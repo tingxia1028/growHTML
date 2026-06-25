@@ -360,6 +360,65 @@ export const entityClient = {
   chat(input: { messages: ChatMessage[]; context?: ChatContext }) {
     return sendJson<{ message: ChatMessage; provider: string }>("POST", "/api/chat", input);
   },
+  // Streaming chat over SSE. Invokes `onDelta` for each incremental chunk and
+  // resolves with the full assistant message + provider once the `done` event
+  // arrives. Falls back to the non-streaming `chat()` when the stream endpoint
+  // is unavailable (no body / non-OK response).
+  async chatStream(
+    input: { messages: ChatMessage[]; context?: ChatContext },
+    onDelta: (delta: string) => void
+  ): Promise<{ message: ChatMessage; provider: string }> {
+    const response = await fetch("/api/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input)
+    });
+    if (!response.ok || !response.body) {
+      // 400 (validation) surfaces an error; otherwise degrade to non-streaming.
+      if (response.status === 400) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error ?? "Request failed: /api/chat/stream");
+      }
+      return this.chat(input);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let result: { message: ChatMessage; provider: string } | null = null;
+    let streamError: string | null = null;
+
+    const handleEvent = (block: string) => {
+      let event = "message";
+      const dataLines: string[] = [];
+      for (const line of block.split("\n")) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+      }
+      if (dataLines.length === 0) return;
+      const payload = JSON.parse(dataLines.join("\n"));
+      if (event === "chunk") onDelta(payload.delta as string);
+      else if (event === "done") result = payload as { message: ChatMessage; provider: string };
+      else if (event === "error") streamError = (payload.error as string) ?? "stream failed";
+    };
+
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let sep = buffer.indexOf("\n\n");
+      while (sep >= 0) {
+        handleEvent(buffer.slice(0, sep));
+        buffer = buffer.slice(sep + 2);
+        sep = buffer.indexOf("\n\n");
+      }
+    }
+    if (buffer.trim()) handleEvent(buffer);
+
+    if (streamError) throw new Error(streamError);
+    if (!result) throw new Error("Stream ended without a result");
+    return result;
+  },
 
   // —— Kit AI (structured generation) ——
   // Generate validated structured note content for a Product Kit command (e.g. a

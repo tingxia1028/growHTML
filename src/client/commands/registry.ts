@@ -21,6 +21,8 @@ export type CommandActions = {
   onPatchCreated?(patch: PatchRecord): void;
   onChatHistory?(messages: ChatMessage[]): void;
   onAssistantMessage?(message: ChatMessage): void;
+  /** A streamed delta of the assistant's reply (progressive render). */
+  onAssistantChunk?(delta: string): void;
   /** A concept was created or a note↔concept link changed. */
   onConceptChanged?(concept?: ConceptRecord): void;
   /** A relation was created or deleted. */
@@ -42,7 +44,10 @@ export type CommandContext = {
     | "patchLayer"
     | "generateStructured"
     | "notes"
-  >;
+  > &
+    // Streaming chat is optional so hosts/tests that only wire `chat` still satisfy
+    // the context; `askAi` feature-detects it and falls back to `chat`.
+    Partial<Pick<EntityClient, "chatStream">>;
   /** The source the user is currently reading, if any. */
   sourceId?: string;
   /** Per-invocation inputs (composer text, patch body, concept/relation fields…). */
@@ -107,6 +112,23 @@ const askAi: Command = {
     if (!text) return;
     const history: ChatMessage[] = [...(ctx.chatMessages ?? []), { role: "user", content: text }];
     ctx.actions.onChatHistory?.(history);
+    // Prefer streaming when the host wired both a stream client and a chunk sink;
+    // the progressive deltas build the assistant message as they arrive. If the
+    // stream produced no deltas (endpoint unavailable → chatStream fell back to a
+    // single non-streaming reply), append the final message instead.
+    const onChunk = ctx.actions.onAssistantChunk;
+    if (ctx.client.chatStream && onChunk) {
+      let streamed = false;
+      const { message } = await ctx.client.chatStream(
+        { messages: history, context: ctx.chatContext },
+        (delta) => {
+          streamed = true;
+          onChunk(delta);
+        }
+      );
+      if (!streamed) ctx.actions.onAssistantMessage?.(message);
+      return;
+    }
     const { message } = await ctx.client.chat({ messages: history, context: ctx.chatContext });
     ctx.actions.onAssistantMessage?.(message);
   }

@@ -471,6 +471,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         onPatchCreated: () => void refreshAnnotations(),
         onChatHistory: (history) => setChatMessages(history),
         onAssistantMessage: (message) => setChatMessages((items) => [...items, message]),
+        // Progressive streaming: append the delta to the trailing assistant message,
+        // or start a new one if the last message is the user's prompt. The accumulated
+        // text equals the final reply, so no separate finalize step is needed.
+        onAssistantChunk: (delta) =>
+          setChatMessages((items) => {
+            const last = items[items.length - 1];
+            if (last && last.role === "assistant") {
+              return [...items.slice(0, -1), { ...last, content: last.content + delta }];
+            }
+            return [...items, { role: "assistant", content: delta }];
+          }),
         // A new concept / changed link / new-or-deleted relation: bump the token so
         // concept views re-fetch, and refresh the source's notes so a freshly linked
         // note's conceptIds show up in the study panel too.

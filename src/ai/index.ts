@@ -5,6 +5,12 @@ import { createClaudePtySession } from "./pty/nodePtySession";
 import type { ModelProvider } from "./provider";
 
 export * from "./provider";
+export {
+  generateStructured,
+  extractJson,
+  StructuredGenerationError,
+  type StructuredGenerateRequest
+} from "./structured";
 export { MockModelProvider } from "./mockProvider";
 export { ClaudeCliProvider, buildSubprocessEnv } from "./claudeCliProvider";
 export { ClaudePtyProvider } from "./claudePtyProvider";

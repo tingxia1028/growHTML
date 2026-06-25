@@ -17,7 +17,7 @@ export type ClaudePtyOptions = {
 // drops into the existing chat panel; SDK / `-p` remain as fallbacks.
 export class ClaudePtyProvider implements ModelProvider {
   readonly id = "claude-pty";
-  readonly capabilities = { chat: true, agentic: true } as const;
+  readonly capabilities = { chat: true, agentic: true, streaming: false } as const;
 
   private session: PtySession | null = null;
   private buffer = "";

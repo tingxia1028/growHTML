@@ -1,12 +1,16 @@
-// Structured generation — the React-free core of Product Kit AI commands. Given a
-// promptId + contentType + input, it builds the prompt, asks the provider for JSON,
-// extracts + validates it against the contentType's NoteContentSpec schema, and
-// retries a few times on malformed output. The MOCK provider echoes the prompt's
-// deterministic `mockContent`, so this is fully testable offline.
+// Product Kit structured generation — a THIN wrapper over the base-layer engine
+// (`src/ai/structured.ts`). It resolves a kit prompt + the contentType's
+// NoteContentSpec schema, then delegates the generate/validate/retry loop to the
+// engine. The kit owns only the domain bits (which prompt, which schema, the
+// deterministic sample); `src/ai` owns the mechanism and never imports a kit.
 
 import { getNoteContentSpec } from "../core/notes/contentTypes";
-import type { ChatContext, ChatMessage, ModelProvider } from "../ai/provider";
+import type { ChatContext, ModelProvider } from "../ai/provider";
+import { generateStructured, StructuredGenerationError } from "../ai/structured";
 import { getKitPrompt } from "./prompts";
+
+// Re-export so existing importers (and tests) keep their import path.
+export { StructuredGenerationError, extractJson } from "../ai/structured";
 
 export type GenerateStructuredRequest = {
   promptId: string;
@@ -15,32 +19,9 @@ export type GenerateStructuredRequest = {
   context?: ChatContext;
 };
 
-const JSON_ONLY =
-  "You output ONLY a single JSON object that matches the requested schema. " +
-  "No prose, no markdown fences, no comments — just the JSON.";
-
-// Pull a JSON object out of a model reply: strip ``` fences, then take the first
-// balanced {...} span. Throws if none parses.
-export function extractJson(text: string): unknown {
-  const unfenced = text.replace(/```(?:json)?/gi, "").trim();
-  // Fast path: the whole thing is JSON.
-  try {
-    return JSON.parse(unfenced);
-  } catch {
-    /* fall through to brace scan */
-  }
-  const start = unfenced.indexOf("{");
-  const end = unfenced.lastIndexOf("}");
-  if (start >= 0 && end > start) {
-    return JSON.parse(unfenced.slice(start, end + 1));
-  }
-  throw new Error("No JSON object found in model output");
-}
-
-export class StructuredGenerationError extends Error {}
-
-// Generate + validate structured note content. `maxAttempts` re-prompts the model
-// with the validation error when its output doesn't fit the schema.
+// Build the kit prompt, generate against the contentType's schema, return the
+// parsed content. Unknown prompt/contentType (or a prompt whose output type
+// doesn't match) is a StructuredGenerationError (the caller maps it to 400).
 export async function generateStructuredContent(
   provider: ModelProvider,
   request: GenerateStructuredRequest,
@@ -58,30 +39,15 @@ export async function generateStructuredContent(
 
   const input = request.input ?? {};
   const sample = prompt.mockContent ? prompt.mockContent(input) : spec.createDefault();
-  const messages: ChatMessage[] = [
-    { role: "system", content: JSON_ONLY },
-    { role: "user", content: prompt.build(input) }
-  ];
-
-  let lastError: unknown;
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    let raw: string;
-    if (provider.completeStructured) {
-      raw = (await provider.completeStructured({ messages, context: request.context, contentType: request.contentType, sample })).json;
-    } else {
-      raw = (await provider.complete({ messages, context: request.context })).message.content;
-    }
-    try {
-      return spec.schema.parse(extractJson(raw));
-    } catch (error) {
-      lastError = error;
-      messages.push({
-        role: "user",
-        content: `That did not match the schema (${error instanceof Error ? error.message : "invalid"}). Return ONLY corrected JSON.`
-      });
-    }
-  }
-  throw new StructuredGenerationError(
-    `Could not produce valid ${request.contentType} content: ${lastError instanceof Error ? lastError.message : "unknown"}`
+  return generateStructured(
+    provider,
+    {
+      messages: [{ role: "user", content: prompt.build(input) }],
+      schema: spec.schema,
+      sample,
+      contentType: request.contentType,
+      context: request.context
+    },
+    maxAttempts
   );
 }

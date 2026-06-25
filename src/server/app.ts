@@ -943,6 +943,43 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
     }
   });
 
+  // Streaming chat over Server-Sent Events. Emits `chunk` events ({delta}) as the
+  // reply is produced, then one `done` event ({message, provider}). Providers
+  // without `stream()` fall back to a single chunk from `complete()`. Validation
+  // errors happen before any byte is written, so they still surface as a 400.
+  app.post("/api/chat/stream", async (req, res, next) => {
+    let input: ReturnType<typeof chatRequestSchema.parse>;
+    try {
+      input = chatRequestSchema.parse(req.body);
+    } catch (error) {
+      next(error);
+      return;
+    }
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    const send = (event: string, data: unknown) =>
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    try {
+      let full = "";
+      if (provider.stream) {
+        for await (const delta of provider.stream(input)) {
+          full += delta;
+          send("chunk", { delta });
+        }
+      } else {
+        full = (await provider.complete(input)).message.content;
+        send("chunk", { delta: full });
+      }
+      send("done", { message: { role: "assistant", content: full }, provider: provider.id });
+      res.end();
+    } catch (error) {
+      // Headers are already sent, so report the failure as a stream event.
+      send("error", { error: error instanceof Error ? error.message : "stream failed" });
+      res.end();
+    }
+  });
+
   // Product Kit structured generation: build the kit prompt, generate, validate
   // against the contentType's NoteContentSpec schema, return the parsed content.
   // Unknown prompt/contentType or unsatisfiable output → 400 (a client/AI problem,

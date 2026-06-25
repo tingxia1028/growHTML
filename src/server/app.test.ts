@@ -210,6 +210,45 @@ describe("vault server API", () => {
     expect(response.body.message.content).toContain("Render Thread");
   });
 
+  it("streams a chat reply over SSE that rejoins to the one-shot answer", async () => {
+    const oneShot = await request(app)
+      .post("/api/chat")
+      .send({ messages: [{ role: "user", content: "Summarize this passage." }] })
+      .expect(200);
+
+    const response = await request(app)
+      .post("/api/chat/stream")
+      .send({ messages: [{ role: "user", content: "Summarize this passage." }] })
+      .expect(200);
+
+    expect(response.headers["content-type"]).toContain("text/event-stream");
+
+    // Parse the SSE frames: collect `chunk` deltas and the final `done` payload.
+    const deltas: string[] = [];
+    let done: { message: { content: string }; provider: string } | null = null;
+    for (const frame of response.text.split("\n\n")) {
+      if (!frame.trim()) continue;
+      let event = "message";
+      const data: string[] = [];
+      for (const line of frame.split("\n")) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        else if (line.startsWith("data:")) data.push(line.slice(5).trim());
+      }
+      const payload = JSON.parse(data.join("\n"));
+      if (event === "chunk") deltas.push(payload.delta);
+      else if (event === "done") done = payload;
+    }
+
+    expect(deltas.length).toBeGreaterThan(1);
+    expect(deltas.join("")).toBe(oneShot.body.message.content);
+    expect(done?.provider).toBe("mock");
+    expect(done?.message.content).toBe(oneShot.body.message.content);
+  });
+
+  it("rejects an empty streaming chat request before opening the stream", async () => {
+    await request(app).post("/api/chat/stream").send({ messages: [] }).expect(400);
+  });
+
   it("opens a URL as a live web source (no snapshot)", async () => {
     const created = await request(app)
       .post("/api/sources/web-live")
