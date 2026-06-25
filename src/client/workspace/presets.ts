@@ -1,40 +1,89 @@
-// Workspace layout presets. A preset is a WorkspaceLayout-shaped object whose
-// `nodes` the WorkspaceShell renders in order through the ViewRegistry. The built-in
-// `threePane` reproduces the original hard-coded three-pane UI — library, source
-// viewer, study — but now as data, so adding a pane = adding a node here (and
-// registering its view) rather than editing JSX.
+// Workspace layout presets. A preset pairs `nodes` (the view instances) with a `layout`
+// DOCK TREE the WorkspaceShell renders. The built-in `threePane` reproduces the original
+// hard-coded three-pane UI — library | reader (flex) | study — now expressed as a dock
+// tree, so changing the arrangement = editing the tree (and listing the node) rather
+// than editing JSX. Sizes here are the initial widths (px) or "flex" for the absorber.
 
 import type { WorkspaceLayout } from "../data/entityClient";
+import { leaf, split, type DockNode } from "./dock";
 
-// The default three-pane workspace: the same library / reader / study layout the app
-// always had, expressed as nodes. Order matters — the shell renders them left→right
-// into the `.app-shell` grid in this order, so the rendered DOM matches the original
-// (library-panel, then reader-panel, then study-panel).
+// library | source-viewer (flex) | study — a single row, matching the original DOM.
+const threePaneDock: DockNode = split("row", [
+  { size: 300, node: leaf("library") },
+  { size: "flex", node: leaf("source-viewer") },
+  { size: 380, node: leaf("study") }
+]);
+
 export const threePane: WorkspaceLayout = {
   id: "three-pane",
   name: "Three Pane",
   mode: "dock",
-  layout: "three-pane",
   nodes: [
     { id: "library", kind: "library" },
     { id: "source-viewer", kind: "source.viewer" },
     { id: "study", kind: "study" }
-  ]
+  ],
+  layout: threePaneDock
 };
 
-// The app's default layout (P5): the original three panes PLUS the concept/relation
-// pane on the right. It is `threePane` extended with one additive node, so the
-// library/reader/study DOM is byte-for-byte unchanged (existing e2e selectors hold)
-// and the new pane simply renders to the right of them. `threePane` is kept as the
-// pristine 3-pane reference (used by the shell guardrail test).
+// The app default (P5 + V2): the three panes PLUS the concept/relation pane and the
+// Study Layer switcher, still a single row so the existing DOM order is unchanged.
+const studyVaultDock: DockNode = split("row", [
+  { size: 300, node: leaf("library") },
+  { size: "flex", node: leaf("source-viewer") },
+  { size: 380, node: leaf("study") },
+  { size: 340, node: leaf("concepts") },
+  { size: 280, node: leaf("layers") }
+]);
+
 export const studyVaultLayout: WorkspaceLayout = {
-  ...threePane,
   id: "study-vault",
   name: "Study Vault",
+  mode: "dock",
   nodes: [
     ...threePane.nodes,
     { id: "concepts", kind: "concept.list" },
-    // V2 Study Layer switcher — additive pane (existing DOM untouched), like concepts.
+    // V2 Study Layer switcher — additive pane, like concepts.
     { id: "layers", kind: "layer.switcher" }
-  ]
+  ],
+  layout: studyVaultDock
 };
+
+// Textbook Learning layout (user spec §8): a NESTED dock tree — the center column is a
+// `column` split so the reader sits above a Practice panel (the bottom-panel case the
+// flat row layouts can't express). nav = library, reader = source.viewer (flex), the
+// bottom panel = the Textbook practice view, right = study (AI tutor/chat).
+const studentDock: DockNode = split("row", [
+  { size: 260, node: leaf("library") },
+  {
+    size: "flex",
+    node: split("column", [
+      { size: "flex", node: leaf("source-viewer") },
+      { size: 240, node: leaf("practice") }
+    ])
+  },
+  { size: 380, node: leaf("study") }
+]);
+
+export const studentLearningLayout: WorkspaceLayout = {
+  id: "student-learning",
+  name: "Textbook Learning",
+  mode: "dock",
+  nodes: [
+    { id: "library", kind: "library" },
+    { id: "source-viewer", kind: "source.viewer" },
+    { id: "practice", kind: "practice" },
+    { id: "study", kind: "study" }
+  ],
+  layout: studentDock
+};
+
+// The switchable presets + the default. The layout switcher (reader header) lists these;
+// `activeLayoutId` (persisted in WorkspaceContext) picks one. studyVault stays default so
+// the app opens exactly as before.
+export const LAYOUT_PRESETS: WorkspaceLayout[] = [studyVaultLayout, threePane, studentLearningLayout];
+export const DEFAULT_LAYOUT_ID = studyVaultLayout.id;
+
+export function getLayoutPreset(id: string): WorkspaceLayout {
+  return LAYOUT_PRESETS.find((preset) => preset.id === id) ?? studyVaultLayout;
+}

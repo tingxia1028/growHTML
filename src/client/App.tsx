@@ -7,15 +7,23 @@
 // zero edits to this file. See docs/design/workspace-runtime.md.
 
 import { FocusProvider } from "./focus/FocusContext";
-import { WorkspaceProvider } from "./workspace/WorkspaceContext";
+import { WorkspaceProvider, useWorkspace } from "./workspace/WorkspaceContext";
 import { WorkspaceShell } from "./workspace/WorkspaceShell";
-import { studyVaultLayout } from "./workspace/presets";
+import { getLayoutPreset } from "./workspace/presets";
+
+// Reads the active layout preset id from the workspace context (the reader-header layout
+// switcher writes it) and renders that preset. Kept inside the provider so switching
+// layouts is just a context state change — no prop drilling from App.
+function ActiveWorkspaceShell() {
+  const { activeLayoutId } = useWorkspace();
+  return <WorkspaceShell layout={getLayoutPreset(activeLayoutId)} />;
+}
 
 export default function App() {
   return (
     <FocusProvider>
       <WorkspaceProvider>
-        <WorkspaceShell layout={studyVaultLayout} />
+        <ActiveWorkspaceShell />
       </WorkspaceProvider>
     </FocusProvider>
   );

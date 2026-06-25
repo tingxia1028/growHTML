@@ -17,14 +17,19 @@ import { WorkspaceProvider } from "./WorkspaceContext";
 import { WorkspaceShell } from "./WorkspaceShell";
 import { threePane } from "./presets";
 
-// The shell renders the threePane preset's nodes through the ViewRegistry. We assert
-// it produces the three pane containers in order, in the `.app-shell` grid — the
-// proof that the layout is data-driven (not hard-coded JSX) yet yields the same DOM.
+// The shell renders the threePane preset's DOCK TREE through the ViewRegistry. We assert
+// it produces the three pane containers in order, inside the `.app-shell` flex dock —
+// the proof that the layout is data-driven (not hard-coded JSX) yet yields the same panes.
 
 let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  // The dock engine auto-collapses SECONDARY panes (library, …) to a rail below the
+  // responsive breakpoint (1280px). jsdom defaults innerWidth to 1024, which would hide
+  // the `.library-panel` behind a rail — so force a wide viewport for these structural
+  // assertions (responsive collapse is covered by its own dock unit test + an e2e).
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: 1400 });
   // WorkspaceProvider's mount effect calls entityClient.sources() (fetch). jsdom has
   // no fetch; stub it to reject so loadSources hits its catch (no unhandled rejection)
   // and the panels still render with empty state.
@@ -77,11 +82,14 @@ describe("WorkspaceShell", () => {
     });
 
     const shell = container.querySelector(".app-shell")!;
-    // Panes are interleaved with drag-resize gutters; assert the PANE order, ignoring
-    // the `.col-resize-handle` separators between them.
-    const panelClasses = Array.from(shell.children)
-      .map((child) => child.className)
-      .filter((cls) => !cls.startsWith("col-resize"));
+    // The root split's children are `.dock-pane` wrappers (interleaved with resize
+    // gutters); each wraps its view PLUS (for a collapsible pane) an absolute collapse
+    // button as a sibling. So assert the PANE order by the wrapped panel itself, not the
+    // pane's firstElementChild (which is the collapse button for library/study).
+    const panelClasses = Array.from(shell.querySelectorAll(":scope > .dock-pane")).map((pane) => {
+      const panel = pane.querySelector(".library-panel, .reader-panel, .study-panel");
+      return panel?.className ?? "";
+    });
     expect(panelClasses).toEqual(["library-panel", "reader-panel", "study-panel"]);
   });
 });

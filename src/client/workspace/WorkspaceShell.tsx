@@ -1,94 +1,131 @@
-// WorkspaceShell — renders a WorkspaceLayout's nodes through the ViewRegistry into
-// the existing `.app-shell` grid, in order. This replaces the hand-written three-pane
-// JSX that used to be App's `Workspace` return value: the shell is layout-agnostic
-// (it just maps `layout.nodes` → `renderNode`), and the `threePane` preset supplies
-// the same library / reader / study nodes. So the rendered DOM is identical, but the
-// panes are now data + registered views.
+// WorkspaceShell — recursively renders a WorkspaceLayout's DOCK TREE (layout.layout)
+// through the ViewRegistry. A `split` node becomes a row/column flex container; a `leaf`
+// resolves its `nodeId` to a WorkspaceNode and renders it via `renderNode`. The root
+// split IS the `.app-shell` flex container, so a single-row layout stays flat; nested
+// splits (e.g. a reader with a bottom panel) add `.dock-split` containers.
 //
-// On top of that it makes the fixed-width panes DRAG-RESIZABLE: a thin gutter sits
-// between adjacent panels; dragging it changes the neighbouring fixed pane's width
-// while the flexible reader (`source.viewer`) absorbs the difference. Widths persist
-// to localStorage so the layout you set sticks across reloads.
+// Panes are DRAG-RESIZABLE in both axes: a thin gutter sits between adjacent children;
+// dragging it resizes the neighbouring FIXED pane (col-resize in a row, row-resize in a
+// column) while the flexible child (size:"flex", e.g. the reader) absorbs the slack.
+// Sizes persist to localStorage so the layout you set sticks across reloads.
 //
-// Importing this module also registers the built-in views (via `./views`), so a
-// consumer only has to render <WorkspaceShell layout={threePane} /> inside a
-// WorkspaceProvider.
+// Importing this module also registers the built-in views (via ./views etc.), so a
+// consumer only has to render <WorkspaceShell layout={…} /> inside a WorkspaceProvider.
 
-import { Fragment, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import type { WorkspaceLayout } from "../data/entityClient";
 import { renderNode } from "./viewRegistry";
 import { useWorkspace } from "./WorkspaceContext";
+import {
+  childInitialPx,
+  clampDockPx,
+  dockNodeMap,
+  dockRoot,
+  flexFor,
+  gutterTarget,
+  isCollapsibleLeaf,
+  isPaneCollapsed,
+  paneCollapseKey,
+  paneLabel,
+  type DockChild,
+  type DockNode
+} from "./dock";
 // Side-effect imports: register the built-in view plugins.
-//   ./views        → library / source.viewer / study (the original three panes)
-//   ./conceptViews → concept.list (the P5 concept/relation pane)
+//   ./views          → library / source.viewer / study (the original three panes)
+//   ./conceptViews   → concept.list (the P5 concept/relation pane)
+//   ./layerViews     → layer.switcher (the V2 Study Layer pane)
+//   ./practiceViews  → practice (the Textbook Learning layout's bottom panel)
 import "./views";
 import "./conceptViews";
 import "./layerViews";
+import "./practiceViews";
 
-type Node = WorkspaceLayout["nodes"][number];
+// px size overrides keyed by dock child key (leaf nodeId, else its tree path).
+const SIZES_KEY = "sv-panel-widths";
+// Per-pane collapsed flags, keyed by `${layoutId}:${nodeId}`.
+const COLLAPSED_KEY = "sv-pane-collapsed";
+// Width of a collapsed pane's rail (just enough for the rotated label + expand hit area).
+const RAIL_PX = 34;
 
-// The reader pane flexes (1fr) and absorbs every resize; all other panes are fixed.
-const FLEX_KIND = "source.viewer";
-const DEFAULT_WIDTH: Record<string, number> = {
-  library: 300,
-  study: 380,
-  "concept.list": 340,
-  "layer.switcher": 280
-};
-const MIN_WIDTH = 200;
-const MAX_WIDTH = 760;
-const WIDTHS_KEY = "sv-panel-widths";
-
-const isFlex = (node: Node) => node.kind === FLEX_KIND;
-
-function loadWidths(): Record<string, number> {
+function loadSizes(): Record<string, number> {
   try {
-    const raw = globalThis.localStorage?.getItem(WIDTHS_KEY);
+    const raw = globalThis.localStorage?.getItem(SIZES_KEY);
     return raw ? (JSON.parse(raw) as Record<string, number>) : {};
   } catch {
     return {};
   }
 }
 
-// Which pane a gutter resizes, and in which direction dragging right grows it.
-// Resize the fixed neighbour; the flexible reader absorbs the change. When both
-// neighbours are fixed (e.g. study|concept), resize the right one so the rightmost
-// pane stays reachable.
-function gutterTarget(left: Node, right: Node): { id: string; sign: 1 | -1 } | null {
-  const lf = isFlex(left);
-  const rf = isFlex(right);
-  if (!lf && rf) return { id: left.id, sign: 1 }; // drag right → left pane grows
-  if (lf && !rf) return { id: right.id, sign: -1 }; // drag right → right pane shrinks
-  if (!lf && !rf) return { id: right.id, sign: -1 };
-  return null; // flex|flex — nothing fixed to resize
+function loadCollapsed(): Record<string, boolean> {
+  try {
+    const raw = globalThis.localStorage?.getItem(COLLAPSED_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function currentWidth(): number {
+  return typeof window !== "undefined" ? window.innerWidth : 9999;
+}
+
+// Stable storage/identity key for a resizable child: its leaf nodeId (meaningful +
+// preserves saved widths) or, for a nested split, its position path.
+function childKey(child: DockChild, path: string): string {
+  return child.node.type === "leaf" ? child.node.nodeId : path;
 }
 
 export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
   const ctx = useWorkspace();
-  const [widths, setWidths] = useState<Record<string, number>>(loadWidths);
-  const nodes = layout.nodes;
-  const kindById = new Map(nodes.map((node) => [node.id, node.kind]));
+  const nodes = useMemo(() => dockNodeMap(layout), [layout]);
+  const root = dockRoot(layout);
 
-  const widthOf = (id: string) => widths[id] ?? DEFAULT_WIDTH[kindById.get(id) ?? ""] ?? 320;
-  const widthOfRef = useRef(widthOf);
-  widthOfRef.current = widthOf;
+  const [sizes, setSizes] = useState<Record<string, number>>(loadSizes);
+  const sizesRef = useRef(sizes);
+  sizesRef.current = sizes;
 
-  function startDrag(event: React.MouseEvent, id: string, sign: 1 | -1) {
+  // User collapse flags (explicit toggles) + the live viewport width (drives responsive
+  // auto-collapse of secondary panes). Both feed `isPaneCollapsed`.
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(loadCollapsed);
+  const [viewportWidth, setViewportWidth] = useState<number>(currentWidth);
+  useEffect(() => {
+    const onResize = () => setViewportWidth(currentWidth());
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  function toggleCollapsed(collapseKey: string, next: boolean) {
+    setCollapsed((prev) => {
+      const updated = { ...prev, [collapseKey]: next };
+      try {
+        globalThis.localStorage?.setItem(COLLAPSED_KEY, JSON.stringify(updated));
+      } catch {
+        // storage unavailable — keep the in-memory flags
+      }
+      return updated;
+    });
+  }
+
+  function pxFor(key: string, fallback: number): number {
+    return sizes[key] ?? fallback;
+  }
+
+  function startDrag(event: ReactMouseEvent, key: string, sign: 1 | -1, axis: "x" | "y", fallback: number) {
     event.preventDefault();
-    const startX = event.clientX;
-    const startW = widthOfRef.current(id);
+    const start = axis === "x" ? event.clientX : event.clientY;
+    const startPx = sizesRef.current[key] ?? fallback;
     const onMove = (e: MouseEvent) => {
-      const next = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startW + sign * (e.clientX - startX)));
-      setWidths((prev) => ({ ...prev, [id]: next }));
+      const cur = axis === "x" ? e.clientX : e.clientY;
+      setSizes((prev) => ({ ...prev, [key]: clampDockPx(startPx + sign * (cur - start)) }));
     };
     const onUp = () => {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
-      setWidths((prev) => {
+      setSizes((prev) => {
         try {
-          globalThis.localStorage?.setItem(WIDTHS_KEY, JSON.stringify(prev));
+          globalThis.localStorage?.setItem(SIZES_KEY, JSON.stringify(prev));
         } catch {
-          // storage unavailable — keep the in-memory widths
+          // storage unavailable — keep the in-memory sizes
         }
         return prev;
       });
@@ -97,33 +134,108 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
     document.addEventListener("mouseup", onUp);
   }
 
-  const columns: string[] = [];
-  const items: ReactNode[] = [];
-  nodes.forEach((node, i) => {
-    columns.push(isFlex(node) ? "minmax(0, 1fr)" : `${widthOf(node.id)}px`);
-    items.push(<Fragment key={node.id}>{renderNode(node, ctx)}</Fragment>);
-    if (i < nodes.length - 1) {
-      const target = gutterTarget(node, nodes[i + 1]);
-      columns.push("6px");
-      items.push(
-        target ? (
-          <div
-            key={`gutter-${i}`}
-            className="col-resize-handle"
-            role="separator"
-            aria-orientation="vertical"
-            onMouseDown={(e) => startDrag(e, target.id, target.sign)}
-          />
-        ) : (
-          <div key={`gutter-${i}`} className="col-resize-gap" />
-        )
-      );
-    }
-  });
+  // The children of a split: panes interleaved with resize gutters. Used for the root
+  // split (rendered straight into .app-shell) and for nested .dock-split containers.
+  function renderChildren(node: Extract<DockNode, { type: "split" }>, path: string): ReactNode[] {
+    const axis: "x" | "y" = node.direction === "row" ? "x" : "y";
 
-  return (
-    <div className="app-shell" style={{ gridTemplateColumns: columns.join(" ") }}>
-      {items}
-    </div>
-  );
+    // Resolve each child once: its size key, the WorkspaceNode (for leaves), whether it
+    // can collapse, and its effective collapsed state (explicit toggle OR responsive).
+    const meta = node.children.map((child, i) => {
+      const key = childKey(child, `${path}/${i}`);
+      const wsNode = child.node.type === "leaf" ? nodes.get(child.node.nodeId) : undefined;
+      const kind = wsNode?.kind ?? "";
+      const collapsible = !!wsNode && isCollapsibleLeaf(child, kind);
+      const collapseKey = wsNode ? paneCollapseKey(layout.id, wsNode.id) : key;
+      const isCollapsed = collapsible && isPaneCollapsed(kind, collapsed[collapseKey] ?? false, viewportWidth);
+      return { child, key, wsNode, collapsible, collapseKey, isCollapsed };
+    });
+
+    const out: ReactNode[] = [];
+    meta.forEach((m, i) => {
+      const paneFlex = m.isCollapsed
+        ? `0 0 ${RAIL_PX}px`
+        : flexFor(m.child, pxFor(m.key, childInitialPx(m.child)));
+      out.push(
+        <div
+          className="dock-pane"
+          data-collapsed={m.isCollapsed ? "true" : undefined}
+          key={`pane-${m.key}`}
+          style={{ flex: paneFlex }}
+        >
+          {m.collapsible && m.isCollapsed ? (
+            <button
+              type="button"
+              className="dock-rail"
+              aria-label={`Expand ${paneLabel(m.wsNode!)}`}
+              title={`Expand ${paneLabel(m.wsNode!)}`}
+              onClick={() => toggleCollapsed(m.collapseKey, false)}
+            >
+              <span className="dock-rail-label">{paneLabel(m.wsNode!)}</span>
+            </button>
+          ) : (
+            <>
+              {m.collapsible ? (
+                <button
+                  type="button"
+                  className="dock-collapse-btn"
+                  aria-label={`Collapse ${paneLabel(m.wsNode!)}`}
+                  title={`Collapse ${paneLabel(m.wsNode!)}`}
+                  onClick={() => toggleCollapsed(m.collapseKey, true)}
+                >
+                  ‹
+                </button>
+              ) : null}
+              {renderDock(m.child.node, m.key)}
+            </>
+          )}
+        </div>
+      );
+
+      if (i < meta.length - 1) {
+        const target = gutterTarget(node.children, i);
+        // No live resize at a collapsed boundary (a collapsed pane is a fixed rail).
+        const boundaryCollapsed =
+          m.isCollapsed || meta[i + 1].isCollapsed || (target ? meta[target.childIndex].isCollapsed : false);
+        if (target && !boundaryCollapsed) {
+          const tChild = node.children[target.childIndex];
+          const tKey = childKey(tChild, `${path}/${target.childIndex}`);
+          out.push(
+            <div
+              key={`gutter-${i}`}
+              className={axis === "x" ? "dock-resize dock-resize-x" : "dock-resize dock-resize-y"}
+              role="separator"
+              aria-orientation={axis === "x" ? "vertical" : "horizontal"}
+              onMouseDown={(e) => startDrag(e, tKey, target.sign, axis, childInitialPx(tChild))}
+            />
+          );
+        } else {
+          out.push(<div key={`gutter-${i}`} className="dock-gap" />);
+        }
+      }
+    });
+    return out;
+  }
+
+  function renderDock(node: DockNode, path: string): ReactNode {
+    if (node.type === "leaf") {
+      const wsNode = nodes.get(node.nodeId);
+      if (!wsNode) {
+        return (
+          <div className="workspace-node-missing" data-kind={node.nodeId}>
+            Unknown node: {node.nodeId}
+          </div>
+        );
+      }
+      return renderNode(wsNode, ctx);
+    }
+    return <div className={`dock-split dock-${node.direction}`}>{renderChildren(node, path)}</div>;
+  }
+
+  // The root split IS the .app-shell flex container (keeps the top-level DOM flat). A
+  // degenerate single-leaf root is wrapped so .app-shell always exists.
+  if (root.type !== "split") {
+    return <div className="app-shell dock-row">{renderDock(root, "root")}</div>;
+  }
+  return <div className={`app-shell dock-${root.direction}`}>{renderChildren(root, "root")}</div>;
 }

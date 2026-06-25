@@ -10,9 +10,10 @@
 
 body {
   margin: 0;
-  /* Wide enough for all panes (library + reader + study + concepts + layers) without
-     collapsing the flexible reader; the shell scrolls horizontally on narrower screens. */
-  min-width: 1740px;
+  /* No fixed min-width anymore: the dock engine collapses secondary panes to rails on
+     narrow viewports (see workspace/dock.ts isPaneCollapsed + RESPONSIVE_BREAKPOINT_PX),
+     so the shell stays usable instead of forcing a horizontal scroll. */
+  min-width: 0;
   min-height: 100vh;
   color: #202124;
   background: #f4f1ea;
@@ -28,27 +29,149 @@ button {
   cursor: pointer;
 }
 
+/* The workspace shell is a recursive flex DOCK tree (see workspace/dock.ts). The root
+   split is the .app-shell itself; nested splits add .dock-split containers. */
 .app-shell {
-  display: grid;
-  /* Column widths are driven inline by WorkspaceShell (drag-resizable panes); this
-     is the fallback before the inline style applies. */
-  grid-template-columns: 300px 6px minmax(0, 1fr) 6px 380px 6px 340px;
+  display: flex;
   height: 100vh;
+  min-width: 0;
+  min-height: 0;
+  /* When the expanded panes are wider than the viewport (e.g. all five Study Vault panes
+     on a 1280px screen) the shell scrolls horizontally instead of crushing the reader —
+     the responsive collapse (dock.ts) reclaims that space on genuinely narrow screens. */
+  overflow-x: auto;
 }
 
-/* Drag handle between two panes — resizes the neighbouring fixed pane. */
-.col-resize-handle {
-  cursor: col-resize;
+.app-shell.dock-row,
+.dock-split.dock-row {
+  flex-direction: row;
+}
+
+.app-shell.dock-column,
+.dock-split.dock-column {
+  flex-direction: column;
+}
+
+/* A split nested inside a pane fills that pane. */
+.dock-split {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* A pane wraps one dock child (a view or a nested split) + carries its main-axis size
+   (set inline as flex). Its single child stretches to fill it. position:relative anchors
+   the absolute collapse button + the collapsed rail. */
+.dock-pane {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The pane's view stretches to fill — but NOT the absolutely-positioned collapse button
+   (it's lifted out of flow, so it keeps its intrinsic size). */
+.dock-pane > *:not(.dock-collapse-btn) {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The flex reader keeps a usable minimum so it never gets crushed to 0 when the fixed
+   side panes already exceed the viewport — instead the shell scrolls (overflow-x above).
+   Below the responsive breakpoint the side panes collapse to rails, so this min fits and
+   no scroll is needed. */
+.dock-pane:has(> .reader-panel) {
+  min-width: 360px;
+}
+
+/* Collapse affordance: a small chevron pinned to the pane's top-right, faint until hover
+   so it doesn't compete with pane content. Clicking collapses the pane to a rail. */
+.dock-collapse-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 5;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d8d2c4;
+  border-radius: 5px;
+  background: rgba(244, 241, 234, 0.85);
+  color: #5f5a4e;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.35;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+
+.dock-pane:hover > .dock-collapse-btn {
+  opacity: 0.85;
+}
+
+.dock-collapse-btn:hover {
+  opacity: 1;
+  background: #fff;
+}
+
+/* A collapsed pane renders ONLY this full-height rail: a vertical label + click-to-expand
+   hit area. The pane's flex is fixed to RAIL_PX (dock.ts) so it reads as a thin spine. */
+.dock-rail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 8px 0;
+  border: none;
+  border-left: 1px solid #e3ddcf;
+  border-right: 1px solid #e3ddcf;
+  background: #efeadf;
+  color: #5f5a4e;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.dock-rail:hover {
+  background: #e6e0d2;
+  color: #2f6f64;
+}
+
+.dock-rail-label {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* Resize gutters — vertical (col-resize) in a row, horizontal (row-resize) in a column. */
+.dock-resize {
+  flex: 0 0 6px;
   background: transparent;
   transition: background 0.12s ease;
 }
 
-.col-resize-handle:hover,
-.col-resize-handle:active {
+.dock-resize-x {
+  cursor: col-resize;
+}
+
+.dock-resize-y {
+  cursor: row-resize;
+}
+
+.dock-resize:hover,
+.dock-resize:active {
   background: #2f6f64;
 }
 
-.col-resize-gap {
+.dock-gap {
+  flex: 0 0 6px;
   background: transparent;
 }
 
@@ -65,6 +188,22 @@ button {
 .study-panel {
   border-right: 1px solid #d8d2c6;
   border-left: 1px solid #d8d2c6;
+}
+
+/* —— Practice pane (Textbook Learning layout's bottom panel) ——————————————
+   It sits UNDER the reader in a column split, so it carries a top border (not a side
+   one) and scrolls its drill/mistake cards independently. */
+.practice-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 18px;
+  border-top: 1px solid #d8d2c6;
+  background: #fbfaf7;
+}
+
+.practice-panel .practice-list {
+  margin-top: 10px;
 }
 
 /* —— Concept / relation pane (P5) ————————————————————————————————————— */
@@ -1450,7 +1589,8 @@ textarea {
 }
 
 /* Per-source Product Kit selector (reader header). Single-select today; "Core" = none. */
-.kit-select {
+.kit-select,
+.layout-select {
   padding: 6px 10px;
   border-radius: 999px;
   border: 1px solid #d8d2c6;
@@ -1462,7 +1602,8 @@ textarea {
   white-space: nowrap;
 }
 
-.kit-select:hover {
+.kit-select:hover,
+.layout-select:hover {
   border-color: #e0a800;
 }
 

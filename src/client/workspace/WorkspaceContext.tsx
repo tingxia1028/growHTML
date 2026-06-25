@@ -39,8 +39,19 @@ import {
 } from "../annotations";
 import { activeKitIdsForSource, CORE_KIT_ID } from "../../kits/activation";
 import { installedKits } from "../../kits/clientContext";
+import { LAYOUT_PRESETS, DEFAULT_LAYOUT_ID } from "./presets";
 
 export type Status = "idle" | "loading" | "saving" | "error";
+
+// Active dock layout preset id, persisted so the chosen layout sticks across reloads.
+const ACTIVE_LAYOUT_KEY = "sv-active-layout";
+function loadActiveLayout(): string {
+  try {
+    return globalThis.localStorage?.getItem(ACTIVE_LAYOUT_KEY) || DEFAULT_LAYOUT_ID;
+  } catch {
+    return DEFAULT_LAYOUT_ID;
+  }
+}
 
 // Note `content` is `unknown` (structured per contentType). For display we want a
 // string: string content passes through; structured content is shown as JSON.
@@ -157,6 +168,13 @@ export type WorkspaceContextValue = {
   installedKits: { id: string; name: string }[];
   /** Apply a kit to the active source ("core" = none); persists to its metadata. */
   setActiveKit(kitId: string): Promise<void>;
+
+  // —— workspace layout (dock presets) ——
+  // The active layout preset id (persisted) + the available presets for the layout
+  // switcher in the reader header. The shell picks the preset by this id.
+  activeLayoutId: string;
+  availableLayouts: { id: string; name: string }[];
+  setActiveLayout(id: string): void;
 };
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -185,6 +203,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [importUrl, setImportUrl] = useState("");
   const [folderRoot, setFolderRoot] = useState<string | null>(null);
   const [conceptsVersion, setConceptsVersion] = useState(0);
+  const [activeLayoutId, setActiveLayoutId] = useState<string>(loadActiveLayout);
   // Note-presentation mode for the DOM HTML reader. Seeded from localStorage so the
   // choice survives reloads; the setter mirrors it back to storage.
   const [annotationMode, setAnnotationModeState] = useState<HtmlAnnotationMode>(readStoredAnnotationMode);
@@ -580,6 +599,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [activeSourceId, loadSources]
   );
 
+  // —— workspace layout switching ——
+  const availableLayouts = useMemo(() => LAYOUT_PRESETS.map((preset) => ({ id: preset.id, name: preset.name })), []);
+  const setActiveLayout = useCallback((id: string) => {
+    setActiveLayoutId(id);
+    try {
+      globalThis.localStorage?.setItem(ACTIVE_LAYOUT_KEY, id);
+    } catch {
+      // storage unavailable — keep the in-memory choice
+    }
+  }, []);
+
   const value = useMemo<WorkspaceContextValue>(
     () => ({
       focus,
@@ -639,7 +669,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       refreshLayers,
       activeKitIds,
       installedKits,
-      setActiveKit
+      setActiveKit,
+      activeLayoutId,
+      availableLayouts,
+      setActiveLayout
     }),
     [
       focus,
@@ -690,7 +723,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       layersVersion,
       refreshLayers,
       activeKitIds,
-      setActiveKit
+      setActiveKit,
+      activeLayoutId,
+      availableLayouts,
+      setActiveLayout
     ]
   );
 

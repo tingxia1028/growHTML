@@ -200,7 +200,10 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
     setAnnotationMode,
     activeKitIds,
     installedKits,
-    setActiveKit
+    setActiveKit,
+    activeLayoutId,
+    availableLayouts,
+    setActiveLayout
   } = ctx;
 
   // The Floating ↔ Margin note toggle is scoped to the DOM-iframe HTML reader —
@@ -217,6 +220,19 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
           <h2>{activeSource?.title ?? "Open or import a source"}</h2>
         </div>
         <div className="reader-header-actions">
+          <select
+            className="layout-select"
+            aria-label="Workspace layout"
+            title="Switch the workspace layout (which panes are shown and how they're arranged)"
+            value={activeLayoutId}
+            onChange={(event) => setActiveLayout(event.target.value)}
+          >
+            {availableLayouts.map((preset) => (
+              <option key={preset.id} value={preset.id}>
+                {preset.name}
+              </option>
+            ))}
+          </select>
           {activeSource ? (
             <select
               className="kit-select"
