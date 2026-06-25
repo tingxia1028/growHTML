@@ -11,6 +11,29 @@ describe("renderNoteContent", () => {
     expect(html).toContain("<li>two</li>");
   });
 
+  it("renders deeper headings, ordered lists, blockquotes, and rules", () => {
+    const { html } = renderNoteContent(
+      "markdown",
+      "### Sub\n\n1. first\n2. second\n\n> quoted line\n\n---"
+    );
+    expect(html).toContain("<h3>Sub</h3>");
+    expect(html).toContain("<ol><li>first</li><li>second</li></ol>");
+    expect(html).toContain("<blockquote>quoted line</blockquote>");
+    expect(html).toContain("<hr>");
+  });
+
+  it("renders fenced code blocks verbatim and escaped (no inline markdown inside)", () => {
+    const { html } = renderNoteContent(
+      "markdown",
+      "```\nconst x = `a` && **b**;\n<b>raw</b>\n```"
+    );
+    expect(html).toContain('<pre class="sv-code"><code>');
+    // backticks/asterisks inside the fence are literal, not turned into <code>/<strong>
+    expect(html).not.toContain("<strong>");
+    expect(html).toContain("const x = `a` &amp;&amp; **b**;");
+    expect(html).toContain("&lt;b&gt;raw&lt;/b&gt;");
+  });
+
   it("escapes HTML so notes cannot inject markup", () => {
     const { html } = renderNoteContent("markdown", "<script>alert(1)</script>");
     expect(html).not.toContain("<script>");

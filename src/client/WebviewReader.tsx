@@ -10,11 +10,20 @@ import {
   type WebviewIpcMessage
 } from "./selection/webviewSelection";
 import { anchorsOfKind, type SurfaceReaderProps } from "./surfaces/types";
+import { DomReader } from "./surfaces/DomReader";
 
 type WebviewReaderProps = SurfaceReaderProps & {
-  url: string;
   // The active source id — stamped onto emitted drafts.
   sourceId: string;
+  // The source's web URL: the live URL (web_live) or the snapshot's original URL
+  // (webpage). Used as the first tab's address + the target of "Open Live".
+  sourceUrl: string;
+  // Which sub-mode the source opens in. "live" = embed the URL in a webview guest
+  // (web_text_quote anchors); "snapshot" = render the stored study-id HTML in a
+  // DomReader tab (html_selection anchors), with the option to go live.
+  primaryMode: "snapshot" | "live";
+  // The server-rendered study-id HTML for the snapshot tab (snapshot mode only).
+  snapshotHtml?: string;
 };
 
 // The <webview> element isn't a typed DOM/JSX element; describe just the methods
@@ -30,7 +39,10 @@ type WebviewElement = SelectionWebview & {
   canGoForward: () => boolean;
 };
 
-type Tab = { id: string; url: string; title: string };
+// A tab is either the offline SNAPSHOT (rendered HTML, html_selection anchors) or a
+// LIVE page (an Electron <webview> guest, web_text_quote anchors). Only one snapshot
+// tab ever exists (the source's first tab); links/"Open Live" spawn live tabs.
+type Tab = { id: string; url: string; title: string; mode: "snapshot" | "live" };
 
 function normalizeUrl(input: string): string {
   const trimmed = input.trim();
@@ -54,24 +66,34 @@ function tabTitle(url: string): string {
 let tabCounter = 0;
 const nextTabId = () => `tab${(tabCounter += 1)}`;
 
-// Live-web webview surface adapter. Embeds live web pages in Electron <webview>s
-// with Chrome-ish in-app TABS: every link click opens a NEW tab (the guest preload
-// reports navigations as sv:open-tab), so the page you came from is never lost. A
-// nav bar (back/forward/reload/stop + address bar) drives the active tab. Renders a
-// hint outside Electron.
-//
-// It conforms to the SAME surface contract as every other reader:
-//   READ : a guest text selection → AnchorDraft { mode:"quote", kind:"web", url } —
-//          keyed by the tab url it was made on (tabs can navigate to other URLs).
-//   WRITE: paint web_text_quote anchors via sv:anchors (shared with LocalHtmlReader).
-// The only real difference from LocalHtmlReader is multi-tab + navbar vs. a single
-// fixed page.
-export function WebviewReader({ url, sourceId, anchors, onSelect }: WebviewReaderProps) {
+// The source's opening tab: a snapshot tab in snapshot mode, else a live tab.
+function initialTabs(primaryMode: "snapshot" | "live", sourceUrl: string): Tab[] {
+  if (primaryMode === "snapshot") {
+    return [{ id: "tab0", url: sourceUrl, title: sourceUrl ? tabTitle(sourceUrl) : "Snapshot", mode: "snapshot" }];
+  }
+  return [{ id: "tab0", url: sourceUrl, title: tabTitle(sourceUrl), mode: "live" }];
+}
+
+// Unified Web surface adapter for BOTH saved snapshots (webpage) and live pages
+// (web_live), behind one Chrome-ish tabbed shell (tab strip + back/forward/reload +
+// address bar). The two sub-modes keep their own annotation path:
+//   SNAPSHOT tab → renders the stored study-id HTML in a DomReader (html_selection
+//                  anchors, painted offline — works without Electron). Clicking a
+//                  link, editing the address, or hitting "Open Live" opens the target
+//                  as a new LIVE tab.
+//   LIVE tab     → an Electron <webview> guest with the selection-capture preload;
+//                  every link click opens a NEW tab (sv:open-tab) so you never lose
+//                  the page you came from.
+//     READ : guest text selection → AnchorDraft { mode:"quote", kind:"web", url }.
+//     WRITE: paint web_text_quote anchors via sv:anchors.
+// Live tabs need Electron; outside it a pure-live source shows a hint, while a
+// snapshot source still renders (its snapshot tab needs no webview).
+export function WebviewReader({ sourceId, sourceUrl, primaryMode, snapshotHtml, anchors, onSelect }: WebviewReaderProps) {
   const preloadUrl = webviewPreloadUrl();
 
-  const [tabs, setTabs] = useState<Tab[]>([{ id: "tab0", url, title: tabTitle(url) }]);
+  const [tabs, setTabs] = useState<Tab[]>(() => initialTabs(primaryMode, sourceUrl));
   const [activeId, setActiveId] = useState("tab0");
-  const [address, setAddress] = useState(url);
+  const [address, setAddress] = useState(sourceUrl);
   const [editingAddress, setEditingAddress] = useState(false);
   const [canBack, setCanBack] = useState(false);
   const [canForward, setCanForward] = useState(false);
@@ -96,13 +118,15 @@ export function WebviewReader({ url, sourceId, anchors, onSelect }: WebviewReade
   // Per-tab anchor pushers (from bindWebviewAnchors), so the anchors-changed effect
   // can re-send into each live webview.
   const anchorPushers = useRef(new Map<string, () => void>());
-  const prevUrl = useRef(url);
+  const prevUrl = useRef(sourceUrl);
 
-  const addTab = (rawUrl: string) => {
+  // Open a URL as a new LIVE tab (link click in a snapshot, address submit on a
+  // snapshot tab, "Open Live", or sv:open-tab from a live guest).
+  const openLive = (rawUrl: string) => {
     const target = normalizeUrl(rawUrl);
     if (!target) return;
     const id = nextTabId();
-    setTabs((prev) => [...prev, { id, url: target, title: tabTitle(target) }]);
+    setTabs((prev) => [...prev, { id, url: target, title: tabTitle(target), mode: "live" }]);
     setActiveId(id);
   };
 
@@ -124,11 +148,13 @@ export function WebviewReader({ url, sourceId, anchors, onSelect }: WebviewReade
     }
   };
 
-  // Create a <webview> for any tab that doesn't have one yet; tear down webviews
-  // for tabs that were closed.
+  // Create a <webview> for any LIVE tab that doesn't have one yet; tear down webviews
+  // for tabs that were closed. Snapshot tabs are React-rendered (DomReader) and never
+  // get a webview.
   useEffect(() => {
     if (!preloadUrl) return;
     for (const tab of tabs) {
+      if (tab.mode !== "live") continue;
       if (webviews.current.has(tab.id)) continue;
       const container = containers.current.get(tab.id);
       if (!container) continue;
@@ -160,7 +186,7 @@ export function WebviewReader({ url, sourceId, anchors, onSelect }: WebviewReade
         },
         (message: WebviewIpcMessage) => {
           if (message.channel === "sv:open-tab") {
-            addTab(String(message.args[0] ?? ""));
+            openLive(String(message.args[0] ?? ""));
           }
         }
       );
@@ -207,33 +233,45 @@ export function WebviewReader({ url, sourceId, anchors, onSelect }: WebviewReade
     }
   }, [tabs, preloadUrl]);
 
-  // Re-push anchors to every tab when they change (e.g. after a new note). Each
-  // push reads the live anchorsRef inside the shared helper.
+  // Re-push anchors to every LIVE tab when they change (e.g. after a new note). Each
+  // push reads the live anchorsRef inside the shared helper. (Snapshot tabs repaint
+  // themselves via DomReader's own anchors effect.)
   useEffect(() => {
     for (const push of anchorPushers.current.values()) push();
   }, [anchors]);
 
   // Reflect the active tab's URL + nav state when switching tabs.
   useEffect(() => {
-    const webview = webviews.current.get(activeId);
     const tab = tabs.find((item) => item.id === activeId);
     setAddress(tab?.url ?? "");
-    if (webview) syncNav(webview);
+    if (tab?.mode === "live") {
+      const webview = webviews.current.get(activeId);
+      if (webview) syncNav(webview);
+    } else {
+      // Snapshot tab: nothing to navigate.
+      setCanBack(false);
+      setCanForward(false);
+      setLoading(false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
 
-  // A new source (url prop changes) resets back to a single tab.
+  // A new source (sourceUrl changes) resets back to its opening tab.
   useEffect(() => {
-    if (prevUrl.current === url) return;
-    prevUrl.current = url;
+    if (prevUrl.current === sourceUrl) return;
+    prevUrl.current = sourceUrl;
     for (const webview of webviews.current.values()) webview.remove();
     webviews.current.clear();
-    setTabs([{ id: "tab0", url, title: tabTitle(url) }]);
+    anchorPushers.current.clear();
+    setTabs(initialTabs(primaryMode, sourceUrl));
     setActiveId("tab0");
-    setAddress(url);
-  }, [url]);
+    setAddress(sourceUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceUrl]);
 
-  if (!preloadUrl) {
+  // Pure-live source outside Electron: there's no snapshot to fall back on, so show
+  // the desktop-app hint (unchanged behavior for web_live in a browser).
+  if (!preloadUrl && primaryMode === "live") {
     return (
       <div className="empty-reader">
         Live web annotation runs in the desktop app. Launch with <code>npm run electron</code>.
@@ -241,18 +279,25 @@ export function WebviewReader({ url, sourceId, anchors, onSelect }: WebviewReade
     );
   }
 
+  const activeTab = tabs.find((item) => item.id === activeId) ?? tabs[0];
   const activeWebview = () => webviews.current.get(activeIdRef.current) ?? null;
 
   const submitAddress = () => {
     const target = normalizeUrl(address);
     setEditingAddress(false);
     if (!target) return;
-    setAddress(target);
-    void activeWebview()
-      ?.loadURL(target)
-      .catch(() => {
-        // navigation failures surface in the guest; ignore here.
-      });
+    const tab = tabs.find((item) => item.id === activeIdRef.current);
+    if (tab?.mode === "live") {
+      setAddress(target);
+      void activeWebview()
+        ?.loadURL(target)
+        .catch(() => {
+          // navigation failures surface in the guest; ignore here.
+        });
+    } else {
+      // Snapshot tab: navigating away means going live.
+      openLive(target);
+    }
   };
 
   return (
@@ -261,7 +306,7 @@ export function WebviewReader({ url, sourceId, anchors, onSelect }: WebviewReade
         {tabs.map((tab) => (
           <div
             key={tab.id}
-            className={`webview-tab${tab.id === activeId ? " active" : ""}`}
+            className={`webview-tab${tab.id === activeId ? " active" : ""}${tab.mode === "snapshot" ? " snapshot" : ""}`}
             role="button"
             tabIndex={0}
             title={tab.url}
@@ -270,7 +315,7 @@ export function WebviewReader({ url, sourceId, anchors, onSelect }: WebviewReade
               if (event.key === "Enter") setActiveId(tab.id);
             }}
           >
-            <span className="webview-tab-title">{tab.title}</span>
+            <span className="webview-tab-title">{tab.mode === "snapshot" ? "Snapshot" : tab.title}</span>
             {tabs.length > 1 ? (
               <button
                 type="button"
@@ -313,6 +358,7 @@ export function WebviewReader({ url, sourceId, anchors, onSelect }: WebviewReade
           className="webview-nav-btn"
           title={loading ? "Stop" : "Reload"}
           aria-label={loading ? "Stop" : "Reload"}
+          disabled={activeTab?.mode === "snapshot"}
           onClick={() => (loading ? activeWebview()?.stop() : activeWebview()?.reload())}
         >
           {loading ? "✕" : "↻"}
@@ -337,6 +383,17 @@ export function WebviewReader({ url, sourceId, anchors, onSelect }: WebviewReade
             }
           }}
         />
+        {activeTab?.mode === "snapshot" ? (
+          <button
+            type="button"
+            className="webview-nav-btn webview-go-live"
+            title="Open this page live"
+            aria-label="Open Live"
+            onClick={() => openLive(activeTab.url || sourceUrl)}
+          >
+            Open Live
+          </button>
+        ) : null}
       </div>
       <div className="webview-stack">
         {tabs.map((tab) => (
@@ -344,11 +401,29 @@ export function WebviewReader({ url, sourceId, anchors, onSelect }: WebviewReade
             key={tab.id}
             className="webview-host"
             style={{ display: tab.id === activeId ? "block" : "none" }}
-            ref={(element) => {
-              if (element) containers.current.set(tab.id, element);
-              else containers.current.delete(tab.id);
-            }}
-          />
+            ref={
+              tab.mode === "live"
+                ? (element) => {
+                    if (element) containers.current.set(tab.id, element);
+                    else containers.current.delete(tab.id);
+                  }
+                : undefined
+            }
+          >
+            {tab.mode === "snapshot" ? (
+              <DomReader
+                srcDoc={snapshotHtml ?? ""}
+                sourceId={sourceId}
+                anchors={anchors}
+                onSelect={onSelect}
+                onOpenUrl={openLive}
+              />
+            ) : !preloadUrl ? (
+              <div className="empty-reader">
+                Live web annotation runs in the desktop app. Launch with <code>npm run electron</code>.
+              </div>
+            ) : null}
+          </div>
         ))}
       </div>
     </div>

@@ -49,12 +49,12 @@ async function saveNote(page: import("@playwright/test").Page, text: string) {
   await expect(page.locator(".note-list")).toContainText(text);
 }
 
-// THE SCROLL REGRESSION. The previous hand-rolled pdf.js renderer lost its scroll
-// wheel; the fix swaps in pdf.js's own virtualized PDFViewer. Seed a tall multi-page
-// PDF, scroll the viewer's scroll container, and assert (a) scrollTop actually moved
-// AND (b) a later page (page 2) gets rendered/visible by the virtualizer — i.e. the
-// scroll root really scrolls and pages page in.
-test("pdf scroll: the PDFViewer scroll container scrolls and pages later content in", async ({ page, request }) => {
+// THE SCROLL REGRESSION. Seed a tall multi-page PDF, scroll the reader's scroll
+// container, and assert (a) scrollTop actually moved AND (b) a later page (page 2)
+// is present — i.e. the scroll root really scrolls and the content is there. The
+// official PDFViewer pre-creates a sized .page placeholder for every page (canvas +
+// text render lazily), so page 2's box exists from the start.
+test("pdf scroll: the scroll container scrolls and later pages are present", async ({ page, request }) => {
   // Many pages → the scroll container is taller than the viewport, so it must scroll.
   const texts = Array.from({ length: 8 }, (_, i) => `Scroll regression page ${i + 1} content line.`);
   const data = makeMultiPageTextPdf(texts).toString("base64");
@@ -69,7 +69,7 @@ test("pdf scroll: the PDFViewer scroll container scrolls and pages later content
 
   // Page 1 renders first.
   const scroller = page.locator(".pdf-reader-canvas");
-  await expect(page.locator('.pdfViewer .page[data-page-number="1"]')).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.page[data-page-number="1"]')).toBeVisible({ timeout: 20_000 });
 
   // The scroll container is overflowing (content taller than the box).
   const overflow = await scroller.evaluate((el) => el.scrollHeight - el.clientHeight);
@@ -80,21 +80,28 @@ test("pdf scroll: the PDFViewer scroll container scrolls and pages later content
   await scroller.evaluate((el) => el.scrollTo(0, el.scrollHeight));
   await expect.poll(async () => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(before);
 
-  // The virtualizer pages later content in: page 2 (or beyond) becomes rendered.
-  await expect(page.locator('.pdfViewer .page[data-page-number="2"]')).toBeVisible({ timeout: 20_000 });
+  // Page 2's placeholder box is present further down the scroll column.
+  await expect(page.locator('.page[data-page-number="2"]')).toBeVisible({ timeout: 20_000 });
 });
 
-// PDF TEXT selection → quote draft (read direction), against the new PDFViewer text
-// layer. Selecting text in page 1's .textLayer must surface a text quote in the chip.
-test("pdf quote: selecting text in the PDFViewer text layer → quote source chip", async ({ page, request }) => {
+// PDF TEXT selection → quote draft (read direction), against the text layer.
+// Selecting text in page 1's .textLayer must surface a text quote in the chip.
+test("pdf quote: selecting text in the text layer → quote source chip", async ({ page, request }) => {
   const source = await seedPdf(request, `Quote PDF ${Date.now()}`);
   await page.goto("/");
   await page.locator(".source-item-open").filter({ hasText: source.id }).click();
 
   // Wait for the text layer to render some selectable spans on page 1.
-  const textLayer = page.locator('.pdfViewer .page[data-page-number="1"] .textLayer');
+  const textLayer = page.locator('.page[data-page-number="1"] .textLayer');
   await expect(textLayer).toBeVisible({ timeout: 20_000 });
   await expect.poll(async () => textLayer.locator("span").count(), { timeout: 20_000 }).toBeGreaterThan(0);
+
+  // REAL-selection guard: the official viewer's spans must have a non-zero font-size
+  // (driven by --total-scale-factor). A bare custom page misses that var and collapses
+  // spans to 0px — invisible + unselectable by mouse — even though the programmatic
+  // Selection below still works. This locks that regression.
+  const fontSize = await textLayer.locator("span").first().evaluate((el) => getComputedStyle(el).fontSize);
+  expect(fontSize, "text-layer spans must be sized (mouse-selectable)").not.toBe("0px");
 
   // Select all the text in the page's text layer (a real DOM Selection), then fire
   // mouseup so the reader reads the selection and emits a quote draft.
@@ -118,8 +125,8 @@ test("pdf region: rubber-band a figure → pdf_selection anchor with rect + regi
   await page.goto("/");
   await page.locator(".source-item-open").filter({ hasText: source.id }).click();
 
-  // Wait for PDFViewer to render a page in the host canvas.
-  const pageEl = page.locator('.pdfViewer .page[data-page-number="1"]').first();
+  // Wait for the first page to render in the host canvas.
+  const pageEl = page.locator('.page[data-page-number="1"]').first();
   await expect(pageEl).toBeVisible({ timeout: 20_000 });
 
   // Switch to Region mode and rubber-band a rectangle over the page.

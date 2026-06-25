@@ -90,7 +90,7 @@ test("PDF viewer (text quote): select → chip → note → pdf_selection anchor
   await page.locator(".source-item-open").filter({ hasText: source.id }).click();
 
   // Wait for the text layer to render selectable spans on page 1.
-  const textLayer = page.locator('.pdfViewer .page[data-page-number="1"] .textLayer');
+  const textLayer = page.locator('.page[data-page-number="1"] .textLayer');
   await expect(textLayer).toBeVisible({ timeout: 20_000 });
   await expect.poll(async () => textLayer.locator("span").count(), { timeout: 20_000 }).toBeGreaterThan(0);
 
@@ -119,7 +119,7 @@ test("PDF viewer (text quote): select → chip → note → pdf_selection anchor
 
   // STEP 4 — the note paints as a highlight over the text layer (a .sv-annotated mark
   // is injected into the page's text layer by the PDF reader's paint).
-  await expect(page.locator('.pdfViewer .page[data-page-number="1"] .sv-annotated').first()).toBeVisible({
+  await expect(page.locator('.page[data-page-number="1"] .sv-annotated').first()).toBeVisible({
     timeout: 10_000
   });
 });

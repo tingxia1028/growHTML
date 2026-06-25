@@ -4,7 +4,7 @@
 // note overlay) applies. New viewers (webview, PDF.js text layer, …) register
 // here instead of adding `sourceType === "x"` branches throughout the UI.
 
-export type SourceViewerKind = "html" | "file" | "webview" | "pdfjs" | "image";
+export type SourceViewerKind = "html" | "web" | "file" | "webview" | "pdfjs" | "image";
 
 export type SourceViewer = {
   id: string;
@@ -15,7 +15,14 @@ export type SourceViewer = {
 };
 
 const viewers: SourceViewer[] = [
-  { id: "html", sourceTypes: ["html", "webpage", "markdown"], kind: "html", htmlPipeline: true },
+  { id: "html", sourceTypes: ["html", "markdown"], kind: "html", htmlPipeline: true },
+  // A saved webpage snapshot shares the HTML study pipeline (study-id anchors), but
+  // renders in the UNIFIED Web viewer's snapshot tab — the same tabbed shell as live
+  // web, so a snapshot can be opened live (and links open as live tabs) without a
+  // separate viewer. Both sub-modes keep their own anchor path (snapshot →
+  // html_selection on the DomReader; live → web_text_quote in the webview guest).
+  { id: "web", sourceTypes: ["webpage"], kind: "web", htmlPipeline: true },
+  // Live web opens straight into the unified Web viewer in its live sub-mode.
   { id: "web-live", sourceTypes: ["web_live"], kind: "webview", htmlPipeline: false },
   // PDFs render via PDF.js (canvas + a selectable text layer) so they can be
   // annotated like HTML — text-quote selections AND rubber-band region marks over

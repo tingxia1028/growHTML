@@ -47,7 +47,10 @@ function renderMarkdown(content: string): string {
   const lines = content.replace(/\r\n/g, "\n").split("\n");
   const blocks: string[] = [];
   let paragraph: string[] = [];
-  let listItems: string[] = [];
+  let ulItems: string[] = [];
+  let olItems: string[] = [];
+  let quoteLines: string[] = [];
+  let codeLines: string[] | null = null; // non-null while inside a ``` fence
 
   const flushParagraph = () => {
     if (paragraph.length) {
@@ -55,34 +58,87 @@ function renderMarkdown(content: string): string {
       paragraph = [];
     }
   };
-  const flushList = () => {
-    if (listItems.length) {
-      blocks.push(`<ul>${listItems.map((item) => `<li>${renderInline(escapeHtml(item))}</li>`).join("")}</ul>`);
-      listItems = [];
+  const flushUl = () => {
+    if (ulItems.length) {
+      blocks.push(`<ul>${ulItems.map((item) => `<li>${renderInline(escapeHtml(item))}</li>`).join("")}</ul>`);
+      ulItems = [];
     }
+  };
+  const flushOl = () => {
+    if (olItems.length) {
+      blocks.push(`<ol>${olItems.map((item) => `<li>${renderInline(escapeHtml(item))}</li>`).join("")}</ol>`);
+      olItems = [];
+    }
+  };
+  const flushQuote = () => {
+    if (quoteLines.length) {
+      blocks.push(`<blockquote>${renderInline(escapeHtml(quoteLines.join(" ")))}</blockquote>`);
+      quoteLines = [];
+    }
+  };
+  const flushBlocks = () => {
+    flushParagraph();
+    flushUl();
+    flushOl();
+    flushQuote();
   };
 
   for (const line of lines) {
+    // Fenced code block: ``` toggles a verbatim, escaped <pre><code> block.
+    if (/^\s*```/.test(line)) {
+      if (codeLines) {
+        blocks.push(`<pre class="sv-code"><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+        codeLines = null;
+      } else {
+        flushBlocks();
+        codeLines = [];
+      }
+      continue;
+    }
+    if (codeLines) {
+      codeLines.push(line);
+      continue;
+    }
+
     const heading = /^(#{1,6})\s+(.*)$/.exec(line);
-    const bullet = /^\s*[-*]\s+(.*)$/.exec(line);
+    const hr = /^\s*([-*_])\1{2,}\s*$/.test(line);
+    const ul = /^\s*[-*+]\s+(.*)$/.exec(line);
+    const ol = /^\s*\d+[.)]\s+(.*)$/.exec(line);
+    const quote = /^\s*>\s?(.*)$/.exec(line);
+
     if (heading) {
-      flushParagraph();
-      flushList();
+      flushBlocks();
       const level = heading[1].length;
       blocks.push(`<h${level}>${renderInline(escapeHtml(heading[2].trim()))}</h${level}>`);
-    } else if (bullet) {
+    } else if (hr) {
+      flushBlocks();
+      blocks.push("<hr>");
+    } else if (ul) {
       flushParagraph();
-      listItems.push(bullet[1].trim());
+      flushOl();
+      flushQuote();
+      ulItems.push(ul[1].trim());
+    } else if (ol) {
+      flushParagraph();
+      flushUl();
+      flushQuote();
+      olItems.push(ol[1].trim());
+    } else if (quote) {
+      flushParagraph();
+      flushUl();
+      flushOl();
+      quoteLines.push(quote[1]);
     } else if (line.trim() === "") {
-      flushParagraph();
-      flushList();
+      flushBlocks();
     } else {
-      flushList();
+      flushUl();
+      flushOl();
+      flushQuote();
       paragraph.push(line.trim());
     }
   }
-  flushParagraph();
-  flushList();
+  if (codeLines) blocks.push(`<pre class="sv-code"><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+  flushBlocks();
   return blocks.join("");
 }
 

@@ -25,6 +25,10 @@ type DomReaderProps = SurfaceReaderProps & {
   // How notes are presented: "floating" hover card (default) or "margin" gutter.
   // Threaded from the workspace so the reader-header toggle repaints this surface.
   mode?: HtmlAnnotationMode;
+  // Optional: intercept in-page link clicks (http/https) and hand the URL up instead
+  // of letting the iframe navigate. The unified Web viewer uses this so clicking a
+  // link in a snapshot opens it as a LIVE tab. Omitted = links behave as before.
+  onOpenUrl?: (url: string) => void;
 };
 
 const CONTEXT = 32;
@@ -98,7 +102,7 @@ export function readDomSelection(doc: Document, sourceId: string, event?: Event)
   };
 }
 
-export function DomReader({ srcDoc, sourceId, anchors, onSelect, mode = "floating" }: DomReaderProps) {
+export function DomReader({ srcDoc, sourceId, anchors, onSelect, mode = "floating", onOpenUrl }: DomReaderProps) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   // Keep the latest callback + state in refs so the once-per-document listeners
   // (bound on load) always see current values.
@@ -108,6 +112,8 @@ export function DomReader({ srcDoc, sourceId, anchors, onSelect, mode = "floatin
   sourceIdRef.current = sourceId;
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  const onOpenUrlRef = useRef(onOpenUrl);
+  onOpenUrlRef.current = onOpenUrl;
 
   // Bind selection capture + paint when the iframe document is ready. Called from
   // onLoad (fresh document) and re-runnable for the initial paint.
@@ -126,6 +132,31 @@ export function DomReader({ srcDoc, sourceId, anchors, onSelect, mode = "floatin
     doc.addEventListener("mouseup", onSelection);
     doc.addEventListener("click", onSelection);
     doc.addEventListener("keyup", onSelection);
+
+    // Link interception (only when the host wants it): a plain click on an http(s)
+    // link is handed up (→ open as a live tab) instead of navigating the iframe. Run
+    // in the capture phase so it pre-empts the iframe's own navigation; left/no-mod
+    // clicks only, so ctrl/cmd-click and selection still behave normally.
+    const onLinkClick = (event: MouseEvent) => {
+      const open = onOpenUrlRef.current;
+      if (!open || event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const node = event.target as Element | null;
+      const link = node?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!link) return;
+      const href = link.getAttribute("href") ?? "";
+      if (!href || href.startsWith("#")) return;
+      let resolved = href;
+      try {
+        resolved = new URL(href, link.baseURI).toString();
+      } catch {
+        return;
+      }
+      if (!/^https?:\/\//i.test(resolved)) return;
+      event.preventDefault();
+      open(resolved);
+    };
+    doc.addEventListener("click", onLinkClick, true);
   }
 
   // Re-paint whenever the anchor set, the document, or the note-presentation mode

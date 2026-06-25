@@ -55,10 +55,30 @@ export function readerForSource({ source, anchors, onSelect, renderedHtml, annot
 
   const viewer = getSourceViewer(source.sourceType);
 
+  // Unified Web viewer (live sub-mode): web_live opens straight into a live webview tab.
   if (viewer.kind === "webview") {
     return (
       <WebviewReader
-        url={(source.metadata?.sourceUrl as string) ?? ""}
+        primaryMode="live"
+        sourceUrl={(source.metadata?.sourceUrl as string) ?? ""}
+        sourceId={source.id}
+        anchors={anchors}
+        onSelect={onSelect}
+      />
+    );
+  }
+  // Unified Web viewer (snapshot sub-mode): a webpage snapshot renders its study-id
+  // HTML in a DomReader tab (html_selection anchors) and can be opened live. Wait for
+  // the rendered HTML, like the HTML pipeline below.
+  if (viewer.kind === "web") {
+    if (!renderedHtml) {
+      return <div className="empty-reader">Select a source to start.</div>;
+    }
+    return (
+      <WebviewReader
+        primaryMode="snapshot"
+        sourceUrl={(source.metadata?.sourceUrl as string) ?? ""}
+        snapshotHtml={renderedHtml}
         sourceId={source.id}
         anchors={anchors}
         onSelect={onSelect}

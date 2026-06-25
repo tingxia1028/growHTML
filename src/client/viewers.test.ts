@@ -13,6 +13,10 @@ describe("SourceViewer registry", () => {
 
   it("maps built-in source types to viewers", () => {
     expect(getSourceViewer("html").id).toBe("html");
+    // Webpage snapshots use the unified Web viewer (kind "web") but still run the
+    // HTML study pipeline (study-id anchors) for their snapshot tab.
+    expect(getSourceViewer("webpage").id).toBe("web");
+    expect(getSourceViewer("webpage").kind).toBe("web");
     expect(getSourceViewer("webpage").htmlPipeline).toBe(true);
     expect(getSourceViewer("markdown").kind).toBe("html");
     // PDFs render via PDF.js (host-page canvas + text layer) so they can be
