@@ -38,15 +38,21 @@ test("textbook kit: select passage → Explain/Practice toolbar → generated St
   const explain = page.locator(".selection-toolbar-btn", { hasText: "Explain" });
   await expect(explain).toBeVisible();
 
-  // Explain → structured explanation generated + saved → renders as a kit card.
+  // Explain → structured explanation generated → previews → Save persists it → it
+  // renders as a kit card (generation no longer auto-saves; Save is the seam).
+  const preview = page.locator(".generation-preview");
   await explain.click();
+  await expect(preview).toBeVisible({ timeout: 15_000 });
+  await preview.locator(".gen-preview-save").click();
   const explanationCard = page.locator(".note-list .record-card .tb-explanation");
   await expect(explanationCard.first()).toBeVisible({ timeout: 15_000 });
   await expect(page.locator(".note-list .tb-card-kind").first()).toContainText("Explanation");
 
-  // Practice → an Exercise Study Block on the same passage.
+  // Practice → an Exercise Study Block on the same passage (via the same preview Save).
   const practice = page.locator(".selection-toolbar-btn", { hasText: "Practice" });
   await expect(practice).toBeVisible();
   await practice.click();
+  await expect(preview).toBeVisible({ timeout: 15_000 });
+  await preview.locator(".gen-preview-save").click();
   await expect(page.locator(".note-list .tb-exercise").first()).toBeVisible({ timeout: 15_000 });
 });

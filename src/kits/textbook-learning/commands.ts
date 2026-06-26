@@ -15,7 +15,9 @@ function anchorText(ctx: CommandContext, fallback: string): string {
 }
 
 // Shared body: ensure an anchor, generate structured content for `contentType`
-// from `promptId`, save it as a note anchored to the passage.
+// from `promptId`. When the host wired `onGenerated`, emit the draft for the
+// preview stage (only Save persists). Otherwise keep the legacy auto-save: create
+// the note anchored to the passage immediately.
 async function generateBlock(
   ctx: CommandContext,
   promptId: string,
@@ -24,11 +26,15 @@ async function generateBlock(
 ): Promise<void> {
   const anchor = await ctx.focus.materializeAnchor();
   const text = anchorText(ctx, anchor?.quote ?? "");
-  const { content } = await ctx.client.generateStructured({
-    promptId,
-    contentType,
-    input: { anchorText: text, ...extraInput }
-  });
+  const input = { anchorText: text, ...extraInput };
+  const { content } = await ctx.client.generateStructured({ promptId, contentType, input });
+  // Preview path: hand the draft to the host (it already holds the anchor id, so
+  // Save attaches there) instead of creating a note now.
+  if (ctx.actions.onGenerated) {
+    ctx.actions.onGenerated({ promptId, contentType, input, content, anchorId: anchor?.id, sourceId: ctx.sourceId });
+    return;
+  }
+  // Legacy auto-save fallback (no preview host wired).
   const { note } = await ctx.client.createNote({
     sourceId: ctx.sourceId,
     anchorIds: anchor ? [anchor.id] : [],
@@ -79,11 +85,26 @@ export const generateReviewPackCommand: Command = {
     const { notes } = await ctx.client.notes(sourceId);
     const explanations = notes.filter((n) => n.contentType === "textbook.explanation").map((n) => n.content);
     const mistakes = notes.filter((n) => n.contentType === "textbook.mistake").map((n) => n.content);
+    const input = { sourceId, sourceTitle: ctx.chatContext?.sourceTitle, explanations, mistakes };
     const { content } = await ctx.client.generateStructured({
       promptId: "textbook.generate-review-pack",
       contentType: "textbook.review-pack",
-      input: { sourceId, sourceTitle: ctx.chatContext?.sourceTitle, explanations, mistakes }
+      input
     });
+    // Preview path: the Review Pack is source-level (no anchor), so the draft
+    // carries anchorId: undefined and Save persists it unanchored on this source.
+    if (ctx.actions.onGenerated) {
+      ctx.actions.onGenerated({
+        promptId: "textbook.generate-review-pack",
+        contentType: "textbook.review-pack",
+        input,
+        content,
+        anchorId: undefined,
+        sourceId
+      });
+      return;
+    }
+    // Legacy auto-save fallback (no preview host wired).
     const { note } = await ctx.client.createNote({
       sourceId,
       anchorIds: [],

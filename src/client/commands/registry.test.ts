@@ -79,6 +79,44 @@ describe("command: anchor.add-note", () => {
   it("is unavailable with empty text", () => {
     expect(getCommand("anchor.add-note")!.isAvailable(baseCtx({ payload: { text: "  " } }))).toBe(false);
   });
+
+  it("explicit payload.anchorIds SKIP focus materialization and save to the given anchors", async () => {
+    // The generation-preview Save passes anchorIds (the generating command already
+    // created the anchor), so add-note must reuse them and NOT materialize a duplicate.
+    const ctx = baseCtx({
+      payload: { content: { __type: "textbook.explanation" }, contentType: "textbook.explanation", anchorIds: ["anchor_pre"] }
+    });
+    await runCommand("anchor.add-note", ctx);
+    expect(ctx.focus.materializeAnchor).not.toHaveBeenCalled();
+    expect(ctx.client.createNote).toHaveBeenCalledWith({
+      sourceId: "src_1",
+      anchorIds: ["anchor_pre"],
+      contentType: "textbook.explanation",
+      content: { __type: "textbook.explanation" }
+    });
+  });
+
+  it("an empty anchorIds array still OVERRIDES focus (saves unanchored, no materialize)", async () => {
+    // Source-level drafts (e.g. Review Pack) save with anchorIds: [] — present-but-empty
+    // must still skip materialization rather than fall back to the focus path.
+    const ctx = baseCtx({
+      payload: { content: { kind: "pack" }, contentType: "textbook.review-pack", anchorIds: [] }
+    });
+    await runCommand("anchor.add-note", ctx);
+    expect(ctx.focus.materializeAnchor).not.toHaveBeenCalled();
+    expect(ctx.client.createNote).toHaveBeenCalledWith(
+      expect.objectContaining({ anchorIds: [], contentType: "textbook.review-pack" })
+    );
+  });
+
+  it("without anchorIds it still materializes the anchor from focus (legacy path)", async () => {
+    const ctx = baseCtx({ payload: { text: "my note" } });
+    await runCommand("anchor.add-note", ctx);
+    expect(ctx.focus.materializeAnchor).toHaveBeenCalledOnce();
+    expect(ctx.client.createNote).toHaveBeenCalledWith(
+      expect.objectContaining({ anchorIds: ["anchor_1"] })
+    );
+  });
 });
 
 describe("command: anchor.create-patch", () => {

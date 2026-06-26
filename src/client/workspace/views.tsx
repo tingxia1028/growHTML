@@ -37,6 +37,7 @@ import {
 // list + composer can render/edit every content type through the registry.
 import { InertNote } from "../notes/builtinNoteTypes";
 import { SelectionToolbar } from "./SelectionToolbar";
+import { GenerationPreview } from "./GenerationPreview";
 import { SourceActionsToolbar } from "./SourceActionsToolbar";
 import { noteTypeOwnerKit } from "../../kits/clientContext";
 // Side-effect import: installs the Product Kits (Textbook Learning Kit, …), which
@@ -363,6 +364,11 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
           kitIds={activeKitIds}
           onRun={(commandId) => void dispatch(commandId, {})}
         />
+
+        {/* generate → preview → edit → save: a kit AI draft awaiting Save. A SEPARATE
+            DOM subtree from .note-list below — a draft previews here before any note
+            exists. Renders nothing when no draft is pending. */}
+        <GenerationPreview />
 
         <div className="chat-log">
           {chatMessages.map((message, index) => (

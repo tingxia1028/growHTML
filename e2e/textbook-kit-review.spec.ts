@@ -34,7 +34,11 @@ test("textbook kit: source-level Review Pack action → review-pack Study Block 
   await expect(reviewBtn).toBeVisible();
   await reviewBtn.click();
 
-  // A review-pack Study Block is generated (structured) + saved + rendered as a card.
+  // A review-pack Study Block is generated (structured) → previews → Save persists it
+  // + it renders as a card (generation no longer auto-saves).
+  const preview = page.locator(".generation-preview");
+  await expect(preview).toBeVisible({ timeout: 15_000 });
+  await preview.locator(".gen-preview-save").click();
   await expect(page.locator(".note-list .tb-review-pack").first()).toBeVisible({ timeout: 15_000 });
   await expect(page.locator(".note-list .tb-card-kind").first()).toContainText("Review Pack");
 });
@@ -46,16 +50,21 @@ test("textbook kit: exporting a layer strips the student's Mistake block (propag
   await openSource(page, title);
 
   const reader = page.frameLocator(READER);
+  const preview = page.locator(".generation-preview");
 
-  // Make a Mistake block (private) …
+  // Make a Mistake block (private) — generate → preview → Save …
   await reader.getByText("selective barrier", { exact: false }).click();
   await expect(page.locator(".chat-source")).toContainText("selective barrier");
   await page.locator(".selection-toolbar-btn", { hasText: "Mistake" }).click();
+  await expect(preview).toBeVisible({ timeout: 15_000 });
+  await preview.locator(".gen-preview-save").click();
   await expect(page.locator(".note-list .tb-mistake").first()).toBeVisible({ timeout: 15_000 });
 
-  // … and an Explanation block (shareable).
+  // … and an Explanation block (shareable) — generate → preview → Save.
   await reader.getByText("selective barrier", { exact: false }).click();
   await page.locator(".selection-toolbar-btn", { hasText: "Explain" }).click();
+  await expect(preview).toBeVisible({ timeout: 15_000 });
+  await preview.locator(".gen-preview-save").click();
   await expect(page.locator(".note-list .tb-explanation").first()).toBeVisible({ timeout: 15_000 });
 
   // Find the source's owned layer and export it.

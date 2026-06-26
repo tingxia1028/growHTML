@@ -90,6 +90,35 @@ describe("textbook commands", () => {
     expect(onNoteCreated).toHaveBeenCalled();
   });
 
+  it("explain (preview host): emits the draft via onGenerated and does NOT auto-save a note", async () => {
+    const onGenerated = vi.fn();
+    const onNoteCreated = vi.fn();
+    const c = ctx({ actions: { onGenerated, onNoteCreated } });
+    await explainConceptCommand.run(c);
+
+    // Generation still happens …
+    expect(c.client.generateStructured).toHaveBeenCalledWith(
+      expect.objectContaining({
+        promptId: "textbook.explain-concept",
+        contentType: "textbook.explanation",
+        input: expect.objectContaining({ anchorText: anchor.quote })
+      })
+    );
+    // … but the draft is diverted to the preview stage instead of being persisted.
+    expect(onGenerated).toHaveBeenCalledTimes(1);
+    expect(onGenerated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        promptId: "textbook.explain-concept",
+        contentType: "textbook.explanation",
+        content: { __type: "textbook.explanation" },
+        anchorId: "anchor_1"
+      })
+    );
+    // No note created and no onNoteCreated when a preview host is wired.
+    expect(c.client.createNote).not.toHaveBeenCalled();
+    expect(onNoteCreated).not.toHaveBeenCalled();
+  });
+
   it("practice + mistake target their own content types", async () => {
     const cp = ctx();
     await generatePracticeCommand.run(cp);
@@ -131,6 +160,34 @@ describe("textbook commands", () => {
     expect(c.client.createNote).toHaveBeenCalledWith(
       expect.objectContaining({ sourceId: "src_1", anchorIds: [], contentType: "textbook.review-pack" })
     );
+  });
+
+  it("review pack (preview host): emits the draft via onGenerated and does NOT auto-save a note", async () => {
+    const onGenerated = vi.fn();
+    const onNoteCreated = vi.fn();
+    const c = ctx({ actions: { onGenerated, onNoteCreated } });
+    await generateReviewPackCommand.run(c);
+
+    // The source-level pack is still generated …
+    expect(c.client.generateStructured).toHaveBeenCalledWith(
+      expect.objectContaining({
+        promptId: "textbook.generate-review-pack",
+        contentType: "textbook.review-pack"
+      })
+    );
+    // … but diverted to the preview stage, unanchored, on this source.
+    expect(onGenerated).toHaveBeenCalledTimes(1);
+    expect(onGenerated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        promptId: "textbook.generate-review-pack",
+        contentType: "textbook.review-pack",
+        anchorId: undefined,
+        sourceId: "src_1"
+      })
+    );
+    // No note created and no onNoteCreated when a preview host is wired.
+    expect(c.client.createNote).not.toHaveBeenCalled();
+    expect(onNoteCreated).not.toHaveBeenCalled();
   });
 
   it("review pack is unavailable with no active source", () => {

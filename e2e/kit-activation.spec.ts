@@ -52,8 +52,12 @@ test("per-source kit activation: default on → switch to Core gates creation (r
   await expect(explain).toBeVisible();
 
   // Create a Study Block (mock provider → deterministic) so we can prove it keeps
-  // rendering after the kit is switched off.
+  // rendering after the kit is switched off. Generation now previews first; Save is the
+  // seam that persists it into the note list.
   await explain.click();
+  const preview = page.locator(".generation-preview");
+  await expect(preview).toBeVisible({ timeout: 15_000 });
+  await preview.locator(".gen-preview-save").click();
   await expect(page.locator(".note-list .tb-explanation").first()).toBeVisible({ timeout: 15_000 });
 
   // The kit's note type is offered in the composer picker while the kit is active.

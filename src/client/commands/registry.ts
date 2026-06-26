@@ -16,8 +16,23 @@ import type {
 } from "../data/entityClient";
 import type { FocusContextValue } from "../focus/FocusContext";
 
+// A unit of AI output BEFORE it is persisted: the prompt/contentType it came from,
+// the input that produced it, the generated `content`, and the anchor/source it
+// should attach to on Save. Hosts that wire `onGenerated` divert generation into a
+// preview stage instead of auto-saving a note (see the kit AI commands).
+export type GeneratedDraft = {
+  promptId: string;
+  contentType: string;
+  input: Record<string, unknown>;
+  content: unknown;
+  anchorId?: string;
+  sourceId?: string;
+};
+
 export type CommandActions = {
   onNoteCreated?(note: NoteRecord): void;
+  /** A draft was generated (preview stage): the host shows it, Save persists later. */
+  onGenerated?(draft: GeneratedDraft): void;
   onPatchCreated?(patch: PatchRecord): void;
   onChatHistory?(messages: ChatMessage[]): void;
   onAssistantMessage?(message: ChatMessage): void;
@@ -61,6 +76,13 @@ export type CommandContext = {
      * for `contentType` has already validated it client-side before dispatch.
      */
     content?: unknown;
+    /**
+     * Explicit anchor ids to attach the note to, bypassing focus materialization.
+     * Used by the generation-preview Save: the generating command already created
+     * the anchor, so Save reuses it instead of materializing a duplicate. When
+     * present (even as []) it OVERRIDES the materialize-from-focus path.
+     */
+    anchorIds?: string[];
     newContent?: string;
     oldText?: string;
     // —— concept / relation ——
@@ -153,12 +175,20 @@ const addNote: Command = {
     // Structured content (object) wins; otherwise the note is the trimmed text.
     const content = ctx.payload.content !== undefined ? ctx.payload.content : ctx.payload.text?.trim();
     if (content === undefined) return;
-    // Materialize the current selection into an anchor if there is one (else save
-    // the note unanchored).
-    const anchor = await ctx.focus.materializeAnchor();
+    // Explicit anchorIds (from the generation-preview Save) win and SKIP focus
+    // materialization — the generating command already created the anchor, so we
+    // attach to it rather than materializing a duplicate. Otherwise materialize the
+    // current selection into an anchor if there is one (else save unanchored).
+    let anchorIds: string[];
+    if (ctx.payload.anchorIds !== undefined) {
+      anchorIds = ctx.payload.anchorIds;
+    } else {
+      const anchor = await ctx.focus.materializeAnchor();
+      anchorIds = anchor ? [anchor.id] : [];
+    }
     const { note } = await ctx.client.createNote({
       sourceId: ctx.sourceId,
-      anchorIds: anchor ? [anchor.id] : [],
+      anchorIds,
       contentType: ctx.payload.contentType ?? "markdown",
       content
     });

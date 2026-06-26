@@ -30,7 +30,7 @@ import {
 import { useFocus, draftQuoteText, type FocusContextValue } from "../focus/FocusContext";
 import { createDefaultContent, isTextContentType } from "../notes/noteTypeRegistry";
 import { getSourceViewer, type SourceViewer } from "../viewers";
-import { getCommand, runCommand, type CommandContext } from "../commands/registry";
+import { getCommand, runCommand, type CommandContext, type GeneratedDraft } from "../commands/registry";
 import type { PaintAnchor } from "../surfaces/types";
 import {
   persistAnnotationMode,
@@ -139,6 +139,20 @@ export type WorkspaceContextValue = {
   submitComposer(): void;
   /** Run a registered command with a per-invocation payload. */
   dispatch(commandId: string, payload: CommandContext["payload"]): Promise<void>;
+
+  // —— generation preview (generate → preview → edit → save) ——
+  // AI kit actions divert their output here instead of auto-saving. The preview view
+  // renders this draft; only `savePendingDraft` persists it as a note (attaching to
+  // the anchor the generation already created). Null when nothing is pending.
+  pendingDraft: GeneratedDraft | null;
+  /** Whether a regenerate request is in flight (the preview disables its buttons). */
+  regenerating: boolean;
+  /** Persist the (possibly edited) draft content as a note, then clear the preview. */
+  savePendingDraft(content: unknown): void;
+  /** Re-run the same generation; replaces the pending draft's content in place. */
+  regeneratePendingDraft(): Promise<void>;
+  /** Drop the pending draft without saving. */
+  discardPendingDraft(): void;
   /** The selected text in a reply, or the full reply if nothing is highlighted. */
   selectedTextOr(fullContent: string): string;
   changePatchStatus(patch: PatchRecord, nextStatus: "applied" | "reverted" | "rejected"): Promise<void>;
@@ -208,6 +222,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // choice survives reloads; the setter mirrors it back to storage.
   const [annotationMode, setAnnotationModeState] = useState<HtmlAnnotationMode>(readStoredAnnotationMode);
   const [layersVersion, setLayersVersion] = useState(0);
+  // The AI draft awaiting preview/edit/save (null = nothing pending), plus a flag for
+  // an in-flight regenerate so the preview can show/disable while it re-runs.
+  const [pendingDraft, setPendingDraft] = useState<GeneratedDraft | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
 
   // Native file/folder dialogs come from the Electron preload; absent in a browser.
   const canOpenLocal = typeof window !== "undefined" && !!window.studyVault?.openFile;
@@ -468,6 +486,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       chatContext: buildChatContext(),
       actions: {
         onNoteCreated: () => void refreshAnnotations(),
+        // A kit AI action generated content: divert it to the preview stage instead
+        // of auto-saving. The host renders it and only persists on Save.
+        onGenerated: (draft) => setPendingDraft(draft),
         onPatchCreated: () => void refreshAnnotations(),
         onChatHistory: (history) => setChatMessages(history),
         onAssistantMessage: (message) => setChatMessages((items) => [...items, message]),
@@ -515,6 +536,53 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     },
     [commandContext]
   );
+
+  // —— generation preview actions ——
+  // Persist the previewed (possibly edited) content as a note via the normal
+  // add-note command, attaching to the anchor the generation already created (passed
+  // as explicit anchorIds so the command SKIPs materializing a duplicate). Clear the
+  // preview afterward.
+  const savePendingDraft = useCallback(
+    (content: unknown) => {
+      const draft = pendingDraft;
+      if (!draft) return;
+      // Clear the draft BEFORE the async dispatch so a rapid double-click on Save
+      // sees a null draft and early-returns — otherwise two `anchor.add-note`
+      // dispatches fire while the draft is still set, creating a duplicate note.
+      setPendingDraft(null);
+      void dispatch("anchor.add-note", {
+        content,
+        contentType: draft.contentType,
+        anchorIds: draft.anchorId ? [draft.anchorId] : []
+      });
+    },
+    [pendingDraft, dispatch]
+  );
+
+  // Re-run the same generation (same prompt/contentType/input) and swap in the new
+  // content. The mock provider is deterministic, so this may yield identical content —
+  // the UX must not depend on the content changing.
+  const regeneratePendingDraft = useCallback(async () => {
+    const draft = pendingDraft;
+    if (!draft) return;
+    setRegenerating(true);
+    setError("");
+    try {
+      const { content } = await entityClient.generateStructured({
+        promptId: draft.promptId,
+        contentType: draft.contentType,
+        input: draft.input
+      });
+      setPendingDraft({ ...draft, content });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to regenerate");
+    } finally {
+      setRegenerating(false);
+    }
+  }, [pendingDraft]);
+
+  // Drop the pending draft without persisting anything.
+  const discardPendingDraft = useCallback(() => setPendingDraft(null), []);
 
   // The user's current text selection within a reply, or the full reply if they
   // haven't highlighted anything — lets them keep just the useful part.
@@ -672,6 +740,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       composerDisabled,
       submitComposer,
       dispatch,
+      pendingDraft,
+      regenerating,
+      savePendingDraft,
+      regeneratePendingDraft,
+      discardPendingDraft,
       selectedTextOr,
       changePatchStatus,
       conceptsVersion,
@@ -727,6 +800,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       composerDisabled,
       submitComposer,
       dispatch,
+      pendingDraft,
+      regenerating,
+      savePendingDraft,
+      regeneratePendingDraft,
+      discardPendingDraft,
       selectedTextOr,
       changePatchStatus,
       conceptsVersion,

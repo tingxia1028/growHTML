@@ -1184,6 +1184,102 @@ button {
   gap: 8px;
 }
 
+/* —— Generation preview (generate → preview → edit → save) ——————————————————— */
+/* A pending AI draft, parked between generation and persistence. Mirrors the
+   .tb-card / .note-edit look but tinted + accent-bordered so it reads as a distinct,
+   un-saved staging surface — visually separate from the saved .note-list below. */
+.generation-preview {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid #cfe3dd;
+  border-left: 3px solid #2f6f64;
+  border-radius: 8px;
+  background: #f3faf7;
+}
+
+.generation-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.generation-preview-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #2f6f64;
+}
+
+.generation-preview-type {
+  font-size: 11px;
+  color: #66756a;
+}
+
+/* The rendered draft / editor body sits on a white card, like a saved note. */
+.generation-preview-body {
+  padding: 8px 10px;
+  border: 1px solid #e2dccd;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.generation-preview-fallback {
+  margin: 0;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.generation-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.generation-preview-actions button {
+  padding: 5px 12px;
+  border: 1px solid #cfe3dd;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #1f5c4f;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.generation-preview-actions button:hover {
+  background: #edf6f3;
+}
+
+.generation-preview-actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* Save is the primary action — filled accent. */
+.generation-preview-actions .gen-preview-save {
+  background: #2f6f64;
+  border-color: #2f6f64;
+  color: #ffffff;
+}
+
+.generation-preview-actions .gen-preview-save:hover {
+  background: #285c52;
+}
+
+/* Discard reads as the destructive escape hatch. */
+.generation-preview-actions .gen-preview-discard {
+  color: #9a3127;
+  border-color: #e8c9c4;
+}
+
+.generation-preview-actions .gen-preview-discard:hover {
+  background: #f9ece9;
+}
+
 /* html-sandbox render — isolated, scriptless iframe. */
 .sv-sandbox-frame {
   width: 100%;
