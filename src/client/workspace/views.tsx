@@ -209,7 +209,10 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
     setActiveKit,
     activeLayoutId,
     availableLayouts,
-    setActiveLayout
+    setActiveLayout,
+    activeThemeId,
+    availableThemes,
+    setActiveTheme
   } = ctx;
 
   // The Floating ↔ Margin note toggle is scoped to the DOM-iframe HTML reader —
@@ -236,6 +239,19 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
             {availableLayouts.map((preset) => (
               <option key={preset.id} value={preset.id}>
                 {preset.name}
+              </option>
+            ))}
+          </select>
+          <select
+            className="theme-select"
+            aria-label="Theme"
+            title="Switch the app theme (colors/typography only)"
+            value={activeThemeId}
+            onChange={(event) => setActiveTheme(event.target.value)}
+          >
+            {availableThemes.map((theme) => (
+              <option key={theme.id} value={theme.id}>
+                {theme.name}
               </option>
             ))}
           </select>

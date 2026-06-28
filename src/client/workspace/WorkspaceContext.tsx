@@ -45,6 +45,13 @@ import {
 import { activeKitIdsForSource, CORE_KIT_ID } from "../../kits/activation";
 import { installedKits, kitSurfaceItems } from "../../kits/clientContext";
 import { LAYOUT_PRESETS, DEFAULT_LAYOUT_ID } from "./presets";
+// Theme V1 — a workspace-wide visual choice, a strict SIBLING of the layout switcher
+// (it never reads activeLayoutId). The side-effect import populates the theme registry
+// before listThemes() runs at provider mount, mirroring views.tsx's kit import.
+import "../theme/builtins";
+import { DEFAULT_THEME_ID } from "../theme/builtins";
+import { listThemes } from "../theme/registry";
+import { setActiveTheme as applyActiveTheme, THEME_STORAGE_KEY } from "../theme/applyTheme";
 
 export type Status = "idle" | "loading" | "saving" | "error";
 
@@ -101,6 +108,16 @@ function loadActiveLayout(): string {
     return globalThis.localStorage?.getItem(ACTIVE_LAYOUT_KEY) || DEFAULT_LAYOUT_ID;
   } catch {
     return DEFAULT_LAYOUT_ID;
+  }
+}
+
+// Active theme id, persisted so the chosen skin sticks across reloads (V1: localStorage,
+// the same precedent as the layout id above). Orthogonal to layout — separate key.
+function loadActiveTheme(): string {
+  try {
+    return globalThis.localStorage?.getItem(THEME_STORAGE_KEY) || DEFAULT_THEME_ID;
+  } catch {
+    return DEFAULT_THEME_ID;
   }
 }
 
@@ -267,6 +284,14 @@ export type WorkspaceContextValue = {
   activeLayoutId: string;
   availableLayouts: { id: string; name: string }[];
   setActiveLayout(id: string): void;
+
+  // —— theme (workspace-wide visual skin; sibling of layout, never reads it) ——
+  // The active theme id (persisted) + the registered themes for the header switcher.
+  // setActiveTheme flips the <html> data-theme attribute (the whole-app re-skin) and
+  // persists the choice; it does NOT touch layout state.
+  activeThemeId: string;
+  availableThemes: { id: string; name: string }[];
+  setActiveTheme(id: string): void;
 };
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -299,6 +324,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [folderRoot, setFolderRoot] = useState<string | null>(null);
   const [conceptsVersion, setConceptsVersion] = useState(0);
   const [activeLayoutId, setActiveLayoutId] = useState<string>(loadActiveLayout);
+  const [activeThemeId, setActiveThemeId] = useState<string>(loadActiveTheme);
   // Note-presentation mode for the DOM HTML reader. Seeded from localStorage so the
   // choice survives reloads; the setter mirrors it back to storage.
   const [annotationMode, setAnnotationModeState] = useState<HtmlAnnotationMode>(readStoredAnnotationMode);
@@ -912,6 +938,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // —— theme switching (sibling of layout) ——
+  const availableThemes = useMemo(() => listThemes().map((theme) => ({ id: theme.id, name: theme.name })), []);
+  const setActiveTheme = useCallback((id: string) => {
+    setActiveThemeId(id);
+    applyActiveTheme(id); // flips <html data-theme> + color-scheme — the whole-app re-skin
+    try {
+      globalThis.localStorage?.setItem(THEME_STORAGE_KEY, id);
+    } catch {
+      // storage unavailable — keep the in-memory choice
+    }
+  }, []);
+
   const value = useMemo<WorkspaceContextValue>(
     () => ({
       focus,
@@ -990,7 +1028,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       runAction,
       activeLayoutId,
       availableLayouts,
-      setActiveLayout
+      setActiveLayout,
+      activeThemeId,
+      availableThemes,
+      setActiveTheme
     }),
     [
       focus,
@@ -1060,7 +1101,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       runAction,
       activeLayoutId,
       availableLayouts,
-      setActiveLayout
+      setActiveLayout,
+      activeThemeId,
+      availableThemes,
+      setActiveTheme
     ]
   );
 
