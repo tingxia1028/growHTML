@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ScanLine, TextCursor } from "lucide-react";
+import { MoveHorizontal, ScanLine, TextCursor, ZoomIn, ZoomOut } from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
 import { EventBus, PDFLinkService, PDFViewer } from "pdfjs-dist/web/pdf_viewer.mjs";
 import workerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
@@ -8,6 +8,7 @@ import { applyHighlight, clearAnnotations, ensureAnnotationLayer, revealAnchorIn
 import type { AnchorDraft } from "./focus/FocusContext";
 import { anchorsOfKind, type SurfaceReaderProps } from "./surfaces/types";
 import { isRealRegion, normalizeDragRect, placeRegionBox } from "./surfaces/overlay";
+import { formatZoomPct, nextZoom } from "./surfaces/pdfZoom";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -56,6 +57,15 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect, activeAnchorId
   const [regionMode, setRegionMode] = useState(false);
   const regionModeRef = useRef(regionMode);
   regionModeRef.current = regionMode;
+
+  // Live zoom scale (pdf.js `currentScale`, 1 = 100%) for the % indicator. null
+  // until the first `scalechanging` fires (i.e. before the initial page-width fit),
+  // so the indicator renders a placeholder rather than a bogus 0%. This is the ONE
+  // bit of zoom state — it mirrors what pdf.js owns, it does not drive it: every
+  // control writes to the PDFViewer and the indicator updates from the event it
+  // dispatches back (which also covers re-fits on container resize). Per-session
+  // only; never persisted to the vault.
+  const [scale, setScale] = useState<number | null>(null);
 
   // (Re)paint every pdf_selection anchor onto whichever pages are currently
   // rendered. Idempotent: clears its own marks first so repaints (page render,
@@ -116,9 +126,31 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect, activeAnchorId
       pdfViewer.currentScaleValue = "page-width";
     });
     // Pages (and their text layers) render lazily as they scroll into view —
-    // (re)paint anchors each time one renders.
+    // (re)paint anchors each time one renders. A zoom re-lays-out and re-renders
+    // every visible page, so these same events fire after a rescale → highlights
+    // and region boxes are repainted at the new scale (region boxes are percent-
+    // sized so they track the page box regardless; text highlights re-match the
+    // freshly-rebuilt text-layer spans). No zoom-specific repaint path needed.
     eventBus.on("pagerendered", () => highlightAnchors());
     eventBus.on("textlayerrendered", () => highlightAnchors());
+    // Keep the % indicator in sync with whatever scale pdf.js settles on — explicit
+    // zoom, the initial page-width fit, AND automatic re-fits when the pane resizes
+    // (page-width is dynamic, so resizing re-dispatches scalechanging).
+    eventBus.on("scalechanging", (evt: { scale: number }) => setScale(evt.scale));
+
+    // —— Ctrl/Cmd + wheel zoom —— mirror the browser/native convention: a plain
+    // wheel scrolls (let it through), but with the zoom modifier held it zooms and
+    // we preventDefault so the page/container doesn't also scroll for that gesture.
+    // Bound non-passive (addEventListener default here is passive:false via the
+    // explicit option) so preventDefault is honored.
+    const onWheel = (event: WheelEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      event.preventDefault();
+      const pdfViewer = pdfViewerRef.current;
+      if (!pdfViewer) return;
+      pdfViewer.currentScale = nextZoom(pdfViewer.currentScale, event.deltaY < 0 ? 1 : -1);
+    };
+    container.addEventListener("wheel", onWheel, { passive: false });
 
     const loadingTask = pdfjsLib.getDocument({ url: fileUrl });
     loadingTask.promise.then(
@@ -228,6 +260,7 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect, activeAnchorId
     return () => {
       cancelled = true;
       container.removeEventListener("mouseup", onMouseUp);
+      container.removeEventListener("wheel", onWheel);
       container.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", finishDrag);
@@ -276,6 +309,21 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect, activeAnchorId
     return () => eventBus.off("textlayerrendered", onRendered);
   }, [activeAnchorId, revealSeq]);
 
+  // Zoom commands — each just writes to the PDFViewer; the indicator follows via the
+  // scalechanging event above (single source of truth). `currentScale` is numeric
+  // (explicit, fixed zoom); `currentScaleValue = "page-width"` is the dynamic fit
+  // value that stays responsive on pane resize. No-ops until the document is set.
+  const zoomBy = (direction: 1 | -1) => {
+    const pdfViewer = pdfViewerRef.current;
+    if (!pdfViewer) return;
+    pdfViewer.currentScale = nextZoom(pdfViewer.currentScale, direction);
+  };
+  const fitWidth = () => {
+    const pdfViewer = pdfViewerRef.current;
+    if (!pdfViewer) return;
+    pdfViewer.currentScaleValue = "page-width";
+  };
+
   return (
     <div className="pdf-reader-shell">
       <div className="pdf-reader-toolbar">
@@ -297,6 +345,22 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect, activeAnchorId
           <ScanLine size={14} />
           Region
         </button>
+        {/* Zoom cluster — sits to the right of the mode tabs (toolbar pushes it over).
+            Ctrl/Cmd + wheel over the page does the same as the +/- buttons. */}
+        <div className="pdf-zoom-controls">
+          <button type="button" className="pdf-zoom-button" onClick={() => zoomBy(-1)} title="Zoom out">
+            <ZoomOut size={14} />
+          </button>
+          <span className="pdf-zoom-indicator" title="Current zoom">
+            {scale == null ? "—" : formatZoomPct(scale)}
+          </span>
+          <button type="button" className="pdf-zoom-button" onClick={() => zoomBy(1)} title="Zoom in">
+            <ZoomIn size={14} />
+          </button>
+          <button type="button" className="pdf-zoom-button" onClick={fitWidth} title="Fit width">
+            <MoveHorizontal size={14} />
+          </button>
+        </div>
       </div>
       {/* The viewport is the relatively-positioned flex item; the container fills it
           absolutely (PDFViewer requires an absolutely-positioned scroll root). */}

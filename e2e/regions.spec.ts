@@ -120,6 +120,35 @@ test("pdf quote: selecting text in the text layer → quote source chip", async 
   await expect(chip).toContainText("Region figure self-test", { timeout: 10_000 });
 });
 
+// PDF ZOOM. Open a PDF, read the rendered page width, click Zoom in and assert the
+// page grows (and the % indicator rises), then click Fit width and assert it returns
+// to the responsive page-width size. Deterministic against the real running app.
+test("pdf zoom: zoom-in grows the page and Fit width returns it", async ({ page, request }) => {
+  const source = await seedPdf(request, `Zoom PDF ${Date.now()}`);
+  await page.goto("/");
+  await page.locator(".source-item-open").filter({ hasText: source.id }).click();
+
+  const pageEl = page.locator('.page[data-page-number="1"]').first();
+  await expect(pageEl).toBeVisible({ timeout: 20_000 });
+
+  // The fit-width scale settles first; capture the fitted width + indicator.
+  const indicator = page.locator(".pdf-zoom-indicator");
+  await expect(indicator).not.toHaveText("—", { timeout: 20_000 });
+  const fitWidth = (await pageEl.boundingBox())!.width;
+  const fitPct = await indicator.textContent();
+
+  // Zoom in → the page box grows and the indicator percentage rises.
+  await page.locator('.pdf-zoom-button[title="Zoom in"]').click();
+  await expect.poll(async () => (await pageEl.boundingBox())!.width, { timeout: 20_000 }).toBeGreaterThan(fitWidth + 1);
+  expect(await indicator.textContent()).not.toBe(fitPct);
+
+  // Fit width → back to (approximately) the original responsive fit size.
+  await page.locator('.pdf-zoom-button[title="Fit width"]').click();
+  await expect
+    .poll(async () => Math.abs((await pageEl.boundingBox())!.width - fitWidth), { timeout: 20_000 })
+    .toBeLessThan(2);
+});
+
 test("pdf region: rubber-band a figure → pdf_selection anchor with rect + region box", async ({ page, request }) => {
   const source = await seedPdf(request, `Region PDF ${Date.now()}`);
   await page.goto("/");

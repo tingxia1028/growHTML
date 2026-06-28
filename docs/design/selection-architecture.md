@@ -162,6 +162,42 @@ type AnchorDraft = QuoteAnchorDraft | RegionAnchorDraft;
 - `isRealRegion` rejects sub-threshold stray clicks; `placeRegionBox` draws a saved region as an absolutely-positioned box that hooks the shared note card (`applyHighlight`).
 - **Local HTML / live web region selection is intentionally deferred** — text-quote is sufficient there this round.
 
+### PDF zoom controls (impl-log)
+
+The PDF reader toolbar has a zoom cluster (pushed to the right, opposite the Text/Region
+tabs): **Zoom out (−) · current-zoom % indicator · Zoom in (+) · Fit width**
+(`ZoomOut`/`ZoomIn`/`MoveHorizontal` lucide icons, `size={14}` to match the tabs).
+
+- **Mechanism — drive pdf.js, don't fight it.** Every control writes to the official
+  `PDFViewer`: explicit zoom sets the numeric `pdfViewer.currentScale`; **Fit width**
+  sets the dynamic `pdfViewer.currentScaleValue = "page-width"` (the same value the
+  initial `pagesinit` fit uses), so it stays **responsive** — resizing the pane re-fits.
+  After an explicit zoom the scale is fixed (expected); Fit width returns to responsive.
+- **One source of truth for the indicator.** The `%` is React state set **only** from
+  the `scalechanging` eventBus event (`evt.scale`), never computed locally — so it
+  tracks explicit zoom, the first page-width fit, AND automatic re-fits on container
+  resize. It shows `—` until the first `scalechanging`.
+- **Bounds + step (`src/client/surfaces/pdfZoom.ts`, pure + unit-tested).** `clampScale`
+  clamps to `[0.25, 4.0]` (tighter than pdf.js's own 0.1/25 — a study reader never needs
+  2500%) and defends against `NaN`/`Infinity` (pdf.js's `currentScale` setter throws on
+  NaN). `nextZoom(current, ±1)` steps multiplicatively by `ZOOM_STEP = 1.1` (pdf.js's
+  `DEFAULT_SCALE_DELTA`, ~10%/click) and re-clamps. `formatZoomPct` renders the label
+  (`1.2 → "120%"`). Tests in `pdfZoom.test.ts` (clamp bounds, non-finite fallback,
+  step in/out, no overshoot at the rails, label rounding).
+- **Ctrl/Cmd + wheel zooms.** A non-passive `wheel` listener on the scroll container
+  zooms (via `nextZoom`) and `preventDefault`s **only** when the zoom modifier is held;
+  a plain wheel still scrolls normally.
+- **Annotations stay aligned across zoom — no new repaint path.** A rescale re-lays-out
+  and re-renders every visible page, firing the same `pagerendered`/`textlayerrendered`
+  events the anchor painter already listens on, so `highlightAnchors()` repaints at the
+  new scale automatically. Region boxes are percent-sized to the page box (so they track
+  any rescale regardless) and text highlights re-match the freshly-rebuilt text-layer
+  spans. Reveal/scroll-to-anchor (`revealAnchorInDoc`) is unaffected. Verified by
+  `e2e/regions.spec.ts` ("pdf zoom: zoom-in grows the page and Fit width returns it").
+- **PDF-only, no persistence.** Zoom is per-session component state; it is **not** written
+  to the vault. ImageReader is intentionally left untouched (rule-of-three not met — no
+  cross-reader zoom abstraction).
+
 ## Shared presentation (`src/client/annotationLayer.ts`)
 
 Resolving an anchor to a target is each surface's job; the **look** is not. Once an

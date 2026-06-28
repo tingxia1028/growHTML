@@ -1125,11 +1125,51 @@ button {
 
 .pdf-reader-toolbar {
   display: flex;
+  align-items: center;
   gap: 6px;
   padding: 6px 8px;
   background: #efe9dd;
   border-bottom: 1px solid var(--sv-border);
   flex: 0 0 auto;
+}
+
+/* Zoom cluster — pushed to the toolbar's right edge, opposite the mode tabs. */
+.pdf-zoom-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  padding: 2px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface-muted);
+}
+
+.pdf-zoom-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--sv-radius-sm);
+  background: none;
+  color: var(--sv-text-subtle);
+  cursor: pointer;
+}
+
+.pdf-zoom-button:hover {
+  background: var(--sv-surface-card);
+  color: var(--sv-text-strong);
+}
+
+/* Current-zoom readout (e.g. "120%") between the −/+ buttons. */
+.pdf-zoom-indicator {
+  min-width: 44px;
+  text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--sv-text-subtle);
+  user-select: none;
 }
 
 /* The relatively-positioned flex item; the scroll column fills it absolutely so
