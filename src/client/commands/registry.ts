@@ -29,6 +29,13 @@ export type GeneratedDraft = {
   content: unknown;
   anchorId?: string;
   sourceId?: string;
+  /**
+   * This draft came from CLASSIFYING free text (a chat reply / paste) via
+   * resolveForm/classifyContent — not from a prompt-backed generation. It has no
+   * runnable promptId, so the preview's Regenerate is a no-op for it (there is
+   * nothing to re-run). Save persists it exactly like any other draft.
+   */
+  classified?: boolean;
 };
 
 export type CommandActions = {

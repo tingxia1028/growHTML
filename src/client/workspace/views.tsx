@@ -26,7 +26,6 @@ import {
   X
 } from "lucide-react";
 import type { NoteRecord, StudyLayerRecord } from "../data/entityClient";
-import { renderNoteContent } from "../../adapters/notes/render";
 import { noteCardsFrom } from "./noteCards";
 import { TerminalPanel } from "../TerminalPanel";
 import { FileTree, baseName } from "../FileTree";
@@ -391,6 +390,7 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
     chatMessages,
     dispatch,
     selectedTextOr,
+    previewClassifiedReply,
     chatInput,
     setChatInput,
     composerMode,
@@ -475,24 +475,27 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
         <div className="chat-log">
           {chatMessages.map((message, index) => (
             <div key={index} className={`chat-msg chat-${message.role}`}>
-              <div
-                className="note-rendered"
-                dangerouslySetInnerHTML={{ __html: renderNoteContent("markdown", message.content).html }}
-              />
+              {/* Display-side HARD contract (§0.5-B / §6.6): a chat reply is shown
+                  through the SAME single render path as a note — getNoteType().render —
+                  never a bespoke renderNoteContent() bypass. Chat replies are markdown. */}
+              {getNoteType("markdown")?.render({ content: message.content }) ?? null}
               {message.role === "assistant" ? (
                 <div className="row-actions">
+                  {/* Save routes through resolveForm/classifyContent → the generation
+                      preview loop: the user PREVIEWS the detected form before it lands,
+                      instead of a hardcoded contentType:"markdown". */}
                   <button
                     className="link-button"
                     type="button"
                     title="Save the highlighted part of this reply (or the whole reply if nothing is selected)"
-                    onClick={() => void dispatch("anchor.add-note", { text: selectedTextOr(message.content), contentType: "markdown" })}
+                    onClick={() => void previewClassifiedReply(selectedTextOr(message.content))}
                   >
                     Save selection as note
                   </button>
                   <button
                     className="link-button"
                     type="button"
-                    onClick={() => void dispatch("anchor.add-note", { text: message.content, contentType: "markdown" })}
+                    onClick={() => void previewClassifiedReply(message.content)}
                   >
                     Save full reply
                   </button>

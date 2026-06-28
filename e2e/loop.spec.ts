@@ -144,7 +144,13 @@ test("AI chat: ask about a passage → reply → save reply as a note", async ({
   await expect(assistant).toContainText("What is this about?");
   await expect(assistant).toContainText("render threads");
 
-  // Save the reply as a note → appears in the note list.
+  // Save the reply as a note. It now routes through resolveForm/classifyContent and
+  // the generation-preview seam (so the user previews the DETECTED form before saving):
+  // this prose reply classifies as `markdown`. Save the preview → the note appears.
   await assistant.getByRole("button", { name: "Save full reply" }).click();
+  const preview = page.locator(".generation-preview");
+  await expect(preview).toBeVisible({ timeout: 15_000 });
+  await expect(preview.locator(".generation-preview-type")).toHaveText("markdown");
+  await preview.locator(".gen-preview-save").click();
   await expect(page.locator(".note-list")).toContainText("render threads");
 });

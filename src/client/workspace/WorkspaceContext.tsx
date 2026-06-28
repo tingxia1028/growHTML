@@ -33,6 +33,7 @@ import {
 } from "../data/entityClient";
 import { useFocus, draftQuoteText, type FocusContextValue } from "../focus/FocusContext";
 import { BOOKMARK_CONTENT_TYPE } from "../../core/notes/contentTypes";
+import { resolveForm } from "../../core/notes/resolveForm";
 import { createDefaultContent, isTextContentType } from "../notes/noteTypeRegistry";
 import { getSourceViewer, type SourceViewer } from "../viewers";
 import { getCommand, runCommand, type CommandContext, type GeneratedDraft } from "../commands/registry";
@@ -223,6 +224,12 @@ export type WorkspaceContextValue = {
   discardPendingDraft(): void;
   /** The selected text in a reply, or the full reply if nothing is highlighted. */
   selectedTextOr(fullContent: string): string;
+  /**
+   * Save a chat reply by routing it through the identification contract: classify the
+   * text via resolveForm/classifyContent and park the DETECTED form in the generation
+   * preview (so the user previews the recognized form before it lands as a note).
+   */
+  previewClassifiedReply(text: string): Promise<void>;
   changePatchStatus(patch: PatchRecord, nextStatus: "applied" | "reverted" | "rejected"): Promise<void>;
 
   // —— concepts / relations ——
@@ -707,6 +714,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const regeneratePendingDraft = useCallback(async () => {
     const draft = pendingDraft;
     if (!draft) return;
+    // A CLASSIFIED draft (chat reply routed through resolveForm/classifyContent) has no
+    // prompt to re-run — Regenerate is a no-op for it.
+    if (draft.classified) return;
     setRegenerating(true);
     setError("");
     try {
@@ -732,6 +742,40 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const selected = typeof window !== "undefined" ? window.getSelection()?.toString().trim() : "";
     return selected || fullContent;
   }, []);
+
+  // Save-a-chat-reply, routed through the IDENTIFICATION contract (§0.5-A / §6.6): the
+  // reply text goes through `resolveForm` (no declared form → classifyContent), and the
+  // DETECTED form is parked in the SAME generation-preview loop a kit draft uses — so
+  // the user previews the recognized form (markmap / mermaid / code / markdown) before
+  // it is saved, instead of the old hardcoded contentType:"markdown". Materialize the
+  // focused passage first (if any) so Save attaches the note to it (matching the
+  // generation-preview Save path), then mark the draft `classified` (Regenerate no-ops).
+  const previewClassifiedReply = useCallback(
+    async (text: string) => {
+      const trimmed = (text ?? "").trim();
+      if (!trimmed) return;
+      setStatus("saving");
+      setError("");
+      try {
+        const anchor = await focus.materializeAnchor();
+        const form = resolveForm({ text: trimmed });
+        setPendingDraft({
+          promptId: "",
+          contentType: form.contentType,
+          input: {},
+          content: form.content,
+          anchorId: anchor?.id,
+          sourceId: activeSourceId || undefined,
+          classified: true
+        });
+        setStatus("idle");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to classify reply");
+        setStatus("error");
+      }
+    },
+    [focus, activeSourceId]
+  );
 
   const changePatchStatus = useCallback(
     async (patch: PatchRecord, nextStatus: "applied" | "reverted" | "rejected") => {
@@ -1007,6 +1051,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       regeneratePendingDraft,
       discardPendingDraft,
       selectedTextOr,
+      previewClassifiedReply,
       changePatchStatus,
       conceptsVersion,
       refreshConcepts,
@@ -1081,6 +1126,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       regeneratePendingDraft,
       discardPendingDraft,
       selectedTextOr,
+      previewClassifiedReply,
       changePatchStatus,
       conceptsVersion,
       refreshConcepts,

@@ -528,6 +528,79 @@ seam used by both the composer and the chat. The classifier is the one new
 
 ---
 
+## Impl-log — Phase 1a (contract foundation) — SHIPPED
+
+The foundation of the plan (`docs/design/adaptive-note-forms.plan.zh.md` §4 Phase 1,
+scoped to "1a") landed. NO new rich UI (ArtifactCard / FocusOverlay / composer
+"detected" chip are Phase 1b; video/html variants are Phase 2/3).
+
+**1. `classifyContent` — pure, sinkable core module** (`src/core/notes/classifyContent.ts`).
+`classifyContent(raw): { contentType, content, confidence: "high" | "low" }`. No React,
+no fetch, no module state, NEVER throws (a pathological input degrades to the markdown
+fallback). Rules, most-specific first, covering ONLY forms that already render:
+  - **mermaid** (high): a ` ```mermaid ` fence (fence body becomes the content), OR a
+    bare source LEADING with a mermaid keyword (`graph`/`flowchart`/`sequenceDiagram`/
+    `gantt`/`classDiagram`/`stateDiagram`/…). Content = the diagram source string.
+  - **markmap** (high): a multi-level outline — ≥2 DISTINCT heading levels (`#`,`##`),
+    OR a nested bullet list (≥2 distinct indent depths with a nested item). Content =
+    the markdown outline string. (A single-level doc / flat bullet list does NOT match.)
+  - **code-snippet** (high): a ` ```lang ` fence whose info-string is a KNOWN language.
+    Content = `{ language, code }` (lower-cased lang) — shaped for `codeSnippetSchema`.
+  - **markdown** (low): the fallback — never blocks. Content = the raw string.
+  Rule order is explicit + commented so Phase 2/3 rules (video-embed, html-interactive)
+  slot in by specificity without touching existing ones. Tests
+  (`classifyContent.test.ts`): positive + negative per rule, low-confidence fallback,
+  exact content-shaping validated against the real core schema, ordering, totality.
+
+**2. `resolveForm` — the single choke point** (`src/core/notes/resolveForm.ts`,
+decision §6.7). `resolveForm({ contentType?, content?, text? })`: a DECLARED form
+(caller/kit/model supplied a contentType) is trusted (`high`) and NOT re-classified;
+otherwise it delegates to `classifyContent(text)`. Pure + dependency-free so server and
+client share it. Live consumer = the chat-save wiring (below). Tests:
+`resolveForm.test.ts`.
+
+**3. contentType consolidation (§2.5) with backward-compat.** `plain-text` is folded
+into `markdown` and the static `mindmap` is dropped in favor of `markmap`: both client
+plugins are marked `hidden: true` (removed from the composer's NEW-note picker) but stay
+REGISTERED, and their core specs are untouched — so EXISTING stored notes of those types
+still open and render (plain-text → inert escaped `<pre>`; mindmap → the original static
+nested tree). No video/html merge here (Phase 2/3). Test:
+`src/client/notes/consolidation.test.tsx` asserts both are hidden from the picker, both
+plugins still resolve, and old notes of each render without crashing (incl. mis-shaped
+inert fallback).
+
+**4. Display-side HARD contract (§6.6).** `getNoteType(contentType).render(...)` is now
+the ONLY path note content reaches the screen:
+  - The chat log's `renderNoteContent("markdown", …)` bypass is gone — replies render
+    via `getNoteType("markdown")?.render(...)` (`views.tsx`).
+  - The "Save full reply" / "Save selection as note" buttons no longer hardcode
+    `contentType:"markdown"`. They call a new `WorkspaceContext.previewClassifiedReply
+    (text)` which materializes the focused anchor, runs `resolveForm({ text })`, and
+    parks the DETECTED form in the existing `pendingDraft` → `GenerationPreview` → Save
+    loop (the user previews the recognized form before saving). The draft is marked
+    `classified` so the preview's Regenerate is a no-op (no prompt to re-run).
+  - **Guard** (`src/client/notes/contract.guard.test.ts`): a CI-runnable repo-grep test
+    over `src/client/workspace/*.{ts,tsx}` (host surface; plugins under
+    `src/client/notes` own the legit render implementations and are NOT scanned). It
+    strips comments first (so a comment describing the old anti-pattern doesn't trip it),
+    then fails on: (a) a raw `renderNoteContent(` call in a host file; (b) a
+    `contentType === <literal>` render branch (allowlisting only the picker SORT
+    comparator); (c) a `createNote(…)` / `dispatch("anchor.add-note"|"bookmark.add", …)`
+    call carrying a string-literal `contentType`.
+
+**Self-test:** `npm run check` clean; `npm test` 511 passing (65 files, incl. the 4 new
+test files / 31 new cases); `npm run e2e` 39 passing — `streaming-chat.spec.ts` extended
+to assert a chat reply containing a mermaid source, when saved, lands a `mermaid` note
+(not markdown) via the preview seam; `loop.spec.ts` updated for the preview-first save.
+
+**Caveats / deviations:** none material. The chat-save path was wired client-side via a
+new `WorkspaceContext` method (the live consumer the plan asked for) rather than touching
+the server generation pipeline, since chat replies are free text classified in the
+client; `resolveForm` is still placed in core (`src/core/notes`) so the server path can
+adopt it unchanged later (the "harden the identification side" prerequisite, §6.6).
+
+---
+
 ## Appendix — cited symbols / paths
 
 - `src/core/notes/contentTypes.ts:11-32,40-44,100-185` — `NoteContentSpec`,

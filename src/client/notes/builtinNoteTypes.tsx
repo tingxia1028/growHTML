@@ -75,9 +75,14 @@ registerNoteType({
   render: (input) => <MarkdownRender {...input} />,
   edit: (input) => <TextEditor {...input} placeholder="Write markdown…" />
 });
+// plain-text is FOLDED INTO markdown (consolidation §2.5): it is no longer offered as
+// a NEW choice (hidden from the composer picker), but the plugin stays registered so
+// EXISTING `plain-text` notes still open — rendered as inert escaped <pre> (their
+// original presentation; markdown is a superset so this never loses content).
 registerNoteType({
   contentType: "plain-text",
   label: "plain text",
+  hidden: true,
   render: (input) => <PlainTextRender {...input} />,
   edit: (input) => <TextEditor {...input} placeholder="Write plain text…" />
 });
@@ -125,9 +130,14 @@ function StructuredJsonEditor({ content, onChange, contentType }: NoteEditInput 
     />
   );
 }
+// The static `mindmap` is DROPPED as a new choice in favor of the interactive
+// `markmap` (consolidation §2.5): hidden from the composer picker, but the plugin
+// stays registered so EXISTING `mindmap` notes still open — rendered by the original
+// static tree renderer (the nested <ul>). New mind-maps are authored as `markmap`.
 registerNoteType({
   contentType: "mindmap",
   label: "mindmap",
+  hidden: true,
   render: (input) => <MindmapRender {...input} />,
   edit: (input) => <StructuredJsonEditor {...input} contentType="mindmap" />
 });
