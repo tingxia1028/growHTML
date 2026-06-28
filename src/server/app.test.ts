@@ -598,6 +598,130 @@ describe("vault server API", () => {
     await request(app).put("/api/workspace").send({ activeLayoutId: 5 }).expect(400);
   });
 
+  it("creates, lists, updates, and deletes a custom operation", async () => {
+    const created = (
+      await request(app)
+        .post("/api/operations")
+        .send({
+          name: "Summarize",
+          outputContentType: "markdown",
+          promptTemplate: "Summarize {{anchorText}}",
+          declaredVariables: [{ name: "anchorText", source: "anchorText" }]
+        })
+        .expect(201)
+    ).body.operation;
+    expect(created.id).toMatch(/^op_/);
+    expect(created.source).toBe("custom");
+    expect(created.scope).toBe("anchor");
+
+    const list = await request(app).get("/api/operations").expect(200);
+    expect(list.body.operations.map((o: { id: string }) => o.id)).toContain(created.id);
+
+    const updated = (
+      await request(app).patch(`/api/operations/${created.id}`).send({ name: "Summarize+" }).expect(200)
+    ).body.operation;
+    expect(updated.name).toBe("Summarize+");
+    expect(updated.promptTemplate).toBe("Summarize {{anchorText}}");
+
+    await request(app).delete(`/api/operations/${created.id}`).expect(200);
+    await request(app).delete(`/api/operations/${created.id}`).expect(404);
+    await request(app).patch(`/api/operations/${created.id}`).send({ name: "x" }).expect(404);
+  });
+
+  it("rejects an operation whose required literal variable has no default", async () => {
+    await request(app)
+      .post("/api/operations")
+      .send({
+        name: "Bad",
+        outputContentType: "markdown",
+        promptTemplate: "do {{x}}",
+        declaredVariables: [{ name: "x", source: "literal", required: true }]
+      })
+      .expect(400);
+  });
+
+  it("returns default operation prefs and round-trips a saved set", async () => {
+    const empty = await request(app).get("/api/operation-prefs").expect(200);
+    expect(empty.body.prefs).toEqual({ order: [], disabled: [], params: {} });
+
+    const prefs = {
+      order: ["textbook.explain-concept", "op_1"],
+      disabled: ["op_1"],
+      params: { "textbook.explain-concept": { grade: "Grade 6" } }
+    };
+    await request(app).put("/api/operation-prefs").send(prefs).expect(200);
+
+    const reloaded = await request(app).get("/api/operation-prefs").expect(200);
+    expect(reloaded.body.prefs.order).toEqual(prefs.order);
+    expect(reloaded.body.prefs.disabled).toEqual(["op_1"]);
+    expect(reloaded.body.prefs.params["textbook.explain-concept"].grade).toBe("Grade 6");
+
+    // Structurally invalid prefs are rejected.
+    await request(app).put("/api/operation-prefs").send({ order: "nope" }).expect(400);
+  });
+
+  it("generates structured content for a stored op_ promptId and for a built-in", async () => {
+    const op = (
+      await request(app)
+        .post("/api/operations")
+        .send({
+          name: "MD",
+          outputContentType: "markdown",
+          promptTemplate: "Write notes on {{anchorText}}",
+          declaredVariables: [{ name: "anchorText", source: "anchorText" }]
+        })
+        .expect(201)
+    ).body.operation;
+
+    // A data op has no mockContent → the mock echoes the spec's createDefault ("").
+    const viaOp = await request(app)
+      .post("/api/kits/generate")
+      .send({ promptId: op.id, contentType: "markdown", input: { anchorText: "tides" } })
+      .expect(200);
+    expect(viaOp.body.content).toBe("");
+    expect(viaOp.body.provider).toBe("mock");
+
+    // Output type guard still fires for an op whose outputContentType differs.
+    await request(app).post("/api/kits/generate").send({ promptId: op.id, contentType: "quiz" }).expect(400);
+
+    // Built-in prompts keep working unchanged.
+    const builtin = await request(app)
+      .post("/api/kits/generate")
+      .send({
+        promptId: "textbook.explain-concept",
+        contentType: "textbook.explanation",
+        input: { anchorText: "Photosynthesis converts light into energy." }
+      })
+      .expect(200);
+    expect(builtin.body.content.title).toContain("Explaining");
+
+    // An unknown promptId is still a 400.
+    await request(app).post("/api/kits/generate").send({ promptId: "op_missing", contentType: "markdown" }).expect(400);
+  });
+
+  it("merges built-in placeholder params from operation-prefs into generate input", async () => {
+    await request(app)
+      .put("/api/operation-prefs")
+      .send({
+        order: [],
+        disabled: [],
+        params: { "textbook.explain-concept": { grade: "Grade 6", subject: "Biology" } }
+      })
+      .expect(200);
+
+    // The merge happens server-side before build(); the mock ignores the rendered
+    // body, so we assert the run succeeds (wiring) rather than the prompt text.
+    const res = await request(app)
+      .post("/api/kits/generate")
+      .send({
+        promptId: "textbook.explain-concept",
+        contentType: "textbook.explanation",
+        input: { anchorText: "Cells are the basic unit of life." }
+      })
+      .expect(200);
+    expect(res.body.content.title).toBeTruthy();
+  });
+
   it("rejects an invalid patch status transition", async () => {
     const source = (
       await request(app).post("/api/sources/html").send({ title: "Render Thread", content: fixtureHtmlBody }).expect(201)

@@ -3,8 +3,49 @@ import { z } from "zod";
 import { registerNoteContentSpec } from "../core/notes/contentTypes";
 import { registerKitPrompt } from "./prompts";
 import { extractJson, generateStructuredContent, StructuredGenerationError } from "./structured";
+import { resolvePrompt } from "./resolvePrompt";
+import { operationSchema, type OperationRecord } from "../core/schema";
+import type { SnapshotStore } from "../core/store/snapshotStore";
 import { MockModelProvider } from "../ai/mockProvider";
 import type { ChatRequest, ChatResponse, ModelProvider } from "../ai/provider";
+
+// A minimal in-memory SnapshotStore over a fixed set of operations — enough to
+// exercise resolvePrompt + generateStructuredContent without touching disk.
+function memoryOperationStore(records: OperationRecord[]): SnapshotStore<OperationRecord> {
+  const byId = new Map(records.map((r) => [r.id, r]));
+  return {
+    async list() {
+      return Array.from(byId.values());
+    },
+    async readWithIssues() {
+      return { records: Array.from(byId.values()), issues: [] };
+    },
+    async get(id: string) {
+      return byId.get(id) ?? null;
+    },
+    async upsert(record: OperationRecord) {
+      byId.set(record.id, record);
+      return record;
+    },
+    async delete(id: string) {
+      return byId.delete(id);
+    }
+  };
+}
+
+const storedThingOp = operationSchema.parse({
+  id: "op_01HZZZZZZZZZZZZZZZZZZZZZZ0",
+  type: "operation",
+  schemaVersion: 1,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  createdBy: "user",
+  name: "My Thing",
+  outputContentType: "test.thing",
+  promptTemplate: "make a thing about {{topic}}",
+  declaredVariables: [{ name: "topic", source: "anchorText" }],
+  source: "custom"
+});
 
 // Isolated test type + prompt so the structured path is verified independent of any kit.
 registerNoteContentSpec({
@@ -28,6 +69,45 @@ describe("extractJson", () => {
   });
   it("throws when there is no JSON object", () => {
     expect(() => extractJson("no json here")).toThrow();
+  });
+});
+
+describe("resolvePrompt", () => {
+  it("returns a built-in KitPrompt verbatim (mockContent preserved)", async () => {
+    const resolved = await resolvePrompt("test.make-thing");
+    expect(resolved?.id).toBe("test.make-thing");
+    expect(resolved?.outputType).toBe("test.thing");
+    expect(resolved?.mockContent?.({ topic: "x" })).toEqual({ title: "x", n: 1 });
+  });
+
+  it("wraps a stored operation into a KitPrompt whose build() renders the template", async () => {
+    const store = memoryOperationStore([storedThingOp]);
+    const resolved = await resolvePrompt(storedThingOp.id, store);
+    expect(resolved?.outputType).toBe("test.thing");
+    expect(resolved?.mockContent).toBeUndefined();
+    // declaredVariables map runtime input through by name; missing → "".
+    expect(resolved?.build({ topic: "the ocean" })).toBe("make a thing about the ocean");
+    expect(resolved?.build({})).toBe("make a thing about ");
+  });
+
+  it("applies a literal variable's default and runtime fallback", async () => {
+    const op = operationSchema.parse({
+      ...storedThingOp,
+      promptTemplate: "{{lead}} about {{topic}}",
+      declaredVariables: [
+        { name: "lead", source: "literal", default: "Tell me" },
+        { name: "topic", source: "anchorText", default: "everything" }
+      ]
+    });
+    const resolved = await resolvePrompt(op.id, memoryOperationStore([op]));
+    // literal always uses its default; non-literal falls back to default when absent.
+    expect(resolved?.build({})).toBe("Tell me about everything");
+    expect(resolved?.build({ topic: "ducks" })).toBe("Tell me about ducks");
+  });
+
+  it("returns undefined for an unknown id (no store / not stored)", async () => {
+    expect(await resolvePrompt("nope")).toBeUndefined();
+    expect(await resolvePrompt("op_does_not_exist", memoryOperationStore([]))).toBeUndefined();
   });
 });
 
@@ -71,6 +151,30 @@ describe("generateStructuredContent", () => {
     await expect(
       generateStructuredContent(bad, { promptId: "test.make-thing", contentType: "test.thing" }, 2)
     ).rejects.toBeInstanceOf(StructuredGenerationError);
+  });
+
+  it("runs a STORED data operation end-to-end via resolvePrompt + store", async () => {
+    const store = memoryOperationStore([storedThingOp]);
+    // The mock provider has no mockContent for a data op, so it echoes the spec's
+    // createDefault (deterministic + schema-valid).
+    const out = await generateStructuredContent(
+      new MockModelProvider(),
+      { promptId: storedThingOp.id, contentType: "test.thing", input: { topic: "tides" } },
+      3,
+      store
+    );
+    expect(out).toEqual({ title: "", n: 0 });
+  });
+
+  it("still resolves a built-in prompt with the new optional store param", async () => {
+    const store = memoryOperationStore([storedThingOp]);
+    const out = await generateStructuredContent(
+      new MockModelProvider(),
+      { promptId: "test.make-thing", contentType: "test.thing", input: { topic: "photosynthesis" } },
+      3,
+      store
+    );
+    expect(out).toEqual({ title: "photosynthesis", n: 1 });
   });
 
   it("rejects unknown promptId / contentType / mismatched output type", async () => {

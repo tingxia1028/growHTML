@@ -94,6 +94,53 @@ export type ConceptRecord = {
   confidence?: number;
 };
 
+// —— Operations (AI actions authored as DATA: a {{var}} template + declared
+// variables, unified with the built-in code prompts at generate time) ——
+export type OperationVariable = {
+  name: string;
+  label?: string;
+  // WHERE the run command pulls the value from: the focused passage's text, the
+  // source title, this source's existing note content, or a verbatim `default`.
+  source: "anchorText" | "sourceTitle" | "existingNotes" | "literal";
+  default?: string;
+  required: boolean;
+};
+
+export type OperationRecord = {
+  id: string;
+  name: string;
+  description: string;
+  // A note contentType string (validated against the NoteContentSpec registry at
+  // generate time, not here).
+  outputContentType: string;
+  promptTemplate: string;
+  declaredVariables: OperationVariable[];
+  source: "custom" | "fork";
+  forkedFrom?: string;
+  scope: "anchor" | "source";
+};
+
+// The editable body of an Operation (the envelope id/type/timestamps are server-set).
+export type OperationInput = {
+  name: string;
+  description?: string;
+  outputContentType: string;
+  promptTemplate: string;
+  declaredVariables?: OperationVariable[];
+  source?: "custom" | "fork";
+  forkedFrom?: string;
+  scope?: "anchor" | "source";
+};
+
+// Workspace-level small prefs (mirrors workspace.json): the action ORDER + DISABLED
+// set (built-in command ids + op_ ids) and per-built-in placeholder PARAMS the
+// server merges into generate input before build().
+export type OperationPrefs = {
+  order: string[];
+  disabled: string[];
+  params: Record<string, Record<string, string>>;
+};
+
 export type NodeRef =
   | { type: "source"; id: string }
   | { type: "anchor"; id: string }
@@ -338,6 +385,27 @@ export const entityClient = {
   },
   deleteRelation(relationId: string) {
     return sendJson<{ ok: true }>("DELETE", `/api/relations/${relationId}`, undefined);
+  },
+
+  // —— Operations (custom AI actions as data) + their workspace prefs ——
+  operations() {
+    return getJson<{ operations: OperationRecord[] }>("/api/operations");
+  },
+  createOperation(input: OperationInput) {
+    return sendJson<{ operation: OperationRecord }>("POST", "/api/operations", input);
+  },
+  updateOperation(operationId: string, input: Partial<OperationInput>) {
+    return sendJson<{ operation: OperationRecord }>("PATCH", `/api/operations/${operationId}`, input);
+  },
+  deleteOperation(operationId: string) {
+    return sendJson<{ ok: true }>("DELETE", `/api/operations/${operationId}`, undefined);
+  },
+  /** Action ordering / enable-disable + per-built-in placeholder params. */
+  operationPrefs() {
+    return getJson<{ prefs: OperationPrefs }>("/api/operation-prefs");
+  },
+  saveOperationPrefs(prefs: OperationPrefs) {
+    return sendJson<{ prefs: OperationPrefs }>("PUT", "/api/operation-prefs", prefs);
   },
 
   // —— Study Layers ——

@@ -24,6 +24,9 @@ import {
   type ChatContext,
   type ChatMessage,
   type NoteRecord,
+  type OperationPrefs,
+  type OperationRecord,
+  type OperationVariable,
   type PatchRecord,
   type SourceRecord,
   type StudyLayerRecord
@@ -39,10 +42,43 @@ import {
   type HtmlAnnotationMode
 } from "../annotations";
 import { activeKitIdsForSource, CORE_KIT_ID } from "../../kits/activation";
-import { installedKits } from "../../kits/clientContext";
+import { installedKits, kitSurfaceItems } from "../../kits/clientContext";
 import { LAYOUT_PRESETS, DEFAULT_LAYOUT_ID } from "./presets";
 
 export type Status = "idle" | "loading" | "saving" | "error";
+
+// One row in a selection / source toolbar: a built-in kit action (dispatched by its
+// command id) OR a custom Operation (dispatched through the generic operation.run
+// command). The host assembles these in the configured order (operation-prefs), with
+// disabled ones filtered out, and `runAction` knows how to fire each kind.
+export type ToolbarAction = {
+  /** Command id for a built-in action (= its promptId), or the op_ id for a custom one. */
+  id: string;
+  title: string;
+  icon?: string;
+  group?: string;
+  kind: "builtin" | "operation";
+  /** Whether the action runs over the focused passage ("anchor") or the source. */
+  scope: "anchor" | "source";
+  /** Custom op only — the note contentType it produces + its declared variables. */
+  outputType?: string;
+  variables?: OperationVariable[];
+};
+
+const EMPTY_OPERATION_PREFS: OperationPrefs = { order: [], disabled: [], params: {} };
+
+// Order a merged action list by operation-prefs: ordered ids first (in prefs.order),
+// unlisted ids keep their incoming order after them; disabled ids are dropped. JS sort
+// is stable, so built-in priority order + custom insertion order are preserved on ties.
+function orderActions(actions: ToolbarAction[], prefs: OperationPrefs): ToolbarAction[] {
+  const indexOf = (id: string) => {
+    const i = prefs.order.indexOf(id);
+    return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+  };
+  return actions
+    .filter((action) => !prefs.disabled.includes(action.id))
+    .sort((a, b) => indexOf(a.id) - indexOf(b.id));
+}
 
 // Active dock layout preset id, persisted so the chosen layout sticks across reloads.
 const ACTIVE_LAYOUT_KEY = "sv-active-layout";
@@ -195,6 +231,22 @@ export type WorkspaceContextValue = {
   /** Apply a kit to the active source ("core" = none); persists to its metadata. */
   setActiveKit(kitId: string): Promise<void>;
 
+  // —— operations (custom AI actions as data) + their workspace prefs ——
+  // The loaded custom operations + the action prefs (order / disabled / built-in
+  // params), plus a refresh token the builder/manager bump after a mutation. The two
+  // merged, ordered, scope-split toolbar lists (built-in kit actions + custom ops) are
+  // what the selection / source toolbars render; `runAction` fires either kind.
+  operations: OperationRecord[];
+  operationPrefs: OperationPrefs;
+  operationsVersion: number;
+  refreshOperations(): void;
+  /** Anchor-scope actions (built-in selection items + anchor ops), in prefs order. */
+  selectionActions: ToolbarAction[];
+  /** Source-scope actions (built-in source items + source ops), in prefs order. */
+  sourceActions: ToolbarAction[];
+  /** Run a merged action: a built-in command, or operation.run for a custom op. */
+  runAction(action: ToolbarAction): void;
+
   // —— workspace layout (dock presets) ——
   // The active layout preset id (persisted) + the available presets for the layout
   // switcher in the reader header. The shell picks the preset by this id.
@@ -241,6 +293,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // an in-flight regenerate so the preview can show/disable while it re-runs.
   const [pendingDraft, setPendingDraft] = useState<GeneratedDraft | null>(null);
   const [regenerating, setRegenerating] = useState(false);
+  // Custom operations + their workspace prefs (action order / disabled / built-in
+  // params). Loaded once and re-fetched whenever the builder/manager bumps the token.
+  const [operations, setOperations] = useState<OperationRecord[]>([]);
+  const [operationPrefs, setOperationPrefs] = useState<OperationPrefs>(EMPTY_OPERATION_PREFS);
+  const [operationsVersion, setOperationsVersion] = useState(0);
 
   // Native file/folder dialogs come from the Electron preload; absent in a browser.
   const canOpenLocal = typeof window !== "undefined" && !!window.studyVault?.openFile;
@@ -730,6 +787,101 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [activeSourceId, loadSources]
   );
 
+  // —— operations (custom AI actions as data) ——
+  const refreshOperations = useCallback(() => setOperationsVersion((value) => value + 1), []);
+
+  // Load custom operations + prefs on mount and whenever the builder/manager mutates
+  // them. Additive + best-effort: a failure leaves the toolbars showing only built-in
+  // kit actions (operations never gate the base app).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [opsResponse, prefsResponse] = await Promise.all([
+          entityClient.operations(),
+          entityClient.operationPrefs()
+        ]);
+        if (cancelled) return;
+        setOperations(opsResponse.operations);
+        setOperationPrefs(prefsResponse.prefs);
+      } catch {
+        // operations are additive — keep the built-in toolbars working
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [operationsVersion]);
+
+  // Merge a slot's built-in kit actions with the custom ops of the matching scope, then
+  // order/filter by prefs. Anchor scope ↔ the selection toolbar; source scope ↔ the
+  // source-actions toolbar. Built-in kit items are gated by the active source's kits;
+  // custom ops are workspace-wide.
+  const selectionActions = useMemo<ToolbarAction[]>(() => {
+    const builtin: ToolbarAction[] = kitSurfaceItems("selection-toolbar", activeKitIds).map((item) => ({
+      id: item.commandId,
+      title: item.title,
+      icon: item.icon,
+      group: item.group,
+      kind: "builtin",
+      scope: "anchor"
+    }));
+    const custom: ToolbarAction[] = operations
+      .filter((op) => op.scope === "anchor")
+      .map((op) => ({
+        id: op.id,
+        title: op.name,
+        group: "My Actions",
+        kind: "operation",
+        scope: "anchor",
+        outputType: op.outputContentType,
+        variables: op.declaredVariables
+      }));
+    return orderActions([...builtin, ...custom], operationPrefs);
+  }, [activeKitIds, operations, operationPrefs]);
+
+  const sourceActions = useMemo<ToolbarAction[]>(() => {
+    const builtin: ToolbarAction[] = kitSurfaceItems("source-actions", activeKitIds).map((item) => ({
+      id: item.commandId,
+      title: item.title,
+      icon: item.icon,
+      group: item.group,
+      kind: "builtin",
+      scope: "source"
+    }));
+    const custom: ToolbarAction[] = operations
+      .filter((op) => op.scope === "source")
+      .map((op) => ({
+        id: op.id,
+        title: op.name,
+        group: "My Actions",
+        kind: "operation",
+        scope: "source",
+        outputType: op.outputContentType,
+        variables: op.declaredVariables
+      }));
+    return orderActions([...builtin, ...custom], operationPrefs);
+  }, [activeKitIds, operations, operationPrefs]);
+
+  // Fire a merged action: a built-in dispatches its command id directly; a custom op
+  // goes through the generic operation.run command (which materializes the passage,
+  // generates, and emits a GeneratedDraft into the preview loop).
+  const runAction = useCallback(
+    (action: ToolbarAction) => {
+      if (action.kind === "operation") {
+        void dispatch("operation.run", {
+          operationId: action.id,
+          outputType: action.outputType,
+          scope: action.scope,
+          variables: action.variables
+        });
+      } else {
+        void dispatch(action.id, {});
+      }
+    },
+    [dispatch]
+  );
+
   // —— workspace layout switching ——
   const availableLayouts = useMemo(() => LAYOUT_PRESETS.map((preset) => ({ id: preset.id, name: preset.name })), []);
   const setActiveLayout = useCallback((id: string) => {
@@ -810,6 +962,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       activeKitIds,
       installedKits,
       setActiveKit,
+      operations,
+      operationPrefs,
+      operationsVersion,
+      refreshOperations,
+      selectionActions,
+      sourceActions,
+      runAction,
       activeLayoutId,
       availableLayouts,
       setActiveLayout
@@ -873,6 +1032,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       toggleLayerFilter,
       activeKitIds,
       setActiveKit,
+      operations,
+      operationPrefs,
+      operationsVersion,
+      refreshOperations,
+      selectionActions,
+      sourceActions,
+      runAction,
       activeLayoutId,
       availableLayouts,
       setActiveLayout

@@ -1,10 +1,12 @@
 # AI Operation as Data — prompt-template + variable system
 
-**Status: Proposal — not yet implemented.**
+**Status: Implemented (V1).**
 
-> This document is a research + design proposal only. No source/test/config files
-> have been changed. It cites real symbols/paths at the commit it was written
-> against (branch `codex/ai-study-vault-rework`).
+> Sections 1–8 below are the original research + design proposal. V1 shipped
+> against a separately-agreed fixed scope that refined some names/locations; the
+> authoritative record of what actually landed on disk is the
+> **[Implementation log](#implementation-log)** at the end of this document. Where
+> the proposal and the log disagree (e.g. schema field names), the log is correct.
 
 ---
 
@@ -589,3 +591,150 @@ This split keeps both deterministic.
 - `src/client/workspace/GenerationPreview.tsx` — the preview/edit/save view.
 - `docs/design/ai-orchestration.md` — iron rule + structured-generation engine.
 - `docs/design/study-layer.md` — share/import (`.studypack`) precedent for V2 shareability.
+
+---
+
+## Implementation log
+
+V1 shipped. This section records the actual on-disk state and supersedes §§1–8
+where they differ. The proposal's core thesis held: **the only mechanism change
+is at the resolve step** (`getKitPrompt` → `resolvePrompt`); spec lookup,
+validation, mock sample, retry, and the preview/save loop are reused unchanged.
+
+### Files changed (`git diff HEAD --stat`)
+
+**New files:**
+- `src/ai/template.ts` — the pure `{{var}}` engine (`extractVariables`, `renderTemplate`).
+- `src/ai/template.test.ts` — pure-engine unit tests.
+- `src/core/schema/operation.ts` — `operationSchema` + `operationVariableSchema`.
+- `src/kits/resolvePrompt.ts` — `resolvePrompt` + `bindOperationValues` (NOT in
+  `src/kits/structured.ts` as the proposal floated; its own module).
+- `src/client/workspace/operationViews.tsx` — Operations Manager / builder view
+  (+ `buildForkTemplate`).
+- `src/client/workspace/operationViews.test.tsx` — `buildForkTemplate` unit tests.
+- `e2e/operation-authoring.spec.ts` — end-to-end author → preview → save → run → prefs spec.
+
+**Modified files:**
+- `src/core/ids.ts` — register `operation` kind (`op` prefix).
+- `src/core/schema/common.ts` — `operationIdSchema`.
+- `src/core/schema/index.ts` — export `./operation`.
+- `src/core/schema/schema.test.ts` — operation schema accept/reject cases.
+- `src/core/store/entities.ts` — `operations: "operations.jsonl"` file + `SnapshotStore`.
+- `src/kits/structured.ts` — resolve swap (see below); threads the operation store.
+- `src/kits/structured.test.ts` — stored-op end-to-end through `generateStructuredContent`.
+- `src/kits/types.ts` — optional `KitPrompt.params` (placeholder declarations for prefs fill).
+- `src/kits/textbook-learning/prompts/explainConcept.prompt.ts`,
+  `generatePractice.prompt.ts` — declare `params` (grade/subject/difficulty).
+- `src/server/app.ts` — `/api/operations` CRUD, `/api/operation-prefs` GET/PUT,
+  params-merge in `/api/kits/generate`, `operationConsistencyError`.
+- `src/server/app.test.ts` — CRUD round-trip, consistency 400, prefs, params-merge.
+- `src/client/data/entityClient.ts` — operation CRUD + prefs methods + `OperationRecord`/`OperationPrefs` types.
+- `src/client/data/entityClient.test.ts` — client method coverage.
+- `src/client/commands/registry.ts` — generic `operation.run` command.
+- `src/client/commands/registry.test.ts` — `operation.run` coverage.
+- `src/client/workspace/WorkspaceContext.tsx` — load operations + prefs, merge/order
+  anchor- and source-scope action lists.
+- `src/client/workspace/SelectionToolbar.tsx`, `SourceActionsToolbar.tsx`,
+  `WorkspaceShell.tsx`, `dock.ts`, `presets.ts`, `views.tsx` — surface the manager
+  view + custom actions in the toolbars/dock.
+- `src/client/styles.css` — manager/builder styling.
+
+### The engine (`src/ai/template.ts`)
+
+Shipped as proposed in §3 and obeys the iron rule (imports nothing from
+`src/kits`/`src/core`). One regex `/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g`
+backs both functions:
+
+```ts
+export function extractVariables(template: string): string[];
+export function renderTemplate(
+  template: string,
+  values: Record<string, unknown>,
+  opts?: { arrayJoin?: string; missing?: (name: string) => string }
+): string;
+```
+
+Total (never throws on author input): missing/null → `""` (override via `missing`),
+arrays → joined on `\n` (override via `arrayJoin`), objects → `JSON.stringify`,
+scalars → `String()`, stray single braces pass through.
+
+### The resolvePrompt swap
+
+`src/kits/structured.ts` changed its one resolve line and gained an optional store
+parameter:
+
+```ts
+// before: const prompt = getKitPrompt(request.promptId);
+const prompt = await resolvePrompt(request.promptId, store);
+```
+
+`resolvePrompt(id, store?)` (`src/kits/resolvePrompt.ts`) checks `getKitPrompt`
+first (built-ins win, id spaces disjoint by construction), else loads the stored
+`OperationRecord` and wraps it as a `ResolvedPrompt` (= `KitPrompt`) whose
+`build()` is `renderTemplate(op.promptTemplate, bindOperationValues(op, input))`.
+A stored op has no `mockContent`, so the mock path falls back to
+`spec.createDefault()`. `bindOperationValues` applies `literal` defaults and fills
+other vars from runtime input. The store is threaded from `createApp`
+(`vault.stores.operations`) into `generateStructuredContent(provider, merged, 3, store)`.
+
+### Prefs storage (operation-prefs.json)
+
+A workspace-level addition beyond the original proposal. `operation-prefs.json`
+lives in `vault.paths.studyDir` (same `vault.storage` atomic-write path as
+`workspace.json`) and holds `{ order: string[]; disabled: string[]; params:
+Record<string, Record<string,string>> }`:
+- `order` / `disabled` — the merged toolbar action list (built-in command ids +
+  `op_` ids) ordering and on/off toggles, surfaced by the manager and read by both
+  toolbars via `WorkspaceContext`.
+- `params` — per-built-in placeholder values (e.g. `grade`/`subject`). On
+  `/api/kits/generate` the server merges `prefs.params[promptId]` UNDER the runtime
+  input (`{ ...params, ...input.input }`) so runtime values always win, and only
+  the prompt's declared `params` placeholders are fillable — the固化 prompt body is
+  never user-editable. Routes: `GET`/`PUT /api/operation-prefs`.
+
+This also backs the **fork** flow (`operation.source: "custom" | "fork"`,
+`forkedFrom`): `buildForkTemplate` approximates a built-in's body as an editable
+`{{var}}` template so a teacher can fork-and-edit a code prompt into a data op.
+
+### New e2e spec
+
+`e2e/operation-authoring.spec.ts` (mock provider) drives the full loop: author a
+custom action in the builder → 试一下 preview renders the rendered template →
+Save persists a note of the chosen `outputType` → run the saved action from the
+toolbar → enable/disable toggle → edit a built-in placeholder param and assert it
+persisted to `operation-prefs.json`. Per the §7 determinism caveat, assertions key
+on note structure/type and prefs state, not mock-ignored prompt text.
+
+### Review findings
+
+Fixed:
+- **(medium) Missing `GET /api/operations/:operationId`** — added in
+  `src/server/app.ts` (returns `{operation}` or 404), mirroring
+  `GET /api/concepts/:conceptId`; it was the one CRUD verb missing.
+- **(medium) Missing unit test for `buildForkTemplate` edge cases** — exported
+  `buildForkTemplate` from `src/client/workspace/operationViews.tsx` and added
+  `operationViews.test.tsx` covering normal fork, params present, `params=[]` (no
+  extra tokens), and the `build()`-throws → empty-string fallback.
+
+Rejected:
+- **(high) "Schema field names deviate from approved specification"** — REJECTED
+  as a false positive. The shipped fields `outputContentType` / `promptTemplate` /
+  `declaredVariables` / `source` / `forkedFrom` in `src/core/schema/operation.ts`
+  match the **governing fixed-scope 定稿** exactly. The reviewer compared against
+  §4 of this proposal (which used `outputType` / `template` / `variables` /
+  `visibility`); that proposal is superseded by the fixed scope. No contract
+  mismatch exists; renaming would violate the fixed scope. No change made. (For
+  the record: the proposal's `visibility` field was dropped in favor of
+  `source`/`forkedFrom`, which the fork flow needed.)
+
+Other low-severity review items (unused-param/input redundancy, `existingNotes`
+always present in the input object) were assessed as benign — `existingNotes` is
+only *fetched* when a declared variable asks for it (`registry.ts` guards the
+`ctx.client.notes` call), and the flat well-known keys in the input object are
+intentional so flat-named templates and the built-in params merge keep working.
+
+### Still deferred (unchanged from §6 V2)
+
+Select/enum variable sources, engine `compile()` AST + `{{#if}}`/`{{#each}}`,
+per-variable transforms, escaped `\{\{` literals, and `.opspack` share/import all
+remain out of scope.

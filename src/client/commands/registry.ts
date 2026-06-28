@@ -11,6 +11,7 @@ import type {
   EntityClient,
   NodeRef,
   NoteRecord,
+  OperationVariable,
   PatchRecord,
   RelationRecord
 } from "../data/entityClient";
@@ -112,6 +113,19 @@ export type CommandContext = {
     layerNoteId?: string;
     /** The note's next FULL layer membership (note.set-layers — add/remove/move). */
     layerIds?: string[];
+    // —— operation.run (a custom AI action authored as data) ——
+    /** The op_ id (or any resolvable promptId) to run (operation.run). */
+    operationId?: string;
+    /** The note contentType the operation produces (operation.run). */
+    outputType?: string;
+    /** Whether the action runs over the focused passage ("anchor") or the whole source. */
+    scope?: "anchor" | "source";
+    /**
+     * The operation's declared variables, so run can map each declared {{name}} to
+     * the value of its source kind (anchorText / sourceTitle / existingNotes). Literal
+     * variables are bound server-side from their default.
+     */
+    variables?: OperationVariable[];
   };
   /** Current chat history (for ask-ai). */
   chatMessages?: ChatMessage[];
@@ -320,6 +334,89 @@ const setNoteLayers: Command = {
   }
 };
 
+// —— Operation (generic custom AI action) ——————————————————————————————————
+// One command backs EVERY custom Operation (op_ id). It follows the EXACT shape of
+// the textbook kit commands (materialize the passage → generate structured content →
+// emit a GeneratedDraft into the shipped generation-preview loop), but is data-driven:
+// the operationId/outputType/scope and the op's declared variables come in via the
+// payload. The server's resolvePrompt turns the op_ id into a runnable template, so
+// nothing downstream of generate changes. Built-in actions keep their own command ids.
+const runOperation: Command = {
+  id: "operation.run",
+  title: "Run Operation",
+  group: "operation",
+  // Needs the op id + output type. Source-scope needs an active source; anchor-scope
+  // needs a passage in focus (a saved anchor or a fresh draft), exactly like the kit
+  // commands' `hasPassage`.
+  isAvailable: (ctx) => {
+    if (!ctx.payload.operationId || !ctx.payload.outputType) return false;
+    return ctx.payload.scope === "source"
+      ? !!ctx.sourceId
+      : !!ctx.focus.anchor || !!ctx.focus.draft;
+  },
+  run: async (ctx) => {
+    const { operationId, outputType, scope, variables } = ctx.payload;
+    if (!operationId || !outputType) return;
+    const sourceScope = scope === "source";
+
+    // Anchor-scope materializes the focused passage into an anchor (so Save attaches
+    // there); source-scope synthesizes over the whole source and stays unanchored.
+    const anchor = sourceScope ? null : await ctx.focus.materializeAnchor();
+
+    // Gather the well-known variable SOURCES from focus/chatContext, mirroring the
+    // kit commands: anchorText = the materialized quote (or the chat fallback used by
+    // region selections), sourceTitle from the chat context. existingNotes (this
+    // source's note content) is fetched only when a declared variable asks for it.
+    const anchorText = (anchor?.quote || ctx.focus.anchor?.quote || ctx.chatContext?.quote || "").trim();
+    const sourceTitle = ctx.chatContext?.sourceTitle;
+    let existingNotes: unknown[] | undefined;
+    if (ctx.sourceId && (variables ?? []).some((v) => v.source === "existingNotes")) {
+      const { notes } = await ctx.client.notes(ctx.sourceId);
+      existingNotes = notes.map((n) => n.content);
+    }
+    const bySource: Record<string, unknown> = { anchorText, sourceTitle, existingNotes };
+
+    // Build the generate input. Pass the well-known keys through (so flat-named
+    // templates and the built-in placeholder merge still work), then map each declared
+    // {{name}} to the value of its source kind. Literal variables are bound server-side
+    // from their default (bindOperationValues), so we skip them here.
+    const input: Record<string, unknown> = { anchorText, sourceTitle, existingNotes };
+    for (const variable of variables ?? []) {
+      if (variable.source === "literal") continue;
+      const value = bySource[variable.source];
+      if (value !== undefined) input[variable.name] = value;
+    }
+
+    const { content } = await ctx.client.generateStructured({
+      promptId: operationId,
+      contentType: outputType,
+      input
+    });
+
+    // Preview path (the shipped loop): hand the draft to the host — it already holds
+    // the anchor id, so Save attaches there — instead of creating a note now.
+    if (ctx.actions.onGenerated) {
+      ctx.actions.onGenerated({
+        promptId: operationId,
+        contentType: outputType,
+        input,
+        content,
+        anchorId: anchor?.id,
+        sourceId: ctx.sourceId
+      });
+      return;
+    }
+    // Legacy auto-save fallback (no preview host wired) — mirrors the kit commands.
+    const { note } = await ctx.client.createNote({
+      sourceId: ctx.sourceId,
+      anchorIds: anchor ? [anchor.id] : [],
+      contentType: outputType,
+      content
+    });
+    ctx.actions.onNoteCreated?.(note);
+  }
+};
+
 const registry = new Map<string, Command>();
 
 export function registerCommand(command: Command): void {
@@ -342,5 +439,15 @@ export async function runCommand(id: string, ctx: CommandContext): Promise<boole
   return true;
 }
 
-for (const command of [askAi, addNote, createPatch, createConcept, linkNote, createRelation, toggleLayer, setNoteLayers])
+for (const command of [
+  askAi,
+  addNote,
+  createPatch,
+  createConcept,
+  linkNote,
+  createRelation,
+  toggleLayer,
+  setNoteLayers,
+  runOperation
+])
   registerCommand(command);

@@ -404,8 +404,8 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
             no kit is installed or no source is open. */}
         <SourceActionsToolbar
           visible={!!ctx.activeSource}
-          kitIds={activeKitIds}
-          onRun={(commandId) => void dispatch(commandId, {})}
+          items={ctx.sourceActions}
+          onRun={(action) => ctx.runAction(action)}
         />
         {/* The passage everything below acts on — auto-filled from the reader
             selection (its anchor is created lazily when you ask or save). */}
@@ -437,8 +437,8 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
             Practice / Mistake). Empty — and absent — when no kit is installed. */}
         <SelectionToolbar
           visible={!!focus.draft || !!focus.anchor}
-          kitIds={activeKitIds}
-          onRun={(commandId) => void dispatch(commandId, {})}
+          items={ctx.selectionActions}
+          onRun={(action) => ctx.runAction(action)}
         />
 
         {/* generate → preview → edit → save: a kit AI draft awaiting Save. A SEPARATE

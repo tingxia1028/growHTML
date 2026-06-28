@@ -5,9 +5,11 @@
 // deterministic sample); `src/ai` owns the mechanism and never imports a kit.
 
 import { getNoteContentSpec } from "../core/notes/contentTypes";
+import type { OperationRecord } from "../core/schema";
+import type { SnapshotStore } from "../core/store/snapshotStore";
 import type { ChatContext, ModelProvider } from "../ai/provider";
 import { generateStructured, StructuredGenerationError } from "../ai/structured";
-import { getKitPrompt } from "./prompts";
+import { resolvePrompt } from "./resolvePrompt";
 
 // Re-export so existing importers (and tests) keep their import path.
 export { StructuredGenerationError, extractJson } from "../ai/structured";
@@ -25,9 +27,11 @@ export type GenerateStructuredRequest = {
 export async function generateStructuredContent(
   provider: ModelProvider,
   request: GenerateStructuredRequest,
-  maxAttempts = 3
+  maxAttempts = 3,
+  store?: SnapshotStore<OperationRecord>
 ): Promise<unknown> {
-  const prompt = getKitPrompt(request.promptId);
+  // Unify built-in code prompts and custom data operations at this one step.
+  const prompt = await resolvePrompt(request.promptId, store);
   if (!prompt) throw new StructuredGenerationError(`Unknown promptId: ${request.promptId}`);
   const spec = getNoteContentSpec(request.contentType);
   if (!spec) throw new StructuredGenerationError(`Unknown contentType: ${request.contentType}`);

@@ -13,6 +13,8 @@ import {
   conceptSchema,
   nodeRefSchema,
   noteSchema,
+  operationSchema,
+  operationVariableSchema,
   patchActionSchema,
   patchSchema,
   relationKindSchema,
@@ -20,9 +22,11 @@ import {
   sourceSchema,
   type AnchorRecord,
   type HtmlSelectionAnchor,
+  type OperationRecord,
   type PatchRecord,
   type PatchStatus
 } from "../core/schema";
+import { extractVariables } from "../ai/template";
 import { getNoteContentSpec, parseNoteContent } from "../core/notes/contentTypes";
 import { importLocalAsset, readAssetBytes } from "../core/store/assets";
 import { createCustomLayer, ensureOwnedLayer, ensurePresetLayers } from "../core/study-layer/layers";
@@ -165,6 +169,44 @@ const createRelationRequestSchema = z.object({
   label: z.string().optional(),
   confidence: z.number().min(0).max(1).optional()
 });
+
+// A custom AI Operation authored as DATA. POST creates from scratch (or from a
+// "复制为我的插件" fork); PATCH merge-updates an existing one. The envelope fields
+// (id/type/timestamps) are server-set, so the request shapes carry only the
+// editable body.
+const createOperationRequestSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().default(""),
+  outputContentType: z.string().min(1),
+  promptTemplate: z.string().min(1),
+  declaredVariables: z.array(operationVariableSchema).default([]),
+  source: z.enum(["custom", "fork"]).default("custom"),
+  forkedFrom: z.string().optional(),
+  scope: z.enum(["anchor", "source"]).default("anchor")
+});
+const updateOperationRequestSchema = z
+  .object({
+    name: z.string().min(1).optional(),
+    description: z.string().optional(),
+    outputContentType: z.string().min(1).optional(),
+    promptTemplate: z.string().min(1).optional(),
+    declaredVariables: z.array(operationVariableSchema).optional(),
+    source: z.enum(["custom", "fork"]).optional(),
+    forkedFrom: z.string().optional(),
+    scope: z.enum(["anchor", "source"]).optional()
+  })
+  .refine((input) => Object.keys(input).length > 0, { message: "operation update requires at least one field" });
+
+// operation-prefs.json — a workspace-level small JSON file (same vault.storage
+// pattern as workspace.json) holding the action ORDER + DISABLED set (built-in
+// command ids + op_ ids) and per-built-in placeholder PARAMS the server merges
+// into generate input before build().
+const operationPrefsSchema = z.object({
+  order: z.array(z.string()).default([]),
+  disabled: z.array(z.string()).default([]),
+  params: z.record(z.string(), z.record(z.string(), z.string())).default({})
+});
+const emptyOperationPrefs: z.infer<typeof operationPrefsSchema> = { order: [], disabled: [], params: {} };
 
 // Workspace layout is UI state, not a core entity: stored as a single JSON file
 // in the vault and validated only structurally.
@@ -947,6 +989,111 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
     }
   });
 
+  // —— Operations (custom AI actions authored as data) —————————————————
+  app.get("/api/operations", async (_req, res, next) => {
+    try {
+      res.json({ operations: await vault.stores.operations.list() });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/operations", async (req, res, next) => {
+    try {
+      const input = createOperationRequestSchema.parse(req.body);
+      const consistency = operationConsistencyError(input.promptTemplate, input.declaredVariables);
+      if (consistency) {
+        res.status(400).json({ error: consistency });
+        return;
+      }
+      const now = new Date().toISOString();
+      const operation = operationSchema.parse({
+        id: createEntityId("operation"),
+        type: "operation",
+        schemaVersion: 1,
+        createdAt: now,
+        updatedAt: now,
+        createdBy: "user",
+        ...input
+      });
+      await vault.stores.operations.upsert(operation);
+      res.status(201).json({ operation });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/operations/:operationId", async (req, res, next) => {
+    try {
+      const operation = await vault.stores.operations.get(req.params.operationId);
+      if (!operation) {
+        res.status(404).json({ error: "Operation not found" });
+        return;
+      }
+      res.json({ operation });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch("/api/operations/:operationId", async (req, res, next) => {
+    try {
+      const input = updateOperationRequestSchema.parse(req.body);
+      const existing = await vault.stores.operations.get(req.params.operationId);
+      if (!existing) {
+        res.status(404).json({ error: "Operation not found" });
+        return;
+      }
+      const merged = { ...existing, ...input, updatedAt: new Date().toISOString() };
+      const consistency = operationConsistencyError(merged.promptTemplate, merged.declaredVariables);
+      if (consistency) {
+        res.status(400).json({ error: consistency });
+        return;
+      }
+      const operation = operationSchema.parse(merged);
+      await vault.stores.operations.upsert(operation);
+      res.json({ operation });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/operations/:operationId", async (req, res, next) => {
+    try {
+      const removed = await vault.stores.operations.delete(req.params.operationId);
+      if (!removed) {
+        res.status(404).json({ error: "Operation not found" });
+        return;
+      }
+      res.json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // —— Operation prefs (ordering / enable-disable / built-in placeholder params) ——
+  const operationPrefsPath = path.join(vault.paths.studyDir, "operation-prefs.json");
+
+  app.get("/api/operation-prefs", async (_req, res, next) => {
+    try {
+      const text = await vault.storage.readText(operationPrefsPath);
+      const prefs = text ? operationPrefsSchema.parse(JSON.parse(text)) : emptyOperationPrefs;
+      res.json({ prefs });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/operation-prefs", async (req, res, next) => {
+    try {
+      const prefs = operationPrefsSchema.parse(req.body);
+      await vault.storage.writeTextAtomic(operationPrefsPath, `${JSON.stringify(prefs, null, 2)}\n`);
+      res.json({ prefs });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // —— Workspace layout (UI state) —————————————————————————————————————
   const workspacePath = path.join(vault.paths.studyDir, "workspace.json");
 
@@ -1103,7 +1250,14 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
   app.post("/api/kits/generate", async (req, res, next) => {
     try {
       const input = kitGenerateSchema.parse(req.body);
-      const content = await generateStructuredContent(provider, input);
+      // Server-side built-in placeholder fill: merge the per-vault params for this
+      // promptId UNDER the runtime input (so runtime values like anchorText always
+      // win) BEFORE the prompt's build() runs. Custom op_ ids simply have no params.
+      const prefsText = await vault.storage.readText(operationPrefsPath);
+      const prefs = prefsText ? operationPrefsSchema.parse(JSON.parse(prefsText)) : emptyOperationPrefs;
+      const params = prefs.params[input.promptId] ?? {};
+      const merged = { ...input, input: { ...params, ...(input.input ?? {}) } };
+      const content = await generateStructuredContent(provider, merged, 3, vault.stores.operations);
       res.json({ content, provider: provider.id });
     } catch (error) {
       if (error instanceof StructuredGenerationError) {
@@ -1157,6 +1311,30 @@ async function layerVisibilityFilter(
     enabled = new Set((await vault.stores.layers.list()).filter((layer) => layer.enabled).map((layer) => layer.id));
   }
   return (note) => note.layerIds.length === 0 || note.layerIds.some((id) => enabled.has(id));
+}
+
+// Consistency between a custom Operation's template and its declared variables.
+// Orphan placeholders (in the template but not declared) are SOFT-allowed — they
+// simply render "" at run time, so the engine stays total. The one hard error: a
+// `literal` variable marked required with no default can never produce a value
+// (literals always use their default), so block it. Returns null when consistent.
+function operationConsistencyError(
+  promptTemplate: string,
+  declaredVariables: z.infer<typeof operationVariableSchema>[]
+): string | null {
+  // Orphan placeholders (referenced but not declared) are soft-allowed: they render
+  // "" at run time. A REQUIRED variable that the template never references, however,
+  // can never be injected — flag that as an authoring mistake.
+  const referenced = new Set(extractVariables(promptTemplate));
+  for (const variable of declaredVariables) {
+    if (variable.required && variable.source === "literal" && !(variable.default && variable.default.trim())) {
+      return `Required literal variable "${variable.name}" needs a default value`;
+    }
+    if (variable.required && !referenced.has(variable.name)) {
+      return `Required variable "${variable.name}" is not used in the template`;
+    }
+  }
+  return null;
 }
 
 async function getHtmlAnchorsForSource(vault: StudyVault, sourceId: string) {

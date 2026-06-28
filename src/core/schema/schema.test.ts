@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   anchorSchema,
   noteSchema,
+  operationSchema,
+  operationVariableSchema,
   relationSchema,
   sourceSchema,
   vaultEntitySchema
@@ -80,6 +82,48 @@ describe("vault entity schemas", () => {
         selector: undefined
       })
     ).toThrow();
+  });
+
+  it("accepts a valid operation record and applies defaults", () => {
+    const op = operationSchema.parse({
+      id: "op_01ARZ3NDEKTSV4RRFFQ69G5FAX",
+      type: "operation",
+      schemaVersion: 1,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      createdBy: "user",
+      name: "Summarize",
+      outputContentType: "markdown",
+      promptTemplate: "Summarize {{anchorText}}"
+    });
+    expect(op.declaredVariables).toEqual([]);
+    expect(op.source).toBe("custom");
+    expect(op.scope).toBe("anchor");
+    expect(op.description).toBe("");
+  });
+
+  it("rejects an operation with an empty name or missing promptTemplate", () => {
+    const base = {
+      id: "op_01ARZ3NDEKTSV4RRFFQ69G5FAX",
+      type: "operation" as const,
+      schemaVersion: 1 as const,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      createdBy: "user" as const,
+      name: "Summarize",
+      outputContentType: "markdown",
+      promptTemplate: "Summarize {{anchorText}}"
+    };
+    expect(() => operationSchema.parse({ ...base, name: "" })).toThrow();
+    expect(() => operationSchema.parse({ ...base, promptTemplate: undefined })).toThrow();
+    expect(() => operationSchema.parse({ ...base, outputContentType: "" })).toThrow();
+    expect(() => operationSchema.parse({ ...base, id: "concept_01ARZ3NDEKTSV4RRFFQ69G5FAX" })).toThrow();
+  });
+
+  it("enforces the {{var}}-safe identifier grammar on declared variables", () => {
+    expect(operationVariableSchema.parse({ name: "anchorText", source: "anchorText" }).required).toBe(false);
+    expect(() => operationVariableSchema.parse({ name: "1bad", source: "literal" })).toThrow();
+    expect(() => operationVariableSchema.parse({ name: "a-b", source: "literal" })).toThrow();
   });
 
   it("validates relation node refs", () => {

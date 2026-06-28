@@ -4,6 +4,7 @@ import {
   assetSchema,
   conceptSchema,
   noteSchema,
+  operationSchema,
   patchSchema,
   relationSchema,
   sourceSchema,
@@ -12,6 +13,7 @@ import {
   type AssetRecord,
   type ConceptRecord,
   type NoteRecord,
+  type OperationRecord,
   type PatchRecord,
   type RelationRecord,
   type SourceRecord,
@@ -29,7 +31,8 @@ export const entityFileNames = {
   concepts: "concepts.jsonl",
   relations: "relations.jsonl",
   assets: "assets.jsonl",
-  layers: "layers.jsonl"
+  layers: "layers.jsonl",
+  operations: "operations.jsonl"
 } as const;
 
 export type EntityStores = {
@@ -41,6 +44,7 @@ export type EntityStores = {
   relations: SnapshotStore<RelationRecord>;
   assets: SnapshotStore<AssetRecord>;
   layers: SnapshotStore<StudyLayerRecord>;
+  operations: SnapshotStore<OperationRecord>;
 };
 
 export function createEntityStores(studyDir: string, storage: StorageAdapter = nodeStorage): EntityStores {
@@ -53,7 +57,8 @@ export function createEntityStores(studyDir: string, storage: StorageAdapter = n
     concepts: createSnapshotStore({ filePath: filePath(entityFileNames.concepts), schema: conceptSchema, storage }),
     relations: createSnapshotStore({ filePath: filePath(entityFileNames.relations), schema: relationSchema, storage }),
     assets: createSnapshotStore({ filePath: filePath(entityFileNames.assets), schema: assetSchema, storage }),
-    layers: createSnapshotStore({ filePath: filePath(entityFileNames.layers), schema: studyLayerSchema, storage })
+    layers: createSnapshotStore({ filePath: filePath(entityFileNames.layers), schema: studyLayerSchema, storage }),
+    operations: createSnapshotStore({ filePath: filePath(entityFileNames.operations), schema: operationSchema, storage })
   };
 }
 

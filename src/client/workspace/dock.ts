@@ -115,6 +115,7 @@ const PANE_LABELS: Record<string, string> = {
   study: "Study",
   "concept.list": "Concepts",
   "layer.switcher": "Layers",
+  "operation.manager": "Actions",
   practice: "Practice"
 };
 

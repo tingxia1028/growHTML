@@ -276,3 +276,101 @@ describe("command: note.set-layers", () => {
     expect(getCommand("note.set-layers")!.isAvailable(baseCtx({ payload: { layerIds: ["layer_1"] } }))).toBe(false);
   });
 });
+
+describe("command: operation.run", () => {
+  it("anchor-scope: materializes the passage, generates, and emits a GeneratedDraft", async () => {
+    const onGenerated = vi.fn();
+    const ctx = baseCtx({
+      payload: {
+        operationId: "op_1",
+        outputType: "markdown",
+        scope: "anchor",
+        variables: [{ name: "topic", source: "anchorText", required: true }]
+      },
+      chatContext: { quote: "passage", sourceTitle: "Chapter 1" },
+      actions: { onGenerated }
+    });
+
+    const ran = await runCommand("operation.run", ctx);
+
+    expect(ran).toBe(true);
+    expect(ctx.focus.materializeAnchor).toHaveBeenCalledOnce();
+    // The declared {{topic}} (source anchorText) is mapped onto the materialized quote,
+    // and the well-known keys are passed through for built-in placeholder merging.
+    expect(ctx.client.generateStructured).toHaveBeenCalledWith({
+      promptId: "op_1",
+      contentType: "markdown",
+      input: expect.objectContaining({ topic: "passage", anchorText: "passage", sourceTitle: "Chapter 1" })
+    });
+    expect(onGenerated).toHaveBeenCalledWith(
+      expect.objectContaining({ promptId: "op_1", contentType: "markdown", anchorId: "anchor_1", sourceId: "src_1" })
+    );
+    // No note is persisted in the preview path — Save does that later.
+    expect(ctx.client.createNote).not.toHaveBeenCalled();
+  });
+
+  it("source-scope: skips materialization and gathers existingNotes for the declared variable", async () => {
+    const onGenerated = vi.fn();
+    const notes = vi.fn(async () => ({ notes: [{ content: "n1" }, { content: "n2" }] as never }));
+    const ctx = baseCtx({
+      payload: {
+        operationId: "op_2",
+        outputType: "textbook.review-pack",
+        scope: "source",
+        variables: [{ name: "existingNotes", source: "existingNotes", required: false }]
+      },
+      client: { ...baseCtx().client, notes },
+      actions: { onGenerated }
+    });
+
+    await runCommand("operation.run", ctx);
+
+    expect(ctx.focus.materializeAnchor).not.toHaveBeenCalled();
+    expect(notes).toHaveBeenCalledWith("src_1");
+    expect(ctx.client.generateStructured).toHaveBeenCalledWith({
+      promptId: "op_2",
+      contentType: "textbook.review-pack",
+      input: expect.objectContaining({ existingNotes: ["n1", "n2"] })
+    });
+    expect(onGenerated).toHaveBeenCalledWith(expect.objectContaining({ anchorId: undefined, sourceId: "src_1" }));
+  });
+
+  it("does not fetch notes when no declared variable needs them", async () => {
+    const ctx = baseCtx({
+      payload: { operationId: "op_3", outputType: "markdown", scope: "anchor", variables: [] },
+      actions: { onGenerated: vi.fn() }
+    });
+    await runCommand("operation.run", ctx);
+    expect(ctx.client.notes).not.toHaveBeenCalled();
+  });
+
+  it("falls back to auto-save when no preview host is wired", async () => {
+    const onNoteCreated = vi.fn();
+    const ctx = baseCtx({
+      payload: { operationId: "op_4", outputType: "markdown", scope: "anchor", variables: [] },
+      actions: { onNoteCreated }
+    });
+    await runCommand("operation.run", ctx);
+    expect(ctx.client.createNote).toHaveBeenCalledWith(
+      expect.objectContaining({ anchorIds: ["anchor_1"], contentType: "markdown" })
+    );
+    expect(onNoteCreated).toHaveBeenCalledOnce();
+  });
+
+  it("is unavailable without an operationId/outputType, and gates scope on source vs passage", () => {
+    expect(getCommand("operation.run")!.isAvailable(baseCtx({ payload: { outputType: "markdown" } }))).toBe(false);
+    expect(getCommand("operation.run")!.isAvailable(baseCtx({ payload: { operationId: "op_1" } }))).toBe(false);
+    // Source-scope without a source is unavailable.
+    expect(
+      getCommand("operation.run")!.isAvailable(
+        baseCtx({ payload: { operationId: "op_1", outputType: "markdown", scope: "source" }, sourceId: undefined })
+      )
+    ).toBe(false);
+    // Anchor-scope with a draft in focus is available.
+    expect(
+      getCommand("operation.run")!.isAvailable(
+        baseCtx({ payload: { operationId: "op_1", outputType: "markdown", scope: "anchor" } })
+      )
+    ).toBe(true);
+  });
+});

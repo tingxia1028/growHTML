@@ -1,13 +1,16 @@
-// SelectionToolbar — the host surface for kit `selection-toolbar` contributions. When
-// a passage is in focus, it renders the installed kits' quick actions (e.g. the
-// Textbook kit's Explain / Practice / Mistake) and dispatches the backing command on
-// click. With no kit installed it renders nothing — zero impact on the base app.
+// SelectionToolbar — the host surface for passage-scoped actions. When a passage is in
+// focus it renders the configured anchor-scope action list (built-in kit actions like
+// the Textbook kit's Explain / Practice / Mistake, PLUS custom Operations) and runs the
+// backing action on click. The host (WorkspaceContext) assembles + orders the list from
+// kit contributions and the user's operation-prefs; this component is a dumb renderer,
+// so the order / enable-disable the user configured shows up here. Empty list → nothing.
 
 import { ListChecks, Sparkles, TriangleAlert, Wand2 } from "lucide-react";
 import type { ComponentType } from "react";
-import { kitSurfaceItems } from "../../kits/clientContext";
+import type { ToolbarAction } from "./WorkspaceContext";
 
-// Map the kit's icon names (presentation hints) to concrete lucide icons.
+// Map the kit's icon names (presentation hints) to concrete lucide icons. Custom ops
+// carry no icon and fall back to the generic wand.
 const ICONS: Record<string, ComponentType<{ size?: number }>> = {
   sparkles: Sparkles,
   "list-checks": ListChecks,
@@ -17,16 +20,15 @@ const ICONS: Record<string, ComponentType<{ size?: number }>> = {
 export type SelectionToolbarProps = {
   /** Show only when there's a passage to act on (a saved anchor or a fresh draft). */
   visible: boolean;
-  /** The active source's effective kit ids — only these kits' actions are shown. */
-  kitIds: readonly string[];
-  /** Run a command by id (the host wires this to its dispatch). */
-  onRun(commandId: string): void;
+  /** The ordered, enabled anchor-scope actions (built-in + custom). */
+  items: ToolbarAction[];
+  /** Run an action (the host wires this to runAction). */
+  onRun(action: ToolbarAction): void;
   /** Whether a command is currently running (disables the buttons). */
   busy?: boolean;
 };
 
-export function SelectionToolbar({ visible, kitIds, onRun, busy }: SelectionToolbarProps) {
-  const items = kitSurfaceItems("selection-toolbar", kitIds);
+export function SelectionToolbar({ visible, items, onRun, busy }: SelectionToolbarProps) {
   if (!visible || items.length === 0) return null;
 
   return (
@@ -35,12 +37,14 @@ export function SelectionToolbar({ visible, kitIds, onRun, busy }: SelectionTool
         const Icon = (item.icon && ICONS[item.icon]) || Wand2;
         return (
           <button
-            key={item.commandId}
+            key={item.id}
             type="button"
             className="selection-toolbar-btn"
+            data-action-kind={item.kind}
+            data-action-id={item.id}
             title={item.group ? `${item.group}: ${item.title}` : item.title}
             disabled={busy}
-            onClick={() => onRun(item.commandId)}
+            onClick={() => onRun(item)}
           >
             <Icon size={14} />
             {item.title}

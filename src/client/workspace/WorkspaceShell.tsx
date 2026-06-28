@@ -39,6 +39,8 @@ import "./views";
 import "./conceptViews";
 import "./layerViews";
 import "./practiceViews";
+//   ./operationViews → operation.manager (the operation-as-data builder + manager)
+import "./operationViews";
 
 // px size overrides keyed by dock child key (leaf nodeId, else its tree path).
 const SIZES_KEY = "sv-panel-widths";

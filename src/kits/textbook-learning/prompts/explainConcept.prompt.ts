@@ -12,6 +12,10 @@ const snippet = (text: string, n = 60) => {
 export const explainConceptPrompt: KitPrompt<ExplainInput> = {
   id: "textbook.explain-concept",
   outputType: "textbook.explanation",
+  params: [
+    { name: "grade", label: "学段/年级", kind: "grade" },
+    { name: "subject", label: "学科", kind: "text" }
+  ],
   build: (input) =>
     [
       `You are an AI tutor for ${input.grade ?? "secondary-school"} students` +

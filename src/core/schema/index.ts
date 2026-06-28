@@ -13,6 +13,7 @@ export * from "./asset";
 export * from "./common";
 export * from "./concept";
 export * from "./note";
+export * from "./operation";
 export * from "./patch";
 export * from "./relation";
 export * from "./source";

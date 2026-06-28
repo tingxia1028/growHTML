@@ -114,6 +114,36 @@ describe("entityClient", () => {
     expect(calls[4]).toMatchObject({ url: "/api/workspace", method: "PUT" });
   });
 
+  it("hits the right method/url for operation CRUD", async () => {
+    const calls = mockFetch({ operation: { id: "op_1" } });
+    await entityClient.operations();
+    await entityClient.createOperation({
+      name: "Summarize",
+      outputContentType: "markdown",
+      promptTemplate: "Summarize {{anchorText}}"
+    });
+    await entityClient.updateOperation("op_1", { name: "Renamed" });
+    await entityClient.deleteOperation("op_1");
+
+    expect(calls[0]).toMatchObject({ url: "/api/operations", method: "GET" });
+    expect(calls[1]).toMatchObject({
+      url: "/api/operations",
+      method: "POST",
+      body: { name: "Summarize", outputContentType: "markdown", promptTemplate: "Summarize {{anchorText}}" }
+    });
+    expect(calls[2]).toMatchObject({ url: "/api/operations/op_1", method: "PATCH", body: { name: "Renamed" } });
+    expect(calls[3]).toMatchObject({ url: "/api/operations/op_1", method: "DELETE" });
+  });
+
+  it("reads and writes operation prefs (ordering / disabled / params)", async () => {
+    const prefs = { order: ["textbook.explain-concept", "op_1"], disabled: ["op_2"], params: { "textbook.explain-concept": { grade: "5" } } };
+    const calls = mockFetch({ prefs });
+    await entityClient.operationPrefs();
+    await entityClient.saveOperationPrefs(prefs);
+    expect(calls[0]).toMatchObject({ url: "/api/operation-prefs", method: "GET" });
+    expect(calls[1]).toMatchObject({ url: "/api/operation-prefs", method: "PUT", body: prefs });
+  });
+
   it("throws the server error message on failure", async () => {
     vi.stubGlobal(
       "fetch",

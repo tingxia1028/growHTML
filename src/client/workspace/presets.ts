@@ -33,7 +33,8 @@ const studyVaultDock: DockNode = split("row", [
   { size: "flex", node: leaf("source-viewer") },
   { size: 380, node: leaf("study") },
   { size: 340, node: leaf("concepts") },
-  { size: 280, node: leaf("layers") }
+  { size: 280, node: leaf("layers") },
+  { size: 320, node: leaf("operations") }
 ]);
 
 export const studyVaultLayout: WorkspaceLayout = {
@@ -44,7 +45,9 @@ export const studyVaultLayout: WorkspaceLayout = {
     ...threePane.nodes,
     { id: "concepts", kind: "concept.list" },
     // V2 Study Layer switcher — additive pane, like concepts.
-    { id: "layers", kind: "layer.switcher" }
+    { id: "layers", kind: "layer.switcher" },
+    // operation-as-data builder + manager — additive pane, like concepts/layers.
+    { id: "operations", kind: "operation.manager" }
   ],
   layout: studyVaultDock
 };

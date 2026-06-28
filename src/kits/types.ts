@@ -61,6 +61,19 @@ export type KitPrompt<Input = Record<string, unknown>> = {
   build(input: Input): string;
   /** Deterministic valid sample the mock provider echoes (real providers ignore). */
   mockContent?(input: Input): unknown;
+  /**
+   * OPTIONAL placeholder params a built-in prompt's `build()` already reads (e.g.
+   * grade/difficulty/language). They advertise which keys the per-vault
+   * `operation-prefs.json` may fill — the server merges these values into `input`
+   * BEFORE `build()` runs. They NEVER let a user override the固化 prompt body; only
+   * the declared placeholders are fillable. React-free (the manager UI reads it).
+   */
+  params?: {
+    name: string;
+    label?: string;
+    kind?: "grade" | "difficulty" | "language" | "text";
+    default?: string;
+  }[];
 };
 
 // What a kit's `install(ctx)` is handed — typed sinks into the host registries.

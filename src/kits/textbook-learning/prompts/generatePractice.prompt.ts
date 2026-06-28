@@ -12,6 +12,11 @@ const snippet = (text: string, n = 60) => {
 export const generatePracticePrompt: KitPrompt<PracticeInput> = {
   id: "textbook.generate-practice",
   outputType: "textbook.exercise",
+  params: [
+    { name: "grade", label: "学段/年级", kind: "grade" },
+    { name: "subject", label: "学科", kind: "text" },
+    { name: "difficulty", label: "难度", kind: "difficulty" }
+  ],
   build: (input) =>
     [
       `You are an AI tutor for ${input.grade ?? "secondary-school"} students` +
