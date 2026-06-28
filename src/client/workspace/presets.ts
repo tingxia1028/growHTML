@@ -32,6 +32,7 @@ const studyVaultDock: DockNode = split("row", [
   { size: 300, node: leaf("library") },
   { size: "flex", node: leaf("source-viewer") },
   { size: 380, node: leaf("study") },
+  { size: 240, node: leaf("bookmarks") },
   { size: 340, node: leaf("concepts") },
   { size: 280, node: leaf("layers") },
   { size: 320, node: leaf("operations") }
@@ -43,6 +44,8 @@ export const studyVaultLayout: WorkspaceLayout = {
   mode: "dock",
   nodes: [
     ...threePane.nodes,
+    // Bookmark V1 jump strip — additive pane, like concepts/layers.
+    { id: "bookmarks", kind: "bookmark.list" },
     { id: "concepts", kind: "concept.list" },
     // V2 Study Layer switcher — additive pane, like concepts.
     { id: "layers", kind: "layer.switcher" },

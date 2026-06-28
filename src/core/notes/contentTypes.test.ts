@@ -46,4 +46,31 @@ describe("note content specs", () => {
     expect(getNoteContentSpec("mindmap")!.toSearchText({ title: "Root", children: [{ title: "Child" }] })).toContain("Child");
     expect(getNoteContentSpec("html-sandbox")!.toSearchText({ html: "<p>Hi <b>there</b></p>" })).toBe("Hi there");
   });
+
+  // Bookmark — a note type, zero core-schema change (docs/design/bookmark-modeling.md).
+  describe("bookmark", () => {
+    it("is registered as a built-in content type", () => {
+      expect(listNoteContentSpecs().map((s) => s.contentType)).toContain("bookmark");
+    });
+
+    it("createDefault is an empty-label bookmark that round-trips its own schema", () => {
+      const spec = getNoteContentSpec("bookmark")!;
+      expect(spec.createDefault()).toEqual({ label: "" });
+      expect(() => spec.schema.parse(spec.createDefault())).not.toThrow();
+    });
+
+    it("validates content: requires a string label, color/order optional", () => {
+      expect(() => parseNoteContent("bookmark", { label: "Intro" })).not.toThrow();
+      expect(() =>
+        parseNoteContent("bookmark", { label: "Intro", color: "#ff0000", order: 2 })
+      ).not.toThrow();
+      // Missing/non-string label is rejected before storage.
+      expect(() => parseNoteContent("bookmark", {})).toThrow();
+      expect(() => parseNoteContent("bookmark", { label: 5 })).toThrow();
+    });
+
+    it("toSearchText returns the label", () => {
+      expect(getNoteContentSpec("bookmark")!.toSearchText({ label: "Chapter 3" })).toBe("Chapter 3");
+    });
+  });
 });

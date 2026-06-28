@@ -83,6 +83,18 @@ const timedMediaSchema = z.object({
 });
 const htmlSandboxSchema = z.object({ html: z.string() });
 
+// Bookmark: a lightweight NAMED marker on a passage. It reuses the note envelope
+// (anchor, layers, study-pack travel, search) but its content is intentionally
+// minimal — a label, an optional color, an optional order. The bespoke "show it as
+// a chip, not a card" presentation lives entirely in the client plugin; the data is
+// a plain note. See docs/design/bookmark-modeling.md.
+export const BOOKMARK_CONTENT_TYPE = "bookmark";
+const bookmarkSchema = z.object({
+  label: z.string(),
+  color: z.string().optional(),
+  order: z.number().optional()
+});
+
 const stripTags = (html: string) => html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 
 export const builtinNoteContentSpecs: NoteContentSpec[] = [
@@ -163,6 +175,12 @@ export const builtinNoteContentSpecs: NoteContentSpec[] = [
     schema: htmlSandboxSchema,
     createDefault: () => ({ html: "" }),
     toSearchText: (c) => stripTags((c as z.infer<typeof htmlSandboxSchema>).html)
+  },
+  {
+    contentType: BOOKMARK_CONTENT_TYPE,
+    schema: bookmarkSchema,
+    createDefault: () => ({ label: "" }),
+    toSearchText: (c) => (c as z.infer<typeof bookmarkSchema>).label
   }
 ];
 

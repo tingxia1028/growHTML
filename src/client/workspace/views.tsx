@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import type { NoteRecord, StudyLayerRecord } from "../data/entityClient";
 import { renderNoteContent } from "../../adapters/notes/render";
+import { noteCardsFrom } from "./noteCards";
 import { TerminalPanel } from "../TerminalPanel";
 import { FileTree, baseName } from "../FileTree";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
@@ -55,6 +56,7 @@ import "../../kits/clientKits";
 function noteTypeOptions(activeKitIds: readonly string[]): { contentType: string; label: string }[] {
   const all = listNoteTypes()
     .filter((plugin) => {
+      if (plugin.hidden) return false;
       const owner = noteTypeOwnerKit(plugin.contentType);
       return !owner || activeKitIds.includes(owner);
     })
@@ -393,6 +395,10 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
     activeKitIds
   } = ctx;
 
+  // Bookmarks are notes too, but they surface in the dedicated Bookmarks pane (and as
+  // inline anchor markers), NOT as cards here — so they read as markers, not content.
+  const noteCards = noteCardsFrom(visibleNotes);
+
   return (
     <aside className="study-panel">
       <section className="chat-box">
@@ -560,9 +566,9 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
           )}
         </div>
 
-        {visibleNotes.length ? (
+        {noteCards.length ? (
           <div className="record-list note-list">
-            {visibleNotes.map((note) => {
+            {noteCards.map((note) => {
               const contentType = note.contentType ?? "markdown";
               // Each note renders through its registered client NoteType plugin
               // (content decoupled from renderer). An UNKNOWN type (no plugin) falls

@@ -88,11 +88,12 @@ const ALL_TYPES = [
   "image",
   "audio",
   "video",
-  "html-sandbox"
+  "html-sandbox",
+  "bookmark"
 ];
 
 describe("NoteTypeRegistry", () => {
-  it("registers a client plugin for every one of the 12 core content specs", () => {
+  it("registers a client plugin for every core content spec", () => {
     for (const type of ALL_TYPES) {
       expect(getNoteType(type), `missing plugin for ${type}`).toBeTruthy();
       expect(listNoteTypes().map((p) => p.contentType)).toContain(type);
@@ -209,6 +210,15 @@ describe("NoteType render — sample content per type", () => {
     expect(html).toContain("srcdoc");
   });
 
+  it("bookmark renders a compact label chip with a color dot (not a card)", () => {
+    const html = renderToHtml(getNoteType("bookmark")!.render({ content: { label: "Chapter 3", color: "#ff0000" } }));
+    expect(html).toContain("sv-bookmark-chip");
+    expect(html).toContain("sv-bookmark-dot");
+    expect(html).toContain("Chapter 3");
+    // The dot carries the bookmark color.
+    expect(html).toMatch(/sv-bookmark-dot[^>]*style="[^"]*(rgb\(255, 0, 0\)|#ff0000)/i);
+  });
+
   it("a render NEVER throws on a foreign/mis-shaped content (inert fallback)", () => {
     // flashcard given a string, quiz given null, code given a number — none should throw.
     expect(() => renderToHtml(getNoteType("flashcard")!.render({ content: "oops" }))).not.toThrow();
@@ -286,6 +296,15 @@ describe("NoteType edit — onChange emits content that round-trips the core sch
     });
     expect(last).toEqual({ html: "<p>note</p>" });
     expect(() => spec("html-sandbox").schema.parse(last)).not.toThrow();
+  });
+
+  it("bookmark editor emits {label} the core schema accepts", () => {
+    const seed = spec("bookmark").createDefault();
+    const { last } = renderEditor("bookmark", seed, (container) => {
+      setValue(container.querySelector("input.bookmark-label")!, "Key passage");
+    });
+    expect(last).toMatchObject({ label: "Key passage" });
+    expect(() => spec("bookmark").schema.parse(last)).not.toThrow();
   });
 
   it("media editor emits a caption (asset pick is desktop-only; covered in electron/e2e)", () => {

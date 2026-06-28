@@ -16,6 +16,7 @@ import type {
   RelationRecord
 } from "../data/entityClient";
 import type { FocusContextValue } from "../focus/FocusContext";
+import { BOOKMARK_CONTENT_TYPE } from "../../core/notes/contentTypes";
 
 // A unit of AI output BEFORE it is persisted: the prompt/contentType it came from,
 // the input that produced it, the generated `content`, and the anchor/source it
@@ -211,6 +212,36 @@ const addNote: Command = {
       anchorIds,
       contentType: ctx.payload.contentType ?? "markdown",
       content
+    });
+    ctx.actions.onNoteCreated?.(note);
+  }
+};
+
+// —— Bookmark ————————————————————————————————————————————————————————————
+// A bookmark is a NORMAL note (contentType "bookmark") whose content is just a
+// label. It materializes the focused passage into an anchor — the SAME path
+// anchor.add-note (and the generation-preview flow) uses — and creates the note
+// there; the bespoke "show it as a chip, not a card" presentation + the Bookmarks
+// jump panel live entirely client-side. See docs/design/bookmark-modeling.md.
+const addBookmark: Command = {
+  id: "bookmark.add",
+  title: "Bookmark",
+  group: "anchor",
+  // Needs a passage to mark: a saved anchor or a fresh draft (mirrors the kit's hasPassage).
+  isAvailable: (ctx) => !!ctx.focus.anchor || !!ctx.focus.draft,
+  run: async (ctx) => {
+    const anchor = await ctx.focus.materializeAnchor();
+    // Seed the label from the focused passage's quote (collapsed + truncated). It's
+    // empty for region drafts (no text) — the chip then shows "Untitled bookmark" and
+    // the tiny editor offers a rename. payload.text lets a caller (e.g. a chat quote)
+    // override the seed.
+    const quote = (ctx.payload.text || anchor?.quote || ctx.focus.anchor?.quote || "").trim();
+    const label = quote.replace(/\s+/g, " ").slice(0, 60);
+    const { note } = await ctx.client.createNote({
+      sourceId: ctx.sourceId,
+      anchorIds: anchor ? [anchor.id] : [],
+      contentType: BOOKMARK_CONTENT_TYPE,
+      content: { label }
     });
     ctx.actions.onNoteCreated?.(note);
   }
@@ -442,6 +473,7 @@ export async function runCommand(id: string, ctx: CommandContext): Promise<boole
 for (const command of [
   askAi,
   addNote,
+  addBookmark,
   createPatch,
   createConcept,
   linkNote,

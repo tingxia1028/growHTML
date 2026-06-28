@@ -5,7 +5,7 @@
 // kit contributions and the user's operation-prefs; this component is a dumb renderer,
 // so the order / enable-disable the user configured shows up here. Empty list → nothing.
 
-import { ListChecks, Sparkles, TriangleAlert, Wand2 } from "lucide-react";
+import { Bookmark, ListChecks, Sparkles, TriangleAlert, Wand2 } from "lucide-react";
 import type { ComponentType } from "react";
 import type { ToolbarAction } from "./WorkspaceContext";
 
@@ -14,7 +14,8 @@ import type { ToolbarAction } from "./WorkspaceContext";
 const ICONS: Record<string, ComponentType<{ size?: number }>> = {
   sparkles: Sparkles,
   "list-checks": ListChecks,
-  "triangle-alert": TriangleAlert
+  "triangle-alert": TriangleAlert,
+  bookmark: Bookmark
 };
 
 export type SelectionToolbarProps = {

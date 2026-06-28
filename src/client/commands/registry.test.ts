@@ -121,6 +121,52 @@ describe("command: anchor.add-note", () => {
   });
 });
 
+describe("command: bookmark.add", () => {
+  it("materializes the anchor and creates a bookmark note seeded from the quote", async () => {
+    const onNoteCreated = vi.fn();
+    const ctx = baseCtx({ actions: { onNoteCreated } });
+
+    const ran = await runCommand("bookmark.add", ctx);
+
+    expect(ran).toBe(true);
+    expect(ctx.focus.materializeAnchor).toHaveBeenCalledOnce();
+    expect(ctx.client.createNote).toHaveBeenCalledWith({
+      sourceId: "src_1",
+      anchorIds: ["anchor_1"],
+      contentType: "bookmark",
+      content: { label: "passage" }
+    });
+    expect(onNoteCreated).toHaveBeenCalledOnce();
+  });
+
+  it("payload.text overrides the seeded label (e.g. a chat quote)", async () => {
+    const ctx = baseCtx({ payload: { text: "  Key   idea  " } });
+    await runCommand("bookmark.add", ctx);
+    expect(ctx.client.createNote).toHaveBeenCalledWith(
+      expect.objectContaining({ contentType: "bookmark", content: { label: "Key idea" } })
+    );
+  });
+
+  it("saves an empty label for a region draft (no quote) and stays unanchored without an anchor", async () => {
+    const ctx = baseCtx({
+      focus: fakeFocus({
+        draft: { mode: "region", sourceId: "src_1", kind: "html" } as never,
+        materializeAnchor: vi.fn(async () => null)
+      })
+    });
+    await runCommand("bookmark.add", ctx);
+    expect(ctx.client.createNote).toHaveBeenCalledWith(
+      expect.objectContaining({ anchorIds: [], contentType: "bookmark", content: { label: "" } })
+    );
+  });
+
+  it("is unavailable without a draft or anchor in focus", () => {
+    expect(
+      getCommand("bookmark.add")!.isAvailable(baseCtx({ focus: fakeFocus({ focus: null, draft: null }) }))
+    ).toBe(false);
+  });
+});
+
 describe("command: anchor.create-patch", () => {
   it("creates a patch against the materialized anchor", async () => {
     const onPatchCreated = vi.fn();

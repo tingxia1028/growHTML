@@ -1,7 +1,7 @@
-// Built-in client NoteType plugins — the React render/edit half for the 12 core
+// Built-in client NoteType plugins — the React render/edit half for the core
 // content specs (src/core/notes/contentTypes.ts). Each plugin PAIRS with its core
 // spec (it imports schema/createDefault from there via `spec()`); it never redefines
-// the shape. Importing this module registers all 12 (the side-effect pattern the
+// the shape. Importing this module registers them all (the side-effect pattern the
 // views/inspectors use).
 //
 // The split per type:
@@ -399,6 +399,65 @@ registerNoteType({
   label: "html (sandboxed)",
   render: (input) => <HtmlSandboxRender {...input} />,
   edit: (input) => <HtmlSandboxEditor {...input} />
+});
+
+// —— bookmark —————————————————————————————————————————————————————————————
+// A lightweight NAMED marker. Unlike every other type it RENDERS as a compact label
+// chip (color dot + label), not a full note card — the data is a plain note, the
+// bespoke chip presentation lives here. Click-to-jump is wired by the Bookmarks
+// panel (render is handed the note, not focus). EDIT is a tiny label + color editor,
+// not the rich note editor. asBookmark is inert-safe (mirrors asFlashcard) so a
+// foreign/mis-shaped content can't crash the chip.
+type Bookmark = { label: string; color?: string; order?: number };
+function asBookmark(content: unknown): Bookmark {
+  const c = (content ?? {}) as Partial<Bookmark>;
+  return {
+    label: typeof c.label === "string" ? c.label : "",
+    color: typeof c.color === "string" ? c.color : undefined,
+    order: typeof c.order === "number" ? c.order : undefined
+  };
+}
+function BookmarkChip({ content }: NoteRenderInput) {
+  const bookmark = asBookmark(content);
+  return (
+    <span className="note-rendered sv-bookmark-chip">
+      <span
+        className="sv-bookmark-dot"
+        style={bookmark.color ? { backgroundColor: bookmark.color } : undefined}
+      />
+      <span className="sv-bookmark-label">{bookmark.label || "Untitled bookmark"}</span>
+    </span>
+  );
+}
+function BookmarkEditor({ content, onChange }: NoteEditInput) {
+  const bookmark = asBookmark(content);
+  return (
+    <div className="note-edit note-edit-bookmark">
+      <input
+        className="note-edit-field bookmark-label"
+        placeholder="Bookmark label"
+        value={bookmark.label}
+        onChange={(event) => onChange({ ...bookmark, label: event.target.value })}
+      />
+      <input
+        type="color"
+        className="note-edit-field bookmark-color"
+        value={bookmark.color ?? "#3b82f6"}
+        onChange={(event) => onChange({ ...bookmark, color: event.target.value })}
+      />
+    </div>
+  );
+}
+registerNoteType({
+  contentType: "bookmark",
+  label: "bookmark",
+  // Hidden from the composer's generic type picker — a bookmark is created via the
+  // bookmark.add command (which materializes the focused anchor), never authored
+  // anchor-less from the composer. Render/edit through the registry still work (the
+  // chip in the note registry, the tiny editor for rename).
+  hidden: true,
+  render: (input) => <BookmarkChip {...input} />,
+  edit: (input) => <BookmarkEditor {...input} />
 });
 
 // Exported only so a host can show an inert fallback for an UNKNOWN contentType

@@ -38,6 +38,8 @@ import {
 import "./views";
 import "./conceptViews";
 import "./layerViews";
+//   ./bookmarkViews  → bookmark.list (the Bookmark V1 jump strip)
+import "./bookmarkViews";
 import "./practiceViews";
 //   ./operationViews → operation.manager (the operation-as-data builder + manager)
 import "./operationViews";

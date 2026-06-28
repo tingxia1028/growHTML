@@ -91,7 +91,7 @@ export function dockRoot(layout: WorkspaceLayout): DockNode {
 export const RESPONSIVE_BREAKPOINT_PX = 1280;
 
 // The side panes that auto-collapse when narrow (the flex reader + the study panel stay).
-export const SECONDARY_KINDS = new Set(["library", "concept.list", "layer.switcher"]);
+export const SECONDARY_KINDS = new Set(["library", "concept.list", "layer.switcher", "bookmark.list"]);
 
 // A pane is collapsible if it's a FIXED-size leaf (the flex reader is never collapsible).
 export function isCollapsibleLeaf(child: DockChild, kind: string): boolean {
@@ -115,6 +115,7 @@ const PANE_LABELS: Record<string, string> = {
   study: "Study",
   "concept.list": "Concepts",
   "layer.switcher": "Layers",
+  "bookmark.list": "Bookmarks",
   "operation.manager": "Actions",
   practice: "Practice"
 };

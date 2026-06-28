@@ -32,6 +32,7 @@ import {
   type StudyLayerRecord
 } from "../data/entityClient";
 import { useFocus, draftQuoteText, type FocusContextValue } from "../focus/FocusContext";
+import { BOOKMARK_CONTENT_TYPE } from "../../core/notes/contentTypes";
 import { createDefaultContent, isTextContentType } from "../notes/noteTypeRegistry";
 import { getSourceViewer, type SourceViewer } from "../viewers";
 import { getCommand, runCommand, type CommandContext, type GeneratedDraft } from "../commands/registry";
@@ -66,6 +67,19 @@ export type ToolbarAction = {
 };
 
 const EMPTY_OPERATION_PREFS: OperationPrefs = { order: [], disabled: [], params: {} };
+
+// The core "Add bookmark" selection action — always available on the focused passage
+// (NOT kit-gated, unlike the kit selection items). Dispatched by its command id like
+// any built-in; it materializes the anchor and creates a bookmark note. Listed first
+// so it leads the selection toolbar, before any kit/custom actions.
+const BOOKMARK_ACTION: ToolbarAction = {
+  id: "bookmark.add",
+  title: "Bookmark",
+  icon: "bookmark",
+  group: "Core",
+  kind: "builtin",
+  scope: "anchor"
+};
 
 // Order a merged action list by operation-prefs: ordered ids first (in prefs.order),
 // unlisted ids keep their incoming order after them; disabled ids are dropped. JS sort
@@ -331,10 +345,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   // Note text per anchor id — a note can hang off several anchors, and several
   // notes can share an anchor (their text is merged for the one hover card). Built from
-  // the FILTERED notes so a hidden layer's note text doesn't paint.
+  // the FILTERED notes so a hidden layer's note text doesn't paint. Bookmarks are
+  // EXCLUDED: their content is a structured { label } that would otherwise paint as raw
+  // JSON on the passage; they surface as chips in the Bookmarks pane instead (the anchor
+  // itself still paints its inline marker — every anchor is in `anchors`/paintAnchors).
   const noteTextByAnchorId = useMemo(() => {
     const map = new Map<string, string>();
     for (const note of visibleNotes) {
+      if ((note.contentType ?? "markdown") === BOOKMARK_CONTENT_TYPE) continue;
       const text = noteText(note.content);
       for (const anchorId of note.anchorIds) {
         const existing = map.get(anchorId);
@@ -837,7 +855,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         outputType: op.outputContentType,
         variables: op.declaredVariables
       }));
-    return orderActions([...builtin, ...custom], operationPrefs);
+    // The core Bookmark action leads, then kit selection items, then custom ops.
+    return orderActions([BOOKMARK_ACTION, ...builtin, ...custom], operationPrefs);
   }, [activeKitIds, operations, operationPrefs]);
 
   const sourceActions = useMemo<ToolbarAction[]>(() => {

@@ -46,6 +46,11 @@ export type NoteTypePlugin = {
   edit(input: NoteEditInput): ReactNode;
   /** Optional friendly label for the composer's type picker (defaults to contentType). */
   label?: string;
+  /** Hide this type from the composer's generic type picker. Used by types that are
+      created only through a dedicated affordance (e.g. `bookmark` via the bookmark.add
+      command, which materializes the anchor) — so they aren't authored anchor-less from
+      the generic composer. Rendering/editing through the registry is unaffected. */
+  hidden?: boolean;
 };
 
 const registry = new Map<string, NoteTypePlugin>();
