@@ -9,10 +9,12 @@
 // Client-backed) — never with each other. Importing the plugins module runs the
 // `registerView` calls below.
 
+import { useState } from "react";
 import {
   File,
   FilePlus2,
   FolderOpen,
+  Layers,
   ListRestart,
   NotebookPen,
   RefreshCcw,
@@ -23,6 +25,7 @@ import {
   Trash2,
   X
 } from "lucide-react";
+import type { NoteRecord, StudyLayerRecord } from "../data/entityClient";
 import { renderNoteContent } from "../../adapters/notes/render";
 import { TerminalPanel } from "../TerminalPanel";
 import { FileTree, baseName } from "../FileTree";
@@ -282,6 +285,78 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
   );
 }
 
+// A note's layer membership: the current-layer chips + a "move / add to layer" picker.
+// The picker is a fold (kept compact in the note card) listing the source's layers as
+// checkboxes; toggling one sends the note's FULL next membership via `onSetLayers`
+// (note.set-layers). A note can belong to several layers, so this is multi-select, not
+// a single move. Chips use each layer's `color` so the lens is visible at a glance.
+function NoteLayerControl({
+  note,
+  layers,
+  onSetLayers
+}: {
+  note: NoteRecord;
+  layers: StudyLayerRecord[];
+  onSetLayers(layerIds: string[]): void;
+}) {
+  const [open, setOpen] = useState(false);
+  if (layers.length === 0) return null;
+  const memberIds = new Set(note.layerIds);
+  const chips = layers.filter((layer) => memberIds.has(layer.id));
+
+  // Toggle one layer in/out of the note's membership and emit the full next set.
+  const toggle = (layerId: string) => {
+    const next = memberIds.has(layerId)
+      ? note.layerIds.filter((id) => id !== layerId)
+      : [...note.layerIds, layerId];
+    onSetLayers(next);
+  };
+
+  return (
+    <div className="note-layers">
+      <div className="note-layer-chips">
+        {chips.map((layer) => (
+          <span
+            key={layer.id}
+            className="note-layer-chip"
+            style={layer.color ? { borderColor: layer.color, color: layer.color } : undefined}
+          >
+            {layer.title}
+          </span>
+        ))}
+        <button
+          type="button"
+          className="link-button note-layer-edit"
+          aria-label="Move or add this note to layers"
+          title="Move / add this note to layers"
+          onClick={() => setOpen((value) => !value)}
+        >
+          <Layers size={13} />
+          Layers
+        </button>
+      </div>
+      {open ? (
+        <div className="note-layer-picker">
+          {layers.map((layer) => (
+            <label key={layer.id} className="note-layer-option">
+              <input
+                type="checkbox"
+                checked={memberIds.has(layer.id)}
+                onChange={() => toggle(layer.id)}
+              />
+              <span
+                className="note-layer-swatch"
+                style={layer.color ? { background: layer.color } : undefined}
+              />
+              {layer.title}
+            </label>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 // —— study → the `.study-panel` aside (chat-box + terminal-box). Kept as ONE view:
 // the e2e depend on the exact `.study-panel > .chat-box`/`.terminal-box` structure,
 // and the chat-box's chip/log/composer/note-list/patch-fold all read shared draft +
@@ -306,7 +381,8 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
     setNoteContent,
     submitNoteContent,
     composerDisabled,
-    notes,
+    visibleNotes,
+    sourceLayers,
     patchHtml,
     setPatchHtml,
     activePatches,
@@ -484,9 +560,9 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
           )}
         </div>
 
-        {notes.length ? (
+        {visibleNotes.length ? (
           <div className="record-list note-list">
-            {notes.map((note) => {
+            {visibleNotes.map((note) => {
               const contentType = note.contentType ?? "markdown";
               // Each note renders through its registered client NoteType plugin
               // (content decoupled from renderer). An UNKNOWN type (no plugin) falls
@@ -498,6 +574,14 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
                   {plugin
                     ? plugin.render({ content: note.content, note })
                     : <InertNote content={note.content} />}
+                  {/* A note's lens(es) + the "move / add to layer" action: chips show its
+                      current layers, the picker toggles membership (note.set-layers sends
+                      the full set). A note can sit in several layers at once. */}
+                  <NoteLayerControl
+                    note={note}
+                    layers={sourceLayers}
+                    onSetLayers={(layerIds) => void dispatch("note.set-layers", { layerNoteId: note.id, layerIds })}
+                  />
                 </article>
               );
             })}

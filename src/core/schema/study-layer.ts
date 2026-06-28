@@ -35,6 +35,12 @@ export const studyLayerSchema = recordEnvelopeSchema("layer", layerIdSchema).ext
   visibility: visibilitySchema.default("private"),
   importMode: importModeSchema.default("owned"),
   enabled: z.boolean().default(true),
+  // Presentation / organization only (all optional, additive): role groups a layer
+  // (preset = the 预习/学习/复习/拓展 stages, custom = user-made, shared = imported);
+  // color is a UI chip; order sorts the switcher. None affect filter/visibility.
+  role: z.enum(["preset", "custom", "shared"]).optional(),
+  color: z.string().optional(),
+  order: z.number().optional(),
   origin: z
     .object({
       packId: z.string().optional(),

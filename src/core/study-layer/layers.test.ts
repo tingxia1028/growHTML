@@ -81,6 +81,8 @@ describe("migrateStudyLayers", () => {
     const { source, anchor, note } = await seedLegacyData();
     // Old records load fine (schema accepts missing layerId — backward compat).
     expect((await vault.stores.anchors.get(anchor.id))?.layerId).toBeUndefined();
+    // A pre-multi note loads with an empty membership array.
+    expect((await vault.stores.notes.get(note.id))?.layerIds).toEqual([]);
 
     const stats = await migrateStudyLayers(vault);
     expect(stats.anchors).toBe(1);
@@ -92,12 +94,42 @@ describe("migrateStudyLayers", () => {
     expect(owned.localSourceId).toBe(source.id);
 
     expect((await vault.stores.anchors.get(anchor.id))?.layerId).toBe(owned.id);
-    expect((await vault.stores.notes.get(note.id))?.layerId).toBe(owned.id);
+    // Notes are migrated to multi-membership: the owned layer joins layerIds.
+    expect((await vault.stores.notes.get(note.id))?.layerIds).toEqual([owned.id]);
 
     // Running again touches nothing.
     const second = await migrateStudyLayers(vault);
     expect(second.anchors).toBe(0);
     expect(second.notes).toBe(0);
     expect(await vault.stores.layers.list()).toHaveLength(1);
+  });
+
+  it("wraps a legacy single layerId into layerIds", async () => {
+    const { source } = await seedLegacyData();
+    const owned = await ensureOwnedLayer(vault, source);
+    // A note that still carries the deprecated single-membership field.
+    const legacy = noteSchema.parse({
+      id: createEntityId("note"),
+      type: "note",
+      schemaVersion: 1,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: "user",
+      sourceId: source.id,
+      anchorIds: [],
+      conceptIds: [],
+      contentType: "markdown",
+      content: "legacy single-layer note",
+      visibility: "private",
+      layerId: owned.id
+    });
+    await vault.stores.notes.upsert(legacy);
+    expect((await vault.stores.notes.get(legacy.id))?.layerIds).toEqual([]);
+
+    await migrateStudyLayers(vault);
+
+    const migrated = await vault.stores.notes.get(legacy.id);
+    expect(migrated?.layerIds).toEqual([owned.id]);
+    expect(migrated?.layerId).toBeUndefined();
   });
 });

@@ -93,8 +93,14 @@ export async function buildStudyPack(vault: StudyVault, layerId: string): Promis
   const layer = await vault.stores.layers.get(layerId);
   if (!layer) return null;
 
-  const layerAnchors = (await vault.stores.anchors.list()).filter((a) => a.layerId === layerId);
-  const layerNotes = (await vault.stores.notes.list()).filter((n) => n.layerId === layerId);
+  // A layer's notes = notes whose multi-membership includes it (spec §7). Anchor
+  // membership is now DERIVED from those notes (anchor.layerId is no longer the source
+  // of truth), unioned with any standalone anchors still carrying this layerId for
+  // backward-compat (a highlight with no note shouldn't be dropped on export).
+  const layerNotes = (await vault.stores.notes.list()).filter((n) => n.layerIds.includes(layerId));
+  const notedAnchorIds = new Set(layerNotes.flatMap((n) => n.anchorIds));
+  const allAnchors = await vault.stores.anchors.list();
+  const layerAnchors = allAnchors.filter((a) => notedAnchorIds.has(a.id) || a.layerId === layerId);
 
   // Propagation policy (user spec §11): a kit can mark a contentType private-by-default
   // (e.g. textbook.mistake) so it never leaves the vault on export. Drop those notes,
@@ -270,6 +276,7 @@ export async function commitImport(
     visibility: pack.layer.visibility,
     importMode: "imported",
     enabled: true,
+    role: "shared",
     origin: { packId: pack.packId, importedAt: now }
   });
   await vault.stores.layers.upsert(layer);
@@ -324,7 +331,8 @@ export async function commitImport(
       contentType: portableNote.contentType,
       content: portableNote.content,
       visibility: "private",
-      layerId: layer.id,
+      // Membership merges into the target imported layer (spec §7).
+      layerIds: [layer.id],
       origin: { copiedFrom: pack.packId },
       metadata: unmatchedAnchors.length ? { unmatchedAnchors } : {}
     });

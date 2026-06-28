@@ -57,6 +57,8 @@ export type CommandContext = {
     | "updateNote"
     | "createRelation"
     | "patchLayer"
+    | "createLayer"
+    | "deleteLayer"
     | "generateStructured"
     | "notes"
   > &
@@ -106,6 +108,10 @@ export type CommandContext = {
     layerId?: string;
     /** The layer's next enabled state (layer.toggle). */
     enabled?: boolean;
+    /** The note whose layer membership to set (note.set-layers). */
+    layerNoteId?: string;
+    /** The note's next FULL layer membership (note.set-layers — add/remove/move). */
+    layerIds?: string[];
   };
   /** Current chat history (for ask-ai). */
   chatMessages?: ChatMessage[];
@@ -296,6 +302,24 @@ const toggleLayer: Command = {
   }
 };
 
+// Set a note's FULL layer membership (the "move / add to layer" note action). The
+// payload's `layerIds` REPLACES the note's membership, so the caller decides add vs
+// remove vs move by sending the resulting set. Reuses the note-patch path used for
+// concept/anchor links; `onLayersChanged` reloads the switcher + repaints anchors
+// (painting is derived from notes' layers).
+const setNoteLayers: Command = {
+  id: "note.set-layers",
+  title: "Set Note Layers",
+  group: "layer",
+  isAvailable: (ctx) => !!ctx.payload.layerNoteId && Array.isArray(ctx.payload.layerIds),
+  run: async (ctx) => {
+    const { layerNoteId, layerIds } = ctx.payload;
+    if (!layerNoteId || !Array.isArray(layerIds)) return;
+    await ctx.client.updateNote(layerNoteId, { layerIds });
+    ctx.actions.onLayersChanged?.();
+  }
+};
+
 const registry = new Map<string, Command>();
 
 export function registerCommand(command: Command): void {
@@ -318,5 +342,5 @@ export async function runCommand(id: string, ctx: CommandContext): Promise<boole
   return true;
 }
 
-for (const command of [askAi, addNote, createPatch, createConcept, linkNote, createRelation, toggleLayer])
+for (const command of [askAi, addNote, createPatch, createConcept, linkNote, createRelation, toggleLayer, setNoteLayers])
   registerCommand(command);

@@ -63,6 +63,10 @@ export type NoteRecord = {
   contentType: string;
   content: unknown;
   visibility: string;
+  // Study Layer membership (multi). A note's lens(es); it is visible iff its
+  // layerIds intersect the enabled layers (OR). Empty = "always visible" (the
+  // server never orphans a note to invisibility).
+  layerIds: string[];
 };
 
 export type PatchRecord = {
@@ -106,7 +110,7 @@ export type RelationRecord = {
   confidence?: number;
 };
 
-// —— Study Layers (share / import anchor+note) ——
+// —— Study Layers (a per-source lens axis: owned + preset stages + custom + imported) ——
 export type StudyLayerRecord = {
   id: string;
   title: string;
@@ -117,6 +121,13 @@ export type StudyLayerRecord = {
   enabled: boolean;
   localSourceId?: string;
   origin?: { packId?: string; importedAt?: string; sourceLayerId?: string };
+  // Additive presentation/organization fields (no visibility impact). role groups the
+  // switcher: "preset" = the built-in stages (预习/学习/复习/拓展), "custom" = a
+  // user-made layer, "shared" = an imported one. color is a chip hex; order sorts within
+  // a group. The owned layer leaves role unset (it is neither preset, custom, nor shared).
+  role?: "preset" | "custom" | "shared";
+  color?: string;
+  order?: number;
 };
 
 // A `.studypack` — only portable fields travel; the importer rebuilds local
@@ -209,6 +220,9 @@ export type CreateNoteInput = {
   conceptIds?: string[];
   content: unknown;
   contentType?: string;
+  // Optional layer membership. Omit to let the server default a source-attached note
+  // to that source's owned layer (never send [] if you want that default).
+  layerIds?: string[];
 };
 
 async function getJson<T>(url: string): Promise<T> {
@@ -279,8 +293,12 @@ export const entityClient = {
   createNote(input: CreateNoteInput) {
     return sendJson<{ note: NoteRecord }>("POST", "/api/notes", input);
   },
-  /** Patch a note's attachments (concept/anchor links) after creation. */
-  updateNote(noteId: string, input: { conceptIds?: string[]; anchorIds?: string[] }) {
+  /**
+   * Patch a note's attachments (concept/anchor links) and/or its layer membership
+   * after creation. `layerIds` is a FULL REPLACE — to add a layer send the union, to
+   * remove send the remainder, to move send the new single-element array.
+   */
+  updateNote(noteId: string, input: { conceptIds?: string[]; anchorIds?: string[]; layerIds?: string[] }) {
     return sendJson<{ note: NoteRecord }>("PATCH", `/api/notes/${noteId}`, input);
   },
 
@@ -323,13 +341,23 @@ export const entityClient = {
   },
 
   // —— Study Layers ——
-  /** Layers over a source (owned + imported), for the layer switcher. */
+  /** Layers over a source (owned + the 4 preset stages + custom + imported), for the
+      multi-select switcher. The server lazily creates the owned + preset layers here. */
   layers(sourceId: string) {
     return getJson<{ layers: StudyLayerRecord[] }>(`/api/sources/${sourceId}/layers`);
   },
-  /** Toggle a layer on/off (enabled) or rename it. */
-  patchLayer(layerId: string, input: { enabled?: boolean; title?: string }) {
+  /** Toggle a layer on/off (enabled — reused as the filter include/exclude), rename it,
+      or set its presentation fields (color/order) for the layer manager. */
+  patchLayer(layerId: string, input: { enabled?: boolean; title?: string; color?: string; order?: number }) {
     return sendJson<{ layer: StudyLayerRecord }>("PATCH", `/api/layers/${layerId}`, input);
+  },
+  /** Create a user-defined ("custom") layer over a source — backs the manager. */
+  createLayer(sourceId: string, input: { title: string; color?: string; order?: number }) {
+    return sendJson<{ layer: StudyLayerRecord }>("POST", `/api/sources/${sourceId}/layers`, input);
+  },
+  /** Delete a CUSTOM layer (the server refuses owned/preset/imported with a 409). */
+  deleteLayer(layerId: string) {
+    return sendJson<{ ok: true }>("DELETE", `/api/layers/${layerId}`, undefined);
   },
   /** Build a portable `.studypack` for a layer (local realizations stripped). */
   exportLayer(layerId: string) {

@@ -25,7 +25,7 @@ import {
 } from "../core/schema";
 import { getNoteContentSpec, parseNoteContent } from "../core/notes/contentTypes";
 import { importLocalAsset, readAssetBytes } from "../core/store/assets";
-import { ensureOwnedLayer } from "../core/study-layer/layers";
+import { createCustomLayer, ensureOwnedLayer, ensurePresetLayers } from "../core/study-layer/layers";
 import { studyLayerSchema } from "../core/schema";
 import { buildStudyPack, commitImport, parseStudyPack, previewImport } from "./studyLayer";
 import type { StudyVault } from "../core/vault";
@@ -112,6 +112,9 @@ const createNoteRequestSchema = z.object({
   sourceId: z.string().min(1).optional(),
   anchorIds: z.array(z.string().min(1)).default([]),
   conceptIds: z.array(z.string().min(1)).default([]),
+  // Study Layer membership (multi). When omitted, a source-attached note defaults to
+  // that source's owned layer so it is never orphaned to invisibility (spec §5).
+  layerIds: z.array(z.string().min(1)).optional(),
   contentType: z.string().min(1).default("markdown"),
   // Shape validated per-type by the NoteContentSpec, not here.
   content: z.unknown()
@@ -123,11 +126,16 @@ const createNoteRequestSchema = z.object({
 const updateNoteRequestSchema = z
   .object({
     conceptIds: z.array(z.string().min(1)).optional(),
-    anchorIds: z.array(z.string().min(1)).optional()
+    anchorIds: z.array(z.string().min(1)).optional(),
+    // Study Layer membership — add/remove/move a note between layers (the full set
+    // replaces the note's current layerIds, spec §8).
+    layerIds: z.array(z.string().min(1)).optional()
   })
-  .refine((input) => input.conceptIds !== undefined || input.anchorIds !== undefined, {
-    message: "note update requires conceptIds or anchorIds"
-  });
+  .refine(
+    (input) =>
+      input.conceptIds !== undefined || input.anchorIds !== undefined || input.layerIds !== undefined,
+    { message: "note update requires conceptIds, anchorIds, or layerIds" }
+  );
 
 const createPatchRequestSchema = z.object({
   sourceId: z.string().min(1),
@@ -522,14 +530,40 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
 
   app.get("/api/sources/:sourceId/anchors", async (req, res, next) => {
     try {
-      // Hide anchors that belong to a DISABLED layer. Anchors with no layerId (pre-
-      // layer data) and anchors on enabled layers are always returned.
-      const disabled = new Set(
-        (await vault.stores.layers.list()).filter((layer) => !layer.enabled).map((layer) => layer.id)
-      );
-      const anchors = (await vault.stores.anchors.list()).filter(
-        (anchor) => anchor.sourceId === req.params.sourceId && !(anchor.layerId && disabled.has(anchor.layerId))
-      );
+      // Anchor painting is DERIVED, not stored: an anchor paints iff it has a note in
+      // an ENABLED layer (OR across that note's layers). One anchor can be shared by
+      // several notes with different layers, so we can't read `anchor.layerId` (kept
+      // only for backward-compat). Fallback for note-less / legacy anchors: paint iff
+      // their own `anchor.layerId` is enabled-or-absent — so a highlight created without
+      // a note (and pre-layer data) doesn't silently vanish.
+      const sourceId = req.params.sourceId;
+      const layers = await vault.stores.layers.list();
+      const enabled = new Set(layers.filter((layer) => layer.enabled).map((layer) => layer.id));
+      const disabled = new Set(layers.filter((layer) => !layer.enabled).map((layer) => layer.id));
+      const sourceNotes = (await vault.stores.notes.list()).filter((note) => note.sourceId === sourceId);
+
+      // Anchor id -> does any note on it sit in an enabled layer? (and is it referenced
+      // by a note at all?) A note with EMPTY layerIds is "always visible" (never orphan
+      // it), so it paints its anchors regardless of the enabled set.
+      const paintedByNote = new Set<string>();
+      const noted = new Set<string>();
+      for (const note of sourceNotes) {
+        const visible = note.layerIds.length === 0 || note.layerIds.some((id) => enabled.has(id));
+        for (const anchorId of note.anchorIds) {
+          noted.add(anchorId);
+          if (visible) paintedByNote.add(anchorId);
+        }
+      }
+
+      const anchors = (await vault.stores.anchors.list()).filter((anchor) => {
+        if (anchor.sourceId !== sourceId) return false;
+        if (paintedByNote.has(anchor.id)) return true;
+        // Note-less anchor: fall back to its own (deprecated) layerId — paint unless it
+        // sits on a disabled layer.
+        if (!noted.has(anchor.id)) return !(anchor.layerId && disabled.has(anchor.layerId));
+        // Anchor only referenced by notes in disabled layers → not painted.
+        return false;
+      });
       res.json({ anchors });
     } catch (error) {
       next(error);
@@ -547,11 +581,12 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
       // Validate content against its type's spec (ZodError → 400 via handler).
       const content = parseNoteContent(input.contentType, input.content);
       const now = new Date().toISOString();
-      // A source-attached note joins that source's "owned" layer.
-      let layerId: string | undefined;
-      if (input.sourceId) {
+      // Membership: explicit layerIds win; else a source-attached note defaults to that
+      // source's "owned" layer (never orphan it to invisibility, spec §5); else empty.
+      let layerIds: string[] = input.layerIds ?? [];
+      if (!input.layerIds && input.sourceId) {
         const source = await vault.stores.sources.get(input.sourceId);
-        if (source) layerId = (await ensureOwnedLayer(vault, source)).id;
+        if (source) layerIds = [(await ensureOwnedLayer(vault, source)).id];
       }
       const note = noteSchema.parse({
         id: createEntityId("note"),
@@ -566,7 +601,7 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
         contentType: input.contentType,
         content,
         visibility: "private",
-        layerId
+        layerIds
       });
 
       await vault.stores.notes.upsert(note);
@@ -578,7 +613,10 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
 
   app.get("/api/sources/:sourceId/notes", async (req, res, next) => {
     try {
-      const notes = (await vault.stores.notes.list()).filter((note) => note.sourceId === req.params.sourceId);
+      const visible = await layerVisibilityFilter(vault, req.query.enabledLayerIds);
+      const notes = (await vault.stores.notes.list()).filter(
+        (note) => note.sourceId === req.params.sourceId && visible(note)
+      );
       res.json({ notes });
     } catch (error) {
       next(error);
@@ -592,11 +630,13 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
       const conceptId = typeof req.query.conceptId === "string" ? req.query.conceptId : undefined;
       const anchorId = typeof req.query.anchorId === "string" ? req.query.anchorId : undefined;
       const sourceId = typeof req.query.sourceId === "string" ? req.query.sourceId : undefined;
+      const visible = await layerVisibilityFilter(vault, req.query.enabledLayerIds);
       const notes = (await vault.stores.notes.list()).filter(
         (note) =>
           (!conceptId || note.conceptIds.includes(conceptId)) &&
           (!anchorId || note.anchorIds.includes(anchorId)) &&
-          (!sourceId || note.sourceId === sourceId)
+          (!sourceId || note.sourceId === sourceId) &&
+          visible(note)
       );
       res.json({ notes });
     } catch (error) {
@@ -619,6 +659,7 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
         ...existing,
         conceptIds: input.conceptIds ?? existing.conceptIds,
         anchorIds: input.anchorIds ?? existing.anchorIds,
+        layerIds: input.layerIds ?? existing.layerIds,
         updatedAt: new Date().toISOString()
       });
       await vault.stores.notes.upsert(note);
@@ -628,10 +669,17 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
     }
   });
 
-  // —— Study Layers (share / import anchor+note) ————————————————————————————
-  // List the layers over a source (owned + imported), for the layer switcher.
+  // —— Study Layers (a per-source lens axis: owned + preset stages + custom + imported) ——
+  // List the layers over a source, for the multi-select filter switcher. The owned layer
+  // and the four preset stages (预习/学习/复习/拓展) are created on demand here (lazily, the
+  // same way ensureOwnedLayer works) so the switcher always sees them.
   app.get("/api/sources/:sourceId/layers", async (req, res, next) => {
     try {
+      const source = await vault.stores.sources.get(req.params.sourceId);
+      if (source) {
+        await ensureOwnedLayer(vault, source);
+        await ensurePresetLayers(vault, source);
+      }
       const layers = (await vault.stores.layers.list()).filter(
         (layer) => layer.localSourceId === req.params.sourceId
       );
@@ -641,12 +689,44 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
     }
   });
 
-  // Toggle a layer on/off (enabled) or rename it.
+  // Create a user-defined ("custom") layer over a source — backs the layer manager.
+  const createLayerRequestSchema = z.object({
+    title: z.string().min(1),
+    color: z.string().min(1).optional(),
+    order: z.number().optional()
+  });
+  app.post("/api/sources/:sourceId/layers", async (req, res, next) => {
+    try {
+      const input = createLayerRequestSchema.parse(req.body);
+      const source = await vault.stores.sources.get(req.params.sourceId);
+      if (!source) {
+        res.status(404).json({ error: "Source not found" });
+        return;
+      }
+      const layer = await createCustomLayer(vault, source, input);
+      res.status(201).json({ layer });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Toggle a layer on/off (enabled, reused as the filter include/exclude), rename it,
+  // or set its presentation fields (color/order) for the manager.
   const updateLayerRequestSchema = z
-    .object({ enabled: z.boolean().optional(), title: z.string().min(1).optional() })
-    .refine((input) => input.enabled !== undefined || input.title !== undefined, {
-      message: "layer update requires enabled or title"
-    });
+    .object({
+      enabled: z.boolean().optional(),
+      title: z.string().min(1).optional(),
+      color: z.string().min(1).optional(),
+      order: z.number().optional()
+    })
+    .refine(
+      (input) =>
+        input.enabled !== undefined ||
+        input.title !== undefined ||
+        input.color !== undefined ||
+        input.order !== undefined,
+      { message: "layer update requires enabled, title, color, or order" }
+    );
   app.patch("/api/layers/:layerId", async (req, res, next) => {
     try {
       const input = updateLayerRequestSchema.parse(req.body);
@@ -659,10 +739,46 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
         ...existing,
         enabled: input.enabled ?? existing.enabled,
         title: input.title ?? existing.title,
+        color: input.color ?? existing.color,
+        order: input.order ?? existing.order,
         updatedAt: new Date().toISOString()
       });
       await vault.stores.layers.upsert(layer);
       res.json({ layer });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Delete a CUSTOM layer (manager action). Preset / owned / imported layers are
+  // structural and cannot be deleted here (409). The deleted layer id is cascade-stripped
+  // from every note's `layerIds` so a note that lived ONLY in this layer collapses to
+  // [] — i.e. "always visible", never orphaned to invisibility (spec §5). Notes that
+  // also belong to other layers keep those memberships.
+  app.delete("/api/layers/:layerId", async (req, res, next) => {
+    try {
+      const existing = await vault.stores.layers.get(req.params.layerId);
+      if (!existing) {
+        res.status(404).json({ error: "Layer not found" });
+        return;
+      }
+      if (existing.role !== "custom") {
+        res.status(409).json({ error: "Only custom layers can be deleted" });
+        return;
+      }
+      const layerId = req.params.layerId;
+      const affected = (await vault.stores.notes.list()).filter((note) => note.layerIds.includes(layerId));
+      for (const note of affected) {
+        await vault.stores.notes.upsert(
+          noteSchema.parse({
+            ...note,
+            layerIds: note.layerIds.filter((id) => id !== layerId),
+            updatedAt: new Date().toISOString()
+          })
+        );
+      }
+      await vault.stores.layers.delete(layerId);
+      res.json({ ok: true });
     } catch (error) {
       next(error);
     }
@@ -1022,6 +1138,25 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
   });
 
   return app;
+}
+
+// Build the OR-over-enabled-layers note-visibility predicate. A note is visible iff
+// its layerIds intersects the enabled set (OR across its layers). A note with EMPTY
+// layerIds is always visible (never orphan it to invisibility). The enabled set comes
+// from an explicit `enabledLayerIds` csv query param when supplied (the client's
+// multi-select filter), else from every layer whose `enabled` flag is on (the stored
+// toggle — reused as the filter source of truth).
+async function layerVisibilityFilter(
+  vault: StudyVault,
+  enabledLayerIdsParam: unknown
+): Promise<(note: { layerIds: string[] }) => boolean> {
+  let enabled: Set<string>;
+  if (typeof enabledLayerIdsParam === "string") {
+    enabled = new Set(enabledLayerIdsParam.split(",").map((id) => id.trim()).filter(Boolean));
+  } else {
+    enabled = new Set((await vault.stores.layers.list()).filter((layer) => layer.enabled).map((layer) => layer.id));
+  }
+  return (note) => note.layerIds.length === 0 || note.layerIds.some((id) => enabled.has(id));
 }
 
 async function getHtmlAnchorsForSource(vault: StudyVault, sourceId: string) {

@@ -1,22 +1,22 @@
-// Study Layer workspace view (V2) — the "layer switcher" pane. It surfaces the
-// share/import layer model the V1 server already backs:
+// Study Layer workspace view (V2 → layer-as-lens) — the "layer switcher" pane. It is
+// both the multi-select FILTER and the layer MANAGER over the active source:
 //
-//   • LIST every layer over the active source (owned + imported), each with an
-//     enabled TOGGLE (→ layer.toggle command). Toggling repaints the reader, because
-//     the anchors endpoint hides disabled layers' anchors.
-//   • EXPORT a layer → download a portable `.studypack`.
-//   • IMPORT a `.studypack` file → a non-destructive PREVIEW (matched / fuzzy /
-//     unmatched counts) → confirm → commit (creates an imported layer + re-located
-//     anchors + notes), then the new layer appears and its matched anchors paint.
+//   • FILTER: every layer over the source (owned + the 4 preset stages 预习/学习/复习/拓展
+//     + custom + imported) is a checkbox. Checking it INCLUDES that lens in the view;
+//     the filter is OR across the checked layers. A note shows iff its layers intersect
+//     the checked set (the server reads each layer's stored `enabled` for both the note
+//     list and the derived anchor painting, so toggling repaints the reader too).
+//   • MANAGER: create a CUSTOM layer; rename / recolor / reorder any owned/custom layer;
+//     delete a CUSTOM layer (preset / owned / imported are structural — no delete).
+//   • EXPORT a layer → a portable `.studypack`; IMPORT a `.studypack` (preview → commit).
 //
 // Like the concept pane it is ADDITIVE (its own pane node) and talks only through the
 // WorkspaceContext + entity client. Export and the two-step file import are done here
-// (file IO + interactive preview) rather than as fire-and-forget commands — the same
-// way URL-import / file dialogs are view/context actions; only the simple toggle is a
-// command.
+// (file IO + interactive preview); the simple enabled toggle is the layer.toggle command,
+// reused as the filter include/exclude (routed through ctx.toggleLayerFilter).
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Layers, Upload, Download } from "lucide-react";
+import { Layers, Upload, Download, Plus, Trash2 } from "lucide-react";
 import { entityClient, type ImportPreview, type StudyLayerRecord, type StudyPack } from "../data/entityClient";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 
@@ -33,12 +33,28 @@ function downloadPack(pack: StudyPack, fileName: string) {
   URL.revokeObjectURL(url);
 }
 
+// A layer's group label, derived from role/importMode (the owned layer leaves role
+// unset). Used to bucket the list so presets / custom / imported read as distinct.
+function groupOf(layer: StudyLayerRecord): "owned" | "preset" | "custom" | "shared" {
+  if (layer.role) return layer.role;
+  return layer.importMode === "imported" || layer.importMode === "subscribed" ? "shared" : "owned";
+}
+
+const GROUP_ORDER: ReadonlyArray<{ key: "owned" | "preset" | "custom" | "shared"; label: string }> = [
+  { key: "owned", label: "Mine" },
+  { key: "preset", label: "Stages" },
+  { key: "custom", label: "Custom" },
+  { key: "shared", label: "Imported" }
+];
+
 function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
-  const { activeSourceId, dispatch, refreshLayers, layersVersion } = ctx;
+  const { activeSourceId, refreshLayers, layersVersion, toggleLayerFilter } = ctx;
   const [layers, setLayers] = useState<StudyLayerRecord[]>([]);
   const [error, setError] = useState("");
   // The in-flight import: the parsed pack + its dry-run preview, shown for confirm.
   const [pending, setPending] = useState<{ pack: StudyPack; preview: ImportPreview } | null>(null);
+  // The new-custom-layer draft title (the create row), kept local to the pane.
+  const [newTitle, setNewTitle] = useState("");
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
@@ -60,11 +76,13 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
     void load();
   }, [load, layersVersion]);
 
+  // The filter toggle — routes through the shared context action (layer.toggle command)
+  // so the reader repaints + the note list re-filters off the same enabled set.
   const toggle = useCallback(
     (layer: StudyLayerRecord) => {
-      void dispatch("layer.toggle", { layerId: layer.id, enabled: !layer.enabled });
+      toggleLayerFilter(layer);
     },
-    [dispatch]
+    [toggleLayerFilter]
   );
 
   const exportLayer = useCallback(async (layer: StudyLayerRecord) => {
@@ -76,6 +94,84 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
       setError(err instanceof Error ? err.message : "Failed to export layer");
     }
   }, []);
+
+  // —— manager actions ——
+  // Create a custom layer (ordered after the existing layers), then reload.
+  const createLayer = useCallback(async () => {
+    const title = newTitle.trim();
+    if (!activeSourceId || !title) return;
+    setError("");
+    try {
+      await entityClient.createLayer(activeSourceId, { title, order: layers.length });
+      setNewTitle("");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create layer");
+    }
+  }, [activeSourceId, newTitle, layers.length, load]);
+
+  // Rename — a single-field prompt keeps the pane compact (mirrors the source-delete
+  // confirm pattern). No-op on cancel / unchanged.
+  const renameLayer = useCallback(
+    async (layer: StudyLayerRecord) => {
+      const next = typeof window !== "undefined" ? window.prompt("Rename layer", layer.title) : null;
+      if (!next || !next.trim() || next.trim() === layer.title) return;
+      setError("");
+      try {
+        await entityClient.patchLayer(layer.id, { title: next.trim() });
+        await load();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to rename layer");
+      }
+    },
+    [load]
+  );
+
+  // Recolor — the color input emits a hex string; persist it as the layer's chip color.
+  const recolorLayer = useCallback(
+    async (layer: StudyLayerRecord, color: string) => {
+      setError("");
+      try {
+        await entityClient.patchLayer(layer.id, { color });
+        await load();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to recolor layer");
+      }
+    },
+    [load]
+  );
+
+  // Reorder — nudge a layer up/down by swapping `order` with its neighbour in the same
+  // group (presentation only; the server sorts by `order`).
+  const reorderLayer = useCallback(
+    async (layer: StudyLayerRecord, delta: number) => {
+      const nextOrder = (layer.order ?? 0) + delta;
+      setError("");
+      try {
+        await entityClient.patchLayer(layer.id, { order: nextOrder });
+        await load();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to reorder layer");
+      }
+    },
+    [load]
+  );
+
+  // Delete — only CUSTOM layers (the server 409s otherwise; the control is hidden for
+  // non-custom). Notes keep their other memberships.
+  const deleteLayer = useCallback(
+    async (layer: StudyLayerRecord) => {
+      if (typeof window !== "undefined" && !window.confirm(`Delete the "${layer.title}" layer?`)) return;
+      setError("");
+      try {
+        await entityClient.deleteLayer(layer.id);
+        await load();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to delete layer");
+      }
+    },
+    [load]
+  );
 
   // Step 1: a file was chosen → parse + dry-run preview (nothing persisted).
   const onFile = useCallback(async (file: File | undefined) => {
@@ -102,6 +198,11 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
       setError(err instanceof Error ? err.message : "Failed to import layer");
     }
   }, [pending, refreshLayers]);
+
+  // One sorted, grouped list: each group's layers sorted by `order` then title.
+  const sorted = [...layers].sort(
+    (a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title)
+  );
 
   return (
     <aside className="layer-panel">
@@ -172,33 +273,126 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
         </section>
       ) : null}
 
-      {/* Layer list — toggle paints/hides each layer's anchors. */}
+      {/* Create a custom layer (the manager's add row). */}
+      {activeSourceId ? (
+        <section className="layer-create">
+          <input
+            className="layer-create-input"
+            value={newTitle}
+            placeholder="New layer name…"
+            onChange={(event) => setNewTitle(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void createLayer();
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="icon-button layer-create-btn"
+            disabled={!newTitle.trim()}
+            onClick={() => void createLayer()}
+            title="Create a custom layer"
+          >
+            <Plus size={16} />
+            Add Layer
+          </button>
+        </section>
+      ) : null}
+
+      {/* Grouped layer list — each checkbox INCLUDES that lens in the OR filter; the
+          manager controls (rename/recolor/reorder/delete) sit in each row's meta. */}
       <div className="layer-list record-list">
-        {layers.map((layer) => (
-          <div key={layer.id} className={`layer-item${layer.enabled ? " enabled" : ""}`} data-import-mode={layer.importMode}>
-            <label className="layer-toggle-label">
-              <input
-                type="checkbox"
-                className="layer-toggle"
-                checked={layer.enabled}
-                onChange={() => toggle(layer)}
-              />
-              <span className="layer-item-title">{layer.title}</span>
-            </label>
-            <div className="layer-item-meta">
-              <span className="layer-badge">{layer.importMode}</span>
-              {layer.author?.name ? <span className="layer-author">{layer.author.name}</span> : null}
-              <button
-                type="button"
-                className="link-button layer-export-btn"
-                title="Export as .studypack"
-                onClick={() => void exportLayer(layer)}
-              >
-                <Download size={13} />
-              </button>
+        {GROUP_ORDER.map(({ key, label }) => {
+          const group = sorted.filter((layer) => groupOf(layer) === key);
+          if (group.length === 0) return null;
+          return (
+            <div key={key} className="layer-group" data-group={key}>
+              <div className="layer-group-title">{label}</div>
+              {group.map((layer) => (
+                <div
+                  key={layer.id}
+                  className={`layer-item${layer.enabled ? " enabled" : ""}`}
+                  data-import-mode={layer.importMode}
+                  data-role={layer.role ?? "owned"}
+                >
+                  <label className="layer-toggle-label">
+                    <input
+                      type="checkbox"
+                      className="layer-toggle"
+                      checked={layer.enabled}
+                      onChange={() => toggle(layer)}
+                    />
+                    {layer.color ? (
+                      <span className="layer-color-dot" style={{ background: layer.color }} />
+                    ) : null}
+                    <span className="layer-item-title">{layer.title}</span>
+                  </label>
+                  <div className="layer-item-meta">
+                    {/* rename / recolor / reorder are only for owned + custom layers;
+                        preset stages and imported (shared) layers are structural (spec). */}
+                    {groupOf(layer) === "owned" || groupOf(layer) === "custom" ? (
+                      <>
+                        <button
+                          type="button"
+                          className="link-button layer-up-btn"
+                          title="Move up"
+                          onClick={() => void reorderLayer(layer, -1)}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          className="link-button layer-down-btn"
+                          title="Move down"
+                          onClick={() => void reorderLayer(layer, 1)}
+                        >
+                          ↓
+                        </button>
+                        <input
+                          type="color"
+                          className="layer-color-input"
+                          aria-label="Layer color"
+                          title="Recolor layer"
+                          value={layer.color ?? "#2f6f64"}
+                          onChange={(event) => void recolorLayer(layer, event.target.value)}
+                        />
+                        <button
+                          type="button"
+                          className="link-button layer-rename-btn"
+                          title="Rename layer"
+                          onClick={() => void renameLayer(layer)}
+                        >
+                          Rename
+                        </button>
+                      </>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="link-button layer-export-btn"
+                      title="Export as .studypack"
+                      onClick={() => void exportLayer(layer)}
+                    >
+                      <Download size={13} />
+                    </button>
+                    {layer.role === "custom" ? (
+                      <button
+                        type="button"
+                        className="link-button layer-delete-btn"
+                        title="Delete custom layer"
+                        aria-label="Delete custom layer"
+                        onClick={() => void deleteLayer(layer)}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
-        ))}
+          );
+        })}
         {activeSourceId && layers.length === 0 ? <div className="empty-state">No layers yet.</div> : null}
         {!activeSourceId ? <div className="empty-state">Open a source to see its layers.</div> : null}
       </div>

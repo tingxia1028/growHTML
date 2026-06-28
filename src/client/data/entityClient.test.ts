@@ -51,6 +51,42 @@ describe("entityClient", () => {
     });
   });
 
+  it("patches a note's layer membership (full replace)", async () => {
+    const calls = mockFetch({ note: { id: "note_x" } });
+    await entityClient.updateNote("note_x", { layerIds: ["layer_1", "layer_2"] });
+    expect(calls[0]).toMatchObject({
+      url: "/api/notes/note_x",
+      method: "PATCH",
+      body: { layerIds: ["layer_1", "layer_2"] }
+    });
+  });
+
+  it("creates a custom layer over a source", async () => {
+    const calls = mockFetch({ layer: { id: "layer_1" } });
+    await entityClient.createLayer("src_1", { title: "Key terms", order: 4 });
+    expect(calls[0]).toMatchObject({
+      url: "/api/sources/src_1/layers",
+      method: "POST",
+      body: { title: "Key terms", order: 4 }
+    });
+  });
+
+  it("deletes a custom layer", async () => {
+    const calls = mockFetch({ ok: true });
+    await entityClient.deleteLayer("layer_1");
+    expect(calls[0]).toMatchObject({ url: "/api/layers/layer_1", method: "DELETE" });
+  });
+
+  it("patches a layer's presentation fields (color/order)", async () => {
+    const calls = mockFetch({ layer: { id: "layer_1" } });
+    await entityClient.patchLayer("layer_1", { color: "#ff0000", order: 2 });
+    expect(calls[0]).toMatchObject({
+      url: "/api/layers/layer_1",
+      method: "PATCH",
+      body: { color: "#ff0000", order: 2 }
+    });
+  });
+
   it("builds entity-oriented query URLs", async () => {
     const calls = mockFetch({ notes: [] });
     await entityClient.notesByConcept("concept_1");

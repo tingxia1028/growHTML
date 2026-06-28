@@ -12,7 +12,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createEntityId } from "../src/core/ids";
-import { noteSchema, type NoteRecord } from "../src/core/schema";
+import { noteSchema, sourceSchema, type NoteRecord } from "../src/core/schema";
 import { openVault } from "../src/core/vault";
 import { ingestHtmlSource, listSources } from "../src/core/store/sources";
 import { ensureOwnedLayer } from "../src/core/study-layer/layers";
@@ -50,7 +50,8 @@ function makeNote(
     contentType,
     content,
     visibility,
-    layerId,
+    // Multi-membership: this note's lens is the source's owned layer.
+    layerIds: [layerId],
     metadata: {}
   });
 }
@@ -61,12 +62,27 @@ async function main() {
   installServerKits(); // register kit content specs + layer policy (export filter)
 
   const existing = (await listSources(vault)).find((s) => s.title === TITLE);
-  const source = existing ?? (await ingestHtmlSource(vault, { title: TITLE, content: SOURCE_HTML, createdBy: "system" }));
+  let source = existing ?? (await ingestHtmlSource(vault, { title: TITLE, content: SOURCE_HTML, createdBy: "system" }));
+
+  // Activate the Textbook Kit ON THIS SOURCE so the §16 selection toolbar /
+  // note-type picker show up immediately on open — don't rely on the workspace
+  // default kit (localStorage) which the user may have switched to Core.
+  const ACTIVE_KIT_IDS = ["textbook-learning"];
+  const current = source.metadata?.activeKitIds;
+  if (JSON.stringify(current) !== JSON.stringify(ACTIVE_KIT_IDS)) {
+    source = sourceSchema.parse({
+      ...source,
+      metadata: { ...source.metadata, activeKitIds: ACTIVE_KIT_IDS },
+      updatedAt: new Date().toISOString()
+    });
+    await vault.stores.sources.upsert(source);
+  }
+
   const ownedLayer = await ensureOwnedLayer(vault, source);
 
   // Seed the four Study Block types once (idempotent across re-runs).
   const already = (await vault.stores.notes.list()).filter(
-    (n) => n.layerId === ownedLayer.id && n.contentType.startsWith("textbook.")
+    (n) => n.layerIds.includes(ownedLayer.id) && n.contentType.startsWith("textbook.")
   );
   if (already.length === 0) {
     const notes: NoteRecord[] = [

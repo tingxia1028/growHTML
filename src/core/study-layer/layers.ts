@@ -30,6 +30,87 @@ export async function ensureOwnedLayer(vault: StudyVault, source: SourceRecord):
   return layer;
 }
 
+// The built-in stage layers (预习 / 学习 / 复习 / 拓展) — a fixed lens axis offered on
+// every source. Like the owned layer, they are pre-named layer records created lazily
+// the first time the switcher lists a source's layers. Order is stable (0..3) so the
+// switcher always shows them in the same sequence. "复习" here is purely an organizing
+// filter (no scheduling/SRS — that is out of scope).
+const PRESET_STAGES: ReadonlyArray<{ title: string; order: number }> = [
+  { title: "预习", order: 0 },
+  { title: "学习", order: 1 },
+  { title: "复习", order: 2 },
+  { title: "拓展", order: 3 }
+];
+
+// Create the four preset stage layers for a source on demand. Idempotent: a stage that
+// already exists (same role:"preset" + localSourceId + title) is reused, so this is safe
+// to call on every layer-list. Mirrors ensureOwnedLayer's construction.
+export async function ensurePresetLayers(vault: StudyVault, source: SourceRecord): Promise<StudyLayerRecord[]> {
+  const existing = (await vault.stores.layers.list()).filter(
+    (layer) => layer.role === "preset" && layer.localSourceId === source.id
+  );
+  const byTitle = new Map(existing.map((layer) => [layer.title, layer]));
+
+  const stages: StudyLayerRecord[] = [];
+  for (const stage of PRESET_STAGES) {
+    const found = byTitle.get(stage.title);
+    if (found) {
+      stages.push(found);
+      continue;
+    }
+    const now = new Date().toISOString();
+    const layer = studyLayerSchema.parse({
+      id: createEntityId("layer"),
+      type: "layer",
+      schemaVersion: 1,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: "user",
+      sourceFingerprint: fingerprintForSource(source),
+      localSourceId: source.id,
+      title: stage.title,
+      visibility: "private",
+      importMode: "owned",
+      enabled: true,
+      role: "preset",
+      order: stage.order
+    });
+    await vault.stores.layers.upsert(layer);
+    stages.push(layer);
+  }
+  return stages;
+}
+
+// Create a user-defined ("custom") layer over a source. Used by the layer-manager
+// create action. Mirrors ensureOwnedLayer but stamps role:"custom" and the optional
+// presentation fields (color/order) the manager supplies.
+export async function createCustomLayer(
+  vault: StudyVault,
+  source: SourceRecord,
+  opts: { title: string; color?: string; order?: number }
+): Promise<StudyLayerRecord> {
+  const now = new Date().toISOString();
+  const layer = studyLayerSchema.parse({
+    id: createEntityId("layer"),
+    type: "layer",
+    schemaVersion: 1,
+    createdAt: now,
+    updatedAt: now,
+    createdBy: "user",
+    sourceFingerprint: fingerprintForSource(source),
+    localSourceId: source.id,
+    title: opts.title,
+    visibility: "private",
+    importMode: "owned",
+    enabled: true,
+    role: "custom",
+    color: opts.color,
+    order: opts.order
+  });
+  await vault.stores.layers.upsert(layer);
+  return layer;
+}
+
 export type StudyLayerMigrationStats = { layers: number; anchors: number; notes: number };
 
 // Backfill: assign every pre-layer anchor/note to its source's owned layer. Cheap to
@@ -62,10 +143,19 @@ export async function migrateStudyLayers(vault: StudyVault): Promise<StudyLayerM
 
   let notes = 0;
   for (const note of await vault.stores.notes.list()) {
-    if (note.layerId || !note.sourceId) continue;
-    const layer = await ownedFor(note.sourceId);
-    if (!layer) continue;
-    await vault.stores.notes.upsert({ ...note, layerId: layer.id, updatedAt: new Date().toISOString() });
+    // Idempotent: a note that already has membership is left alone.
+    if (note.layerIds.length > 0) continue;
+    // Legacy single-membership note -> wrap its id; else (no layer yet) fall back to
+    // the source's owned layer. Notes with no sourceId stay untouched (nothing to
+    // bind them to). The deprecated single `layerId` is dropped on this rewrite.
+    const layerIds = note.layerId
+      ? [note.layerId]
+      : note.sourceId
+        ? [(await ownedFor(note.sourceId))?.id].filter((id): id is string => Boolean(id))
+        : [];
+    if (layerIds.length === 0) continue;
+    const { layerId: _legacyLayerId, ...rest } = note;
+    await vault.stores.notes.upsert({ ...rest, layerIds, updatedAt: new Date().toISOString() });
     notes += 1;
   }
 

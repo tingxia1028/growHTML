@@ -530,6 +530,120 @@ button {
   margin-top: 0;
 }
 
+/* —— Layer manager: create row + grouped list + per-row controls ——————————— */
+.layer-create {
+  display: grid;
+  gap: 6px;
+}
+
+.layer-create-input {
+  width: 100%;
+}
+
+.layer-create-btn.icon-button {
+  margin-top: 0;
+}
+
+.layer-group {
+  display: grid;
+  gap: 8px;
+}
+
+.layer-group + .layer-group {
+  margin-top: 8px;
+}
+
+.layer-group-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8a9189;
+}
+
+.layer-color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.layer-color-input {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #ddd7cc;
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
+.layer-rename-btn.link-button,
+.layer-up-btn.link-button,
+.layer-down-btn.link-button,
+.layer-delete-btn.link-button {
+  margin-top: 0;
+}
+
+.layer-delete-btn.link-button {
+  color: #9a3127;
+}
+
+/* —— A note's layer membership: chips + the move/add picker ————————————————— */
+.note-layers {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.note-layer-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.note-layer-chip {
+  padding: 1px 8px;
+  border: 1px solid #cfe3dd;
+  border-radius: 10px;
+  font-size: 11px;
+  color: #2f6f64;
+}
+
+.note-layer-edit.link-button {
+  margin-top: 0;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.note-layer-picker {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid #ddd7cc;
+  border-radius: 8px;
+  background: #fbfaf7;
+}
+
+.note-layer-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.note-layer-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: #cfd6cf;
+  flex: 0 0 auto;
+}
+
 .brand-block p,
 .reader-header p {
   margin: 0 0 6px;

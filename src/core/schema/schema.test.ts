@@ -63,6 +63,14 @@ describe("vault entity schemas", () => {
     expect(noteSchema.parse({ ...fixtureNote, contentType: "mindmap" }).contentType).toBe("mindmap");
   });
 
+  it("treats note layerIds as a multi-membership array (defaults empty, validates ids)", () => {
+    expect(noteSchema.parse({ ...fixtureNote, layerIds: undefined }).layerIds).toEqual([]);
+    const layerId = "layer_01ARZ3NDEKTSV4RRFFQ69G5FAX";
+    expect(noteSchema.parse({ ...fixtureNote, layerIds: [layerId] }).layerIds).toEqual([layerId]);
+    expect(() => noteSchema.parse({ ...fixtureNote, layerIds: "not-an-array" })).toThrow();
+    expect(() => noteSchema.parse({ ...fixtureNote, layerIds: ["note_01ARZ3NDEKTSV4RRFFQ69G5FAX"] })).toThrow();
+  });
+
   it("uses a discriminated anchor union", () => {
     expect(anchorSchema.parse(fixtureAnchor).anchorKind).toBe("html_selection");
     expect(() =>

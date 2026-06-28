@@ -37,6 +37,8 @@ function baseCtx(over: Partial<CommandContext> = {}): CommandContext {
       updateNote: vi.fn(async () => ({ note: { id: "note_1" } as never })),
       createRelation: vi.fn(async () => ({ relation: { id: "rel_1" } as never })),
       patchLayer: vi.fn(async () => ({ layer: { id: "layer_1" } as never })),
+      createLayer: vi.fn(async () => ({ layer: { id: "layer_1" } as never })),
+      deleteLayer: vi.fn(async () => ({ ok: true as const })),
       generateStructured: vi.fn(async () => ({ content: {}, provider: "mock" })),
       notes: vi.fn(async () => ({ notes: [] as never }))
     },
@@ -246,5 +248,31 @@ describe("command: layer.toggle", () => {
   it("is unavailable without a layerId or a boolean enabled", () => {
     expect(getCommand("layer.toggle")!.isAvailable(baseCtx({ payload: { layerId: "layer_1" } }))).toBe(false);
     expect(getCommand("layer.toggle")!.isAvailable(baseCtx({ payload: { enabled: true } }))).toBe(false);
+  });
+});
+
+describe("command: note.set-layers", () => {
+  it("sets the note's FULL layer membership and reports the change", async () => {
+    const onLayersChanged = vi.fn();
+    const ctx = baseCtx({
+      payload: { layerNoteId: "note_1", layerIds: ["layer_1", "layer_2"] },
+      actions: { onLayersChanged }
+    });
+    const ran = await runCommand("note.set-layers", ctx);
+    expect(ran).toBe(true);
+    expect(ctx.client.updateNote).toHaveBeenCalledWith("note_1", { layerIds: ["layer_1", "layer_2"] });
+    expect(onLayersChanged).toHaveBeenCalledOnce();
+  });
+
+  it("allows clearing membership (empty array is still a valid set)", async () => {
+    const ctx = baseCtx({ payload: { layerNoteId: "note_1", layerIds: [] } });
+    const ran = await runCommand("note.set-layers", ctx);
+    expect(ran).toBe(true);
+    expect(ctx.client.updateNote).toHaveBeenCalledWith("note_1", { layerIds: [] });
+  });
+
+  it("is unavailable without a note id or a layerIds array", () => {
+    expect(getCommand("note.set-layers")!.isAvailable(baseCtx({ payload: { layerNoteId: "note_1" } }))).toBe(false);
+    expect(getCommand("note.set-layers")!.isAvailable(baseCtx({ payload: { layerIds: ["layer_1"] } }))).toBe(false);
   });
 });

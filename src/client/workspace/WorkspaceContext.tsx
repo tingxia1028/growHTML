@@ -25,7 +25,8 @@ import {
   type ChatMessage,
   type NoteRecord,
   type PatchRecord,
-  type SourceRecord
+  type SourceRecord,
+  type StudyLayerRecord
 } from "../data/entityClient";
 import { useFocus, draftQuoteText, type FocusContextValue } from "../focus/FocusContext";
 import { createDefaultContent, isTextContentType } from "../notes/noteTypeRegistry";
@@ -166,12 +167,23 @@ export type WorkspaceContextValue = {
   /** Bump `conceptsVersion` after a direct entity mutation (e.g. delete relation). */
   refreshConcepts(): void;
 
-  // —— study layers ——
+  // —— study layers (a per-source lens axis: the multi-select filter) ——
   // Same refresh-token pattern as concepts: the layer switcher watches this to
   // re-fetch its list. `refreshLayers` ALSO repaints the reader, because toggling /
   // importing a layer changes which anchors are returned (server filters by enabled).
   layersVersion: number;
   refreshLayers(): void;
+  /** The active source's layers (owned + preset stages + custom + imported), loaded
+      alongside anchors/notes so the note filter + per-note chips can read them. */
+  sourceLayers: StudyLayerRecord[];
+  /** The set of layer ids currently enabled (the multi-select filter's "on" set). */
+  enabledLayerIds: Set<string>;
+  /** Notes after the OR filter: a note shows iff its layerIds intersect the enabled
+      set, OR it has no layers (never orphaned). This is what the views render. */
+  visibleNotes: NoteRecord[];
+  /** Toggle one layer's membership in the filter (flips its stored `enabled`). The
+      server is the source of truth, so this dispatches layer.toggle then re-fetches. */
+  toggleLayerFilter(layer: StudyLayerRecord): void;
 
   // —— product kits (per-source activation) ——
   // Effective kit ids for the active source (source.metadata.activeKitIds, else the
@@ -203,6 +215,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [anchors, setAnchors] = useState<AnyAnchor[]>([]);
   const [notes, setNotes] = useState<NoteRecord[]>([]);
   const [patches, setPatches] = useState<PatchRecord[]>([]);
+  // The active source's layers (the lens axis). Loaded with anchors/notes so the note
+  // OR-filter and the per-note layer chips can read them without their own fetch.
+  const [sourceLayers, setSourceLayers] = useState<StudyLayerRecord[]>([]);
   const [noteContentType, setNoteContentType] = useState<string>("markdown");
   // Structured draft for OBJECT content types (flashcard/quiz/image/…). Seeded from
   // the type's core `createDefault()` whenever the type changes; string types ignore
@@ -237,11 +252,32 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const selectedAnchorId = focus.anchor?.id ?? "";
   const activeFileDir = parentDir((activeSource?.metadata?.originalPath as string | undefined) ?? "");
 
+  // The enabled-layer set — the multi-select filter's "on" set. Driven off each
+  // layer's stored `enabled` flag (the same source of truth the server filters by, so
+  // the client and server agree on which notes/anchors show).
+  const enabledLayerIds = useMemo(
+    () => new Set(sourceLayers.filter((layer) => layer.enabled).map((layer) => layer.id)),
+    [sourceLayers]
+  );
+
+  // The OR filter (layer-as-lens): a note shows iff its layerIds intersect the enabled
+  // set, OR it has no layers (never orphaned — mirrors the server's empty="always
+  // visible" rule). Everything the views render — the note list, the painted note text —
+  // derives from this filtered list rather than the raw `notes`.
+  const visibleNotes = useMemo(
+    () =>
+      notes.filter(
+        (note) => note.layerIds.length === 0 || note.layerIds.some((id) => enabledLayerIds.has(id))
+      ),
+    [notes, enabledLayerIds]
+  );
+
   // Note text per anchor id — a note can hang off several anchors, and several
-  // notes can share an anchor (their text is merged for the one hover card).
+  // notes can share an anchor (their text is merged for the one hover card). Built from
+  // the FILTERED notes so a hidden layer's note text doesn't paint.
   const noteTextByAnchorId = useMemo(() => {
     const map = new Map<string, string>();
-    for (const note of notes) {
+    for (const note of visibleNotes) {
       const text = noteText(note.content);
       for (const anchorId of note.anchorIds) {
         const existing = map.get(anchorId);
@@ -249,7 +285,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
     }
     return map;
-  }, [notes]);
+  }, [visibleNotes]);
 
   // ONE normalized paint list for the active source: every anchor it has, mapped to
   // the uniform PaintAnchor shape with its merged note text. The host hands this
@@ -297,16 +333,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const sourceRecord = sources.find((item) => item.id === sourceId);
         const viewer = getSourceViewer(sourceRecord?.sourceType);
         const isLocalHtml = viewer.htmlPipeline && !!sourceRecord?.metadata?.originalPath;
-        const [rendered, anchorsResponse, notesResponse, patchesResponse] = await Promise.all([
+        const [rendered, anchorsResponse, notesResponse, patchesResponse, layersResponse] = await Promise.all([
           viewer.htmlPipeline && !isLocalHtml ? entityClient.rendered(sourceId) : Promise.resolve(null),
           entityClient.anchors(sourceId),
           entityClient.notes(sourceId),
-          entityClient.patches(sourceId)
+          entityClient.patches(sourceId),
+          entityClient.layers(sourceId)
         ]);
         setRenderedHtml(rendered?.content ?? "");
         setAnchors(anchorsResponse.anchors);
         setNotes(notesResponse.notes);
         setPatches(patchesResponse.patches);
+        setSourceLayers(layersResponse.layers);
         focus.clear();
         setPatchHtml("");
         setChatMessages([]);
@@ -326,14 +364,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const refreshAnnotations = useCallback(async () => {
     if (!activeSourceId) return;
     try {
-      const [anchorsResponse, notesResponse, patchesResponse] = await Promise.all([
+      const [anchorsResponse, notesResponse, patchesResponse, layersResponse] = await Promise.all([
         entityClient.anchors(activeSourceId),
         entityClient.notes(activeSourceId),
-        entityClient.patches(activeSourceId)
+        entityClient.patches(activeSourceId),
+        entityClient.layers(activeSourceId)
       ]);
       setAnchors(anchorsResponse.anchors);
       setNotes(notesResponse.notes);
       setPatches(patchesResponse.patches);
+      setSourceLayers(layersResponse.layers);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to refresh");
     }
@@ -416,6 +456,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           setNotes([]);
           setAnchors([]);
           setPatches([]);
+          setSourceLayers([]);
         }
         await loadSources();
         setStatus("idle");
@@ -623,6 +664,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     void refreshAnnotations();
   }, [refreshAnnotations]);
 
+  // Flip one layer's membership in the multi-select filter. The stored `enabled` flag IS
+  // the filter source of truth (the server reads it for both the note list and derived
+  // anchor painting), so this routes through the layer.toggle command; its shared
+  // onLayersChanged action re-fetches layers + annotations, which updates the filter.
+  const toggleLayerFilter = useCallback(
+    (layer: StudyLayerRecord) => {
+      void dispatch("layer.toggle", { layerId: layer.id, enabled: !layer.enabled });
+    },
+    [dispatch]
+  );
+
   // Whether the composer's primary action is available, via the command itself.
   const composerCommandId = composerMode === "ask" ? "anchor.ask-ai" : "anchor.add-note";
   const composerCtx = commandContext({ text: chatInput, contentType: noteContentType });
@@ -751,6 +803,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       refreshConcepts,
       layersVersion,
       refreshLayers,
+      sourceLayers,
+      enabledLayerIds,
+      visibleNotes,
+      toggleLayerFilter,
       activeKitIds,
       installedKits,
       setActiveKit,
@@ -811,6 +867,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       refreshConcepts,
       layersVersion,
       refreshLayers,
+      sourceLayers,
+      enabledLayerIds,
+      visibleNotes,
+      toggleLayerFilter,
       activeKitIds,
       setActiveKit,
       activeLayoutId,

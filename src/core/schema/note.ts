@@ -33,8 +33,14 @@ export const noteSchema = recordEnvelopeSchema("note", noteIdSchema).extend({
 
   visibility: visibilitySchema.default("private"),
 
-  // Study Layer membership (optional for backward-compat; migration backfills the
-  // source's "owned" layer onto pre-layer notes).
+  // Study Layer membership (multi). A note's lens(es); a note is visible iff
+  // layerIds intersects the enabled layers (OR across its layers). Defaults empty;
+  // migration backfills the source's "owned" layer. Mirrors anchorIds/conceptIds.
+  layerIds: z.array(layerIdSchema).default([]),
+  // DEPRECATED, migration-only: the legacy single-membership field. Retained for
+  // one release so the layerIds backfill can read a pre-multi note's stored id
+  // (the strict envelope would otherwise strip it on parse). Do not write it; it
+  // is dropped once the backfill has run everywhere.
   layerId: layerIdSchema.optional(),
   // Provenance for a note copied out of an imported layer into the user's own.
   origin: z
