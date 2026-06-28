@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { rectSchema } from "../region/region";
 import { anchorIdSchema, layerIdSchema, recordEnvelopeSchema, sourceIdSchema } from "./common";
 
 export const anchorKindSchema = z.enum([
@@ -39,7 +40,7 @@ export const pdfSelectionAnchorSchema = anchorEnvelopeSchema.extend({
   // Geometric hint in normalized page coords [x, y, w, h] (0..1). Primary
   // re-location is by page + quote when there's text; rect is the fallback and
   // the only locator for figures / scanned pages (where quote is empty).
-  rect: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional()
+  rect: rectSchema.optional()
 });
 
 export const codeRangeAnchorSchema = anchorEnvelopeSchema.extend({
@@ -52,7 +53,7 @@ export const codeRangeAnchorSchema = anchorEnvelopeSchema.extend({
 
 export const imageRegionAnchorSchema = anchorEnvelopeSchema.extend({
   anchorKind: z.literal("image_region"),
-  rect: z.tuple([z.number(), z.number(), z.number(), z.number()])
+  rect: rectSchema
 });
 
 // Live web pages have no injected study-ids, so anchor by W3C TextQuoteSelector:

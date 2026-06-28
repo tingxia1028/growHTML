@@ -9,6 +9,7 @@
 // caller still keeps the note, just flagged as un-located for manual re-anchoring.
 
 import type { AnchorKind } from "../schema";
+import { rematchRegion } from "../region/region";
 
 export type MatchStatus = "matched" | "fuzzy" | "unmatched";
 
@@ -164,12 +165,12 @@ export function rematchAnchor(portable: PortableAnchor, ctx: RematchContext): Re
         if (result.status !== "unmatched") return result;
       }
       // Figure / scanned region: the rect is the locator.
-      if (portable.rect) return { status: ctx.sameBinary === false ? "fuzzy" : "matched" };
+      if (portable.rect) return rematchRegion({ rect: portable.rect, space: { kind: "page", page: portable.page ?? 1 } }, ctx);
       return { status: "unmatched" };
     }
 
     case "image_region":
-      if (portable.rect) return { status: ctx.sameBinary === false ? "fuzzy" : "matched" };
+      if (portable.rect) return rematchRegion({ rect: portable.rect, space: { kind: "whole" } }, ctx);
       return { status: "unmatched" };
 
     case "code_range": {

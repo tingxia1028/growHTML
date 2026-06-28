@@ -7,27 +7,19 @@
 // box-draw lives here once instead of being duplicated between the two readers.
 
 import { applyHighlight } from "../annotationLayer";
+import { normalizeRect } from "../../core/region/region";
+import type { Rect } from "../../core/region/region";
 
-export type NormalizedRect = [number, number, number, number];
+export type NormalizedRect = Rect;
 
 // Minimum drag extent (px) below which a gesture is treated as a stray click.
 const MIN_DRAG = 6;
 
 // Normalize a drag (start + current point, both relative to `rect`) to a rect in
-// 0..1 of `rect`, clamped to its bounds. Pure — unit-tested without the DOM.
-export function normalizeDragRect(
-  rect: { width: number; height: number },
-  start: { x: number; y: number },
-  current: { x: number; y: number }
-): NormalizedRect {
-  const curX = Math.max(0, Math.min(rect.width, current.x));
-  const curY = Math.max(0, Math.min(rect.height, current.y));
-  const x0 = Math.min(start.x, curX);
-  const y0 = Math.min(start.y, curY);
-  const w = Math.abs(curX - start.x);
-  const h = Math.abs(curY - start.y);
-  return [x0 / rect.width, y0 / rect.height, w / rect.width, h / rect.height];
-}
+// 0..1 of `rect`, clamped to its bounds. Pure — unit-tested without the DOM. The
+// math now lives once in core/region; re-exported here under its original name so
+// overlay stays the gesture/box home for the readers.
+export const normalizeDragRect = normalizeRect;
 
 // Whether a drag is large enough (and the element laid out) to be a real region
 // rather than a stray click. Pure.

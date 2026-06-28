@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { entityClient, type AnyAnchor, type CreateAnchorInput } from "../data/entityClient";
+import type { Rect, RegionTarget } from "../../core/region/region";
 
 // AnchorDraft — a passage the user has selected/marked in a reader but not yet
 // saved as a real Anchor. It is materialized into a stored Anchor lazily, only
@@ -32,7 +33,7 @@ export type RegionAnchorDraft = {
   sourceId: string;
   kind: "pdf" | "image";
   /** Normalized rectangle [x, y, w, h] (0..1) on the page/image. */
-  rect: [number, number, number, number];
+  rect: Rect;
   // pdf
   page?: number;
   url?: string;
@@ -59,6 +60,17 @@ export type FocusTarget =
   | { type: "concept"; conceptId: string }
   | { type: "relation"; relationId: string };
 
+// The single region draft→request map: a source-agnostic RegionTarget → the
+// createAnchor request body, keyed off the target's space (the box the rect is
+// normalized to). Replaces the two near-identical region arms that buildAnchorInput
+// used to inline — image → image_region {rect}; pdf page → pdf_selection {page,rect}.
+export function regionTargetToRequest(target: RegionTarget, source: string): CreateAnchorInput {
+  if (target.space.kind === "whole") {
+    return { sourceId: source, anchorKind: "image_region", rect: target.rect, quote: "" };
+  }
+  return { sourceId: source, anchorKind: "pdf_selection", page: target.space.page, rect: target.rect, quote: "" };
+}
+
 // Pure mapping: an AnchorDraft → the createAnchor request body. Exported so it can
 // be unit-tested without React. Covers both capture modes:
 //   quote + html  → html_selection {studyId, selector, quote, ctx}
@@ -68,17 +80,11 @@ export type FocusTarget =
 //   region + image→ image_region {rect}
 export function buildAnchorInput(draft: AnchorDraft): CreateAnchorInput {
   if (draft.mode === "region") {
-    if (draft.kind === "image") {
-      return { sourceId: draft.sourceId, anchorKind: "image_region", rect: draft.rect, quote: "" };
-    }
-    // region + pdf
-    return {
-      sourceId: draft.sourceId,
-      anchorKind: "pdf_selection",
-      page: draft.page ?? 1,
-      rect: draft.rect,
-      quote: ""
-    };
+    const target: RegionTarget =
+      draft.kind === "image"
+        ? { rect: draft.rect, space: { kind: "whole" } }
+        : { rect: draft.rect, space: { kind: "page", page: draft.page ?? 1 } };
+    return regionTargetToRequest(target, draft.sourceId);
   }
 
   if (draft.kind === "web") {
