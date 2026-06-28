@@ -17,6 +17,7 @@ function fakeFocus(over: Partial<FocusContextValue> = {}): FocusContextValue {
     focus: { type: "anchor-draft", draft: { mode: "quote", sourceId: "src_1", kind: "html", quote: "passage" } },
     draft: { mode: "quote", sourceId: "src_1", kind: "html", quote: "passage" },
     anchor: null,
+    revealSeq: 0,
     setFocus: vi.fn(),
     setDraft: vi.fn(),
     setAnchor: vi.fn(),

@@ -4,6 +4,7 @@ import {
   bindWebviewAnchors,
   bindWebviewSelection,
   normalizeWebSelection,
+  revealWebviewAnchor,
   toWebAnchorMsgs,
   webSelectionToDraft,
   webviewPreloadUrl,
@@ -83,6 +84,30 @@ describe("webviewPreloadUrl", () => {
       webviewPreloadUrl: "file:///preload.cjs"
     };
     expect(webviewPreloadUrl()).toBe("file:///preload.cjs");
+  });
+});
+
+describe("revealWebviewAnchor", () => {
+  it("sends sv:reveal with the anchor id to the guest", () => {
+    const webview = fakeWebview();
+    revealWebviewAnchor(webview, "anchor-7");
+    expect(webview.send).toHaveBeenCalledWith("sv:reveal", "anchor-7");
+  });
+
+  it("no-ops without a webview or an id", () => {
+    const webview = fakeWebview();
+    revealWebviewAnchor(null, "anchor-7");
+    revealWebviewAnchor(undefined, "anchor-7");
+    revealWebviewAnchor(webview, undefined);
+    expect(webview.send).not.toHaveBeenCalled();
+  });
+
+  it("swallows a throwing send (guest not ready yet)", () => {
+    const webview = fakeWebview();
+    (webview.send as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      throw new Error("guest not attached");
+    });
+    expect(() => revealWebviewAnchor(webview, "anchor-7")).not.toThrow();
   });
 });
 

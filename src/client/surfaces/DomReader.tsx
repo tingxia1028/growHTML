@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { decorateAnnotations, type HtmlAnnotationMode } from "../annotations";
+import { revealAnchorInDoc } from "../annotationLayer";
 import type { AnchorDraft } from "../focus/FocusContext";
 import { anchorsOfKind, type PaintAnchor, type SurfaceReaderProps } from "./types";
 
@@ -102,8 +103,21 @@ export function readDomSelection(doc: Document, sourceId: string, event?: Event)
   };
 }
 
-export function DomReader({ srcDoc, sourceId, anchors, onSelect, mode = "floating", onOpenUrl }: DomReaderProps) {
+export function DomReader({
+  srcDoc,
+  sourceId,
+  anchors,
+  onSelect,
+  activeAnchorId,
+  revealSeq,
+  mode = "floating",
+  onOpenUrl
+}: DomReaderProps) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
+  // Latest reveal target in a ref so bindFrame (run on iframe load, possibly AFTER
+  // the first reveal effect) can reveal once the anchors are actually painted.
+  const activeAnchorIdRef = useRef(activeAnchorId);
+  activeAnchorIdRef.current = activeAnchorId;
   // Keep the latest callback + state in refs so the once-per-document listeners
   // (bound on load) always see current values.
   const onSelectRef = useRef(onSelect);
@@ -121,6 +135,9 @@ export function DomReader({ srcDoc, sourceId, anchors, onSelect, mode = "floatin
     const doc = frameRef.current?.contentDocument;
     if (!doc) return;
     paintDomAnchors(doc, anchors, modeRef.current);
+    // A reveal may have been requested before this fresh document painted (effect
+    // ran first) — now that the data-sv-key elements exist, honor the pending one.
+    if (activeAnchorIdRef.current) revealAnchorInDoc(doc, activeAnchorIdRef.current);
     if (boundSelectionDocuments.has(doc)) return;
 
     const onSelection = (event?: Event) => {
@@ -166,6 +183,14 @@ export function DomReader({ srcDoc, sourceId, anchors, onSelect, mode = "floatin
     if (doc) paintDomAnchors(doc, anchors, mode);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anchors, srcDoc, mode]);
+
+  // REVEAL: scroll the focused anchor into view (+ brief flash) via the one shared
+  // helper. Keyed on revealSeq too so re-selecting the SAME anchor re-fires. Prop-
+  // driven (no useFocus) so this stays unit-testable in jsdom.
+  useEffect(() => {
+    if (!activeAnchorId) return;
+    revealAnchorInDoc(frameRef.current?.contentDocument, activeAnchorId);
+  }, [activeAnchorId, revealSeq]);
 
   return <iframe ref={frameRef} title="Source reader" srcDoc={srcDoc} onLoad={bindFrame} />;
 }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   bindWebviewAnchors,
   bindWebviewSelection,
+  revealWebviewAnchor,
   toWebAnchorMsgs,
   webSelectionToDraft,
   webviewPreloadUrl,
@@ -88,7 +89,16 @@ function initialTabs(primaryMode: "snapshot" | "live", sourceUrl: string): Tab[]
 //     WRITE: paint web_text_quote anchors via sv:anchors.
 // Live tabs need Electron; outside it a pure-live source shows a hint, while a
 // snapshot source still renders (its snapshot tab needs no webview).
-export function WebviewReader({ sourceId, sourceUrl, primaryMode, snapshotHtml, anchors, onSelect }: WebviewReaderProps) {
+export function WebviewReader({
+  sourceId,
+  sourceUrl,
+  primaryMode,
+  snapshotHtml,
+  anchors,
+  onSelect,
+  activeAnchorId,
+  revealSeq
+}: WebviewReaderProps) {
   const preloadUrl = webviewPreloadUrl();
 
   const [tabs, setTabs] = useState<Tab[]>(() => initialTabs(primaryMode, sourceUrl));
@@ -239,6 +249,16 @@ export function WebviewReader({ sourceId, sourceUrl, primaryMode, snapshotHtml, 
   useEffect(() => {
     for (const push of anchorPushers.current.values()) push();
   }, [anchors]);
+
+  // REVEAL: ask the ACTIVE LIVE tab's guest to scroll the focused anchor into view
+  // (sv:reveal → the guest preload calls the shared revealAnchorInDoc). Keyed on
+  // revealSeq so re-selecting the same anchor re-fires, and on activeId so switching
+  // to a tab honors the current focus. The snapshot tab reveals through its nested
+  // DomReader (below) instead, so target only live guests here.
+  useEffect(() => {
+    if (!activeAnchorId) return;
+    revealWebviewAnchor(webviews.current.get(activeIdRef.current), activeAnchorId);
+  }, [activeAnchorId, revealSeq, activeId]);
 
   // Reflect the active tab's URL + nav state when switching tabs.
   useEffect(() => {
@@ -416,6 +436,8 @@ export function WebviewReader({ sourceId, sourceUrl, primaryMode, snapshotHtml, 
                 sourceId={sourceId}
                 anchors={anchors}
                 onSelect={onSelect}
+                activeAnchorId={activeAnchorId}
+                revealSeq={revealSeq}
                 onOpenUrl={openLive}
               />
             ) : !preloadUrl ? (

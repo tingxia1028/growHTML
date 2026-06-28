@@ -48,6 +48,34 @@ async function selectPassage(page: Page, passage: string) {
   await expect(page.locator(".chat-source")).toContainText(passage);
 }
 
+// Is the painted anchor element for `passage` inside the reader iframe's viewport?
+// The REVEAL assertion: clicking a bookmark row must scroll its [data-sv-key]
+// highlight (.sv-annotated) on-screen, not just re-focus it.
+async function anchorInView(page: Page, passage: string): Promise<boolean> {
+  return page
+    .frameLocator(READER)
+    .locator(".sv-annotated", { hasText: passage })
+    .first()
+    .evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const view = el.ownerDocument.defaultView;
+      const vh = view ? view.innerHeight : 0;
+      return r.bottom > 0 && r.top < vh;
+    });
+}
+
+// Scroll the reader document to its bottom so a top passage goes off-screen — the
+// setup for proving a jump scrolls it BACK into view.
+async function scrollReaderToBottom(page: Page) {
+  await page
+    .frameLocator(READER)
+    .locator("body")
+    .evaluate((b) => {
+      const view = b.ownerDocument.defaultView;
+      if (view) view.scrollTo(0, b.scrollHeight);
+    });
+}
+
 test("bookmark V1: select → Add bookmark → row in Bookmarks pane → jumps → absent from note list", async ({
   page,
   request
@@ -117,4 +145,49 @@ test("bookmark V1: select → Add bookmark → row in Bookmarks pane → jumps �
   await expect(page.locator(".chat-source")).toHaveCount(0);
   await row.click();
   await expect(page.locator(".chat-source")).toContainText(passage);
+});
+
+// REVEAL: a bookmark row click must SCROLL the reader to the passage, not just set
+// focus state (the reported "no jump" bug). With a tall spacer below the bookmarked
+// passage, scrolling the reader away and clicking the row must bring it back on-screen.
+test("bookmark reveal: clicking a row scrolls the off-screen passage back into the reader", async ({
+  page,
+  request
+}) => {
+  const stamp = uid();
+  const title = `Bookmark reveal ${stamp}`;
+  const passage = `Reveal bookmark passage ${stamp}`;
+  // A tall spacer below the passage so scrolling the reader to the bottom pushes the
+  // bookmarked passage off-screen — the precondition for proving the jump scrolls back.
+  const body = `<article><section><p>${passage}</p><div style="height:2400px"></div><p>End of document ${stamp}</p></section></article>`;
+  const source = await seedHtmlSource(request, title, body);
+
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await openSource(page, source);
+
+  // Bookmark the passage (select → core Bookmark action) → a row in the Bookmarks pane.
+  await selectPassage(page, passage);
+  await page.locator('.selection-toolbar-btn[data-action-id="bookmark.add"]').click();
+  const row = page.locator(".bookmark-panel .bookmark-row");
+  await expect(row).toHaveCount(1);
+
+  // The bookmarked anchor paints (carries data-sv-key) so reveal has a target.
+  await expect(page.frameLocator(READER).locator(".sv-annotated", { hasText: passage })).toHaveCount(1);
+
+  // Scroll the reader to the bottom → the bookmarked passage is off-screen.
+  await scrollReaderToBottom(page);
+  await expect.poll(() => anchorInView(page, passage)).toBe(false);
+
+  // Click the row → it re-focuses (quote in .chat-source) AND scrolls back into view.
+  await page.locator(".chat-source-clear").click();
+  await expect(page.locator(".chat-source")).toHaveCount(0);
+  await row.click();
+  await expect(page.locator(".chat-source")).toContainText(passage);
+  await expect.poll(() => anchorInView(page, passage)).toBe(true);
+
+  // RE-TRIGGER: scroll away and re-click the SAME row — revealSeq must re-fire the scroll.
+  await scrollReaderToBottom(page);
+  await expect.poll(() => anchorInView(page, passage)).toBe(false);
+  await row.click();
+  await expect.poll(() => anchorInView(page, passage)).toBe(true);
 });

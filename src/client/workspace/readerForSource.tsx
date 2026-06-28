@@ -5,10 +5,12 @@
 // `source.viewer` view calls this resolver and renders whatever it returns.
 //
 // Every annotatable reader takes the SAME annotation contract — `anchors`
-// (the host's one paintAnchors list; the reader filters to the kinds it paints) +
+// (the host's one paintAnchors list; the reader filters to the kinds it paints),
 // `onSelect` (the host's `focus.setDraft`; the reader emits a normalized
-// AnchorDraft). The only per-reader prop is its source locator. Adding a viewer =
-// mapping its surface here; no capture/paint logic lives in the host.
+// AnchorDraft), and the REVEAL leg `activeAnchorId` + `revealSeq` (the host's
+// focused anchor + reveal nonce; the reader scrolls it into view). The only
+// per-reader prop is its source locator. Adding a viewer = mapping its surface
+// here; no capture/paint/reveal logic lives in the host.
 
 import type { ReactNode } from "react";
 import type { AnchorDraft } from "../focus/FocusContext";
@@ -39,6 +41,10 @@ export type ReaderArgs = {
   anchors: PaintAnchor[];
   /** The host's single draft sink (`focus.setDraft`). */
   onSelect: (draft: AnchorDraft) => void;
+  /** REVEAL: the focused anchor id the reader should scroll into view (`focus.anchor?.id`). */
+  activeAnchorId?: string;
+  /** REVEAL: the reveal nonce (`focus.revealSeq`); a change re-fires the scroll, even for the same id. */
+  revealSeq?: number;
   /** Rendered HTML for the imported-HTML pipeline (DomReader srcDoc). */
   renderedHtml: string;
   /** Note-presentation mode for the DOM HTML reader (floating ↔ margin gutter). */
@@ -48,7 +54,15 @@ export type ReaderArgs = {
 // Resolve the reader for the active source. Returns the empty-state placeholder when
 // there's nothing to show (no source, or an HTML-pipeline source whose render hasn't
 // arrived yet) — the SAME fallbacks the old inline switch produced.
-export function readerForSource({ source, anchors, onSelect, renderedHtml, annotationMode }: ReaderArgs): ReactNode {
+export function readerForSource({
+  source,
+  anchors,
+  onSelect,
+  activeAnchorId,
+  revealSeq,
+  renderedHtml,
+  annotationMode
+}: ReaderArgs): ReactNode {
   if (!source) {
     return <div className="empty-reader">Select a source to start.</div>;
   }
@@ -64,6 +78,8 @@ export function readerForSource({ source, anchors, onSelect, renderedHtml, annot
         sourceId={source.id}
         anchors={anchors}
         onSelect={onSelect}
+        activeAnchorId={activeAnchorId}
+        revealSeq={revealSeq}
       />
     );
   }
@@ -82,6 +98,8 @@ export function readerForSource({ source, anchors, onSelect, renderedHtml, annot
         sourceId={source.id}
         anchors={anchors}
         onSelect={onSelect}
+        activeAnchorId={activeAnchorId}
+        revealSeq={revealSeq}
       />
     );
   }
@@ -92,6 +110,8 @@ export function readerForSource({ source, anchors, onSelect, renderedHtml, annot
         sourceId={source.id}
         anchors={anchors}
         onSelect={onSelect}
+        activeAnchorId={activeAnchorId}
+        revealSeq={revealSeq}
       />
     );
   }
@@ -102,6 +122,8 @@ export function readerForSource({ source, anchors, onSelect, renderedHtml, annot
         sourceId={source.id}
         anchors={anchors}
         onSelect={onSelect}
+        activeAnchorId={activeAnchorId}
+        revealSeq={revealSeq}
       />
     );
   }
@@ -115,6 +137,8 @@ export function readerForSource({ source, anchors, onSelect, renderedHtml, annot
         sourceId={source.id}
         anchors={anchors}
         onSelect={onSelect}
+        activeAnchorId={activeAnchorId}
+        revealSeq={revealSeq}
       />
     );
   }
@@ -125,6 +149,8 @@ export function readerForSource({ source, anchors, onSelect, renderedHtml, annot
         sourceId={source.id}
         anchors={anchors}
         onSelect={onSelect}
+        activeAnchorId={activeAnchorId}
+        revealSeq={revealSeq}
         mode={annotationMode}
       />
     );

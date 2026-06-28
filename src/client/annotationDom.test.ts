@@ -10,6 +10,7 @@ import {
   packColumn,
   paintMarginNotes,
   readCardGeom,
+  revealAnchorInDoc,
   writeCardGeom
 } from "./annotationLayer";
 import { decorateAnnotations } from "./annotations";
@@ -66,6 +67,50 @@ describe("clearAnnotations", () => {
     const el = document.querySelector('[data-study-id="s1"]');
     expect(el?.classList.contains("sv-annotated")).toBe(false);
     expect(el?.hasAttribute("data-sv-note")).toBe(false);
+  });
+});
+
+describe("revealAnchorInDoc", () => {
+  it("scrolls the data-sv-key element into view and adds a transient sv-active flash", () => {
+    document.body.innerHTML = '<p data-study-id="s1">Hello world</p>';
+    const el = document.querySelector('[data-study-id="s1"]') as HTMLElement;
+    applyHighlight(el, "", "a1"); // stamps data-sv-key="a1"
+    // jsdom has no scrollIntoView; stub it to assert it's called exactly once.
+    let calls = 0;
+    el.scrollIntoView = () => {
+      calls += 1;
+    };
+    expect(revealAnchorInDoc(document, "a1")).toBe(true);
+    expect(calls).toBe(1);
+    expect(el.classList.contains("sv-active")).toBe(true);
+  });
+
+  it("is a safe no-op for an unknown id, a missing root, or an empty id", () => {
+    document.body.innerHTML = '<p data-study-id="s1">Hello</p>';
+    applyHighlight(document.querySelector('[data-study-id="s1"]')!, "", "a1");
+    expect(revealAnchorInDoc(document, "nope")).toBe(false);
+    expect(revealAnchorInDoc(null, "a1")).toBe(false);
+    expect(revealAnchorInDoc(document, undefined)).toBe(false);
+  });
+
+  it("escapes a quote in the id (no throw, no selector injection)", () => {
+    document.body.innerHTML = "<p>quoted</p>";
+    const el = document.querySelector("p") as HTMLElement;
+    applyHighlight(el, "", 'a"b');
+    el.scrollIntoView = () => {};
+    expect(revealAnchorInDoc(document, 'a"b')).toBe(true);
+    expect(el.classList.contains("sv-active")).toBe(true);
+  });
+
+  it("swallows a missing scrollIntoView (jsdom) and still flashes", () => {
+    document.body.innerHTML = "<p>x</p>";
+    const el = document.querySelector("p") as HTMLElement & { scrollIntoView?: unknown };
+    applyHighlight(el, "", "a1");
+    // Ensure scrollIntoView is absent → the try/catch must not throw. Cast through a
+    // partial record so `delete` is legal on the (otherwise non-optional) DOM member.
+    delete (el as { scrollIntoView?: unknown }).scrollIntoView;
+    expect(() => revealAnchorInDoc(document, "a1")).not.toThrow();
+    expect(el.classList.contains("sv-active")).toBe(true);
   });
 });
 

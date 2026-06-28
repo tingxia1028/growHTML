@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { applyHighlight } from "./annotationLayer";
+import { applyHighlight, revealAnchorInDoc } from "./annotationLayer";
 import type { AnchorDraft } from "./focus/FocusContext";
 import { anchorsOfKind, type PaintAnchor, type SurfaceReaderProps } from "./surfaces/types";
 import { isRealRegion, normalizeDragRect, type NormalizedRect } from "./surfaces/overlay";
@@ -17,7 +17,7 @@ type ImageReaderProps = SurfaceReaderProps & {
 // drawn on top of it. Stored image_region anchors from the `anchors` prop are drawn
 // back as boxes that share the same floating note card as every other surface
 // (WRITE). It uses the shared overlay rubber-band helpers.
-export function ImageReader({ src, sourceId, anchors, onSelect }: ImageReaderProps) {
+export function ImageReader({ src, sourceId, anchors, onSelect, activeAnchorId, revealSeq }: ImageReaderProps) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
@@ -29,6 +29,13 @@ export function ImageReader({ src, sourceId, anchors, onSelect }: ImageReaderPro
   function metrics() {
     return frameRef.current?.getBoundingClientRect() ?? null;
   }
+
+  // REVEAL: scroll the focused region box into view (+ flash) via the one shared
+  // helper — each ImageRegionBox carries data-sv-key (applyHighlight). Keyed on
+  // revealSeq so re-selecting the same region re-fires. Prop-driven (no useFocus).
+  useEffect(() => {
+    if (activeAnchorId) revealAnchorInDoc(frameRef.current, activeAnchorId);
+  }, [activeAnchorId, revealSeq]);
 
   // Bind the move/up listeners synchronously on mousedown (not via an effect) so the
   // gesture is captured even when the whole drag arrives in one tick (e.g. driven by

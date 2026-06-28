@@ -132,6 +132,14 @@ export type FocusContextValue = {
   draft: AnchorDraft | null;
   /** The materialized/selected anchor record currently in focus, if any. */
   anchor: AnyAnchor | null;
+  /**
+   * Reveal nonce: bumped on every `setAnchor(non-null)` (and when a draft is
+   * materialized into a fresh anchor). Readers watch [activeAnchorId, revealSeq]
+   * to scroll the focused passage into view — bumping on EVERY focus (not just
+   * id changes) means re-clicking the SAME anchor (e.g. a bookmark row, a
+   * multi-anchor jump button) still re-triggers the scroll-to-passage.
+   */
+  revealSeq: number;
   setFocus(next: FocusTarget | null): void;
   /** Focus a fresh selection (or clear it). */
   setDraft(draft: AnchorDraft | null): void;
@@ -163,6 +171,9 @@ export function FocusProvider({
 }: FocusProviderProps) {
   const [focus, setFocusState] = useState<FocusTarget | null>(null);
   const [anchorRecord, setAnchorRecord] = useState<AnyAnchor | null>(null);
+  // Reveal nonce — bumped on every focus of an anchor so re-selecting the SAME
+  // anchor re-fires the reader's scroll-to-passage effect (see revealSeq doc).
+  const [revealSeq, setRevealSeq] = useState(0);
 
   const setDraft = useCallback((draft: AnchorDraft | null) => {
     setAnchorRecord(null);
@@ -172,6 +183,9 @@ export function FocusProvider({
   const setAnchor = useCallback((anchor: AnyAnchor | null) => {
     setAnchorRecord(anchor);
     setFocusState(anchor ? { type: "anchor", anchorId: anchor.id } : null);
+    // Bump the reveal nonce on a real focus so the reader scrolls to it — even if
+    // it's the same anchor as last time (re-clicking a bookmark / jump button).
+    if (anchor) setRevealSeq((n) => n + 1);
   }, []);
 
   const clear = useCallback(() => {
@@ -185,6 +199,7 @@ export function FocusProvider({
     const { anchor } = await createAnchor(buildAnchorInput(focus.draft));
     setAnchorRecord(anchor);
     setFocusState({ type: "anchor", anchorId: anchor.id });
+    setRevealSeq((n) => n + 1);
     onAnchorMaterialized?.(anchor);
     return anchor;
   }, [anchorRecord, focus, createAnchor, onAnchorMaterialized]);
@@ -194,13 +209,14 @@ export function FocusProvider({
       focus,
       draft: focus?.type === "anchor-draft" ? focus.draft : null,
       anchor: anchorRecord,
+      revealSeq,
       setFocus: setFocusState,
       setDraft,
       setAnchor,
       clear,
       materializeAnchor
     }),
-    [focus, anchorRecord, setDraft, setAnchor, clear, materializeAnchor]
+    [focus, anchorRecord, revealSeq, setDraft, setAnchor, clear, materializeAnchor]
   );
 
   return <FocusContext.Provider value={value}>{children}</FocusContext.Provider>;

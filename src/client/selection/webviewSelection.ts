@@ -137,6 +137,22 @@ export function bindWebviewAnchors(
   };
 }
 
+// REVEAL side: ask a webview GUEST to scroll a painted anchor into view. The host
+// can't reach the guest DOM, so it sends `sv:reveal` over IPC and the guest preload
+// (electron/webview-preload.ts) calls the SAME shared revealAnchorInDoc against its
+// own document. Shared here so both webview readers (LocalHtmlReader + the live
+// WebviewReader tab) plumb reveal identically. `send` throws before the guest
+// attaches, so it's guarded — a reveal requested too early is simply dropped (the
+// user can re-click; the painted anchor is already in view after a fresh paint).
+export function revealWebviewAnchor(webview: SelectionWebview | null | undefined, anchorId: string | undefined): void {
+  if (!webview || !anchorId) return;
+  try {
+    webview.send("sv:reveal", anchorId);
+  } catch {
+    // Guest not ready yet; nothing to reveal.
+  }
+}
+
 // —— Bridge: uniform surface contract ⇄ guest IPC shapes ——
 // The webview surface speaks WebSelection/WebAnchorMsg over IPC, but the host
 // drives every reader through the uniform PaintAnchor/AnchorDraft contract. These

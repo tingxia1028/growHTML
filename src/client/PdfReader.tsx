@@ -4,7 +4,7 @@ import * as pdfjsLib from "pdfjs-dist";
 import { EventBus, PDFLinkService, PDFViewer } from "pdfjs-dist/web/pdf_viewer.mjs";
 import workerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 import "pdfjs-dist/web/pdf_viewer.css";
-import { applyHighlight, clearAnnotations, ensureAnnotationLayer } from "./annotationLayer";
+import { applyHighlight, clearAnnotations, ensureAnnotationLayer, revealAnchorInDoc } from "./annotationLayer";
 import type { AnchorDraft } from "./focus/FocusContext";
 import { anchorsOfKind, type SurfaceReaderProps } from "./surfaces/types";
 import { isRealRegion, normalizeDragRect, placeRegionBox } from "./surfaces/overlay";
@@ -31,11 +31,16 @@ const CONTEXT = 32;
 //   WRITE: paint pdf_selection anchors from the `anchors` prop — a text highlight
 //          (match the quote in the text layer) or, when the anchor carries a rect,
 //          a region box. Both hook the shared note card via applyHighlight.
-export function PdfReader({ fileUrl, sourceId, anchors, onSelect }: PdfReaderProps) {
+export function PdfReader({ fileUrl, sourceId, anchors, onSelect, activeAnchorId, revealSeq }: PdfReaderProps) {
   // container = the absolutely-positioned scroll root PDFViewer requires; viewer =
   // the inner `.pdfViewer` div PDFViewer fills with pages.
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<HTMLDivElement | null>(null);
+  // The official PDFViewer instance + its eventBus, lifted to refs so the reveal
+  // effect can scrollPageIntoView for anchors on virtualized (not-yet-rendered)
+  // pages and re-reveal once that page's text layer renders.
+  const pdfViewerRef = useRef<PDFViewer | null>(null);
+  const eventBusRef = useRef<EventBus | null>(null);
 
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
@@ -99,8 +104,10 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect }: PdfReaderPro
     let cancelled = false;
 
     const eventBus = new EventBus();
+    eventBusRef.current = eventBus;
     const linkService = new PDFLinkService({ eventBus });
     const pdfViewer = new PDFViewer({ container, viewer, eventBus, linkService });
+    pdfViewerRef.current = pdfViewer;
     linkService.setViewer(pdfViewer);
 
     // Fit each page to the container width; 'page-width' is a dynamic value, so
@@ -230,6 +237,8 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect }: PdfReaderPro
       } catch {
         /* already torn down */
       }
+      if (pdfViewerRef.current === pdfViewer) pdfViewerRef.current = null;
+      if (eventBusRef.current === eventBus) eventBusRef.current = null;
     };
   }, [fileUrl]);
 
@@ -238,6 +247,34 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect }: PdfReaderPro
     highlightAnchors();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anchors]);
+
+  // REVEAL: scroll the focused pdf_selection anchor into view via the one shared
+  // helper (text hits + region boxes both carry data-sv-key in the host document).
+  // If its page is virtualized (no painted element yet), scroll that page into view
+  // first, then reveal again on the next textlayerrendered. Keyed on revealSeq so
+  // re-selecting the same anchor re-fires. Prop-driven (no useFocus).
+  useEffect(() => {
+    if (!activeAnchorId) return;
+    if (revealAnchorInDoc(viewerRef.current, activeAnchorId)) return;
+    const target = anchorsRef.current.find((a) => a.id === activeAnchorId);
+    const pdfViewer = pdfViewerRef.current;
+    if (!target?.page || !pdfViewer) return;
+    try {
+      pdfViewer.scrollPageIntoView({ pageNumber: target.page });
+    } catch {
+      // viewer not ready (no document yet) — ignore.
+    }
+    // Reveal once the page's text layer (and our repaint) has rendered.
+    const eventBus = eventBusRef.current;
+    if (!eventBus) return;
+    const onRendered = () => {
+      if (revealAnchorInDoc(viewerRef.current, activeAnchorId)) {
+        eventBus.off("textlayerrendered", onRendered);
+      }
+    };
+    eventBus.on("textlayerrendered", onRendered);
+    return () => eventBus.off("textlayerrendered", onRendered);
+  }, [activeAnchorId, revealSeq]);
 
   return (
     <div className="pdf-reader-shell">

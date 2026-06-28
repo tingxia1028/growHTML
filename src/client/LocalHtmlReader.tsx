@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import {
   bindWebviewAnchors,
   bindWebviewSelection,
+  revealWebviewAnchor,
   toWebAnchorMsgs,
   webSelectionToDraft,
   type SelectionWebview,
@@ -50,7 +51,7 @@ function absolute(src: string): string {
   return (typeof window !== "undefined" ? window.location.origin : "") + src;
 }
 
-export function LocalHtmlReader({ src, sourceId, anchors, onSelect }: LocalHtmlReaderProps) {
+export function LocalHtmlReader({ src, sourceId, anchors, onSelect, activeAnchorId, revealSeq }: LocalHtmlReaderProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<WebviewEl | null>(null);
   const readyRef = useRef(false);
@@ -127,6 +128,14 @@ export function LocalHtmlReader({ src, sourceId, anchors, onSelect }: LocalHtmlR
   useEffect(() => {
     pushAnchorsRef.current?.();
   }, [anchors]);
+
+  // REVEAL: ask the guest to scroll the focused anchor into view. The guest is a
+  // separate WebContents, so we send sv:reveal (the preload calls the same shared
+  // revealAnchorInDoc on its document). Keyed on revealSeq so re-selecting the same
+  // anchor re-fires. Prop-driven (no useFocus).
+  useEffect(() => {
+    if (readyRef.current && activeAnchorId) revealWebviewAnchor(viewRef.current, activeAnchorId);
+  }, [activeAnchorId, revealSeq]);
 
   // Navigate the same webview when the source changes — loadURL() is a normal
   // navigation (paint-held), unlike resetting the src attribute (reload → white).

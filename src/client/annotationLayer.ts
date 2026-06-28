@@ -20,6 +20,15 @@ export const ANNOTATION_CSS = `
   box-shadow: inset 0 -2px 0 #f0a500;
   cursor: pointer;
 }
+/* Transient "we just jumped here" pulse, applied by revealAnchorInDoc on a
+   jump-to-anchor (bookmark row / multi-anchor jump) then removed after ~1s. A
+   ring + glow distinct from the persistent .sv-annotated highlight. */
+.sv-active {
+  outline: 2px solid #f0a500 !important;
+  outline-offset: 1px;
+  box-shadow: 0 0 0 3px rgba(240, 165, 0, 0.45), inset 0 -2px 0 #f0a500 !important;
+  transition: outline-color 0.25s ease, box-shadow 0.25s ease;
+}
 #sv-note-card {
   position: fixed;
   z-index: 2147483000;
@@ -365,6 +374,44 @@ export function applyHighlight(element: Element, noteText: string, key?: string)
   if (noteText) element.setAttribute("data-sv-note", noteText);
   // Stable id → the card remembers this anchor's placement/size across shows.
   if (key) element.setAttribute("data-sv-key", key);
+}
+
+// The ONE shared "scroll the focused passage into view" helper for every surface
+// whose anchors are painted into a DOM document carrying `data-sv-key` — the iframe
+// reader (DomReader), the snapshot webview's nested DomReader, the webview GUEST
+// page (called from the preload), and the host-document overlays (PDF text/region
+// hits, image region boxes). It is the WRITE-side mirror of selection: the host
+// hands every reader an activeAnchorId + a reveal nonce, and the reader that owns a
+// painted element for that id delegates HERE, so the scroll/flash logic lives once.
+//
+// Framework-free (no React/Node) so it runs equally in the app document, the reader
+// iframe realm, and the injected guest realm. Every DOM call is wrapped in try/catch
+// because the realm may be cross-origin/torn down and jsdom has no scrollIntoView.
+// Returns whether a matching element was found (PDF uses the false return to first
+// scroll the virtualized target page into view, then reveal again after it paints).
+export function revealAnchorInDoc(root: ParentNode | null | undefined, anchorId: string | undefined): boolean {
+  if (!root || !anchorId) return false;
+  try {
+    // Escape double-quotes the same way DomReader escapes its selector so an exotic
+    // anchor id can't break the attribute selector or inject into the query.
+    const el = root.querySelector(`[data-sv-key="${anchorId.replace(/"/g, '\\"')}"]`) as
+      | (Element & { scrollIntoView?: Element["scrollIntoView"] })
+      | null;
+    if (!el) return false;
+    try {
+      el.scrollIntoView?.({ block: "center", inline: "nearest" });
+    } catch {
+      // jsdom / realm without scrollIntoView — the flash still applies.
+    }
+    el.classList.add("sv-active");
+    const view = el.ownerDocument?.defaultView;
+    const clear = () => el.classList.remove("sv-active");
+    if (view && typeof view.setTimeout === "function") view.setTimeout(clear, 1000);
+    else clear();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // Remove all highlights this layer painted under `root` (idempotent repaint).

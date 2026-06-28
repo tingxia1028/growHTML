@@ -3,7 +3,7 @@
 // highlights stored anchors the host sends back. Reuses the unit-tested
 // textQuote helpers so the selector logic is trustworthy.
 import { ipcRenderer } from "electron";
-import { clearAnnotations, ensureAnnotationLayer, highlightQuote } from "../src/client/annotationLayer";
+import { clearAnnotations, ensureAnnotationLayer, highlightQuote, revealAnchorInDoc } from "../src/client/annotationLayer";
 
 type WebAnchorMsg = { id?: string; quote: string; contextBefore: string; contextAfter: string; note?: string };
 
@@ -88,6 +88,12 @@ ipcRenderer.on("sv:anchors", (_event, anchors: WebAnchorMsg[]) => {
     );
   }
 });
+
+// The host asks us to scroll a painted anchor into view (a bookmark row / a
+// multi-anchor jump button on a web or local-HTML source). We paint data-sv-key
+// marks via highlightQuote above, so this delegates to the SAME shared helper —
+// no scroll logic duplicated in the guest.
+ipcRenderer.on("sv:reveal", (_event, anchorId: string) => revealAnchorInDoc(document, anchorId));
 
 // Tell the host we're ready so it can push existing anchors.
 window.addEventListener("DOMContentLoaded", () => ipcRenderer.sendToHost("sv:ready", {}));

@@ -297,6 +297,8 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
         source: activeSource,
         anchors: paintAnchors,
         onSelect: focus.setDraft,
+        activeAnchorId: focus.anchor?.id,
+        revealSeq: focus.revealSeq,
         renderedHtml,
         annotationMode
       })}

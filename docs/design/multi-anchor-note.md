@@ -100,6 +100,108 @@ New files (were untracked, now **staged, not committed** — review findings 2 &
 
 All check / unit / e2e suites pass.
 
+## Follow-up: jump now actually REVEALS the passage (scroll-to-anchor)
+
+V1 above wired the jump buttons to `focus.setAnchor`, but that only updated focus
+*state* — the reader did not scroll, so jumping to (or re-clicking) an off-screen
+anchor left it off-screen. This follow-up makes a jump actually **reveal** the
+passage: scroll it into the reader viewport with a brief flash. It is the **third leg**
+of the per-surface seam — WRITE (paint), READ (select), and now REVEAL — modeled as a
+uniform `SurfaceCapability` in the reader contract
+(`docs/design/anchor-selection-abstraction.md` §8): the host drives reveal identically
+for every surface; a surface that can scroll implements it once; one that can't simply
+ignores the props. The same fix powers the bookmark-row jump
+(`docs/design/bookmark-modeling.md`).
+
+### `revealSeq` nonce (FocusContext)
+
+`src/client/focus/FocusContext.tsx` adds a `revealSeq: number` to the context value,
+**bumped on every `setAnchor(non-null)`** and on `materializeAnchor` (a draft promoted
+to a fresh anchor). The nonce is the crux of the re-click case: re-selecting the **same**
+anchor (a multi-anchor jump button, a bookmark row) leaves `activeAnchorId` unchanged, so
+a reveal effect keyed on the id alone would never re-fire. Bumping a nonce on every focus
+gives the readers a value that always changes, so the scroll re-triggers. `setAnchor(null)`,
+`setDraft`, and `clear` deliberately do **not** bump it (there is no passage to scroll to).
+
+### Threading: `activeAnchorId` + `revealSeq` through the reader contract
+
+The two REVEAL props are added to the uniform `SurfaceReaderProps`
+(`src/client/surfaces/types.ts`) — `activeAnchorId?` (the focused anchor id) and
+`revealSeq?` (the nonce). `views.tsx` `SourceViewerView` passes
+`activeAnchorId: focus.anchor?.id` + `revealSeq: focus.revealSeq` into
+`readerForSource`, which threads both into **every** annotatable reader. There is **zero
+per-surface branching for reveal in `views.tsx`** — the host hands all readers the same
+two props; adding/enabling reveal on a new surface needs no host change. All readers are
+**prop-driven** (no `useFocus`), keeping them unit-testable in jsdom without a
+`FocusProvider`.
+
+### One shared reveal helper + per-surface delegation
+
+`src/client/annotationLayer.ts` adds the single shared `revealAnchorInDoc(root,
+anchorId)`: find the `[data-sv-key="…"]` element (quote-escaped), `scrollIntoView({ block:
+"center" })`, and add a transient `.sv-active` flash (a ring/glow CSS class, also added
+there) cleared after ~1s. It is framework-free and fully try/catch-guarded (cross-origin
+/ torn-down realms, jsdom without `scrollIntoView`), and returns whether it found a target
+(the PDF path uses a `false` return to first scroll a virtualized page in). Every reader
+keys a `useEffect` on `[activeAnchorId, revealSeq]` and delegates:
+
+- **`DomReader`** (the iframe reader, and the snapshot webview's nested `DomReader`):
+  calls `revealAnchorInDoc` on its `contentDocument`. A pending reveal requested before
+  the fresh document painted is also honored from `bindFrame` after paint (via an
+  `activeAnchorId` ref).
+- **`LocalHtmlReader`** and the **live `WebviewReader`** tab: the guest DOM is a separate
+  WebContents the host can't reach, so they call the shared `revealWebviewAnchor`
+  (`src/client/selection/webviewSelection.ts`) which sends `sv:reveal` over IPC; the
+  guest preload (`electron/webview-preload.ts`) calls the **same** `revealAnchorInDoc`
+  against its own document. The live `WebviewReader` targets only the active live tab
+  (the snapshot tab reveals through its nested `DomReader`).
+- **`PdfReader`**: tries `revealAnchorInDoc` on the viewer; if the target page is
+  virtualized (not yet rendered, so no painted element), it `scrollPageIntoView` on the
+  lifted `PDFViewer` ref, then re-reveals on the next `textlayerrendered` event —
+  correctly handling off-screen pages.
+- **`ImageReader`**: calls `revealAnchorInDoc` on its frame (each region box carries
+  `data-sv-key` via `applyHighlight`).
+
+### Surfaces covered vs. deferred
+
+**Covered (reveal honored):** the DOM iframe reader (`DomReader`) — the primary path for
+imported-HTML/bookmark sources; the snapshot webview (nested `DomReader`); the live
+webview tab and `LocalHtmlReader` (via `sv:reveal` IPC); `PdfReader` (incl. virtualized
+off-screen pages); `ImageReader` (region boxes). **Deferred:** none of the annotatable
+readers are left out — every surface that can scroll now reveals. A surface that
+genuinely can't reveal would simply no-op on the optional props (the contract allows it),
+but no such annotatable surface exists today.
+
+### Handlers unchanged
+
+The multi-anchor jump buttons (`noteAnchorControl.tsx`) and the bookmark rows
+(`bookmarkViews.tsx`) still just call `focus.setAnchor(...)`; reveal now follows
+automatically from the nonce bump — no handler change was needed.
+
+### New / extended e2e + unit proving the reveal
+
+- **`e2e/multi-anchor.spec.ts:171`** — new test **"multi-anchor reveal: jumping to an
+  off-screen anchor scrolls it back into the reader"**: a note on a top passage linked to
+  a bottom passage with a 2400px spacer between → scroll the reader to the bottom so the
+  top anchor is off-screen (`anchorInView` polls `false`) → click its jump button → it
+  re-focuses **and** scrolls back into view (`anchorInView` → `true`). The **re-trigger
+  subtest** (lines 218-223) scrolls away and re-clicks the **same** jump button, proving
+  the `revealSeq` bump re-fires the scroll even though the focused anchor id is unchanged.
+- **`src/client/focus/FocusContext.revealSeq.test.tsx`** (new): `revealSeq` starts at 0,
+  bumps on `setAnchor(non-null)`, bumps **again on re-selecting the same anchor**, and
+  does **not** bump on `setAnchor(null)` / `setDraft` / `clear`.
+- **`src/client/surfaces/DomReader.reveal.test.tsx`** (new): renders `DomReader`
+  **without** a `FocusProvider` (proving prop-driven, no `useFocus`) and asserts that an
+  `[activeAnchorId, revealSeq]` change scrolls the painted `data-sv-key` element into view
+  + flashes it, and that a `revealSeq` bump re-fires.
+- **`src/client/annotationDom.test.ts`**: direct unit coverage of the shared
+  `revealAnchorInDoc` (scroll + flash; no-op on unknown id / null root / empty id; quote
+  escaping; swallowing a missing `scrollIntoView`).
+
+> Note (`npm run check` fix): `annotationDom.test.ts:110` used `delete el.scrollIntoView`
+> on a non-optional DOM member (TS2790); changed to `delete (el as { scrollIntoView?:
+> unknown }).scrollIntoView` so the delete is type-legal. `check` / unit / e2e all pass.
+
 ## Deferred
 
 - **Cross-source** multi-anchor (a note spanning passages in *different*

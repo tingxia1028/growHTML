@@ -47,11 +47,28 @@ export type PaintAnchor = {
 // `focus.setDraft` (the reader emits a normalized AnchorDraft into it). A reader
 // also takes its own source locator (src / url / fileUrl) — that's the only thing
 // that differs between readers at the call site.
+//
+// REVEAL is the THIRD leg of the same per-surface seam (after WRITE=paint and
+// READ=select), modeled as a SurfaceCapability (docs/design/anchor-selection-
+// abstraction.md §8): the host hands EVERY reader the SAME focused-anchor id +
+// reveal nonce, and a reader that can scroll honors them on [activeAnchorId,
+// revealSeq] change by delegating to the one shared revealAnchorInDoc helper (DOM
+// family) or its own scroll-into-view (PDF page / image box / webview IPC). A reader
+// that genuinely can't reveal simply ignores the two optional props (no-op). So the
+// host drives reveal UNIFORMLY with zero per-surface branching, and a NEW surface
+// implements reveal EXACTLY ONCE — enabling it later needs no host change.
 export type SurfaceReaderProps = {
   // WRITE: paint the anchors this surface understands (filter by anchorKind).
   anchors: PaintAnchor[];
   // READ: emit a normalized AnchorDraft (the quote|region union from FocusContext).
   onSelect: (draft: AnchorDraft) => void;
+  // REVEAL: the id of the anchor the host wants brought into view (the focused
+  // anchor), or undefined when nothing is focused.
+  activeAnchorId?: string;
+  // REVEAL: a nonce that changes on EVERY focus request, even to the same id — so
+  // re-selecting the same anchor (a bookmark row, a jump button) re-triggers the
+  // scroll. Readers key their reveal effect on [activeAnchorId, revealSeq].
+  revealSeq?: number;
 };
 
 // Filter the host's paintAnchors to the kinds a surface paints — the shared WRITE

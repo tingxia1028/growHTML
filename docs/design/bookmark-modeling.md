@@ -254,6 +254,46 @@ Checks, unit tests, and e2e all pass after the fixes.
   anchor-painting path: the bookmark reuses an `html_selection` anchor in `paintAnchors`;
   `DomReader.paintDomAnchors` synthesizes a per-anchor note and
   `decorateAnnotations`/`resolveTargets` applies the inline highlight for **every** anchor
-  regardless of note text. No separate marker code is needed. *Minor non-blocking nit:*
-  `bookmark.spec.ts` asserts the panel + note-list exclusion + jump, but does not assert
-  the inline highlight itself.
+  regardless of note text. No separate marker code is needed.
+
+### Follow-up: jump now actually REVEALS the passage (scroll-to-anchor)
+
+The V1 spec above said "click → jumps to the passage," but the implementation only set
+focus *state* (`focus.setAnchor`) — the reader never scrolled, so an off-screen passage
+stayed off-screen. This follow-up makes the jump actually scroll the bookmarked passage
+into the reader viewport. It is the **REVEAL** leg of the same per-surface seam as
+WRITE (paint) and READ (select), modeled as a uniform `SurfaceCapability` in the reader
+contract (`docs/design/anchor-selection-abstraction.md` §8). Full mechanics — the
+`revealSeq` nonce, prop threading, the shared `revealAnchorInDoc` helper, and which
+surfaces reveal vs. are deferred — are documented in `docs/design/multi-anchor-note.md`
+("Follow-up: jump now actually REVEALS the passage"); the two features share one
+implementation.
+
+- **`FocusContext.tsx`**: new `revealSeq` nonce, bumped on every `setAnchor(non-null)`
+  and on `materializeAnchor` — so re-clicking the **same** bookmark row re-fires the
+  scroll (its anchor id is unchanged, so the id alone can't re-trigger the effect).
+- **Threading**: `views.tsx` passes `activeAnchorId: focus.anchor?.id` + `revealSeq:
+  focus.revealSeq` through `readerForSource` to every annotatable reader (zero
+  per-surface branching in the host).
+- **DOM family** (`DomReader`, the snapshot webview's nested `DomReader`, the live
+  webview/`LocalHtmlReader` guest, PDF text/region hits, image region boxes) all
+  delegate to the single shared `revealAnchorInDoc` (`annotationLayer.ts`) — for an
+  HTML/bookmark source the `DomReader` finds the `data-sv-key` element, calls
+  `scrollIntoView`, and applies a transient `.sv-active` flash.
+- **Handler unchanged**: the Bookmarks pane row still calls `focus.setAnchor(...)`
+  (`bookmarkViews.tsx`); the reveal now follows automatically from the nonce bump.
+
+### New / extended e2e proving the reveal
+
+`e2e/bookmark.spec.ts:153` — **"bookmark reveal: clicking a row scrolls the off-screen
+passage back into the reader"**: seed an HTML source with a tall (2400px) spacer below
+the bookmarked passage → bookmark it → scroll the reader to the bottom so the passage
+is off-screen (`anchorInView` polls to `false`) → click the row → it re-focuses **and**
+scrolls back into view (`anchorInView` → `true`). A re-trigger subtest scrolls away and
+re-clicks the **same** row, proving `revealSeq` re-fires the scroll even though the
+anchor id never changed. The shared helper is also unit-tested directly in
+`annotationDom.test.ts` (`revealAnchorInDoc`: scroll + flash, no-op on unknown id /
+null root / empty id, quote escaping, jsdom missing-`scrollIntoView` swallow).
+
+*Minor non-blocking nit (still open):* `bookmark.spec.ts` asserts the panel + note-list
+exclusion + jump + reveal, but does not assert the inline highlight styling itself.
