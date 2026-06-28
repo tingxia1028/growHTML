@@ -94,10 +94,12 @@ export type CommandContext = {
     conceptName?: string;
     /** New concept description (concept.create). */
     conceptDescription?: string;
-    /** The note to (un)link (concept.link-note). */
+    /** The note to (un)link (concept.link-note) / attach an anchor to (note.link-anchor). */
     noteId?: string;
     /** Its current concept links, so link-note can append without dropping others. */
     noteConceptIds?: string[];
+    /** The note's current anchor links, so link-anchor can append without dropping others. */
+    noteAnchorIds?: string[];
     /** The concept a note is linked to / a relation endpoint (concept.link-note, relation.create). */
     conceptId?: string;
     /** relation.create endpoints + kind. */
@@ -306,6 +308,51 @@ const linkNote: Command = {
   }
 };
 
+// —— Multi-anchor note (link a note to another passage) ————————————————————
+// A note can hang off several anchors (NoteRecord.anchorIds is a list). This command
+// materializes the CURRENT selection into an anchor — the SAME path anchor.add-note /
+// bookmark.add use — and APPENDS its id to the target note's anchorIds (full-array
+// replace via updateNote, deduped). The note then paints at every passage it claims
+// (the paint pipeline already maps a note to all its anchorIds). Pure UX over data the
+// layer already supports — no schema change. The target note is the card the user
+// clicked (payload.noteId). The append base is read FRESH from the server (not the
+// payload snapshot the card captured at render): two rapid link-anchor dispatches
+// would otherwise both append to the same stale list and the second would clobber the
+// first's new anchor. payload.noteAnchorIds is kept only as a fallback for hosts/tests
+// that can't resolve the note fresh (no source, or no notes() wired).
+const linkAnchor: Command = {
+  id: "note.link-anchor",
+  title: "Link Note to Selection",
+  group: "anchor",
+  // Needs a note to link and a passage to link it to (a saved anchor or a fresh draft).
+  isAvailable: (ctx) => !!ctx.payload.noteId && (!!ctx.focus.anchor || !!ctx.focus.draft),
+  run: async (ctx) => {
+    const { noteId } = ctx.payload;
+    if (!noteId) return;
+    const anchor = await ctx.focus.materializeAnchor();
+    if (!anchor) return;
+    // Read the note's CURRENT anchorIds fresh, so a concurrent link that already landed
+    // is never dropped. Fall back to the payload snapshot when the fresh fetch can't
+    // resolve the note (no active source, the note isn't in the list, or notes() failed).
+    let current = ctx.payload.noteAnchorIds ?? [];
+    if (ctx.sourceId) {
+      try {
+        const { notes } = await ctx.client.notes(ctx.sourceId);
+        const fresh = notes.find((existing) => existing.id === noteId);
+        if (fresh) current = fresh.anchorIds;
+      } catch {
+        // keep the payload snapshot
+      }
+    }
+    // Dedupe — never duplicate an anchor id on the note.
+    if (current.includes(anchor.id)) return;
+    const { note } = await ctx.client.updateNote(noteId, { anchorIds: [...current, anchor.id] });
+    // Reuse the note-created action: the host re-fetches notes+anchors and repaints, so
+    // the new anchor enters paintAnchors and the note paints at the new passage too.
+    ctx.actions.onNoteCreated?.(note);
+  }
+};
+
 const createRelation: Command = {
   id: "relation.create",
   title: "Create Relation",
@@ -477,6 +524,7 @@ for (const command of [
   createPatch,
   createConcept,
   linkNote,
+  linkAnchor,
   createRelation,
   toggleLayer,
   setNoteLayers,

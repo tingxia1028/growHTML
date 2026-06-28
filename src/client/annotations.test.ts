@@ -44,6 +44,19 @@ describe("groupForRenderer", () => {
     expect(groups[0].notes.map((n) => n.content)).toEqual(["first", "second"]);
   });
 
+  it("paints a single multi-anchor note under EVERY anchor it claims", () => {
+    // Multi-anchor V1: one note hanging off two passages must group under both, so the
+    // reader paints the same note at each of its anchors.
+    const a1 = htmlAnchor("a1", "s1");
+    const a2 = htmlAnchor("a2", "s2");
+    const multi: AnnotationNote = { anchorIds: ["a1", "a2"], content: "shared note" };
+    const groups = groupForRenderer(claimHtml, [multi], anchorMap(a1, a2));
+    expect(groups.map((g) => g.anchor.id).sort()).toEqual(["a1", "a2"]);
+    for (const group of groups) {
+      expect(group.notes.map((n) => n.content)).toEqual(["shared note"]);
+    }
+  });
+
   it("ignores notes with no anchor or a missing anchor", () => {
     const a1 = htmlAnchor("a1", "s1");
     const groups = groupForRenderer(

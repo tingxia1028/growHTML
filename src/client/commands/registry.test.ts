@@ -255,6 +255,77 @@ describe("command: concept.link-note", () => {
   });
 });
 
+describe("command: note.link-anchor", () => {
+  it("materializes the selection and appends its anchor id to the note (full-array replace)", async () => {
+    const onNoteCreated = vi.fn();
+    const ctx = baseCtx({
+      payload: { noteId: "note_1", noteAnchorIds: ["anchor_0"] },
+      actions: { onNoteCreated }
+    });
+
+    const ran = await runCommand("note.link-anchor", ctx);
+
+    expect(ran).toBe(true);
+    expect(ctx.focus.materializeAnchor).toHaveBeenCalledOnce();
+    expect(ctx.client.updateNote).toHaveBeenCalledWith("note_1", { anchorIds: ["anchor_0", "anchor_1"] });
+    expect(onNoteCreated).toHaveBeenCalledOnce();
+  });
+
+  it("appends to an empty link list (first extra anchor on a note)", async () => {
+    const ctx = baseCtx({ payload: { noteId: "note_1" } });
+    await runCommand("note.link-anchor", ctx);
+    expect(ctx.client.updateNote).toHaveBeenCalledWith("note_1", { anchorIds: ["anchor_1"] });
+  });
+
+  it("appends onto the note's FRESH server anchorIds, not the stale payload snapshot", async () => {
+    // Race guard: the card captured noteAnchorIds=["anchor_0"] at render, but a prior
+    // link already landed server-side so the note now has ["anchor_0", "anchor_prev"].
+    // The append must build on the fresh list (not clobber "anchor_prev").
+    const notes = vi.fn(async () => ({
+      notes: [{ id: "note_1", anchorIds: ["anchor_0", "anchor_prev"] }] as never
+    }));
+    const ctx = baseCtx({
+      payload: { noteId: "note_1", noteAnchorIds: ["anchor_0"] },
+      client: { ...baseCtx().client, notes }
+    });
+    await runCommand("note.link-anchor", ctx);
+    expect(notes).toHaveBeenCalledWith("src_1");
+    expect(ctx.client.updateNote).toHaveBeenCalledWith("note_1", {
+      anchorIds: ["anchor_0", "anchor_prev", "anchor_1"]
+    });
+  });
+
+  it("dedupes against the FRESH list (concurrent link already added this anchor)", async () => {
+    // The fresh note already carries the anchor the focus would materialize → no-op,
+    // even though the stale payload snapshot didn't list it yet.
+    const notes = vi.fn(async () => ({ notes: [{ id: "note_1", anchorIds: ["anchor_1"] }] as never }));
+    const ctx = baseCtx({
+      payload: { noteId: "note_1", noteAnchorIds: [] },
+      client: { ...baseCtx().client, notes }
+    });
+    await runCommand("note.link-anchor", ctx);
+    expect(ctx.client.updateNote).not.toHaveBeenCalled();
+  });
+
+  it("dedupes — does NOT call updateNote when the materialized anchor is already linked", async () => {
+    const ctx = baseCtx({ payload: { noteId: "note_1", noteAnchorIds: ["anchor_1"] } });
+    const ran = await runCommand("note.link-anchor", ctx);
+    expect(ran).toBe(true);
+    expect(ctx.client.updateNote).not.toHaveBeenCalled();
+  });
+
+  it("is unavailable without a noteId, and without a focused anchor/draft", () => {
+    // No note to link.
+    expect(getCommand("note.link-anchor")!.isAvailable(baseCtx({ payload: {} }))).toBe(false);
+    // Note id but no passage in focus.
+    expect(
+      getCommand("note.link-anchor")!.isAvailable(
+        baseCtx({ payload: { noteId: "note_1" }, focus: fakeFocus({ focus: null, draft: null }) })
+      )
+    ).toBe(false);
+  });
+});
+
 describe("command: relation.create", () => {
   it("creates a concept→concept relation with the chosen kind", async () => {
     const onRelationChanged = vi.fn();

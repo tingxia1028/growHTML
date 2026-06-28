@@ -956,6 +956,51 @@ button {
   flex: 0 0 auto;
 }
 
+/* —— A note's anchor(s): "link to selection" + multi-anchor jump buttons ————— */
+.note-anchors {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.note-anchor-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.note-anchor-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--sv-text-muted);
+}
+
+.note-anchor-link.link-button {
+  margin-top: 0;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.note-anchor-jumps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.note-anchor-jump.link-button {
+  margin-top: 0;
+  padding: 1px 8px;
+  border: 1px solid var(--sv-accent-border);
+  border-radius: 10px;
+  font-size: 11px;
+  color: var(--sv-accent);
+}
+
 .brand-block p,
 .reader-header p {
   margin: 0 0 6px;

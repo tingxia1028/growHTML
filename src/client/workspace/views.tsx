@@ -40,6 +40,7 @@ import {
 // Side-effect import: registers the 12 built-in client NoteType plugins so the note
 // list + composer can render/edit every content type through the registry.
 import { InertNote } from "../notes/builtinNoteTypes";
+import { NoteAnchorControl } from "./noteAnchorControl";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { GenerationPreview } from "./GenerationPreview";
 import { SourceActionsToolbar } from "./SourceActionsToolbar";
@@ -400,6 +401,7 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
     submitNoteContent,
     composerDisabled,
     visibleNotes,
+    anchors,
     sourceLayers,
     patchHtml,
     setPatchHtml,
@@ -603,6 +605,15 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
                     note={note}
                     layers={sourceLayers}
                     onSetLayers={(layerIds) => void dispatch("note.set-layers", { layerNoteId: note.id, layerIds })}
+                  />
+                  {/* A note's anchor(s): "link to selection" (anchor the note at the
+                      focused passage too) + per-anchor jump buttons for a multi-anchor
+                      note. Pure UX over note.anchorIds (no schema change). */}
+                  <NoteAnchorControl
+                    note={note}
+                    anchors={anchors}
+                    focus={focus}
+                    onLink={() => void dispatch("note.link-anchor", { noteId: note.id, noteAnchorIds: note.anchorIds })}
                   />
                 </article>
               );
