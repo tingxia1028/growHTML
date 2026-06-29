@@ -19,6 +19,7 @@
 // note can't crash the note list).
 
 import { escapeHtml, renderNoteContent } from "../../adapters/notes/render";
+import { videoEmbedSrc, type VideoProvider } from "../../core/notes/parseVideoUrl";
 import { DiagramNote } from "../DiagramNote";
 import { entityClient } from "../data/entityClient";
 import {
@@ -393,10 +394,76 @@ registerNoteType({
   render: (input) => <MediaRender {...input} kind="audio" />,
   edit: (input) => <MediaEditor {...input} accept="audio/*" />
 });
+// —— video (unified: asset | embed) ———————————————————————————————————————
+// ONE `video` plugin whose single render() switches on the content's `kind` — an
+// INTERNAL variant switch in one renderer (legal per design plan §3), NOT host-side
+// branching. asset → <video src=/api/assets/:id> (now Range-streamed for long files);
+// embed → a provider <iframe>. An ABSENT kind is treated as "asset" (backward-compat
+// with pre-Phase-2 notes, mirroring the core schema default).
+type VideoEmbed = { kind: "embed"; provider: VideoProvider; videoId: string; url: string; caption?: string };
+
+function asVideo(content: unknown): MediaContent | VideoEmbed {
+  const c = (content ?? {}) as Record<string, unknown>;
+  if (c.kind === "embed") {
+    const provider = c.provider;
+    return {
+      kind: "embed",
+      provider: (provider === "youtube" || provider === "bilibili" || provider === "vimeo"
+        ? provider
+        : "youtube") as VideoProvider,
+      videoId: typeof c.videoId === "string" ? c.videoId : "",
+      url: typeof c.url === "string" ? c.url : "",
+      caption: typeof c.caption === "string" ? c.caption : undefined
+    };
+  }
+  // Absent or "asset" kind → the local-asset shape (asMedia is inert-safe).
+  return asMedia(content);
+}
+
+function VideoRender({ content, mode }: NoteRenderInput) {
+  const video = asVideo(content);
+  if ("kind" in video && video.kind === "embed") {
+    // Build the provider player src from { provider, videoId } — never trust the raw
+    // URL's query noise. videoId/provider come from parseVideoUrl at classify/save time.
+    const src = videoEmbedSrc({ provider: video.provider, videoId: video.videoId });
+    return (
+      <div className="note-rendered sv-media sv-media-video sv-video-embed">
+        {/* sandbox: allow-scripts (player JS) + allow-same-origin + allow-presentation.
+            allow-same-origin is acceptable HERE ONLY because `src` is a REMOTE provider
+            origin (youtube.com / bilibili.com / vimeo.com), NOT our own origin — so the
+            frame is same-origin with the PROVIDER, never with the host app/vault.
+            `allow=` is restricted to media capabilities; referrerpolicy limits leakage. */}
+        <iframe
+          className="sv-video-embed-frame"
+          title={video.caption ?? `${video.provider} video`}
+          src={src}
+          sandbox="allow-scripts allow-same-origin allow-presentation"
+          allow="fullscreen; picture-in-picture"
+          referrerPolicy="strict-origin-when-cross-origin"
+          loading="lazy"
+        />
+        {video.caption ? <figcaption className="sv-media-caption">{video.caption}</figcaption> : null}
+      </div>
+    );
+  }
+  // Local asset video. In "card" mode we DON'T mount a live <video>; the generic
+  // ArtifactCard supplies the title/snippet (the full player runs in the overlay).
+  const media = video as MediaContent;
+  if (!media.assetId) return <div className="note-rendered sv-media-empty">No video selected.</div>;
+  if (mode === "card") return null;
+  const src = entityClient.assetUrl(media.assetId);
+  return (
+    <div className="note-rendered sv-media sv-media-video">
+      <video className="sv-media-video" src={src} controls preload="metadata" />
+      {media.caption ? <figcaption className="sv-media-caption">{media.caption}</figcaption> : null}
+    </div>
+  );
+}
+
 registerNoteType({
   contentType: "video",
   label: "video",
-  render: (input) => <MediaRender {...input} kind="video" />,
+  render: (input) => <VideoRender {...input} />,
   edit: (input) => <MediaEditor {...input} accept="video/*" />
 });
 

@@ -28,7 +28,10 @@ import {
 } from "../core/schema";
 import { extractVariables } from "../ai/template";
 import { getNoteContentSpec, parseNoteContent } from "../core/notes/contentTypes";
-import { importLocalAsset, readAssetBytes } from "../core/store/assets";
+import { assetBytesPath, importLocalAsset } from "../core/store/assets";
+import { parseRange } from "./httpRange";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
 import { createCustomLayer, ensureOwnedLayer, ensurePresetLayers } from "../core/study-layer/layers";
 import { studyLayerSchema } from "../core/schema";
 import { buildStudyPack, commitImport, parseStudyPack, previewImport } from "./studyLayer";
@@ -887,6 +890,12 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
     }
   });
 
+  // Serve asset bytes with HTTP Range support (design plan §4 Phase 2 / §6 #4). We
+  // STREAM the file from disk (constant memory) and honor a single-range `Range`
+  // header so <video> can seek + progressively load long local files:
+  //   • no/malformed/multi/inverted Range → 200 full stream (Accept-Ranges: bytes).
+  //   • bytes=START-END / START- / -SUFFIX → 206 with Content-Range + sliced length.
+  //   • a syntactically valid range past EOF → 416 with `Content-Range: bytes */total`.
   app.get("/api/assets/:assetId", async (req, res, next) => {
     try {
       const asset = await vault.stores.assets.get(req.params.assetId);
@@ -894,7 +903,38 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
         res.status(404).json({ error: "Asset not found" });
         return;
       }
-      res.type(asset.mimeType).send(await readAssetBytes(vault, asset));
+      const filePath = assetBytesPath(vault, asset);
+      const stats = await stat(filePath);
+      const total = stats.size;
+
+      res.type(asset.mimeType);
+      res.setHeader("Accept-Ranges", "bytes");
+
+      const range = parseRange(req.headers.range, total);
+
+      if (range.kind === "unsatisfiable") {
+        res.status(416).setHeader("Content-Range", `bytes */${total}`);
+        res.end();
+        return;
+      }
+
+      if (range.kind === "satisfiable") {
+        const { start, end } = range;
+        res.status(206);
+        res.setHeader("Content-Range", `bytes ${start}-${end}/${total}`);
+        res.setHeader("Content-Length", String(end - start + 1));
+        const stream = createReadStream(filePath, { start, end });
+        stream.on("error", next);
+        stream.pipe(res);
+        return;
+      }
+
+      // No (usable) Range → full 200, streamed (not buffered into memory).
+      res.status(200);
+      res.setHeader("Content-Length", String(total));
+      const stream = createReadStream(filePath);
+      stream.on("error", next);
+      stream.pipe(res);
     } catch (error) {
       next(error);
     }

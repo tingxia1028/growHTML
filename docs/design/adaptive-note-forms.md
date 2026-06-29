@@ -693,6 +693,113 @@ viewer. No mock/infra change was made for this.
 
 ---
 
+## Impl-log — Phase 2 (complete video support) — SHIPPED
+
+Phase 2 (plan §4 Phase 2, §6 #4) landed: ONE `video` contentType with `asset | embed`
+variants (NO separate `video-embed` type — §2.5), plus HTTP Range on the asset route so
+long LOCAL videos seek + stream. No host branching, no new top-level discriminator — the
+single `video` render switches on an INTERNAL `kind` (§3).
+
+**1. `video` contentType — discriminated `asset | embed` union with absent-kind
+backward-compat** (`src/core/notes/contentTypes.ts`). `video`'s schema became a zod
+`z.union([embed, asset])`:
+  - asset — `{ kind:"asset" (DEFAULTED), assetId, caption?, startSec?, endSec? }`.
+  - embed — `{ kind:"embed", provider:"youtube"|"bilibili"|"vimeo", videoId, url, caption? }`.
+  - **Backward-compat (critical):** pre-Phase-2 notes are stored as `{ assetId, … }` with
+    NO `kind`. The asset member declares `kind: z.literal("asset").default("asset")`, so an
+    absent `kind` parses and is NORMALIZED to `"asset"`. A plain `z.union` (not
+    `discriminatedUnion`) is used precisely so the asset member can match the legacy
+    kind-less shape; the embed member's required `kind:"embed"` keeps the two unambiguous.
+    Test (`contentTypes.test.ts`): an old `{ assetId, caption, startSec }` note parses and
+    comes back with `kind:"asset"`; embed validates; bad provider / missing videoId reject.
+  - `createDefault()` seeds `{ kind:"asset", assetId:"" }` (the composer's choose-a-file
+    path); `toSearchText` returns the caption for both variants.
+
+**2. `parseVideoUrl` — pure, shared URL parser** (`src/core/notes/parseVideoUrl.ts`). Pure
+(no React/fetch/DOM/state), total (junk → `null`). Maps a URL → `{ provider, videoId }`:
+  - **YouTube** — `youtu.be/<id>`, `youtube.com/watch?v=<id>`, `/embed/<id>`, `/shorts/<id>`
+    (www./m./music. + youtube-nocookie.com normalized; an 11-char `[A-Za-z0-9_-]` id is
+    REQUIRED so `youtu.be/about` → null).
+  - **bilibili** — `bilibili.com/video/<BV…>` → the BVID (validated `BV` + 10 alnum).
+  - **Vimeo** — `vimeo.com/<digits>` and `player.vimeo.com/video/<digits>` (a non-numeric
+    path like `/channels/foo` → null).
+  - Non-http(s) schemes and unrelated hosts → null. Sibling `videoEmbedSrc({provider,
+    videoId})` builds the player src — SHARED by the classifier and the render so they
+    never drift: `youtube.com/embed/<id>`, `player.bilibili.com/player.html?bvid=<id>&page=1`,
+    `player.vimeo.com/video/<id>`. Tests (`parseVideoUrl.test.ts`): every shape per
+    provider + negatives + junk + the src builder.
+
+**3. Embed render + security note** (`src/client/notes/builtinNoteTypes.tsx`). The `video`
+plugin's single `render()` switches on `kind` (an absent kind → asset, mirroring the
+schema): embed → a provider `<iframe>` whose `src` is rebuilt from `{provider, videoId}`
+via `videoEmbedSrc` (the stored URL's query noise is never trusted); asset → `<video
+src=/api/assets/:id controls preload="metadata">`. The iframe is
+`sandbox="allow-scripts allow-same-origin allow-presentation"`,
+`allow="fullscreen; picture-in-picture"`, `referrerpolicy="strict-origin-when-cross-origin"`,
+`loading="lazy"`. **Security:** `allow-same-origin` is acceptable HERE ONLY because `src`
+points at a REMOTE provider origin (youtube.com / bilibili.com / vimeo.com), never our own
+origin — so the frame is same-origin with the PROVIDER, never with the host app/vault
+(contrast Phase 3 game sandboxing, which must NOT carry `allow-same-origin` because its src
+is our srcdoc). `allow-forms`/`allow-popups`/`allow-top-navigation` are NOT granted; `allow=`
+is restricted to media. Works in Electron + mobile WebView (a standard `<iframe>`, not an
+Electron `<webview>`). In `mode:"card"` the asset variant returns `null` (no live `<video>`
+inline) so the generic ArtifactCard supplies the title/snippet and the player runs in the
+overlay. Test (`videoNote.test.tsx`): embed builds the right src + sandbox flags per
+provider; a legacy `{assetId}` note renders a `<video src=/api/assets/:id>`; mis-shaped
+content doesn't throw.
+
+**4. Classifier rule** (`src/core/notes/classifyContent.ts`, at the marked slot, as rule
+0 = most specific). A BARE provider URL — the WHOLE trimmed input is one link with no
+internal whitespace, parsed by `parseVideoUrl` — classifies as `video`
+`{ kind:"embed", provider, videoId, url }` at **HIGH** confidence (auto-applied). A link
+INSIDE prose has whitespace → falls through to markdown (low); a non-video URL → markdown.
+Tests (`classifyContent.test.ts`): a bare link of each provider (positive, exact content
+shape validated against the real schema); link-in-sentence and non-video URL (negative).
+
+**5. HTTP Range on `GET /api/assets/:id`** (`src/server/app.ts` + new pure
+`src/server/httpRange.ts`; `assetBytesPath` helper in `src/core/store/assets.ts`). The
+route now STREAMS the file from disk (`createReadStream`, constant memory) instead of
+buffering it, and honors a single-range `Range` header:
+  - no/empty/malformed/multi-range/inverted Range → `200` full stream, `Accept-Ranges:
+    bytes`, `Content-Length: total`.
+  - `bytes=START-END` / `bytes=START-` (open-ended) / `bytes=-SUFFIX` (suffix, clamped to
+    the file) → `206 Partial Content` with `Content-Range: bytes start-end/total` and a
+    `Content-Length` of the slice, streamed via `createReadStream(path,{start,end})`.
+  - a syntactically valid range entirely past EOF (or a 0-byte suffix, or any range on an
+    empty file) → `416 Range Not Satisfiable` with `Content-Range: bytes */total`.
+  The header parsing is a SEPARATE pure function (`parseRange(header,total)`) so the edge
+  cases are unit-tested without a server (`httpRange.test.ts`: closed/open/suffix/clamp/
+  416/ignore). Import-time SHA-256 dedup in `assets.ts` is UNCHANGED (it still reads bytes
+  once at import); only PLAYBACK is now streamed. This removes the "short clips only" limit
+  and lets `<video>` seek long local files.
+  - **e2e** (`adaptive-note-forms.spec.ts`): imports a real local file as an asset, then
+    asserts `bytes=0-9` → 206 + `Content-Range: bytes 0-9/total` + 10-byte body; a range
+    past EOF → 416 + `bytes */total`; no Range → 200 full body + `Accept-Ranges`.
+
+**6. Overlay/card** — reused unchanged. `video` is registered like any type, so the shared
+`ArtifactCard` (mode:"card") + `FocusOverlay` (mode:"full" = the player) from Phase 1b
+serve it for free via the one `getNoteType().render` entry — no fork.
+
+**Self-test:** `npm run check` clean; `npm test` 565 passing (70 files; +5 test files:
+`parseVideoUrl.test.ts`, `httpRange.test.ts`, `videoNote.test.tsx`, plus new cases in
+`classifyContent.test.ts` / `contentTypes.test.ts`); `npm run e2e` 43 passing
+(`adaptive-note-forms.spec.ts` +2 tests: bare-YouTube-link auto-detects `video` + the
+saved embed note renders a provider `<iframe>`; the asset Range 206/416/200 check). Contract
+guard stays green (the video render lives in the PLUGINS dir, not the scanned host surface;
+no host `contentType ===` branch was added).
+
+**Caveats / deviations:** none material. (a) The composer chip shows the live-detected
+`video` label, but the e2e SEEDS the embed note via the API (the exact `{kind:"embed",…}`
+shape the classifier produces) to assert the RENDER deterministically — same content path,
+no real network to a provider. (b) Provider embeds can be blocked by the provider (e.g.
+owner-disabled embedding) or by a future host CSP; an "open externally" fallback is left to
+a later pass (the plan's risk note). (c) `assetBytesPath` exposes a vault-validated absolute
+path for the Node server to stream directly — the StorageAdapter abstraction wasn't widened
+with a streaming API since the server is Node-specific; a mobile adapter can add its own
+range path later.
+
+---
+
 ## Appendix — cited symbols / paths
 
 - `src/core/notes/contentTypes.ts:11-32,40-44,100-185` — `NoteContentSpec`,

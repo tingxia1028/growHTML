@@ -89,3 +89,81 @@ test("note viewer → centered overlay: a markmap note renders in its form and o
   await page.keyboard.press("Escape");
   await expect(overlay).toHaveCount(0);
 });
+
+// —— Phase 2: video (embed + local-asset Range) ————————————————————————————
+
+test("composer auto-detects a BARE YouTube link as a video embed, and the saved note renders a provider <iframe>", async ({
+  page,
+  request
+}) => {
+  const title = `Video Embed ${Date.now()}`;
+  const source = await seedHtmlSource(request, title, "<article><p>Body about videos.</p></article>");
+
+  // Composer LIVE-classifies a bare provider URL as `video` (the Phase 2 rule).
+  await openSource(page, title);
+  await page.locator(".composer-mode .mode-tab", { hasText: "Note" }).click();
+  await page.locator(".composer-input").fill("https://youtu.be/dQw4w9WgXcQ");
+  await expect(page.locator(".composer-detected-label strong")).toHaveText("video");
+
+  // Seed the embed note via the API (the same {kind:'embed',…} the classifier shapes)
+  // so the assertion targets the RENDER deterministically.
+  const noteRes = await request.post(`${SERVER}/api/notes`, {
+    data: {
+      sourceId: source.id,
+      contentType: "video",
+      content: {
+        kind: "embed",
+        provider: "youtube",
+        videoId: "dQw4w9WgXcQ",
+        url: "https://youtu.be/dQw4w9WgXcQ"
+      }
+    }
+  });
+  expect(noteRes.ok(), `create video embed note failed: ${noteRes.status()}`).toBeTruthy();
+
+  await openSource(page, title);
+  const card = page.locator(".note-list .record-card", { hasText: "video" }).first();
+  await expect(card).toBeVisible();
+  // The note renders IN ITS FORM: a provider <iframe> pointing at the embed player.
+  const iframe = card.locator("iframe.sv-video-embed-frame");
+  await expect(iframe).toBeVisible();
+  await expect(iframe).toHaveAttribute("src", "https://www.youtube.com/embed/dQw4w9WgXcQ");
+});
+
+test("GET /api/assets/:id honors HTTP Range: 206 + correct Content-Range for a sub-range, 416 past EOF", async ({
+  request
+}) => {
+  // Import a small local file as an asset, then exercise the Range path on it. We use
+  // this very spec file as the source bytes (it always exists on disk).
+  const path = await import("node:path");
+  const fs = await import("node:fs/promises");
+  const url = await import("node:url");
+  const here = path.dirname(url.fileURLToPath(import.meta.url));
+  const absPath = path.join(here, "adaptive-note-forms.spec.ts");
+  const total = (await fs.stat(absPath)).size;
+
+  const importRes = await request.post(`${SERVER}/api/assets/local-file`, { data: { path: absPath } });
+  expect(importRes.ok(), `import asset failed: ${importRes.status()}`).toBeTruthy();
+  const assetId = (await importRes.json()).asset.id as string;
+
+  // (1) A sub-range → 206 with Accept-Ranges + an exact Content-Range + sliced length.
+  const partial = await request.get(`${SERVER}/api/assets/${assetId}`, { headers: { Range: "bytes=0-9" } });
+  expect(partial.status()).toBe(206);
+  expect(partial.headers()["accept-ranges"]).toBe("bytes");
+  expect(partial.headers()["content-range"]).toBe(`bytes 0-9/${total}`);
+  expect(partial.headers()["content-length"]).toBe("10");
+  expect((await partial.body()).length).toBe(10);
+
+  // (2) A range entirely past EOF → 416 with `Content-Range: bytes */total`.
+  const past = await request.get(`${SERVER}/api/assets/${assetId}`, {
+    headers: { Range: `bytes=${total + 100}-${total + 200}` }
+  });
+  expect(past.status()).toBe(416);
+  expect(past.headers()["content-range"]).toBe(`bytes */${total}`);
+
+  // (3) No Range → 200 full body, with Accept-Ranges advertised.
+  const full = await request.get(`${SERVER}/api/assets/${assetId}`);
+  expect(full.status()).toBe(200);
+  expect(full.headers()["accept-ranges"]).toBe("bytes");
+  expect((await full.body()).length).toBe(total);
+});

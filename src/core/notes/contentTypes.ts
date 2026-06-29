@@ -83,6 +83,41 @@ const timedMediaSchema = z.object({
 });
 const htmlSandboxSchema = z.object({ html: z.string() });
 
+// —— video (unified asset | embed; design plan §2.5, §4 Phase 2) ————————————
+// ONE `video` contentType with an internal `kind` variant handled by the single
+// video render (NOT a competing top-level discriminator — §3). Two shapes:
+//   • asset — a local file imported into the vault (the original shape).
+//   • embed — a remote provider (YouTube / bilibili / Vimeo) played in an iframe.
+//
+// BACKWARD COMPAT (critical): notes stored before Phase 2 have { assetId, … } with
+// NO `kind`. The asset member treats `kind` as OPTIONAL and DEFAULTS it to "asset",
+// so an old `{ assetId }` note still parses → the union accepts the legacy shape
+// unchanged. New asset notes may write `kind:"asset"` explicitly; both validate.
+const VIDEO_PROVIDERS = ["youtube", "bilibili", "vimeo"] as const;
+const videoAssetSchema = z.object({
+  // Optional + defaulted: an absent kind (legacy note) is normalized to "asset".
+  kind: z.literal("asset").default("asset"),
+  assetId: assetIdSchema,
+  caption: z.string().optional(),
+  startSec: z.number().nonnegative().optional(),
+  endSec: z.number().nonnegative().optional()
+});
+const videoEmbedSchema = z.object({
+  kind: z.literal("embed"),
+  provider: z.enum(VIDEO_PROVIDERS),
+  videoId: z.string().min(1),
+  url: z.string().min(1),
+  caption: z.string().optional()
+});
+// A plain union (NOT discriminatedUnion) so the asset member's defaulted/absent
+// `kind` still matches the legacy `{ assetId }` shape. The embed member's required
+// `kind:"embed"` keeps the two unambiguous.
+const videoSchema = z.union([videoEmbedSchema, videoAssetSchema]);
+type VideoContent = z.infer<typeof videoSchema>;
+function videoSearchText(c: VideoContent): string {
+  return c.caption ?? "";
+}
+
 // Bookmark: a lightweight NAMED marker on a passage. It reuses the note envelope
 // (anchor, layers, study-pack travel, search) but its content is intentionally
 // minimal — a label, an optional color, an optional order. The bespoke "show it as
@@ -166,9 +201,11 @@ export const builtinNoteContentSpecs: NoteContentSpec[] = [
   },
   {
     contentType: "video",
-    schema: timedMediaSchema,
-    createDefault: () => ({ assetId: "" }) as unknown as z.infer<typeof timedMediaSchema>,
-    toSearchText: (c) => (c as z.infer<typeof timedMediaSchema>).caption ?? ""
+    schema: videoSchema,
+    // Seed an asset video (the composer's "choose a file" path); embed videos are
+    // created via the classifier / a pasted link, not this blank seed.
+    createDefault: () => ({ kind: "asset", assetId: "" }) as unknown as VideoContent,
+    toSearchText: (c) => videoSearchText(c as VideoContent)
   },
   {
     contentType: "html-sandbox",

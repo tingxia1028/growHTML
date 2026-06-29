@@ -80,3 +80,13 @@ export async function readAssetBytes(vault: StudyVault, asset: AssetRecord): Pro
   if (bytes === null) throw new Error(`Asset bytes not found: ${asset.path}`);
   return Buffer.from(bytes);
 }
+
+/**
+ * The absolute on-disk path of an asset's bytes (validated to stay inside the vault).
+ * Exposed so the server can STAT + STREAM the file directly (HTTP Range, long-video
+ * seeking) instead of buffering the whole thing into memory — the import-time
+ * SHA-256 dedup above is unchanged (it still reads the bytes once, at import).
+ */
+export function assetBytesPath(vault: StudyVault, asset: AssetRecord): string {
+  return resolveAssetPath(vault, asset);
+}

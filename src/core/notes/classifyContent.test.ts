@@ -94,6 +94,36 @@ describe("classifyContent — code-snippet", () => {
   });
 });
 
+describe("classifyContent — video-embed (Phase 2)", () => {
+  it("a BARE provider link → video {kind:'embed'} (high), per provider", () => {
+    const cases: Array<[string, string, string]> = [
+      ["https://youtu.be/dQw4w9WgXcQ", "youtube", "dQw4w9WgXcQ"],
+      ["https://www.youtube.com/watch?v=dQw4w9WgXcQ", "youtube", "dQw4w9WgXcQ"],
+      ["https://www.bilibili.com/video/BV1xx411c7mu", "bilibili", "BV1xx411c7mu"],
+      ["https://vimeo.com/123456789", "vimeo", "123456789"]
+    ];
+    for (const [url, provider, videoId] of cases) {
+      const r = classifyContent(url);
+      expect(r.contentType, url).toBe("video");
+      expect(r.confidence).toBe("high");
+      expect(r.content).toEqual({ kind: "embed", provider, videoId, url });
+      expectValidForType("video", r.content);
+    }
+  });
+
+  it("a link INSIDE prose stays markdown (low) — not a bare URL", () => {
+    const r = classifyContent("Watch this https://youtu.be/dQw4w9WgXcQ it's great");
+    expect(r.contentType).toBe("markdown");
+    expect(r.confidence).toBe("low");
+  });
+
+  it("a NON-video URL does NOT classify as video (→ markdown)", () => {
+    const r = classifyContent("https://example.com/page");
+    expect(r.contentType).toBe("markdown");
+    expect(r.confidence).toBe("low");
+  });
+});
+
 describe("classifyContent — markdown fallback", () => {
   it("falls back to markdown (low) for ordinary prose", () => {
     const raw = "Just a sentence of plain prose with no special structure.";

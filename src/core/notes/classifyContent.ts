@@ -14,6 +14,8 @@
 // detection are Phase 2/3 — the rule list is ordered + commented so those rules slot
 // in by most-specificity without touching the existing ones.
 
+import { parseVideoUrl } from "./parseVideoUrl";
+
 export type ClassifiedForm = {
   /** An already-registered contentType (so getNoteContentSpec / getNoteType resolve). */
   contentType: string;
@@ -106,6 +108,23 @@ function markdownFallback(raw: string): ClassifiedForm {
 // them as discrete functions makes adding Phase 2/3 rules (video/html) a one-liner
 // insertion into `classifyContent`'s ordered list below — no rule entangles another.
 
+// video-embed: the WHOLE input is a single bare provider URL (YouTube / bilibili /
+// Vimeo). A bare link is a high-confidence "play this video" intent; a link sitting
+// INSIDE prose stays markdown (see classifyContent: we only test the trimmed whole).
+// Content is shaped for the `video` union's embed member {kind, provider, videoId, url}.
+function detectVideoEmbed(raw: string): ClassifiedForm | null {
+  const trimmed = raw.trim();
+  // Reject anything with internal whitespace — a bare URL has none, prose does.
+  if (/\s/.test(trimmed)) return null;
+  const parsed = parseVideoUrl(trimmed);
+  if (!parsed) return null;
+  return {
+    contentType: "video",
+    content: { kind: "embed", provider: parsed.provider, videoId: parsed.videoId, url: trimmed },
+    confidence: "high"
+  };
+}
+
 // mermaid: a ```mermaid``` fence, OR a bare source that LEADS with a mermaid keyword.
 function detectMermaid(raw: string, fence: RegExpMatchArray | null): ClassifiedForm | null {
   if (fence) {
@@ -190,6 +209,11 @@ export function classifyContent(raw: string): ClassifiedForm {
     // the FIRST fence; mixed prose+fence stays markdown unless the fence rule fires.
     const fence = raw.match(FENCE_RE);
 
+    // 0. video-embed (most specific: the ENTIRE input is one bare provider URL). A
+    //    link inside a sentence has whitespace and falls through to markdown.
+    const video = detectVideoEmbed(raw);
+    if (video) return video;
+
     // 1. mermaid (most specific: a named diagram language / bare diagram source).
     const mermaid = detectMermaid(raw, fence);
     if (mermaid) return mermaid;
@@ -203,8 +227,8 @@ export function classifyContent(raw: string): ClassifiedForm {
     const code = detectCodeSnippet(fence);
     if (code) return code;
 
-    // —— Phase 2/3 rules slot in here (most-specificity preserved) ——
-    //   • video-embed: a bare YouTube/bilibili/Vimeo URL → video {kind:"embed", …}
+    // —— Phase 3 rules slot in here (most-specificity preserved) ——
+    //   • video-embed (Phase 2): DONE — see rule 0 above (a bare provider URL).
     //   • html-interactive: <script> + <canvas>/addEventListener → html {interactive:true}
     //   • html-static: tags but no script → html {interactive:false}
 

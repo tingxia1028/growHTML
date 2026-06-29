@@ -47,6 +47,47 @@ describe("note content specs", () => {
     expect(getNoteContentSpec("html-sandbox")!.toSearchText({ html: "<p>Hi <b>there</b></p>" })).toBe("Hi there");
   });
 
+  // Video — unified asset | embed union with absent-kind backward-compat (Phase 2).
+  describe("video (asset | embed union)", () => {
+    it("accepts a LEGACY { assetId } note with NO kind (backward-compat) and defaults kind:'asset'", () => {
+      // The exact shape a pre-Phase-2 video note was stored as.
+      const legacy = { assetId: VALID_ASSET_ID, caption: "old clip", startSec: 3 };
+      const parsed = parseNoteContent("video", legacy) as Record<string, unknown>;
+      expect(parsed.kind).toBe("asset");
+      expect(parsed.assetId).toBe(VALID_ASSET_ID);
+      expect(parsed.caption).toBe("old clip");
+      expect(parsed.startSec).toBe(3);
+    });
+
+    it("accepts an explicit { kind:'asset', assetId } note", () => {
+      expect(() => parseNoteContent("video", { kind: "asset", assetId: VALID_ASSET_ID })).not.toThrow();
+    });
+
+    it("accepts an embed { kind:'embed', provider, videoId, url } note", () => {
+      const embed = { kind: "embed", provider: "youtube", videoId: "dQw4w9WgXcQ", url: "https://youtu.be/dQw4w9WgXcQ" };
+      expect(() => parseNoteContent("video", embed)).not.toThrow();
+    });
+
+    it("rejects an unknown provider and a missing videoId on embed", () => {
+      expect(() =>
+        parseNoteContent("video", { kind: "embed", provider: "dailymotion", videoId: "x", url: "u" })
+      ).toThrow();
+      expect(() => parseNoteContent("video", { kind: "embed", provider: "vimeo", url: "u" })).toThrow();
+    });
+
+    it("rejects an asset note with a bad assetId (the empty seed is not persistable)", () => {
+      expect(() => parseNoteContent("video", { assetId: "" })).toThrow();
+    });
+
+    it("toSearchText returns the caption for both variants", () => {
+      const spec = getNoteContentSpec("video")!;
+      expect(spec.toSearchText({ kind: "asset", assetId: VALID_ASSET_ID, caption: "cap" })).toBe("cap");
+      expect(
+        spec.toSearchText({ kind: "embed", provider: "vimeo", videoId: "1", url: "u", caption: "talk" })
+      ).toBe("talk");
+    });
+  });
+
   // Bookmark — a note type, zero core-schema change (docs/design/bookmark-modeling.md).
   describe("bookmark", () => {
     it("is registered as a built-in content type", () => {
