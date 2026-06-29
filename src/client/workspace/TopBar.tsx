@@ -19,8 +19,11 @@ import { useEffect, useRef, useState } from "react";
 import {
   Anchor,
   BookOpen,
+  Crosshair,
+  FileText,
   Layers,
   Network,
+  PanelRight,
   Settings
 } from "lucide-react";
 import type { WorkspaceContext } from "./viewRegistry";
@@ -88,6 +91,7 @@ export function TopBar({ ctx, leftPaneKind, onSelectPane }: TopBarProps) {
             setAnnotationMode("floating");
           }}
         >
+          <FileText size={15} aria-hidden="true" />
           Document
         </button>
         <button
@@ -97,6 +101,7 @@ export function TopBar({ ctx, leftPaneKind, onSelectPane }: TopBarProps) {
           className={`topbar-tab${overlayActive ? " active" : ""}`}
           onClick={() => setAnnotationMode("margin")}
         >
+          <PanelRight size={15} aria-hidden="true" />
           Notes Overlay
         </button>
         <button
@@ -114,6 +119,7 @@ export function TopBar({ ctx, leftPaneKind, onSelectPane }: TopBarProps) {
             if (focus.anchor) focus.setAnchor(focus.anchor);
           }}
         >
+          <Crosshair size={15} aria-hidden="true" />
           Anchor Focus
           {hasAnchor ? <span className="topbar-tab-badge">1</span> : null}
         </button>
@@ -131,21 +137,23 @@ export function TopBar({ ctx, leftPaneKind, onSelectPane }: TopBarProps) {
 
         <button
           type="button"
-          className={`topbar-icon-btn${leftPaneKind === "layer.switcher" ? " active" : ""}`}
-          aria-label="Layers"
+          className={`topbar-pill${leftPaneKind === "layer.switcher" ? " active" : ""}`}
+          aria-pressed={leftPaneKind === "layer.switcher"}
           title="Layers"
           onClick={() => onSelectPane("layer.switcher")}
         >
-          <Layers size={18} />
+          <Layers size={16} aria-hidden="true" />
+          <span>Layers</span>
         </button>
         <button
           type="button"
-          className={`topbar-icon-btn${leftPaneKind === "concept.list" ? " active" : ""}`}
-          aria-label="Concepts and relations"
+          className={`topbar-pill${leftPaneKind === "concept.list" ? " active" : ""}`}
+          aria-pressed={leftPaneKind === "concept.list"}
           title="Concepts &amp; relations"
           onClick={() => onSelectPane("concept.list")}
         >
-          <Network size={18} />
+          <Network size={16} aria-hidden="true" />
+          <span>Concepts</span>
         </button>
         <button
           type="button"

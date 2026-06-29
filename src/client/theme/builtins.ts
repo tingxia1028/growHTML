@@ -87,8 +87,10 @@ export const DEFAULT_THEME_TOKENS: Record<string, string> = {
   "--sv-connector": "#cdd3dc",
   "--sv-anchor-marker": "#9aa1ab",
 
-  // —— Typography ——
-  "--sv-font-sans": 'Inter, "Segoe UI", Arial, sans-serif',
+  // —— Typography —— (sans = Inter for UI; serif = Source Serif 4 for reader prose,
+  // both bundled via @fontsource. Serif is theme-shared / identical light+dark.)
+  "--sv-font-sans": '"Inter", "Segoe UI", Arial, sans-serif',
+  "--sv-font-serif": '"Source Serif 4", Georgia, "Times New Roman", serif',
   "--sv-font-mono": "ui-monospace, SFMono-Regular, Menlo, monospace",
 
   // —— Shape / rhythm ——

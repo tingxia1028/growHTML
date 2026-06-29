@@ -7,6 +7,11 @@
 // Bottom: a static avatar placeholder that opens the same Settings affordance the gear
 // hosts (account/settings menu) — here it just toggles the gear menu by selecting nothing
 // destructive; R1 keeps it a placeholder per spec.
+//
+// R1.5 note: this app is local-first with NO user/account/auth concept (WorkspaceContext
+// has no current-user/profile name, and there is no login). So there is no real user name
+// to show. The avatar therefore carries a neutral app-derived identity ("Growte" / "G")
+// instead of the old hardcoded "Alex". When an account model lands, point AVATAR_NAME at it.
 
 import {
   Anchor,
@@ -38,6 +43,12 @@ export const RAIL_ENTRIES: RailEntry[] = [
   { kind: "layer.switcher", label: "Layers", Icon: Layers }
 ];
 
+// Neutral app-derived identity for the bottom avatar. This app has no user/account model
+// (see header note), so there is no real name to show — we use the product identity rather
+// than the old hardcoded "Alex". AVATAR_DOT stays in sync with AVATAR_NAME's initial.
+const AVATAR_NAME = "Growte";
+const AVATAR_DOT = AVATAR_NAME.charAt(0).toUpperCase();
+
 export type IconRailProps = {
   /** The view-kind currently shown in the left rail slot. */
   selected: string;
@@ -63,11 +74,11 @@ export function IconRail({ selected, onSelect }: IconRailProps) {
           </button>
         ))}
       </div>
-      <button type="button" className="icon-rail-avatar" title="Account">
+      <button type="button" className="icon-rail-avatar" title={AVATAR_NAME}>
         <span className="icon-rail-avatar-dot" aria-hidden="true">
-          A
+          {AVATAR_DOT}
         </span>
-        <span className="icon-rail-avatar-label">Alex</span>
+        <span className="icon-rail-avatar-label">{AVATAR_NAME}</span>
       </button>
     </nav>
   );

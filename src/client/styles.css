@@ -74,8 +74,11 @@
   --sv-connector: #cdd3dc;         /* margin-note → anchor dashed connector */
   --sv-anchor-marker: #9aa1ab;     /* paragraph anchor marker */
 
-  /* —— Typography —— */
-  --sv-font-sans: Inter, "Segoe UI", Arial, sans-serif;
+  /* —— Typography —— (Inter for UI/chrome, Source Serif 4 for the reader prose;
+     both bundled locally via @fontsource — see src/client/main.tsx. Serif is
+     theme-shared: identical in light + dark, so it lives at :root only.) */
+  --sv-font-sans: "Inter", "Segoe UI", Arial, sans-serif;
+  --sv-font-serif: "Source Serif 4", Georgia, "Times New Roman", serif;
   --sv-font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* —— Shape / rhythm —— */
@@ -106,6 +109,9 @@ body {
   min-height: 100vh;
   color: var(--sv-text);
   background: var(--sv-bg);
+  /* R1.5 type scale: base body UI text = 14px (was the browser default 16px, which read
+     heavier than the reference). Section headers / wordmark / rows set their own sizes. */
+  font-size: 14px;
 }
 
 button,
@@ -163,8 +169,8 @@ button {
 }
 
 .topbar-wordmark {
-  font-size: 17px;
-  font-weight: 700;
+  font-size: 18px;
+  font-weight: 600;
   color: var(--sv-text-heading);
   letter-spacing: 0.01em;
 }
@@ -236,6 +242,34 @@ button {
 
 .topbar-opacity:disabled {
   cursor: default;
+}
+
+/* Labeled pill (icon + text) for the Layers / Concepts pane toggles. Active = the
+   accent-tinted chip (accent-weak bg + accent text + accent border), matching the
+   reference; resting = muted text on a hairline outline. */
+.topbar-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-pill);
+  background: var(--sv-surface);
+  color: var(--sv-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.topbar-pill:hover {
+  background: var(--sv-surface-muted);
+  color: var(--sv-text);
+}
+
+.topbar-pill.active {
+  border-color: var(--sv-accent-border);
+  background: var(--sv-accent-weak);
+  color: var(--sv-accent-text);
 }
 
 .topbar-icon-btn {
@@ -389,8 +423,10 @@ button {
 
 .anchor-excerpt-quote {
   margin: 0 0 6px;
-  font-size: 13px;
-  line-height: 1.5;
+  /* R1.5: this is quoted reading body (the focused passage) → serif. */
+  font-family: var(--sv-font-serif);
+  font-size: 14px;
+  line-height: 1.55;
   color: var(--sv-text);
 }
 
@@ -1703,16 +1739,26 @@ button {
   margin-top: 8px;
 }
 
+/* R1.5: the markdown note prose is reading body, so it renders in the serif
+   (var(--sv-font-serif)). Headings stay on the sans (chrome-like hierarchy) and
+   code stays on the mono — only the running prose is serif. */
 .note-rendered {
-  font-size: 13px;
-  line-height: 1.5;
+  font-family: var(--sv-font-serif);
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .note-rendered h1,
 .note-rendered h2,
 .note-rendered h3 {
   margin: 4px 0;
+  font-family: var(--sv-font-sans);
   font-size: 14px;
+}
+
+.note-rendered code,
+.note-rendered .sv-code code {
+  font-family: var(--sv-font-mono);
 }
 
 .note-rendered code {
@@ -2414,8 +2460,11 @@ button {
   gap: 7px;
   margin: 0 0 10px;
   color: var(--sv-text-heading);
-  font-size: 13px;
-  font-weight: 800;
+  /* R1.5 type scale: section headers (Library / Anchor / AI Chat) — 14px semibold
+     with slightly muted tracking, matching the reference's clean hierarchy. */
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .study-panel section,
