@@ -139,6 +139,7 @@
 
 - **R0 令牌(浅默认 + 深)**:改 `styles.css :root` + `builtins.ts` 的 DEFAULT/DARK 为本规范令牌;浅色设为默认主题。**纯令牌、低风险、立刻换肤**。先做。
 - **R1 Shell/顶栏/图标栏**:新 `TopBar` + `IconRail` + 改 `presets.ts` dock 树为"iconrail | library | reader | (anchor/aichat 上下)";现有面板收进图标栏/⋯;三视图分段控件接 annotationMode/focus。
+- **R1.5 排版与图标精修**:真正打包加载 **Inter**(离线安全,非 CDN;此前只声明未加载 → 实际渲染成 Segoe UI)+ 阅读器正文衬线 `--sv-font-serif` + 字号字重对齐;TopBar 的 Layers/Concepts 改 labeled pill、三 tab 加图标、active 段控样式;IconRail active 高亮 + 头像用真实用户名(非写死 Alex)。**纯排版/图标/标签,不加功能**。
 - **R2 Library**:树层级 + 头部 + active 态按稿。
 - **R3 Note 展示统一(§10,组件地基)+ Reader chrome**:先收敛 `ArtifactCard`/`FocusOverlay` → 一套 **PreviewCard(三态)+ CenterView**(双击打开)+ per-type 预览规则 + 尺寸;再做 tab 条、工具条、锚点标记、**note-type 图标→点开预览卡**(§10.4)、内联簇(= Selection Toolbar 表面,§7)、margin 卡 + 虚线连线。**R4/R5 消费同一套卡**。
 - **R4 Right(Anchor + Anchor Tools + AI Log)**:摘录卡 + Anchor Action Bar 表面(§7)+ 聊天气泡/操作/输入重绘;Anchor 下 / Chat 里的 Note **复用 §10 PreviewCard**。
