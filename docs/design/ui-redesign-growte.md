@@ -145,6 +145,7 @@
 - **R5 通用件**:笔记卡/ArtifactCard/FocusOverlay/按钮/输入/滚动条对齐两套令牌。
 - **R6 工具栏体系 + Customize(见 §7)**:抽 **Action Registry**(kit 提供动作集 + 用户自定义)→ 三表面统一渲染(Selection / Anchor / 全局底栏)+ Hover tooltip + More 菜单分组 + Disabled 态 + **Customize Toolbar**(排序/显隐/换图标/钉自定义 Operation/Reset)。复用现有 `commands/registry` + `operationViews`,对齐「AI Operation as Data」计划。
 - **R7 Layer Lens + 层级(见 §8)**:顶栏 `Layers` pill → 弹层(过滤+管理合一);`studyLayerSchema` 加 `parentId`(导入/角色驱动)+ per-layer 计数 + roll-up + 父级级联;`Visible note count` 页脚。
+- **R8 右侧目录 / Study Index(hover-reveal,见 §9)**:阅读器右边缘 hover 滑出的可跳转索引(按类目分组),复用 jump-to-anchor reveal;折叠态=目录图标,可 pin。
 
 > 全程保持功能不变 + 契约守卫绿;每期串行(改动多在 styles.css/presets/views,易冲突)。R6 可与 R3/R4 协同:R3/R4 先用占位的内联/Anchor 工具行,R6 再把它们替换成 Action Registry 的统一渲染。
 
@@ -200,3 +201,27 @@
 - core:`study-layer.ts` 加 `parentId`;`.studypack`(`pack.ts`)序列化父子;import 路径按包建父挂子。
 - server:layers 接口返回 **per-layer note 计数**(+ 可见去重总数),供 Lens 显示。
 - client:新 **Layer Lens** 弹层组件(树渲染 + 级联/indeterminate + 计数 + 就地管理);顶栏 `Layers` pill;`toggleLayerFilter` 扩展为父级级联。
+
+## 9. 右侧目录 / Study Index(hover-reveal)
+
+> 阅读器**右边缘**一个**悬浮即现**的可跳转索引("目录"),把当前 source 的 note/anchor 按类目聚合,点击**跳到原文锚点**。它是导航器,不是文档大纲(条目是学习产物,不是文档标题)。
+
+### 9.1 交互
+- **折叠态**(默认):右边缘只留一个**目录图标**(竖条),不占阅读宽度。
+- **悬浮展开**:鼠标移到右边缘/图标 → 面板从右侧滑入(over 内容,带过渡);鼠标移开 → 收起。可 **pin**(图钉)常驻;pin 后变成常驻面板。
+- 顶部有 `«` 折叠 + 最大化小图标(对齐稿)。
+- 条目点击 = **jump-to-anchor reveal**(复用已落地的统一能力,git `726db77`):滚动并高亮对应锚点;当前所在条目高亮(稿中 `Concept Misunderstanding` 高亮态)。
+
+### 9.2 内容结构(分组)
+- **分组 = note 的类目**(默认假设,可调):
+  `Important Formula`(概念/公式)· `Summary`(摘要)· `To-do`(练习/复习待办)· `Common Mistake`(错题)· `Exam Review`(复习)· `Related Links`(媒体/外链)。
+  —— 类目来自 **note 类型 / 生成它的动作类目**(对齐 §7 的 action group / note type),**不新增字段**;空分组不显示。
+- 每行:组头 = 文件夹图标 + 类目名(muted);条目 = note 标题(accent 蓝,链接态)。
+
+### 9.3 与右栏的关系(默认假设,可调)
+- 目录是**最外侧**的 hover-reveal 折叠条,**独立**于持久右栏(Anchor / Anchor Tools / AI Log);二者可并存。pin 后并入右侧区域。
+
+### 9.4 需要的改动(R8)
+- client:新 **StudyIndex** hover 面板组件(右边缘触发区 + 滑入过渡 + pin 状态持久化到 workspace storage)。
+- 数据:复用现有 note/anchor 查询,按类目(note 类型/动作 group)聚合;条目跳转复用 jump-to-anchor reveal。
+- 纯 `--sv-*` 令牌;两套主题。
