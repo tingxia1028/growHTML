@@ -1,8 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none">
-  <g transform="translate(36 36) scale(7.6666667)" stroke="#111827" stroke-width="2.05" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="12" cy="5" r="3"/>
-    <path d="M8.6 10H15.4"/>
-    <path d="M12 22V8"/>
-    <path d="M5 12H2a10 10 0 0 0 20 0h-3"/>
+  <!-- Soft rounded-square plate for taskbar legibility at small sizes. -->
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="#ffffff"/>
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="none" stroke="#e6eaf2" stroke-width="2"/>
+  <!--
+    lucide-react Anchor glyph (v1.21.0), Growte accent #3b6fe0.
+    Source: node_modules/lucide-react/dist/esm/icons/anchor.mjs
+    Original 24x24 viewBox scaled to fit ~62% of the 256 plate and centered.
+    Lucide defaults: stroke=currentColor, fill=none, stroke-width=2, round caps/joins.
+  -->
+  <g transform="translate(48 48) scale(6.6666667)" stroke="#3b6fe0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M12 6v16"/>
+    <path d="m19 13 2-1a9 9 0 0 1-18 0l2 1"/>
+    <path d="M9 11h6"/>
+    <circle cx="12" cy="4" r="2"/>
   </g>
 </svg>

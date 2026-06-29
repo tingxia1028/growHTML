@@ -33,7 +33,15 @@ export default defineConfig({
       timeout: 60_000,
       // Space out mock stream chunks so the streaming-chat spec can observe the
       // reply arriving progressively (deterministic; content is unchanged).
-      env: { STUDY_VAULT_ROOT: e2eVaultRoot, STUDY_VAULT_MOCK_STREAM_DELAY_MS: "60" }
+      // Pin the MOCK provider for e2e regardless of any local `.env` (which may set
+      // STUDY_VAULT_AI_PROVIDER=claude-cli for real dev) — specs assert deterministic
+      // mock replies, and a real provider would be slow/non-deterministic and bill the
+      // user's subscription.
+      env: {
+        STUDY_VAULT_ROOT: e2eVaultRoot,
+        STUDY_VAULT_MOCK_STREAM_DELAY_MS: "60",
+        STUDY_VAULT_AI_PROVIDER: "mock"
+      }
     },
     {
       command: "npm run dev:client",
