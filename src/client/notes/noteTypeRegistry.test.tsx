@@ -201,6 +201,36 @@ describe("NoteType render — sample content per type", () => {
     expect(html).not.toContain("<img");
   });
 
+  // §10.3 Media CARD mode — the lightweight preview the shared PreviewCard drops in:
+  //   • image  → an <img class="sv-media-img"> THUMBNAIL pointing at the asset + caption
+  //              (the contract the media e2e relied on; kept here at the stable unit layer).
+  //   • audio/video → an INERT poster glyph (no live <audio>/<video> player) + an optional
+  //              mm:ss duration badge derived from a trimmed clip's start/end.
+  it("image CARD render = an <img.sv-media-img> thumbnail + .sv-media-caption (no full player)", () => {
+    const html = renderToHtml(
+      getNoteType("image")!.render({ content: { assetId: "asset_img1", caption: "A seeded figure" }, mode: "card" })
+    );
+    expect(html).toContain("sv-media-card");
+    expect(html).toContain('class="sv-media-img"');
+    expect(html).toContain('src="/api/assets/asset_img1"');
+    expect(html).toContain("sv-media-caption");
+    expect(html).toContain("A seeded figure");
+  });
+
+  it("audio/video CARD render = an inert poster glyph (no live player); a trimmed clip shows a duration badge", () => {
+    const audio = renderToHtml(getNoteType("audio")!.render({ content: { assetId: "asset_a1" }, mode: "card" }));
+    expect(audio).toContain("sv-media-poster");
+    expect(audio).not.toContain("<audio");
+
+    // A trimmed clip (start 12s → end 284s) → a 4:32 badge in the card.
+    const video = renderToHtml(
+      getNoteType("video")!.render({ content: { assetId: "asset_v1", startSec: 12, endSec: 284 }, mode: "card" })
+    );
+    expect(video).toContain("sv-media-poster");
+    expect(video).not.toContain("<video");
+    expect(video).toContain("4:32");
+  });
+
   it("html-sandbox (inert / interactive:false) renders a sandboxed (scriptless) iframe carrying the html", () => {
     const html = renderToHtml(getNoteType("html-sandbox")!.render({ content: { html: "<p>hi</p><script>evil()</script>" } }));
     expect(html).toContain("<iframe");
@@ -241,14 +271,17 @@ describe("NoteType render — sample content per type", () => {
     expect(html).toContain("no-referrer");
   });
 
-  it("html-sandbox (interactive:true) CARD view = INERT preview (no live script frame in the thread)", () => {
+  it("html-sandbox (interactive:true) CARD view = inert preview (no iframe at all; §10.3)", () => {
     const game = '<canvas></canvas><script>requestAnimationFrame(()=>{})</script>';
     const html = renderToHtml(
       getNoteType("html-sandbox")!.render({ content: { html: game, interactive: true }, mode: "card" })
     );
-    // The card must NOT mount the allow-scripts frame — it shows the inert sandbox="" one.
-    expect(html).toContain('sandbox=""');
+    // §10.3: the HTML card does NOT run an iframe at all — it shows a short text gist +
+    // a blue `Interactive` badge. (The live frame mounts only in the Center View.)
+    expect(html).not.toContain("<iframe");
     expect(html).not.toContain("allow-scripts");
+    expect(html).toContain("sv-card-interactive-badge");
+    expect(html).toContain("Interactive");
   });
 
   it("bookmark renders a compact label chip with a color dot (not a card)", () => {

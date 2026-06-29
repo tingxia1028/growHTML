@@ -3051,6 +3051,200 @@ textarea {
   padding: 16px;
 }
 
+/* ============================================================================
+   §10 Note display — converged PreviewCard + CenterView chrome.
+   PreviewCard reuses the .sv-artifact-card hooks above; the rules below add the
+   §10 layout (icon + type name + ⋯ header / bold title / per-type body / footer).
+   Token-only color; both themes inherit. ========================================= */
+
+/* PreviewCard sizing — §10.5 default 260 × 140 (min so a card stays card-sized). */
+.sv-preview-card {
+  min-height: 132px;
+  max-width: 280px;
+}
+.sv-card-head {
+  width: 100%;
+}
+.sv-card-type {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sv-card-more {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--sv-text-muted);
+}
+.sv-card-title {
+  font-weight: 600;
+  color: var(--sv-text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sv-card-body {
+  flex: 1 1 auto;
+}
+.sv-card-footer {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--sv-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* —— per-type card bodies (§10.3). Each is a SMALL preview, never the full view. —— */
+.sv-card-md {
+  font-size: 12.5px;
+  color: var(--sv-text-quote);
+  white-space: pre-wrap;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+.sv-card-quiz-question,
+.sv-card-flashcard-front {
+  margin: 0;
+  font-size: 13px;
+  color: var(--sv-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sv-card-flashcard-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--sv-text-muted);
+}
+.sv-card-code-pre {
+  margin: 0;
+  padding: 6px 8px;
+  background: var(--sv-surface-tag);
+  border-radius: var(--sv-radius-sm);
+  font-family: var(--sv-font-mono);
+  font-size: 11.5px;
+  line-height: 1.4;
+  white-space: pre;
+  overflow: hidden;
+  max-height: 64px;
+}
+
+/* Media card — a thumbnail (image) or an inert poster glyph (audio/video) + an
+   optional mm:ss duration badge. The live player only mounts in the CenterView. */
+.sv-media-card .sv-media-thumb {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-height: 96px;
+  overflow: hidden;
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface-muted);
+}
+.sv-media-card .sv-media-img {
+  width: 100%;
+  max-height: 96px;
+  object-fit: cover;
+}
+.sv-media-poster {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 72px;
+  font-size: 26px;
+  color: var(--sv-text-muted);
+}
+.sv-media-duration {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  background: rgba(20, 18, 14, 0.72);
+  color: #fff;
+}
+.sv-media-provider {
+  text-transform: capitalize;
+}
+
+.sv-card-html-gist {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--sv-text-quote);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+/* Interactive badge — HTML cards carry a blue "Interactive" marker (§10.3). */
+.sv-card-interactive-badge {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: var(--sv-accent-weak);
+  color: var(--sv-accent-text);
+  border: 1px solid var(--sv-accent-border);
+}
+
+/* —— CenterView header chrome (icon · title · anchor/layer chips · actions · ✕) —— */
+.sv-center-dialog {
+  width: min(880px, 92vw);
+  max-height: 82vh;
+}
+.sv-center-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--sv-accent);
+}
+.sv-center-chip {
+  flex: 0 0 auto;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.sv-center-anchor-chip {
+  background: var(--sv-accent-weak);
+  color: var(--sv-accent-text);
+  border: 1px solid var(--sv-accent-border);
+}
+.sv-center-layer-chip {
+  background: var(--sv-surface-tag);
+  color: var(--sv-text-muted);
+}
+.sv-center-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+.sv-center-action {
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--sv-text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+}
+.sv-center-action:hover {
+  background: var(--sv-surface-muted);
+  color: var(--sv-text-strong);
+}
+
 /* Composer "detected · override" chip — the demoted type picker. */
 .composer-type-picker {
   display: inline-flex;
@@ -3567,10 +3761,20 @@ textarea {
   color: var(--sv-icon-muted);
 }
 
-.anchor-linked-icon:hover {
+.anchor-linked-icon:hover,
+.anchor-linked-icon.active {
   border-color: var(--sv-accent-border);
   background: var(--sv-accent-weak);
   color: var(--sv-accent);
+}
+
+/* The PreviewCard revealed under the icon row when a linked note-type icon is clicked
+   (§10.4). It is the shared sv-preview-card; constrain its width to the panel. */
+.anchor-linked-card {
+  margin-top: 8px;
+}
+.anchor-linked-card .sv-preview-card {
+  max-width: 100%;
 }
 
 .anchor-linked-empty {

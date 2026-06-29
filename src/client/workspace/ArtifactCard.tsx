@@ -1,57 +1,38 @@
-// ArtifactCard — the shared "compact card → click → centered overlay" capability
-// (design plan §3.5 requirement 1/2). ONE component used uniformly by BOTH the chat
-// thread (rich assistant replies / saved rich notes) and the note viewer — not
-// re-implemented per surface (§0.5 / abstract-recurring-capabilities).
+// PreviewCard (exported as ArtifactCard for back-compat) — the ONE shared lightweight
+// note preview (§10.1 "Preview Card", design plan §3.5). Used UNIFORMLY by every
+// surface that shows a note compactly: the chat thread, the note viewer, the reader's
+// anchor note clusters, the right-column related-note list. There is no per-surface
+// card — each caller hands the SAME block, and the body comes through the one sanctioned
+// path getNoteType(contentType).render({ ..., mode: "card" }) (display-side hard
+// contract §0.5-B). Double-click (or click) opens the FULL interactive view in the
+// shared CenterView (FocusOverlay), so card · overlay · saved note all flow through one
+// render entry.
 //
-// A card is a compact preview: a form icon + a title/snippet + a small form-label
-// badge + an optional first-screen thumbnail rendered through the SAME registry path
-// a saved note uses — getNoteType(contentType).render({ ..., mode: "card" }). Clicking
-// the card opens the block's FULL interactive view in the shared FocusOverlay
-// (mode:"full"). So card, overlay, and saved note all flow through the one
-// getNoteType().render entry — there is no bespoke render path here.
-//
-// GENERIC card fallback: any contentType gets a card for FREE. We always show the
-// icon + title + a text snippet (derived from the content); a plugin that opts into a
-// nicer card (e.g. markmap/mermaid render a light preview in "card" mode) supplies the
-// thumbnail body, but a plugin that ignores `mode` still gets a usable card from the
-// title/snippet alone (and we DON'T mount its heavy full render inline).
+// §10 card chrome (this wrapper owns it; the plugin owns only the small body):
+//   ┌ [type icon] type-name … ⋯ ┐
+//   │ Bold title                │
+//   │ short per-type body       │
+//   └ P<page> · <extra> · <layer> ┘
+// The footer parts are OPTIONAL block metadata the host threads in (page/layer come from
+// the note's anchor/layer; extra = a content-derived hint like "3 questions" / a
+// language). Absent parts are simply omitted — the card never fabricates them.
 
 import { useState, type ReactNode } from "react";
-import { FileText, Network, GitBranch, Code2, Boxes } from "lucide-react";
-import type { NoteRecord } from "../data/entityClient";
+import { MoreHorizontal } from "lucide-react";
 import { getNoteType } from "../notes/noteTypeRegistry";
+import { noteTypeIcon } from "../notes/noteTypeIcon";
 import { FocusOverlay, type FocusOverlayBlock } from "./FocusOverlay";
 
 // A plain-text snippet from any content shape (string passes through; an object is
-// JSON-stringified) — the generic card's title/preview line, never raw HTML.
+// JSON-stringified) — the generic card's title fallback, never raw HTML.
 function snippetOf(content: unknown): string {
   const text = typeof content === "string" ? content : JSON.stringify(content ?? {});
   return text.replace(/\s+/g, " ").trim();
 }
 
-// A small per-form icon. Unknown types fall back to a generic block icon — purely
-// decorative (the badge already names the form), so a missing mapping never matters.
-function FormIcon({ contentType }: { contentType: string }) {
-  const size = 15;
-  switch (contentType) {
-    case "markmap":
-      return <Network size={size} />;
-    case "mermaid":
-      return <GitBranch size={size} />;
-    case "code-snippet":
-      return <Code2 size={size} />;
-    case "markdown":
-    case "plain-text":
-      return <FileText size={size} />;
-    default:
-      return <Boxes size={size} />;
-  }
-}
-
-// Whether a plugin offers a richer card body. We try its "card" render; if it returns
-// nothing we fall back to the generic snippet. (A plugin that ignores `mode` returns
-// its normal node, which is fine as a thumbnail — but the heavy diagram plugins
-// explicitly render a LIGHT preview for "card", so the thread never mounts live SVG.)
+// The plugin's "card" body (light preview). A plugin that ignores `mode` still returns a
+// usable node; the heavy diagram/html plugins explicitly return a LIGHT preview for
+// "card" so the thread never mounts a live diagram/iframe. Null → the wrapper alone.
 function cardBody(block: FocusOverlayBlock): ReactNode {
   const plugin = getNoteType(block.contentType);
   if (plugin) {
@@ -61,29 +42,57 @@ function cardBody(block: FocusOverlayBlock): ReactNode {
   return null;
 }
 
+// The footer meta line "P<page> · <extra> · <layer>" — only the parts we actually have.
+function FooterMeta({ block }: { block: FocusOverlayBlock }) {
+  const parts: string[] = [];
+  if (block.page != null) parts.push(`P${block.page}`);
+  if (block.extra) parts.push(block.extra);
+  if (block.layer) parts.push(block.layer);
+  if (parts.length === 0) return null;
+  return <span className="sv-card-footer">{parts.join(" · ")}</span>;
+}
+
 export function ArtifactCard({ block }: { block: FocusOverlayBlock }) {
   const [open, setOpen] = useState(false);
   const title = block.title ?? (snippetOf(block.content).slice(0, 80) || block.contentType);
   const body = cardBody(block);
+  const Icon = noteTypeIcon(block.contentType);
 
   return (
     <>
-      <button
-        type="button"
-        className={`sv-artifact-card sv-artifact-card-${block.contentType}`}
+      <div
+        className={`sv-artifact-card sv-preview-card sv-artifact-card-${block.contentType}`}
+        role="button"
+        tabIndex={0}
         aria-haspopup="dialog"
-        title={`Open ${block.contentType} (interactive)`}
+        title={`Open ${block.contentType} (double-click)`}
+        // Single click and double-click both open the centered view — single keeps the
+        // long-standing behavior the chat thread/tests rely on, double-click matches the
+        // §10 "双击预览卡 → Center View" gesture. Keyboard: Enter/Space opens too.
         onClick={() => setOpen(true)}
+        onDoubleClick={() => setOpen(true)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
       >
-        <span className="sv-artifact-head">
+        <span className="sv-artifact-head sv-card-head">
           <span className="sv-artifact-icon" aria-hidden="true">
-            <FormIcon contentType={block.contentType} />
+            <Icon size={15} />
           </span>
-          <span className="sv-artifact-title">{title}</span>
-          <span className="sv-artifact-badge">{block.contentType}</span>
+          {/* The type NAME (the §10 header label). Keeps the legacy .sv-artifact-badge
+              hook so the form is named exactly once. */}
+          <span className="sv-artifact-badge sv-card-type">{block.contentType}</span>
+          <span className="sv-card-more" aria-hidden="true">
+            <MoreHorizontal size={15} />
+          </span>
         </span>
-        {body ? <span className="sv-artifact-thumb">{body}</span> : null}
-      </button>
+        <span className="sv-card-title sv-artifact-title">{title}</span>
+        {body ? <span className="sv-artifact-thumb sv-card-body">{body}</span> : null}
+        <FooterMeta block={block} />
+      </div>
       {open ? <FocusOverlay block={block} onClose={() => setOpen(false)} /> : null}
     </>
   );

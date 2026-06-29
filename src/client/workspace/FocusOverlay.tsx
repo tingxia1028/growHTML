@@ -1,23 +1,27 @@
-// FocusOverlay — the shared "centered interactive overlay" capability (design plan
-// §3.5 requirement 1/2, decision §6.6). It is ONE component used uniformly by BOTH
-// the chat thread and the note viewer: an ArtifactCard click opens this overlay, and
-// the note viewer focuses a rich note into the SAME overlay. There is no second
-// rendering path — the overlay renders the block's FULL interactive view through the
-// one sanctioned entry, getNoteType(contentType).render({ ..., mode: "full" }) — the
-// exact renderer a saved note / the generation preview uses, so card = overlay =
-// saved note are visually consistent.
+// CenterView (exported as FocusOverlay for back-compat) — the ONE shared centered full
+// view (§10.1 "Center View", design plan §3.5 / decision §6.6). A PreviewCard
+// double-click/click and the note viewer's "Open interactively" both open THIS overlay;
+// there is no second rendering path — the body comes through the one sanctioned entry
+// getNoteType(contentType).render({ ..., mode: "full" }) — the exact renderer a saved
+// note / the generation preview uses, so card = overlay = saved note stay consistent.
 //
-// Behavior: a centered modal/lightbox over a dimmed backdrop. Esc or a backdrop
-// click closes it. Accessible: role="dialog" aria-modal, a labelled title, a focus
-// trap (Tab cycles within the dialog), focus moves in on open and is restored to the
-// opener on close. The live (heavy) render mounts ONLY while the overlay is open — so
-// many interactive forms never run inline in the thread at once.
+// §10 header chrome (this wrapper owns it; the plugin owns only the body):
+//   [type icon] Title  [Anchor P## (Section x.x)]  [Layer]  …  ⤴ open-external  ⋯  ✕
+// The anchor / layer / open-external parts are OPTIONAL block metadata the host threads
+// in (resolved from the note's anchor + layer); absent parts are omitted, never faked.
+// The "jump back to source anchor" affordance calls block.onJumpToAnchor when supplied.
+//
+// Behavior: a centered modal/lightbox over a dimmed backdrop (720–920px, §10.5). Esc or
+// a backdrop click closes it. Accessible: role="dialog" aria-modal, a labelled title, a
+// Tab focus trap, focus moves in on open and restores to the opener on close. The live
+// (heavy) full render mounts ONLY while the overlay is open.
 
 import { useCallback, useEffect, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
+import { ExternalLink, MoreHorizontal, X } from "lucide-react";
 import type { NoteRecord } from "../data/entityClient";
 import { getNoteType } from "../notes/noteTypeRegistry";
+import { noteTypeIcon } from "../notes/noteTypeIcon";
 import { InertNote } from "../notes/builtinNoteTypes";
 
 export type FocusOverlayBlock = {
@@ -27,8 +31,20 @@ export type FocusOverlayBlock = {
   content: unknown;
   /** Optional whole note (ids/attachments) when focusing a saved note. */
   note?: NoteRecord;
-  /** Optional human title shown in the overlay header (defaults to the contentType). */
+  /** Optional human title shown in the card/overlay header (defaults to the contentType). */
   title?: string;
+  // —— optional §10 chrome metadata (host-supplied; the component never derives these
+  //    from contentType, honoring the display-side hard contract). ——
+  /** Source page number for the footer "P<page>" / the header anchor chip. */
+  page?: number;
+  /** A content-derived hint for the card footer (e.g. "3 questions", "Python", "5 min"). */
+  extra?: string;
+  /** Layer name for the footer / the header layer chip. */
+  layer?: string;
+  /** Section label for the header anchor chip, e.g. "Section 4.2". */
+  section?: string;
+  /** Jump back to the source anchor (wired by the host); shows the ⤴ affordance when set. */
+  onJumpToAnchor?: () => void;
 };
 
 const FOCUSABLE =
@@ -93,17 +109,26 @@ export function FocusOverlay({ block, onClose }: { block: FocusOverlayBlock; onC
   const body: ReactNode = plugin
     ? plugin.render({ content: block.content, note: block.note, mode: "full" })
     : <InertNote content={block.content} />;
+  const Icon = noteTypeIcon(block.contentType);
+
+  // The anchor chip "Anchor P## (Section x.x)" — only when we know a page/section.
+  const anchorChip =
+    block.page != null
+      ? `Anchor P${block.page}${block.section ? ` (${block.section})` : ""}`
+      : block.section
+        ? block.section
+        : null;
 
   return createPortal(
     <div
-      className="sv-focus-overlay"
+      className="sv-focus-overlay sv-center-overlay"
       onMouseDown={(event) => {
         // Backdrop click (not a click that began inside the dialog) closes.
         if (event.target === event.currentTarget) onClose();
       }}
     >
       <div
-        className="sv-focus-dialog"
+        className="sv-focus-dialog sv-center-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -111,22 +136,49 @@ export function FocusOverlay({ block, onClose }: { block: FocusOverlayBlock; onC
         ref={dialogRef}
         onKeyDown={onKeyDown}
       >
-        <div className="sv-focus-head">
-          <span id={titleId} className="sv-focus-title">
+        <div className="sv-focus-head sv-center-head">
+          <span className="sv-center-icon" aria-hidden="true">
+            <Icon size={16} />
+          </span>
+          <span id={titleId} className="sv-focus-title sv-center-title">
             {block.title ?? block.contentType}
           </span>
+          {anchorChip ? <span className="sv-center-chip sv-center-anchor-chip">{anchorChip}</span> : null}
+          {block.layer ? <span className="sv-center-chip sv-center-layer-chip">{block.layer}</span> : null}
+          {/* Keep the legacy .sv-focus-type hook (names the form) for back-compat. */}
           <span className="sv-focus-type">{block.contentType}</span>
-          <button
-            type="button"
-            className="sv-focus-close"
-            aria-label="Close"
-            title="Close (Esc)"
-            onClick={onClose}
-          >
-            <X size={16} />
-          </button>
+          <span className="sv-center-actions">
+            {block.onJumpToAnchor ? (
+              <button
+                type="button"
+                className="sv-center-action sv-center-jump"
+                aria-label="Jump to source anchor"
+                title="Jump to source anchor"
+                onClick={block.onJumpToAnchor}
+              >
+                <ExternalLink size={16} />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="sv-center-action sv-center-more"
+              aria-label="More actions"
+              title="More actions"
+            >
+              <MoreHorizontal size={16} />
+            </button>
+            <button
+              type="button"
+              className="sv-focus-close sv-center-close"
+              aria-label="Close"
+              title="Close (Esc)"
+              onClick={onClose}
+            >
+              <X size={16} />
+            </button>
+          </span>
         </div>
-        <div className="sv-focus-body">{body}</div>
+        <div className="sv-focus-body sv-center-body">{body}</div>
       </div>
     </div>,
     document.body

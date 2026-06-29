@@ -46,11 +46,34 @@ function InertText({ content }: { content: unknown }) {
   return <div className="note-rendered" dangerouslySetInnerHTML={{ __html: inertPreHtml(text) }} />;
 }
 
+// —— per-type CARD bodies (§10.3) ——————————————————————————————————————————
+// A NoteType's render({mode:"card"}) returns the lightweight PREVIEW body that the
+// shared PreviewCard wrapper drops under its [icon · type · ⋯] header + bold title +
+// footer meta. The wrapper owns the chrome; each type owns only WHAT little to preview
+// (first lines / the question / a thumbnail / a code snippet) — never the full,
+// interactive content (that runs only in the Center View, mode:"full"). Keeping the
+// card body inside the plugin (not the host) honors the adaptive-note display contract:
+// card AND full both come from getNoteType().render({mode}).
+
+// The first ~N non-empty lines of a markdown/plain body — the markdown card preview.
+function firstLines(text: string, n: number): string {
+  return text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0)
+    .slice(0, n)
+    .join("\n");
+}
+
 // —— markdown / plain-text ————————————————————————————————————————————————
 // content is a string. markdown renders via the sanitized renderer; plain-text
-// shows as escaped <pre> (no markdown interpretation) — both inert-safe.
-function MarkdownRender({ content }: NoteRenderInput) {
+// shows as escaped <pre> (no markdown interpretation) — both inert-safe. In "card"
+// mode markdown shows only the first ~3 lines of body (§10.3).
+function MarkdownRender({ content, mode }: NoteRenderInput) {
   const text = typeof content === "string" ? content : String(content ?? "");
+  if (mode === "card") {
+    return <div className="note-rendered sv-card-md">{firstLines(text, 3) || "(empty note)"}</div>;
+  }
   return <div className="note-rendered" dangerouslySetInnerHTML={{ __html: renderNoteContent("markdown", text).html }} />;
 }
 function PlainTextRender({ content }: NoteRenderInput) {
@@ -95,11 +118,27 @@ registerNoteType({
 // renderer — the ArtifactCard shows this in the thread; the full interactive diagram
 // only mounts when the FocusOverlay opens (mode:"full"). This is the rich-form card
 // opt-in the contract allows; ignoring `mode` would still get the generic card.
+// A LIGHT diagram thumbnail for the card: a tiny structure glyph (a few connected
+// node bars derived from the source's first lines) + a one-line snippet. This is the
+// "downscaled static render / simple structure glyph" §10.3 calls for — it never
+// mounts mermaid/markmap (the full, zoomable diagram only mounts in the Center View).
 function DiagramCard({ contentType, content }: { contentType: string; content: string }) {
-  const snippet = content.replace(/\s+/g, " ").trim().slice(0, 120);
+  const snippet = content.replace(/\s+/g, " ").trim().slice(0, 80);
+  // Up to 4 node labels from the outline/source for the glyph (cheap, never throws).
+  const nodes = content
+    .split(/\n|;|-->|->/)
+    .map((l) => l.replace(/^[#\-*\s>]+/, "").replace(/[\[\](){}]/g, " ").trim())
+    .filter((l) => l.length > 0)
+    .slice(0, 4);
   return (
     <div className={`note-rendered sv-diagram-card sv-diagram-card-${contentType}`}>
-      <span className="sv-diagram-card-kind">{contentType}</span>
+      <div className="sv-diagram-glyph" aria-hidden="true">
+        {(nodes.length ? nodes : ["diagram"]).map((label, i) => (
+          <span key={i} className="sv-diagram-glyph-node" style={{ marginLeft: `${i * 10}px` }}>
+            {label.slice(0, 18)}
+          </span>
+        ))}
+      </div>
       <pre className="sv-diagram-card-snippet">{snippet || "(empty diagram)"}</pre>
     </div>
   );
@@ -172,10 +211,21 @@ function asFlashcard(content: unknown): Flashcard {
   const c = (content ?? {}) as Partial<Flashcard>;
   return { front: typeof c.front === "string" ? c.front : "", back: typeof c.back === "string" ? c.back : "" };
 }
-function FlashcardRender({ content }: NoteRenderInput) {
+function FlashcardRender({ content, mode }: NoteRenderInput) {
+  const card = asFlashcard(content);
+  // "card" → the front summary + a muted hint; the BACK is never shown until the
+  // Center View flips it (§10.3). "full" → the flip card (front + reveal-able back).
+  if (mode === "card") {
+    return (
+      <div className="note-rendered sv-card-flashcard">
+        <p className="sv-card-flashcard-front">{card.front || "(empty flashcard)"}</p>
+        <p className="sv-card-flashcard-hint">点击翻开查看背面</p>
+      </div>
+    );
+  }
   // Reuse the sanitized flashcard renderer (flip card via <details>). It expects a
   // JSON string of {front, back}; stringify our structured content for it.
-  const json = JSON.stringify(asFlashcard(content));
+  const json = JSON.stringify(card);
   return <div className="note-rendered" dangerouslySetInnerHTML={{ __html: renderNoteContent("flashcard", json).html }} />;
 }
 function FlashcardEditor({ content, onChange }: NoteEditInput) {
@@ -216,8 +266,18 @@ function asQuiz(content: unknown): Quiz {
     explanation: typeof c.explanation === "string" ? c.explanation : undefined
   };
 }
-function QuizRender({ content }: NoteRenderInput) {
+function QuizRender({ content, mode }: NoteRenderInput) {
   const quiz = asQuiz(content);
+  // "card" → just the question (1 line, truncated) — never the options (§10.3). The
+  // option count is shown by the wrapper footer (extraMeta), so the body stays a single
+  // line. "full" → the question + options with the answer marked (the Center View).
+  if (mode === "card") {
+    return (
+      <div className="note-rendered sv-card-quiz">
+        <p className="sv-quiz-question sv-card-quiz-question">{quiz.question || "(empty quiz)"}</p>
+      </div>
+    );
+  }
   return (
     <div className="note-rendered sv-quiz">
       <p className="sv-quiz-question">{quiz.question}</p>
@@ -290,12 +350,43 @@ function asCode(content: unknown): CodeSnippet {
   const c = (content ?? {}) as Partial<CodeSnippet>;
   return { language: typeof c.language === "string" ? c.language : "text", code: typeof c.code === "string" ? c.code : "" };
 }
-function CodeRender({ content }: NoteRenderInput) {
+function CodeRender({ content, mode }: NoteRenderInput) {
   const snippet = asCode(content);
+  // "card" → a 2–3 line monospace preview (the language is shown by the wrapper footer).
+  if (mode === "card") {
+    const preview = snippet.code.split("\n").slice(0, 3).join("\n");
+    return (
+      <div className="note-rendered sv-card-code">
+        <pre className={`sv-card-code-pre language-${snippet.language}`}>
+          <code>{preview || "(empty)"}</code>
+        </pre>
+      </div>
+    );
+  }
+  // "full" → the whole code with line numbers + a copy affordance (the Center View).
+  const lines = snippet.code.split("\n");
   return (
-    <div className="note-rendered sv-code">
-      <pre className={`sv-code-pre language-${snippet.language}`}>
-        <code>{snippet.code}</code>
+    <div className="note-rendered sv-code sv-code-full">
+      <div className="sv-code-toolbar">
+        <span className="sv-code-lang">{snippet.language}</span>
+        <button
+          type="button"
+          className="sv-code-copy link-button"
+          title="Copy code"
+          onClick={() => void navigator.clipboard?.writeText(snippet.code)}
+        >
+          Copy
+        </button>
+      </div>
+      <pre className={`sv-code-pre sv-code-numbered language-${snippet.language}`}>
+        <code>
+          {lines.map((line, i) => (
+            <span key={i} className="sv-code-line">
+              <span className="sv-code-ln" aria-hidden="true">{i + 1}</span>
+              <span className="sv-code-lc">{line || " "}</span>
+            </span>
+          ))}
+        </code>
       </pre>
     </div>
   );
@@ -342,15 +433,57 @@ function asMedia(content: unknown): MediaContent {
   };
 }
 
-function MediaRender({ content, kind }: NoteRenderInput & { kind: "image" | "audio" | "video" }) {
+// A mm:ss (or h:mm:ss) duration badge from a seconds count — only when we actually know
+// a length (a trimmed clip's start/end). Never fabricates a duration.
+function formatDuration(totalSec: number): string {
+  const s = Math.max(0, Math.round(totalSec));
+  const hh = Math.floor(s / 3600);
+  const mm = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return hh > 0 ? `${hh}:${pad(mm)}:${pad(ss)}` : `${mm}:${pad(ss)}`;
+}
+function mediaDuration(media: MediaContent): string | null {
+  if (typeof media.endSec === "number" && typeof media.startSec === "number" && media.endSec > media.startSec) {
+    return formatDuration(media.endSec - media.startSec);
+  }
+  return null;
+}
+
+function MediaRender({ content, mode, kind }: NoteRenderInput & { kind: "image" | "audio" | "video" }) {
   const media = asMedia(content);
   if (!media.assetId) return <div className="note-rendered sv-media-empty">No media selected.</div>;
   const src = entityClient.assetUrl(media.assetId);
+  const duration = mediaDuration(media);
+
+  // "card" → a LIGHTWEIGHT thumbnail (§10.3): image shows the actual <img> thumbnail
+  // (the e2e relies on .sv-media-img + .sv-media-caption in a card); audio/video show
+  // an inert poster glyph + an optional duration badge — never an autoplaying/controls
+  // player (the live player runs only in the Center View, mode:"full").
+  if (mode === "card") {
+    return (
+      <div className={`note-rendered sv-media sv-media-card sv-media-card-${kind}`}>
+        <span className="sv-media-thumb">
+          {kind === "image" ? (
+            <img className="sv-media-img" src={src} alt={media.caption ?? ""} loading="lazy" />
+          ) : (
+            <span className="sv-media-poster" aria-hidden="true">
+              {kind === "audio" ? "♪" : "▶"}
+            </span>
+          )}
+          {duration ? <span className="sv-media-duration">{duration}</span> : null}
+        </span>
+        {media.caption ? <figcaption className="sv-media-caption">{media.caption}</figcaption> : null}
+      </div>
+    );
+  }
+
+  // "full" → the real, interactive player (Center View). Image stays an <img>.
   return (
     <div className={`note-rendered sv-media sv-media-${kind}`}>
       {kind === "image" ? <img className="sv-media-img" src={src} alt={media.caption ?? ""} /> : null}
-      {kind === "audio" ? <audio className="sv-media-audio" src={src} controls /> : null}
-      {kind === "video" ? <video className="sv-media-video" src={src} controls /> : null}
+      {kind === "audio" ? <audio className="sv-media-audio" src={src} controls preload="metadata" /> : null}
+      {kind === "video" ? <video className="sv-media-video" src={src} controls preload="metadata" /> : null}
       {media.caption ? <figcaption className="sv-media-caption">{media.caption}</figcaption> : null}
     </div>
   );
@@ -423,6 +556,20 @@ function asVideo(content: unknown): MediaContent | VideoEmbed {
 function VideoRender({ content, mode }: NoteRenderInput) {
   const video = asVideo(content);
   if ("kind" in video && video.kind === "embed") {
+    // "card" → an INERT poster (provider glyph + caption); never mount the live player
+    // iframe in a thread/list card (§10.3 "不默认运行"). The real player runs in the
+    // Center View (mode:"full").
+    if (mode === "card") {
+      return (
+        <div className="note-rendered sv-media sv-media-card sv-media-card-video sv-video-embed-card">
+          <span className="sv-media-thumb">
+            <span className="sv-media-poster" aria-hidden="true">▶</span>
+            <span className="sv-media-duration sv-media-provider">{video.provider}</span>
+          </span>
+          {video.caption ? <figcaption className="sv-media-caption">{video.caption}</figcaption> : null}
+        </div>
+      );
+    }
     // Build the provider player src from { provider, videoId } — never trust the raw
     // URL's query noise. videoId/provider come from parseVideoUrl at classify/save time.
     const src = videoEmbedSrc({ provider: video.provider, videoId: video.videoId });
@@ -446,18 +593,12 @@ function VideoRender({ content, mode }: NoteRenderInput) {
       </div>
     );
   }
-  // Local asset video. In "card" mode we DON'T mount a live <video>; the generic
-  // ArtifactCard supplies the title/snippet (the full player runs in the overlay).
+  // Local asset video. Reuse the shared MediaRender so the card (poster glyph + duration
+  // badge) and the full player are identical to image/audio — one media presentation, not
+  // a bespoke video one.
   const media = video as MediaContent;
   if (!media.assetId) return <div className="note-rendered sv-media-empty">No video selected.</div>;
-  if (mode === "card") return null;
-  const src = entityClient.assetUrl(media.assetId);
-  return (
-    <div className="note-rendered sv-media sv-media-video">
-      <video className="sv-media-video" src={src} controls preload="metadata" />
-      {media.caption ? <figcaption className="sv-media-caption">{media.caption}</figcaption> : null}
-    </div>
-  );
+  return <MediaRender content={media} mode={mode} kind="video" />;
 }
 
 registerNoteType({
@@ -511,11 +652,27 @@ function withCspMeta(html: string): string {
   return `<meta http-equiv="Content-Security-Policy" content="${HTML_INTERACTIVE_CSP}">\n${html}`;
 }
 
+// A one-line plain-text gist of an HTML body for the card description — tags stripped,
+// inert (never inserted as HTML). Cheap; never throws.
+function htmlGist(html: string): string {
+  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+}
+
 function HtmlSandboxRender({ content, mode }: NoteRenderInput) {
   const { html, interactive } = asHtmlContent(content);
-  // Interactive games RUN only in the overlay (mode:"full"). In a card we show an INERT
-  // sandbox="" preview (scripts disabled) so the thread never mounts a live game frame.
-  if (interactive && mode !== "card") {
+  // CARD (§10.3): NEVER run an iframe — show a short text gist + a blue `Interactive`
+  // badge for interactive notes. The live frame mounts only in the Center View.
+  if (mode === "card") {
+    return (
+      <div className="note-rendered sv-card-html">
+        <p className="sv-card-html-gist">{htmlGist(html) || "(empty html)"}</p>
+        {interactive ? <span className="sv-card-interactive-badge">Interactive</span> : null}
+      </div>
+    );
+  }
+  // Interactive games RUN only in the overlay (mode:"full") — the card path returned
+  // above, so reaching here means full mode.
+  if (interactive) {
     return (
       <div className="note-rendered sv-html-sandbox sv-html-interactive">
         {/* sandbox="allow-scripts" with NO allow-same-origin → the frame is an opaque
