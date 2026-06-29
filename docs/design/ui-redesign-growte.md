@@ -144,6 +144,7 @@
 - **R4 Right(Anchor + Anchor Tools + AI Log)**:摘录卡 + Anchor Action Bar 表面(§7)+ 聊天气泡/操作/输入重绘。
 - **R5 通用件**:笔记卡/ArtifactCard/FocusOverlay/按钮/输入/滚动条对齐两套令牌。
 - **R6 工具栏体系 + Customize(见 §7)**:抽 **Action Registry**(kit 提供动作集 + 用户自定义)→ 三表面统一渲染(Selection / Anchor / 全局底栏)+ Hover tooltip + More 菜单分组 + Disabled 态 + **Customize Toolbar**(排序/显隐/换图标/钉自定义 Operation/Reset)。复用现有 `commands/registry` + `operationViews`,对齐「AI Operation as Data」计划。
+- **R7 Layer Lens + 层级(见 §8)**:顶栏 `Layers` pill → 弹层(过滤+管理合一);`studyLayerSchema` 加 `parentId`(导入/角色驱动)+ per-layer 计数 + roll-up + 父级级联;`Visible note count` 页脚。
 
 > 全程保持功能不变 + 契约守卫绿;每期串行(改动多在 styles.css/presets/views,易冲突)。R6 可与 R3/R4 协同:R3/R4 先用占位的内联/Anchor 工具行,R6 再把它们替换成 Action Registry 的统一渲染。
 
@@ -174,3 +175,28 @@
 ### 7.4 服务对象
 - Selection Toolbar 作用于**当前选区**;Anchor Action Bar 作用于**右侧当前 Anchor**(生成解释/题目/复习卡/媒体/自定义 AI 输出)。
 - 产物一律经 **adaptive-note**(`resolveForm` → `getNoteType().render`)渲染,不走自定义渲染路径(见 [[adaptive-note-mandatory-contract]])。
+
+## 8. Layer Lens(数据层)+ 层级
+
+> 现有模型(`src/core/schema/study-layer.ts` + `src/core/study-layer/layers.ts`):layer **每个 source 一套**;`role: preset|custom|shared`、`importMode: owned|imported|subscribed`、`enabled`、`color`、`order`;预设阶段 = **预习/学习/复习/拓展**(`PRESET_STAGES`)。note 用 `layerIds[]`(多归属)、anchor 用单 `layerId`;**过滤 = 勾选层的 OR**,server 按各层 `enabled` 同时驱动笔记列表 + 锚点重绘(见 `layerViews.tsx`)。
+
+### 8.1 Layer Lens 弹层(顶栏 `Layers` pill → 弹出)
+- 触发:顶栏右段 `Layers` pill(与 `Anchor layer 18%` 不透明度滑块并列,二者不同:滑块=锚点层透明度,pill=层可见性 Lens)。
+- 内容(**过滤 + 管理合一**,用户已定:Lens 里也能管理):
+  - 标题 `Layer Lens` + 副标题 `Choose which layers are visible`。
+  - **层级树**:每行 = 复选(可见性)+ **颜色圆点** + 层名 + **笔记计数**(右对齐);父层可展开/折叠。
+  - 计数:叶层 = 该层笔记数;**父层 = 后代之和(roll-up)**。
+  - 可见性:勾选 = 纳入 OR 过滤;**父层勾选 = 级联开关所有后代**;部分开 → 父层 indeterminate(─)。底部 `Visible note count: N`(当前可见集合去重总数)。
+  - 管理(就地):新建 custom 层、改名/改色/排序、删除 custom、Import/Export `.studypack`(复用现有 `entityClient` 那套,从 `layer.switcher` pane 迁来)。
+- 现 `layer.switcher` pane 折叠进此弹层(或弹层即 `layer.switcher` 的弹出渲染);icon rail 的 layer 入口打开它。
+
+### 8.2 层级模型(**导入/角色驱动**,用户已定)
+- `studyLayerSchema` 加可选 **`parentId: layerIdSchema.optional()`**(additive,无迁移负担;无 parentId = 顶层)。
+- **不靠手动拖拽嵌套**:层级**天然来自导入/角色** —— 导入一个「老师 studypack 包」→ 形成一个**父层**(如 `Teacher Layer`),包内的 **预习/复习/学习拓展** = 其**子层**(`parentId` 指向父)。即 `.studypack` 携带成组层 + 父子关系;import 时按 `origin.packId`/角色建父并挂子。
+- 角色:父层多为 `shared`(imported)或一个代表角色的容器层;子层沿用现有 `preset`/`custom`。owned 个人层默认顶层。
+- 过滤语义不变:仍是**叶层 `enabled` 的 OR**;父层 `enabled` 仅作级联主开关 + 计数归并,不直接决定 note 归属(note 仍属具体叶层)。
+
+### 8.3 需要的改动(R7)
+- core:`study-layer.ts` 加 `parentId`;`.studypack`(`pack.ts`)序列化父子;import 路径按包建父挂子。
+- server:layers 接口返回 **per-layer note 计数**(+ 可见去重总数),供 Lens 显示。
+- client:新 **Layer Lens** 弹层组件(树渲染 + 级联/indeterminate + 计数 + 就地管理);顶栏 `Layers` pill;`toggleLayerFilter` 扩展为父级级联。
