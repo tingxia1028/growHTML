@@ -81,7 +81,20 @@ const timedMediaSchema = z.object({
   startSec: z.number().nonnegative().optional(),
   endSec: z.number().nonnegative().optional()
 });
-const htmlSandboxSchema = z.object({ html: z.string() });
+// —— html (unified static | interactive; design plan §2.5, §3, §4 Phase 3) ————
+// ONE `html` contentType (persisted id stays "html-sandbox" — DO NOT rename; existing
+// notes persist this id and a rename would need a risky migration). Its content has an
+// internal `interactive` variant handled by the single html render (NOT a competing
+// top-level discriminator — §3). Two security postures:
+//   • interactive:false (default) — INERT: rendered in <iframe sandbox=""> (no scripts,
+//     no network, no same-origin). The original html-sandbox behavior.
+//   • interactive:true — a hardened game frame: <iframe sandbox="allow-scripts"> (NEVER
+//     allow-same-origin) + a strict default-src 'none' CSP. Runs ONLY in the overlay.
+//
+// BACKWARD COMPAT (critical): notes stored before Phase 3 are { html } with NO
+// `interactive` field. `interactive` is OPTIONAL and DEFAULTS to false, so an old
+// { html } note still parses → renders inert exactly as before (covered by a test).
+const htmlSandboxSchema = z.object({ html: z.string(), interactive: z.boolean().optional().default(false) });
 
 // —— video (unified asset | embed; design plan §2.5, §4 Phase 2) ————————————
 // ONE `video` contentType with an internal `kind` variant handled by the single

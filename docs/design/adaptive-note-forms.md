@@ -800,6 +800,116 @@ range path later.
 
 ---
 
+## Impl-log — Phase 3 (interactive html / games) — SHIPPED
+
+Phase 3 (plan §4 Phase 3, §5 game sandbox, §6 #3) landed: the existing `html` note type
+gained an `interactive` variant so AI-written games/widgets actually RUN, in a hardened
+iframe, executed ONLY in the centered overlay. This is the security-critical phase — the
+sandbox/CSP is exact. No host branching, no new top-level discriminator — the single html
+render switches on an INTERNAL `interactive` flag (§3); the persisted contentType id stays
+`html-sandbox` (NOT renamed — existing notes persist it; presented to the user as "html").
+
+**1. `html` schema — added `interactive?: boolean` (default false), id unchanged**
+(`src/core/notes/contentTypes.ts`). `htmlSandboxSchema` became
+`z.object({ html: z.string(), interactive: z.boolean().optional().default(false) })`.
+  - **Backward-compat (critical):** pre-Phase-3 notes are stored as `{ html }` with NO
+    `interactive`. The field is `.optional().default(false)`, so an old `{ html }` note
+    parses and renders INERT exactly as before. Test (`contentTypes.test.ts` already covers
+    `createDefault` round-trip; `noteTypeRegistry.test.tsx` adds a legacy-`{html}`-renders-
+    inert render test). The persisted id `html-sandbox` is deliberately kept (a rename would
+    need a risky data migration); §2.5's "html" concept maps onto this id.
+
+**2. Single html render switches on `interactive`** (`src/client/notes/builtinNoteTypes.tsx`).
+The one `HtmlSandboxRender` (legal internal variant switch per §3):
+  - `interactive:false` (default) → `<iframe sandbox="">` — the unchanged inert behavior
+    (no scripts/forms/same-origin/navigation; even a `<script>` in the note is dead).
+  - `interactive:true` AND `mode!=="card"` → the HARDENED game frame:
+    `<iframe sandbox="allow-scripts" csp="<CSP>" referrerpolicy="no-referrer"
+    srcdoc="<meta CSP>…game…">`. **Exact attributes:** `sandbox="allow-scripts"` (and
+    nothing else — NO `allow-same-origin`, NO `allow-forms`/`allow-popups`/
+    `allow-top-navigation`/`allow-modals`/`allow-downloads`), `referrerpolicy="no-referrer"`.
+  - **CSP (verbatim), applied via BOTH the `csp` attribute AND a `<meta http-equiv>`
+    prepended into the srcdoc** (the repo sets no server CSP, so the `<meta>` is the
+    cross-browser fallback; `withCspMeta()` prepends it so the policy is in force before any
+    inline `<script>` runs):
+    `default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'`
+    — `default-src 'none'` blocks ALL network (fetch/XHR/WebSocket/beacon/external script);
+    `script-src`/`style-src 'unsafe-inline'` run only the inline game code; `img-src data:`
+    allows inline images.
+  - **Why no same-origin:** with both `allow-scripts` AND `allow-same-origin`, a `srcdoc`
+    frame is SAME-ORIGIN with the host page → the AI code gets full host-DOM/vault access =
+    sandbox escape. Dropping `allow-same-origin` puts the frame in a UNIQUE opaque ("null")
+    origin: scripts run, but `window.parent`/`window.top`, our cookies, our `localStorage`,
+    same-origin `fetch`, and `window.studyVault` are ALL unreachable. Identical in the
+    Electron renderer and mobile/web WebView (a native `<iframe>` — NOT an Electron
+    `<webview>`). EDIT got an "interactive" checkbox beside the textarea.
+
+**3. Card-inert / overlay-interactive split** (plan §3.5/§5). The interactive frame mounts
+ONLY in `FocusOverlay` (`mode:"full"`). In a card (`mode:"card"`) an interactive note
+renders the INERT `sandbox=""` preview instead — so the thread never runs many
+`allow-scripts` frames at once. The note viewer reaches the overlay via a new REGISTRY
+capability flag `focusable?: boolean` on `NoteTypePlugin` (the html plugin sets
+`focusable: true`); the host's `NoteContentView` shows "Open interactively" for
+`isDiagramType(...) || plugin.focusable === true` — derived from registry capabilities, NOT
+a `contentType ===` branch, so the contract guard stays green. Card + overlay both flow
+through the one `getNoteType().render` entry (Phase 1b components reused, not forked).
+
+**4. Classifier rules** (`src/core/notes/classifyContent.ts`, at the Phase 3 slot — AFTER
+the fence rules so a ```` ```html ```` block stays `code-snippet`, BEFORE the markdown
+fallback since raw HTML isn't fenced):
+  - `<script>` AND (`<canvas>` OR `addEventListener(` OR `requestAnimationFrame(`) →
+    `html-sandbox` `{ html, interactive:true }` at **HIGH** confidence (a self-contained
+    game/widget — the script+runtime pair is the high-precision tell; even a single-tag
+    `<canvas>` fragment qualifies).
+  - a real document/fragment (`<!doctype html>`/`<html`, OR ≥2 DISTINCT element tags) with
+    NO `<script>` → `html-sandbox` `{ html, interactive:false }` at **HIGH**.
+  - **Precision:** a STRAY single tag in prose (e.g. "use `<b>` for bold") has <2 distinct
+    tags and no doctype → falls through to markdown. Tests (`classifyContent.test.ts`):
+    canvas+script game → interactive true; script+addEventListener → true; static doc / a
+    multi-tag fragment → interactive false; prose with a lone `<b>` → markdown;
+    a ```` ```html ```` fence → code-snippet (fence rules win).
+
+**5. Security review (self-review against §5) — RESULT: PASS.**
+  - `allow-same-origin` is NOT present on the interactive frame anywhere (asserted by a unit
+    test AND the escape e2e: `sandbox` is exactly `"allow-scripts"`).
+  - CSP is applied via BOTH the `csp` attribute AND a `<meta http-equiv>` in the srcdoc, and
+    is `default-src 'none'` (no network) — asserted by unit + e2e.
+  - No `allow-forms`/`allow-popups`/`allow-top-navigation`/`allow-modals`/`allow-downloads`
+    (unit test scans for each token).
+  - The frame cannot reach `window.parent`/`window.top` (cross-origin SecurityError), our
+    cookies/`localStorage` (opaque origin), `fetch` (CSP), or `window.studyVault` (opaque
+    origin) — proven live by the escape e2e.
+
+**6. Escape e2e — the load-bearing regression guard** (`adaptive-note-forms.spec.ts`). Seeds
+an `interactive:true` html note whose script DRAWS on a canvas (proves it ran) and probes:
+(a) `window.parent.location`/`window.top.location`/`window.parent.document.title`,
+(b) `fetch('http://127.0.0.1:4177/api/health')`, (c) `window.parent.studyVault` — recording
+each outcome ("REACHED" vs "blocked:<error>") into an in-frame `<pre id="results">`. The
+note is opened in the overlay; the test asserts the frame attributes (`sandbox="allow-scripts"`,
+no `same-origin`, `csp` contains `default-src 'none'`), then reads the in-frame results and
+asserts `ran===true` and that parent/top/parentDom/studyVault are ALL `blocked:` and fetch is
+blocked (or unavailable) — the game renders/interacts while every escape fails and the host
+`window.studyVault` is untouched.
+
+**Self-test:** `npm run check` clean; `npm test` 574 passing (70 files; new cases in
+`classifyContent.test.ts` for the html rules + `noteTypeRegistry.test.tsx` for the
+inert/interactive/card/overlay/backward-compat renders); `npm run e2e` 44 passing
+(`adaptive-note-forms.spec.ts` +1: the interactive-html ESCAPE guard). Contract guard stays
+green (the html render lives in the PLUGINS dir; the host uses the registry `focusable` flag,
+no `contentType ===` branch). Before e2e the 4177/5173/5174 servers were killed so Playwright
+used `.e2e-vault`; after the run no server is left and `data/vault` is untouched.
+
+**Caveats / deviations / residual risk:** (a) **Runaway CPU** — a game with a busy loop /
+runaway `requestAnimationFrame` can still hog the renderer thread (the frame is isolated for
+SECURITY, not for CPU). Recorded as a known risk (plan §4/§5); V2 should add a "stop / unload"
+control or `<webview>` process isolation (desktop-only enhancement, not the baseline). (b) The
+`csp` iframe attribute needs a `@ts-expect-error` (not yet in the React DOM types) and is
+Chromium/Electron-only — the `<meta>` CSP is the fallback that covers WebViews lacking the
+attribute; both carry the identical policy. (c) No host I/O / `postMessage` capability channel
+in V1 (deferred per §5 / plan Phase 4) — interactive notes are self-contained.
+
+---
+
 ## Appendix — cited symbols / paths
 
 - `src/core/notes/contentTypes.ts:11-32,40-44,100-185` — `NoteContentSpec`,

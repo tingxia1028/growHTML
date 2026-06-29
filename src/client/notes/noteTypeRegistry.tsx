@@ -68,6 +68,12 @@ export type NoteTypePlugin = {
       command, which materializes the anchor) — so they aren't authored anchor-less from
       the generic composer. Rendering/editing through the registry is unaffected. */
   hidden?: boolean;
+  /** Opt this type into the centered FocusOverlay "Open interactively" affordance in the
+      note viewer (it has a richer/interactive full view worth focusing — e.g. an
+      interactive html game). A REGISTRY capability flag so the host never branches on
+      contentType to decide focusability (design law §0.5-B / contract guard). Diagram
+      types are focusable via the diagram registry; this flag covers the rest. */
+  focusable?: boolean;
 };
 
 const registry = new Map<string, NoteTypePlugin>();

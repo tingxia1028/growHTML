@@ -124,6 +124,59 @@ describe("classifyContent — video-embed (Phase 2)", () => {
   });
 });
 
+describe("classifyContent — html (Phase 3)", () => {
+  it("a canvas+script game → html-sandbox { interactive:true } (high)", () => {
+    const raw =
+      '<canvas id="c" width="200" height="200"></canvas>\n' +
+      "<script>\n" +
+      'const ctx = document.getElementById("c").getContext("2d");\n' +
+      "let x = 0;\n" +
+      "function loop(){ ctx.clearRect(0,0,200,200); ctx.fillRect(x++ % 200, 10, 10, 10); requestAnimationFrame(loop); }\n" +
+      "loop();\n" +
+      "</script>";
+    const r = classifyContent(raw);
+    expect(r.contentType).toBe("html-sandbox");
+    expect(r.confidence).toBe("high");
+    expect(r.content).toEqual({ html: raw, interactive: true });
+    expectValidForType("html-sandbox", r.content);
+  });
+
+  it("a script + addEventListener (no canvas) → interactive:true", () => {
+    const raw =
+      "<div id='app'></div>\n<script>document.addEventListener('click', () => {});</script>";
+    const r = classifyContent(raw);
+    expect(r.contentType).toBe("html-sandbox");
+    expect((r.content as { interactive: boolean }).interactive).toBe(true);
+  });
+
+  it("a static HTML document with NO script → html-sandbox { interactive:false } (high)", () => {
+    const raw = "<!doctype html>\n<html><body><h1>Hi</h1><p>A static page.</p></body></html>";
+    const r = classifyContent(raw);
+    expect(r.contentType).toBe("html-sandbox");
+    expect(r.confidence).toBe("high");
+    expect(r.content).toEqual({ html: raw, interactive: false });
+    expectValidForType("html-sandbox", r.content);
+  });
+
+  it("a multi-tag fragment with NO script → interactive:false", () => {
+    const raw = "<section><h2>Title</h2><p>Body text with <em>emphasis</em>.</p></section>";
+    const r = classifyContent(raw);
+    expect(r.contentType).toBe("html-sandbox");
+    expect((r.content as { interactive: boolean }).interactive).toBe(false);
+  });
+
+  it("prose containing a STRAY single tag stays markdown (precision first)", () => {
+    const r = classifyContent("Use <b> to make text bold in your notes.");
+    expect(r.contentType).toBe("markdown");
+    expect(r.confidence).toBe("low");
+  });
+
+  it("a ```html``` FENCED block stays code-snippet, not html (fence rules win)", () => {
+    const r = classifyContent("```html\n<canvas></canvas><script>foo()</script>\n```");
+    expect(r.contentType).toBe("code-snippet");
+  });
+});
+
 describe("classifyContent — markdown fallback", () => {
   it("falls back to markdown (low) for ordinary prose", () => {
     const raw = "Just a sentence of plain prose with no special structure.";

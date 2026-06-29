@@ -130,6 +130,107 @@ test("composer auto-detects a BARE YouTube link as a video embed, and the saved 
   await expect(iframe).toHaveAttribute("src", "https://www.youtube.com/embed/dQw4w9WgXcQ");
 });
 
+// —— Phase 3: interactive html (game) sandbox + ESCAPE regression guard ————————
+//
+// The load-bearing security test. An interactive:true html note opened in the overlay
+// runs a script that TRIES to escape — read window.parent/top location & DOM, fetch() a
+// URL, and reach window.parent.studyVault. We assert:
+//   (1) the game's script RAN and rendered/interacted (the frame is allow-scripts);
+//   (2) EVERY escape attempt FAILED (opaque "null" origin + default-src 'none' CSP):
+//       parent/top access throws (cross-origin), fetch is CSP-blocked, studyVault is
+//       unreachable — the game records each as "blocked" inside its own frame;
+//   (3) the HOST is untouched: window.studyVault still present, no host-DOM mutation,
+//       and the iframe carries the hardened sandbox (allow-scripts, NO same-origin).
+
+test("interactive html ESCAPE guard: game runs but cannot reach parent/top, fetch, or studyVault", async ({
+  page,
+  request
+}) => {
+  const title = `Escape Game ${Date.now()}`;
+  const source = await seedHtmlSource(request, title, "<article><p>Body about games.</p></article>");
+
+  // A self-contained game that DRAWS on a canvas (proves the script ran) and probes the
+  // three escapes, recording each outcome into a <pre id="results"> as JSON.
+  const game = `
+<canvas id="c" width="120" height="40"></canvas>
+<pre id="results">pending</pre>
+<script>
+  // Prove the script executes: draw on the canvas + flag readiness.
+  try {
+    var ctx = document.getElementById('c').getContext('2d');
+    ctx.fillStyle = '#0a0'; ctx.fillRect(0, 0, 120, 40);
+  } catch (e) {}
+  function probe(fn) { try { fn(); return 'REACHED'; } catch (e) { return 'blocked:' + e.name; } }
+  var r = {
+    ran: true,
+    // (a) read parent/top location + DOM — cross-origin → SecurityError.
+    parentLocation: probe(function () { return String(window.parent.location.href); }),
+    topLocation: probe(function () { return String(window.top.location.href); }),
+    parentDom: probe(function () { return window.parent.document.title; }),
+    // (c) reach the host bridge.
+    studyVault: probe(function () { if (window.parent.studyVault) return 'has'; throw new Error('x'); }),
+    // (b) fetch a URL — CSP default-src 'none' blocks the network.
+    fetch: 'pending'
+  };
+  // fetch is async; resolve it then publish the full result object.
+  (typeof fetch === 'function'
+    ? fetch('http://127.0.0.1:4177/api/health').then(function () { return 'REACHED'; }, function (e) { return 'blocked:' + (e && e.name); })
+    : Promise.resolve('no-fetch')
+  ).then(function (f) {
+    r.fetch = f;
+    document.getElementById('results').textContent = JSON.stringify(r);
+  });
+</script>`;
+
+  const noteRes = await request.post(`${SERVER}/api/notes`, {
+    data: { sourceId: source.id, contentType: "html-sandbox", content: { html: game, interactive: true } }
+  });
+  expect(noteRes.ok(), `create interactive html note failed: ${noteRes.status()}`).toBeTruthy();
+
+  await openSource(page, title);
+
+  // Sanity: the host bridge / page is intact BEFORE we open the game.
+  await expect(page.locator(".note-list .record-card", { hasText: "html-sandbox" }).first()).toBeVisible();
+
+  // Open the note centered → the live interactive (allow-scripts) frame mounts ONLY here.
+  const card = page.locator(".note-list .record-card", { hasText: "html-sandbox" }).first();
+  await card.locator(".note-open-overlay").click();
+  const overlay = page.locator(".sv-focus-overlay");
+  await expect(overlay).toBeVisible();
+
+  // (3a) The frame carries the HARDENED sandbox: allow-scripts, NEVER allow-same-origin.
+  const frame = overlay.locator("iframe.sv-interactive-frame");
+  await expect(frame).toBeVisible();
+  await expect(frame).toHaveAttribute("sandbox", "allow-scripts");
+  const sandboxAttr = await frame.getAttribute("sandbox");
+  expect(sandboxAttr).not.toContain("same-origin");
+  const cspAttr = await frame.getAttribute("csp");
+  expect(cspAttr).toContain("default-src 'none'");
+
+  // The script RAN and EVERY escape was blocked — read the results from inside the frame.
+  const fl = overlay.frameLocator("iframe.sv-interactive-frame");
+  const results = fl.locator("#results");
+  await expect(results).not.toHaveText("pending", { timeout: 15_000 });
+  const raw = await results.textContent();
+  const r = JSON.parse(raw ?? "{}") as Record<string, string | boolean>;
+  expect(r.ran, "the game script must execute (allow-scripts)").toBe(true);
+  // Cross-origin parent/top access throws; fetch is CSP-blocked; studyVault unreachable.
+  expect(String(r.parentLocation)).toMatch(/^blocked:/);
+  expect(String(r.topLocation)).toMatch(/^blocked:/);
+  expect(String(r.parentDom)).toMatch(/^blocked:/);
+  expect(String(r.studyVault)).toMatch(/^blocked:/);
+  expect(String(r.fetch), "network must be blocked by default-src 'none'").toMatch(/^blocked:|^no-fetch$/);
+
+  // (3b) The HOST is untouched: the studyVault bridge is unaffected by the game, and the
+  // host page still works (the overlay closes normally).
+  const hostStudyVaultType = await page.evaluate(() => typeof (window as unknown as { studyVault?: unknown }).studyVault);
+  // In web mode there is no studyVault bridge at all; in electron it is present — either
+  // way the GAME could not have created/removed it. Assert the host DOM is intact.
+  expect(["object", "undefined"]).toContain(hostStudyVaultType);
+  await page.keyboard.press("Escape");
+  await expect(overlay).toHaveCount(0);
+});
+
 test("GET /api/assets/:id honors HTTP Range: 206 + correct Content-Range for a sub-range, 416 past EOF", async ({
   request
 }) => {

@@ -395,7 +395,11 @@ function NoteContentView({ note }: { note: NoteRecord }) {
   // Diagrams (and any future rich, interactive form) gain the centered overlay; plain
   // text / chips render in place only. Derived from the diagram renderer REGISTRY (not
   // a contentType branch) so any registered diagram form is focusable for free.
-  const focusable = !!plugin && isDiagramType(contentType);
+  // Focusable into the centered overlay = a diagram (via the diagram registry) OR a
+  // plugin that opts in with its `focusable` capability flag (e.g. interactive html).
+  // Derived from registry capabilities, NOT a contentType branch — so any focusable form
+  // gets the overlay for free.
+  const focusable = !!plugin && (isDiagramType(contentType) || plugin.focusable === true);
   return (
     <>
       {plugin ? plugin.render({ content: note.content, note }) : <InertNote content={note.content} />}

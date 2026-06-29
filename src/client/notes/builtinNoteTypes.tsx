@@ -467,36 +467,111 @@ registerNoteType({
   edit: (input) => <MediaEditor {...input} accept="video/*" />
 });
 
-// —— html-sandbox —————————————————————————————————————————————————————————
-// content is { html }. RENDERED inside a sandboxed <iframe sandbox> with NO tokens
-// → scripts can't run, the frame can't navigate the top window, submit forms, or
-// reach the parent (same-origin is also denied). The HTML goes in via `srcdoc`, so
-// even a <script> in the note is inert. EDIT is a textarea.
-function HtmlSandboxRender({ content }: NoteRenderInput) {
-  const html = (content as { html?: unknown } | null)?.html;
-  const doc = typeof html === "string" ? html : "";
+// —— html (unified: static | interactive) ————————————————————————————————————
+// ONE `html` plugin (persisted contentType id stays "html-sandbox" — a stable id, NOT
+// renamed; presented to the user simply as "html"). Its single render() switches on the
+// content's `interactive` flag — an INTERNAL variant switch in one renderer (legal per
+// design plan §3, NOT host-side branching). content = { html, interactive? }.
+//
+//   • interactive:false (default, backward-compatible with pre-Phase-3 { html } notes)
+//     → <iframe sandbox=""> — MOST restrictive: no scripts, no forms, no same-origin,
+//       no top navigation; the note's HTML (even a <script>) is fully inert.
+//   • interactive:true → the HARDENED game frame (design plan §5): sandbox="allow-scripts"
+//     (NEVER allow-same-origin — with both, a srcdoc frame is SAME-ORIGIN with the host
+//     and the AI code gets full host-DOM/vault access = sandbox escape) + a strict CSP
+//     applied BOTH as the iframe `csp` attribute AND as a <meta http-equiv> prepended
+//     into the srcdoc (the repo sets no server CSP). default-src 'none' blocks ALL network
+//     (fetch/XHR/WebSocket/beacon/external script); script-src/style-src 'unsafe-inline'
+//     run only the inline game code; img-src data: allows inline images. The opaque
+//     ("null") origin means window.parent / window.top / our cookies / our localStorage /
+//     window.studyVault are ALL unreachable.
+//
+// The live interactive frame mounts ONLY in the FocusOverlay (mode:"full"); in a card
+// (mode:"card") an interactive note shows an INERT sandbox="" preview so the thread never
+// runs many allow-scripts frames at once (design plan §3.5/§5). EDIT is a textarea + an
+// "interactive" checkbox.
+
+// The strict CSP for the interactive frame (design plan §5). Verbatim — also injected as
+// a <meta http-equiv> inside the srcdoc as the no-server-CSP fallback.
+const HTML_INTERACTIVE_CSP =
+  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'";
+
+function asHtmlContent(content: unknown): { html: string; interactive: boolean } {
+  const c = (content ?? {}) as { html?: unknown; interactive?: unknown };
+  return {
+    html: typeof c.html === "string" ? c.html : "",
+    interactive: c.interactive === true
+  };
+}
+
+// Prepend the CSP <meta> so it is the FIRST thing the frame parses (so the policy is in
+// force before any inline <script> runs), regardless of whether the note's html is a full
+// document or a bare fragment.
+function withCspMeta(html: string): string {
+  return `<meta http-equiv="Content-Security-Policy" content="${HTML_INTERACTIVE_CSP}">\n${html}`;
+}
+
+function HtmlSandboxRender({ content, mode }: NoteRenderInput) {
+  const { html, interactive } = asHtmlContent(content);
+  // Interactive games RUN only in the overlay (mode:"full"). In a card we show an INERT
+  // sandbox="" preview (scripts disabled) so the thread never mounts a live game frame.
+  if (interactive && mode !== "card") {
+    return (
+      <div className="note-rendered sv-html-sandbox sv-html-interactive">
+        {/* sandbox="allow-scripts" with NO allow-same-origin → the frame is an opaque
+            ("null") origin: scripts run, but window.parent/top, our cookies/localStorage,
+            same-origin fetch, and window.studyVault are ALL unreachable. NO allow-forms /
+            allow-popups / allow-top-navigation / allow-modals / allow-downloads. The CSP
+            is applied via BOTH the `csp` attribute (Chromium/Electron) and a <meta> in the
+            srcdoc (fallback, since the repo sets no server CSP) → default-src 'none' blocks
+            all network. referrerpolicy=no-referrer prevents any URL leakage. */}
+        <iframe
+          className="sv-sandbox-frame sv-interactive-frame"
+          sandbox="allow-scripts"
+          // @ts-expect-error `csp` is a valid iframe attribute (Chromium) not yet in the React DOM types.
+          csp={HTML_INTERACTIVE_CSP}
+          referrerPolicy="no-referrer"
+          title="Interactive HTML note"
+          srcDoc={withCspMeta(html)}
+        />
+      </div>
+    );
+  }
+  // Inert HTML (interactive:false) AND the card preview of an interactive note: both use
+  // the MOST restrictive sandbox="" (no scripts, no forms, no same-origin, no navigation).
   return (
     <div className="note-rendered sv-html-sandbox">
-      {/* sandbox="" (empty) = MOST restrictive: no scripts, no forms, no same-origin,
-          no top navigation. The note's HTML is fully isolated. */}
-      <iframe className="sv-sandbox-frame" sandbox="" title="HTML note" srcDoc={doc} />
+      <iframe className="sv-sandbox-frame" sandbox="" title="HTML note" srcDoc={html} />
     </div>
   );
 }
 function HtmlSandboxEditor({ content, onChange }: NoteEditInput) {
-  const html = typeof (content as { html?: unknown } | null)?.html === "string" ? (content as { html: string }).html : "";
+  const { html, interactive } = asHtmlContent(content);
   return (
-    <textarea
-      className="note-edit note-edit-text note-edit-html"
-      placeholder="<p>HTML…</p>"
-      value={html}
-      onChange={(event) => onChange({ html: event.target.value })}
-    />
+    <div className="note-edit note-edit-html-wrap">
+      <textarea
+        className="note-edit note-edit-text note-edit-html"
+        placeholder="<p>HTML…</p>"
+        value={html}
+        onChange={(event) => onChange({ html: event.target.value, interactive })}
+      />
+      <label className="note-edit-html-interactive">
+        <input
+          type="checkbox"
+          checked={interactive}
+          onChange={(event) => onChange({ html, interactive: event.target.checked })}
+        />
+        Interactive (run scripts in a hardened sandbox)
+      </label>
+    </div>
   );
 }
 registerNoteType({
   contentType: "html-sandbox",
-  label: "html (sandboxed)",
+  label: "html",
+  // Rich, self-contained interactive content → focusable into the shared overlay (where
+  // the live allow-scripts frame mounts). A registry capability flag, NOT a host branch.
+  focusable: true,
   render: (input) => <HtmlSandboxRender {...input} />,
   edit: (input) => <HtmlSandboxEditor {...input} />
 });

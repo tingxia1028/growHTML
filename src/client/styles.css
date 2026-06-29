@@ -1883,6 +1883,25 @@ button {
   background: var(--sv-surface-card);
 }
 
+/* Interactive html (game) frame — gets more room when run in the overlay. */
+.sv-interactive-frame {
+  min-height: 360px;
+}
+
+/* html editor: textarea + the "interactive" toggle. */
+.note-edit-html-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.note-edit-html-interactive {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--sv-text-muted);
+}
+
 .chat-source {
   display: flex;
   align-items: center;

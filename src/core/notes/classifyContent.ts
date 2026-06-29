@@ -190,6 +190,41 @@ function detectCodeSnippet(fence: RegExpMatchArray | null): ClassifiedForm | nul
   };
 }
 
+// html (Phase 3): a self-contained HTML blob. Two variants on ONE contentType
+// ("html-sandbox" — the stable persisted id; presented as "html"), shaped for
+// htmlSandboxSchema = { html, interactive }:
+//   • interactive:true  — has a <script> AND a runtime signal (<canvas> / addEventListener
+//     / requestAnimationFrame): a real interactive game/widget → run in the hardened frame.
+//   • interactive:false — looks like a real HTML document/fragment (a <!doctype/<html, OR
+//     ≥2 DISTINCT element tags) but has NO <script>: an inert rich page.
+// PRECISION: a stray single tag sitting in prose (e.g. "use <b> for bold") must NOT become
+// html — it stays markdown. We require either a doctype/html root or ≥2 distinct tags.
+const SCRIPT_RE = /<script[\s>]/i;
+const RUNTIME_RE = /<canvas[\s>]|addEventListener\s*\(|requestAnimationFrame\s*\(/i;
+const DOCTYPE_OR_HTML_RE = /<!doctype\s+html|<html[\s>]/i;
+function distinctTagCount(raw: string): number {
+  const tags = new Set<string>();
+  const re = /<([a-zA-Z][a-zA-Z0-9-]*)[\s/>]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(raw)) !== null) tags.add(m[1].toLowerCase());
+  return tags.size;
+}
+function detectHtml(raw: string): ClassifiedForm | null {
+  const looksLikeHtmlDoc = DOCTYPE_OR_HTML_RE.test(raw) || distinctTagCount(raw) >= 2;
+  const hasScript = SCRIPT_RE.test(raw);
+  // Interactive: a script + a runtime signal — even a single-tag fragment qualifies (a
+  // <canvas> game is self-contained); the script+runtime pair is the high-precision tell.
+  if (hasScript && RUNTIME_RE.test(raw)) {
+    return { contentType: "html-sandbox", content: { html: raw, interactive: true }, confidence: "high" };
+  }
+  // Static rich HTML: a real document/fragment with NO script. A lone tag in prose
+  // (distinctTagCount < 2 and no doctype/html) falls through to markdown.
+  if (looksLikeHtmlDoc && !hasScript) {
+    return { contentType: "html-sandbox", content: { html: raw, interactive: false }, confidence: "high" };
+  }
+  return null;
+}
+
 /**
  * Classify a free-text blob into an already-registered note form.
  *
@@ -227,10 +262,14 @@ export function classifyContent(raw: string): ClassifiedForm {
     const code = detectCodeSnippet(fence);
     if (code) return code;
 
-    // —— Phase 3 rules slot in here (most-specificity preserved) ——
-    //   • video-embed (Phase 2): DONE — see rule 0 above (a bare provider URL).
-    //   • html-interactive: <script> + <canvas>/addEventListener → html {interactive:true}
-    //   • html-static: tags but no script → html {interactive:false}
+    // —— Phase 3: html (interactive | static) ——
+    //   • interactive: <script> + <canvas>/addEventListener/requestAnimationFrame → high.
+    //   • static: a real doc/fragment (doctype/html or ≥2 distinct tags) with NO script.
+    //   A stray single tag in prose falls through to markdown (precision first).
+    //   Placed AFTER the fence rules (a ```html``` code block stays code-snippet) but
+    //   before the fallback — raw HTML isn't fenced.
+    const html = detectHtml(raw);
+    if (html) return html;
 
     // 4. fallback.
     return markdownFallback(raw);

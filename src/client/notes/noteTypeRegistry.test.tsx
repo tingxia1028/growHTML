@@ -201,13 +201,54 @@ describe("NoteType render — sample content per type", () => {
     expect(html).not.toContain("<img");
   });
 
-  it("html-sandbox renders a sandboxed (scriptless) iframe carrying the html", () => {
+  it("html-sandbox (inert / interactive:false) renders a sandboxed (scriptless) iframe carrying the html", () => {
     const html = renderToHtml(getNoteType("html-sandbox")!.render({ content: { html: "<p>hi</p><script>evil()</script>" } }));
     expect(html).toContain("<iframe");
     expect(html).toContain('sandbox=""'); // empty sandbox = no scripts/forms/same-origin
     // The HTML is delivered via srcdoc (inert in a scriptless frame), not injected
     // into the host DOM — so the host never gets a live <script>.
     expect(html).toContain("srcdoc");
+    expect(html).not.toContain("allow-scripts");
+  });
+
+  it("html-sandbox: a LEGACY { html } note with NO interactive field renders inert (backward-compat)", () => {
+    // The exact shape a pre-Phase-3 html note was stored as.
+    const html = renderToHtml(getNoteType("html-sandbox")!.render({ content: { html: "<p>old note</p>" } }));
+    expect(html).toContain('sandbox=""');
+    expect(html).not.toContain("allow-scripts");
+  });
+
+  it("html-sandbox (interactive:true) FULL view = hardened allow-scripts frame + strict CSP, NO same-origin", () => {
+    const game = '<canvas></canvas><script>requestAnimationFrame(()=>{})</script>';
+    const html = renderToHtml(
+      getNoteType("html-sandbox")!.render({ content: { html: game, interactive: true }, mode: "full" })
+    );
+    expect(html).toContain("<iframe");
+    // The load-bearing security posture: scripts allowed, NEVER same-origin.
+    expect(html).toContain('sandbox="allow-scripts"');
+    expect(html).not.toContain("allow-same-origin");
+    // No other dangerous tokens.
+    for (const tok of ["allow-forms", "allow-popups", "allow-top-navigation", "allow-modals", "allow-downloads"]) {
+      expect(html, `must not grant ${tok}`).not.toContain(tok);
+    }
+    // CSP applied via the `csp` attribute (verbatim).
+    const CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'";
+    expect(html).toContain(`csp="${CSP}"`);
+    // srcdoc carries the same CSP via a <meta http-equiv> (the no-server-CSP fallback).
+    // React escapes the srcdoc attribute value, so the inner quotes become &quot;.
+    expect(html).toContain("Content-Security-Policy");
+    expect(html).toContain("default-src");
+    expect(html).toContain("no-referrer");
+  });
+
+  it("html-sandbox (interactive:true) CARD view = INERT preview (no live script frame in the thread)", () => {
+    const game = '<canvas></canvas><script>requestAnimationFrame(()=>{})</script>';
+    const html = renderToHtml(
+      getNoteType("html-sandbox")!.render({ content: { html: game, interactive: true }, mode: "card" })
+    );
+    // The card must NOT mount the allow-scripts frame — it shows the inert sandbox="" one.
+    expect(html).toContain('sandbox=""');
+    expect(html).not.toContain("allow-scripts");
   });
 
   it("bookmark renders a compact label chip with a color dot (not a card)", () => {
@@ -294,7 +335,7 @@ describe("NoteType edit — onChange emits content that round-trips the core sch
     const { last } = renderEditor("html-sandbox", { html: "" }, (container) => {
       setValue(container.querySelector("textarea")!, "<p>note</p>");
     });
-    expect(last).toEqual({ html: "<p>note</p>" });
+    expect(last).toEqual({ html: "<p>note</p>", interactive: false });
     expect(() => spec("html-sandbox").schema.parse(last)).not.toThrow();
   });
 
