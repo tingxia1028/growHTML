@@ -1108,6 +1108,67 @@ the `importXmindFile` dialog wiring is desktop-only host glue around the proven 
 
 ---
 
+## Impl-log — Hardening (inline-HTML guard + generation status) — SHIPPED
+
+Two defects surfaced when running the form router against the **claude-cli** provider
+(an agentic Claude that uses tools). Both fixed register-only / additively; no new
+contentType, no render/save bypass, contract guard stays green.
+
+### FIX 1 — generated HTML must be INLINE content, never a file path
+
+**Symptom.** The agentic provider WRITES a file to disk and returns only its path. The
+html note's content became the literal string `generated/公顷和平方千米-互动游戏.html` — a path
+that displays as text and can't run. Even under the structured form-router, the model
+put the PATH into the `html` field instead of the markup.
+
+**Two layers (both shipped).**
+1. **Prompt instruction (best-effort nudge).** A general output-format rule was added to
+   `generateStructured`'s JSON-only system message (`src/ai/structured.ts` — "if the
+   schema has an `html` field it MUST be the complete inline markup, never a path / file")
+   AND to the form-router user prompt (`src/server/app.ts runFormRouter`, via the exported
+   `INLINE_HTML_INSTRUCTION` in `src/core/notes/formRouter.ts`).
+2. **Validation guard (the RELIABLE mechanism).** `looksLikeHtml(s)` (pure, in
+   `formRouter.ts`) returns true only for a string containing a real `<tag …>` / `</tag>`;
+   a bare path (`generated/x.html`), filename, or prose fails. The `html-interactive`
+   union arm's `html` field is `z.string().refine(looksLikeHtml, …)`, so a PATH fails the
+   union parse → `generateStructured`'s EXISTING re-prompt loop fires (the refine message
+   is the corrective hint). After the retries exhaust, `runFormRouter` catches the
+   `StructuredGenerationError` and **DEGRADES** to a `markdown` note carrying the original
+   text — it NEVER persists a path as html.
+
+**Known limitation (documented).** This does NOT change the claude-cli "writes files"
+nature — it only stops a path from becoming an html note and nudges/forces inline output;
+when degradation kicks in you get a markdown note rather than an interactive game. The
+robust long-term fix is a **content-returning API provider** (e.g. DeepSeek) that returns
+the markup in-band instead of an agent that writes files. (See `multi-provider-ai-agent.md`.)
+
+### FIX 2 — AI generation status indicator
+
+**Symptom.** Structured generation (Explain / Practice / `operation.run` /
+`note.generate-block` / classify-reply) is a single non-streamed request with NO loading
+UI — the user couldn't tell it was running (only the streaming ask-ai chat showed text).
+
+**Design.** A single shared `generating` flag lives in `WorkspaceContext` (sibling of
+`status`/`regenerating`). `dispatch` flips it for any command in `GENERATION_COMMAND_IDS`
+(the exported `isGenerationCommand`: `note.generate-block`, `operation.run`, the four
+textbook kit commands) — set on start, cleared in `finally` on done OR error;
+`previewClassifiedReply` sets it too. Surfaces consume the one flag (no per-button
+duplication): a `.generation-status` "AI 生成中…" spinner banner in the study panel, and
+`busy={generating}` disables the Selection/Source toolbars and the chat-log generate/save
+buttons. Errors are surfaced via the existing `error` box (not swallowed). The streaming
+ask-ai chat additionally shows a per-message `.chat-pending` "AI 思考中…" row while the
+request is in flight and the last message is still the user's prompt (before the first
+streamed token), so the chat never looks frozen.
+
+**Tests.** `looksLikeHtml` pos/neg incl. the exact `generated/…​.html` path → false
+(`formRouter.test.ts`); the html arm refine rejects a path; the server degrade path
+(path-like html result → markdown, never html-sandbox) in `app.test.ts` + an e2e; the
+`generating` flag set-on-start / clear-on-done / clear-on-error in
+`generatingState.test.tsx`; an e2e that a structured generation shows the indicator (and
+disables the trigger) then the preview. Contract guard + all prior tests stay green.
+
+---
+
 ## Appendix — cited symbols / paths
 
 - `src/core/notes/contentTypes.ts:11-32,40-44,100-185` — `NoteContentSpec`,

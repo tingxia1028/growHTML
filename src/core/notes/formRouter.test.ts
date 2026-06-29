@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formRouterSchema,
   formRouterSample,
+  looksLikeHtml,
   routerOutputToNote,
   type FormRouterOutput
 } from "./formRouter";
@@ -20,6 +21,49 @@ function assertPersistable(routed: { contentType: string; content: unknown }) {
   expect(spec, `contentType ${routed.contentType} must be registered`).toBeDefined();
   expect(() => spec!.schema.parse(routed.content)).not.toThrow();
 }
+
+describe("looksLikeHtml — real markup passes; a path / filename / prose fails", () => {
+  it("accepts real HTML (documents, fragments, self-contained widgets)", () => {
+    expect(looksLikeHtml("<!doctype html><html><body><canvas></canvas></body></html>")).toBe(true);
+    expect(looksLikeHtml("<canvas></canvas>")).toBe(true);
+    expect(looksLikeHtml('<div class="game"><script>run()</script></div>')).toBe(true);
+    expect(looksLikeHtml("<br/>")).toBe(true);
+    expect(looksLikeHtml("  <p>hi</p>  ")).toBe(true);
+  });
+
+  it("REJECTS a bare file path or filename (the claude-cli failure mode)", () => {
+    // The exact shape the agentic provider returned in the bug report.
+    expect(looksLikeHtml("generated/公顷和平方千米-互动游戏.html")).toBe(false);
+    expect(looksLikeHtml("generated/x.html")).toBe(false);
+    expect(looksLikeHtml("report.html")).toBe(false);
+    expect(looksLikeHtml("./out/index.html")).toBe(false);
+    expect(looksLikeHtml("C:\\\\tmp\\\\game.html")).toBe(false);
+  });
+
+  it("rejects plain prose and empty/whitespace", () => {
+    expect(looksLikeHtml("Here is the interactive game I built for you.")).toBe(false);
+    expect(looksLikeHtml("")).toBe(false);
+    expect(looksLikeHtml("   ")).toBe(false);
+    expect(looksLikeHtml("a < b and c > d")).toBe(false);
+  });
+});
+
+describe("html-interactive arm — looksLikeHtml refine gates the html field", () => {
+  it("accepts inline markup", () => {
+    expect(() =>
+      formRouterSchema.parse({ form: "html-interactive", html: "<canvas></canvas>" })
+    ).not.toThrow();
+  });
+
+  it("REJECTS a path so the structured re-prompt loop fires instead of saving it", () => {
+    expect(() =>
+      formRouterSchema.parse({ form: "html-interactive", html: "generated/x.html" })
+    ).toThrow();
+    expect(
+      formRouterSchema.safeParse({ form: "html-interactive", html: "report.html" }).success
+    ).toBe(false);
+  });
+});
 
 describe("formRouterSchema — accepts each valid union member, rejects bad ones", () => {
   it("parses every offered form", () => {

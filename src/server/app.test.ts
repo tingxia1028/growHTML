@@ -847,3 +847,60 @@ describe("vault server API", () => {
   });
 });
 
+// FIX 1 — the form router must NEVER persist a FILE PATH as html. An agentic provider
+// (claude-cli) writes a file and returns its path; the html arm's looksLikeHtml refine
+// rejects it on every attempt → the structured re-prompt loop exhausts → runFormRouter
+// DEGRADES to a markdown note carrying the original text. These tests inject a provider
+// to drive that path (the default mock can't, since it echoes a sample verbatim).
+describe("form router — html path result degrades, never saved as html", () => {
+  // A provider that ALWAYS returns a path-like html arm (the bug's exact shape). It
+  // ignores the re-prompt corrective turns, so the refine fails on every attempt.
+  const PATH_RESULT = JSON.stringify({ form: "html-interactive", html: "generated/x.html" });
+  const pathProvider = {
+    id: "path-writer",
+    capabilities: { chat: true, agentic: true, streaming: false },
+    async complete() {
+      return { message: { role: "assistant" as const, content: PATH_RESULT } };
+    },
+    async completeStructured() {
+      return { json: PATH_RESULT };
+    }
+  };
+
+  it("generate-block degrades a path-like html result to a markdown note (text preserved)", async () => {
+    const degradeApp = createApp({ vault, modelProvider: pathProvider });
+    const res = await request(degradeApp)
+      .post("/api/notes/generate-block")
+      .send({ text: "Build me an interactive hectares game" })
+      .expect(200);
+    // NEVER html-sandbox with a path; it falls back to markdown carrying the input text.
+    expect(res.body.contentType).toBe("markdown");
+    expect(res.body.contentType).not.toBe("html-sandbox");
+    expect(res.body.content).toBe("Build me an interactive hectares game");
+    // The path string must NOT appear anywhere in the persisted content.
+    expect(JSON.stringify(res.body.content)).not.toContain("generated/x.html");
+  });
+
+  it("a valid inline html result IS routed to html-sandbox (interactive)", async () => {
+    const goodHtml = JSON.stringify({ form: "html-interactive", html: "<canvas></canvas>" });
+    const okProvider = {
+      id: "inline-html",
+      capabilities: { chat: true, agentic: false, streaming: false },
+      async complete() {
+        return { message: { role: "assistant" as const, content: goodHtml } };
+      },
+      async completeStructured() {
+        return { json: goodHtml };
+      }
+    };
+    const okApp = createApp({ vault, modelProvider: okProvider });
+    const res = await request(okApp)
+      .post("/api/notes/generate-block")
+      .send({ text: "a widget" })
+      .expect(200);
+    expect(res.body.contentType).toBe("html-sandbox");
+    expect((res.body.content as { html: string }).html).toBe("<canvas></canvas>");
+    expect((res.body.content as { interactive: boolean }).interactive).toBe(true);
+  });
+});
+

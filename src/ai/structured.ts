@@ -13,9 +13,18 @@ import type { ChatContext, ChatMessage, ModelProvider } from "./provider";
 export class StructuredGenerationError extends Error {}
 
 // The instruction prepended (as a system message) so the model returns bare JSON.
+// The second sentence is a GENERAL output-format rule for any schema that carries an
+// `html` field: an agentic provider (claude-cli) tends to WRITE a file and return its
+// PATH; this nudges it to inline the markup instead. It is best-effort — the RELIABLE
+// enforcement is the schema's looksLikeHtml refine (which triggers the re-prompt loop
+// below) + the caller's degrade-on-failure. Kept inline (no core import) so src/ai stays
+// kit/core-agnostic.
 const JSON_ONLY =
   "You output ONLY a single JSON object that matches the requested schema. " +
-  "No prose, no markdown fences, no comments — just the JSON.";
+  "No prose, no markdown fences, no comments — just the JSON. " +
+  "If the schema has an `html` field, it MUST contain the COMPLETE inline HTML markup " +
+  "(doctype + tags + inline <style>/<script>) — NEVER a file path or filename, and NEVER " +
+  "write a file to disk; put the full document text directly in the field.";
 
 // Pull a JSON object out of a model reply: strip ``` fences, then take the first
 // balanced {...} span. Throws if none parses.

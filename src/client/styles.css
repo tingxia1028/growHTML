@@ -1782,6 +1782,46 @@ button {
 /* A pending AI draft, parked between generation and persistence. Mirrors the
    .tb-card / .note-edit look but tinted + accent-bordered so it reads as a distinct,
    un-saved staging surface — visually separate from the saved .note-list below. */
+/* AI generation status (FIX 2) — a single shared indicator shown while a structured
+   generation is in flight (Explain / Practice / operation.run / Generate-as-best-form /
+   classify-reply) and the per-message "AI 思考中…" row before the first streamed token. */
+.generation-status,
+.chat-pending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--sv-accent);
+}
+
+.generation-status {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--sv-accent-border);
+  border-left: 3px solid var(--sv-accent);
+  border-radius: var(--sv-radius);
+  background: var(--sv-accent-weak-preview);
+  font-weight: 600;
+}
+
+.chat-pending {
+  color: var(--sv-text-muted);
+}
+
+/* Spinner used by the generation/chat status indicators. */
+.spin {
+  animation: sv-spin 0.9s linear infinite;
+}
+
+@keyframes sv-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .generation-preview {
   display: grid;
   gap: 8px;

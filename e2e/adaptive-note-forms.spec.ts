@@ -336,6 +336,77 @@ test(".xmind import: the server converts a .xmind to a markmap outline, and the 
   }
 });
 
+// —— FIX 2: AI generation status indicator ————————————————————————————————————
+//
+// Triggering a structured generation ("Generate as best form") shows the shared
+// "AI 生成中…" indicator while the single non-streamed request is in flight, then the
+// generation preview replaces it once the draft is ready. We DELAY the generate-block
+// response via page.route so the indicator is reliably observable (the mock is otherwise
+// instant), then let it through and assert the preview lands.
+
+test("generating indicator: a structured generation shows 'AI 生成中…' then the preview", async ({ page, request }) => {
+  const title = `Gen Indicator ${Date.now()}`;
+  const body = "<article><section><p>Photosynthesis converts light into chemical energy.</p></section></article>";
+  await seedHtmlSource(request, title, body);
+  await openSource(page, title);
+
+  // Select the passage so the Textbook kit's selection toolbar (Explain) appears — a
+  // deterministic, non-streamed structured generation that drives the shared indicator.
+  const reader = page.frameLocator('iframe[title="Source reader"]');
+  await reader.getByText("Photosynthesis converts", { exact: false }).click();
+  await expect(page.locator(".chat-source")).toContainText("Photosynthesis");
+  const explain = page.locator(".selection-toolbar-btn", { hasText: "Explain" });
+  await expect(explain).toBeVisible();
+
+  // Delay the generation response so the in-flight indicator is reliably observable
+  // (the mock is otherwise instant).
+  await page.route("**/api/kits/generate", async (route) => {
+    await new Promise((r) => setTimeout(r, 800));
+    await route.continue();
+  });
+
+  await explain.click();
+
+  // The shared status indicator appears while the single request is in flight, and the
+  // triggering toolbar button is disabled.
+  await expect(page.locator(".generation-status")).toBeVisible();
+  await expect(page.locator(".generation-status")).toContainText("AI 生成中");
+  await expect(explain).toBeDisabled();
+
+  // …then the draft is ready: the indicator clears and the preview is shown.
+  await expect(page.locator(".generation-preview")).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".generation-status")).toHaveCount(0);
+});
+
+// —— FIX 1: a path-like html result is NEVER saved as an html note ————————————————
+//
+// The agentic provider failure mode: the model returns a FILE PATH in the html field
+// instead of inline markup. The html arm's looksLikeHtml refine rejects it on every
+// attempt, the re-prompt loop exhausts, and the server DEGRADES to a markdown note
+// carrying the original text — it must NOT route to html-sandbox. We force the failure
+// by passing a path-like html `sample` (the mock echoes it verbatim, so every attempt
+// fails the refine), driving the degrade end-to-end through the real server.
+
+test("path-like html result degrades to markdown — NEVER saved as an html-sandbox note", async ({ request }) => {
+  const routed = await request.post(`${SERVER}/api/notes/generate-block`, {
+    data: {
+      text: "make me an interactive hectares game",
+      // A FILE PATH in the html field — the exact claude-cli bug shape. The mock echoes
+      // this verbatim on every (re-prompted) attempt, so looksLikeHtml fails each time.
+      sample: { form: "html-interactive", html: "generated/公顷和平方千米-互动游戏.html" }
+    }
+  });
+  expect(routed.ok(), `generate-block failed: ${routed.status()}`).toBeTruthy();
+  const body = (await routed.json()) as { contentType: string; content: unknown };
+
+  // DEGRADED: a markdown note carrying the original text — NOT an html-sandbox note,
+  // and the path string must NOT appear in the persisted content.
+  expect(body.contentType).toBe("markdown");
+  expect(body.contentType).not.toBe("html-sandbox");
+  expect(body.content).toBe("make me an interactive hectares game");
+  expect(JSON.stringify(body.content)).not.toContain(".html");
+});
+
 test("GET /api/assets/:id honors HTTP Range: 206 + correct Content-Range for a sub-range, 416 past EOF", async ({
   request
 }) => {

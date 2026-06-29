@@ -16,6 +16,7 @@ import {
   FolderOpen,
   Layers,
   ListRestart,
+  Loader2,
   NotebookPen,
   Pencil,
   RefreshCcw,
@@ -512,12 +513,14 @@ function NoteContentView({
 function StudyView({ ctx }: { ctx: WorkspaceContext }) {
   const {
     focus,
+    status,
     draftQuote,
     hasRegionDraft,
     chatMessages,
     dispatch,
     selectedTextOr,
     previewClassifiedReply,
+    generating,
     chatInput,
     setChatInput,
     composerMode,
@@ -559,6 +562,7 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
           visible={!!ctx.activeSource}
           items={ctx.sourceActions}
           onRun={(action) => ctx.runAction(action)}
+          busy={generating}
         />
         {/* The passage everything below acts on — auto-filled from the reader
             selection (its anchor is created lazily when you ask or save). */}
@@ -592,7 +596,19 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
           visible={!!focus.draft || !!focus.anchor}
           items={ctx.selectionActions}
           onRun={(action) => ctx.runAction(action)}
+          busy={generating}
         />
+
+        {/* AI generation status: a single shared indicator for the in-flight structured
+            generation (Explain / Practice / operation.run / Generate-as-best-form /
+            classify-reply). Shows while `generating` is true, then clears when the draft
+            is ready (GenerationPreview appears) or an error surfaces in the error-box. */}
+        {generating ? (
+          <div className="generation-status" role="status" aria-live="polite" aria-busy="true">
+            <Loader2 size={14} className="spin" />
+            <span>AI 生成中…</span>
+          </div>
+        ) : null}
 
         {/* generate → preview → edit → save: a kit AI draft awaiting Save. A SEPARATE
             DOM subtree from .note-list below — a draft previews here before any note
@@ -616,6 +632,7 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
                     className="link-button"
                     type="button"
                     title="Save the highlighted part of this reply (or the whole reply if nothing is selected)"
+                    disabled={generating}
                     onClick={() => void previewClassifiedReply(selectedTextOr(message.content))}
                   >
                     Save selection as note
@@ -623,6 +640,7 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
                   <button
                     className="link-button"
                     type="button"
+                    disabled={generating}
                     onClick={() => void previewClassifiedReply(message.content)}
                   >
                     Save full reply
@@ -633,14 +651,29 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
                     className="link-button"
                     type="button"
                     title="Ask the model to pick the best note form for this reply and generate it"
+                    disabled={generating}
                     onClick={() => void dispatch("note.generate-block", { text: message.content })}
                   >
-                    Generate as best form
+                    {generating ? "AI 生成中…" : "Generate as best form"}
                   </button>
                 </div>
               ) : null}
             </div>
           ))}
+          {/* Streaming ask-ai: until the FIRST token arrives, the last message is still
+              the user's prompt while a request is in flight (status "saving"). Show a
+              working row so the chat doesn't look frozen before progressive text begins.
+              Once a delta lands, onAssistantChunk appends an assistant message and this
+              clears. Generation flows have their own .generation-status above. */}
+          {status === "saving" &&
+          !generating &&
+          chatMessages.length > 0 &&
+          chatMessages[chatMessages.length - 1].role === "user" ? (
+            <div className="chat-msg chat-assistant chat-pending" role="status" aria-live="polite">
+              <Loader2 size={14} className="spin" />
+              <span>AI 思考中…</span>
+            </div>
+          ) : null}
         </div>
 
         {/* One composer: toggle whether the text is sent to the AI or saved as a

@@ -52,7 +52,12 @@ import {
   FORM_ROUTER_CONTENT_TYPE,
   type ModelProvider
 } from "../ai";
-import { formRouterSchema, routerOutputToNote, type FormRouterOutput } from "../core/notes/formRouter";
+import {
+  formRouterSchema,
+  routerOutputToNote,
+  INLINE_HTML_INSTRUCTION,
+  type FormRouterOutput
+} from "../core/notes/formRouter";
 import { installServerKits } from "../kits/server";
 import { generateStructuredContent, StructuredGenerationError } from "../kits/structured";
 import { readFile } from "node:fs/promises";
@@ -1393,22 +1398,41 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
   // path (§0.5: a registered contentType, no bypass). The mock is deterministic for
   // this schema (echoes `sample`, else synthesizes the first union member).
   async function runFormRouter(text: string, context: unknown, sample: unknown): Promise<FormRouterOutput> {
-    const output = (await generateStructured(provider, {
-      messages: [
-        {
-          role: "user",
-          content:
-            "Choose the BEST note form for the following content and return it as the router " +
-            "JSON (pick the single most appropriate `form`).\n\n" +
-            text
-        }
-      ],
-      schema: formRouterSchema,
-      contentType: FORM_ROUTER_CONTENT_TYPE,
-      sample,
-      context: chatContextSchema.optional().parse(context) ?? undefined
-    })) as FormRouterOutput;
-    return output;
+    try {
+      const output = (await generateStructured(provider, {
+        messages: [
+          {
+            role: "user",
+            content:
+              "Choose the BEST note form for the following content and return it as the router " +
+              "JSON (pick the single most appropriate `form`).\n" +
+              // Inline-HTML guard (FIX 1, best-effort half): if the model picks the html
+              // form it must inline the markup, never write a file / return a path. The
+              // RELIABLE half is the schema's looksLikeHtml refine + the degrade below.
+              INLINE_HTML_INSTRUCTION +
+              "\n\n" +
+              text
+          }
+        ],
+        schema: formRouterSchema,
+        contentType: FORM_ROUTER_CONTENT_TYPE,
+        sample,
+        context: chatContextSchema.optional().parse(context) ?? undefined
+      })) as FormRouterOutput;
+      return output;
+    } catch (error) {
+      // DEGRADE GRACEFULLY (FIX 1, reliable half): generation failed to produce a valid
+      // union member after the re-prompt loop. The dominant cause with the agentic
+      // claude-cli provider is an html arm whose `html` was a FILE PATH (rejected by the
+      // looksLikeHtml refine on every attempt). Rather than surface a hard error — or,
+      // worse, persist a path as html — fall back to a MARKDOWN note carrying the original
+      // text. The robust long-term fix is a content-returning API provider (DeepSeek), not
+      // an agent that writes files; this keeps the offline/path case from corrupting a note.
+      if (error instanceof StructuredGenerationError) {
+        return { form: "markdown", markdown: text };
+      }
+      throw error;
+    }
   }
 
   app.post("/api/notes/generate-block", async (req, res, next) => {

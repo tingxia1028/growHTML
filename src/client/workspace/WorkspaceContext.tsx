@@ -76,6 +76,26 @@ export type ToolbarAction = {
 
 const EMPTY_OPERATION_PREFS: OperationPrefs = { order: [], disabled: [], params: {} };
 
+// Command ids whose `run` performs an AI STRUCTURED GENERATION (a single non-streamed
+// request that emits a GeneratedDraft). Dispatching one flips the shared `generating`
+// flag so the UI shows "AI 生成中…" and disables the trigger until the draft is ready or
+// the request errors. Custom operations dispatch `operation.run` (covered here); the
+// built-in textbook kit commands generate too, so they're listed explicitly. Built-in
+// add/edit/link/layer commands are NOT generation and stay off this list.
+const GENERATION_COMMAND_IDS = new Set<string>([
+  "note.generate-block",
+  "operation.run",
+  "textbook.explain-concept",
+  "textbook.generate-practice",
+  "textbook.mark-as-mistake",
+  "textbook.generate-review-pack"
+]);
+
+/** True for a command that triggers AI structured generation (drives `generating`). */
+export function isGenerationCommand(commandId: string): boolean {
+  return GENERATION_COMMAND_IDS.has(commandId);
+}
+
 // The core "Add bookmark" selection action — always available on the focused passage
 // (NOT kit-gated, unlike the kit selection items). Dispatched by its command id like
 // any built-in; it materializes the anchor and creates a bookmark note. Listed first
@@ -216,6 +236,15 @@ export type WorkspaceContextValue = {
   pendingDraft: GeneratedDraft | null;
   /** Whether a regenerate request is in flight (the preview disables its buttons). */
   regenerating: boolean;
+  /**
+   * Whether an AI GENERATION request is in flight (structured generation: Explain /
+   * Practice / operation.run / note.generate-block / classify-reply). A single shared
+   * flag — set on start, cleared on draft-ready OR error — that the surfaces consume to
+   * show a "AI 生成中…" spinner and disable their triggers, so the user knows the
+   * single non-streamed request is running. Distinct from `status:"saving"` (a generic
+   * busy state every command sets) and `regenerating` (the preview's re-run).
+   */
+  generating: boolean;
   /** Persist the (possibly edited) draft content as a note, then clear the preview. */
   savePendingDraft(content: unknown): void;
   /** Re-run the same generation; replaces the pending draft's content in place. */
@@ -347,6 +376,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // an in-flight regenerate so the preview can show/disable while it re-runs.
   const [pendingDraft, setPendingDraft] = useState<GeneratedDraft | null>(null);
   const [regenerating, setRegenerating] = useState(false);
+  // Whether an AI structured-generation request is in flight (see `generating` in the
+  // context type). Set true around a generation command/flow, cleared on done/error.
+  const [generating, setGenerating] = useState(false);
   // Custom operations + their workspace prefs (action order / disabled / built-in
   // params). Loaded once and re-fetched whenever the builder/manager bumps the token.
   const [operations, setOperations] = useState<OperationRecord[]>([]);
@@ -686,14 +718,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const dispatch = useCallback(
     async (commandId: string, payload: CommandContext["payload"]) => {
+      // A generation command flips the shared `generating` flag (spinner + disabled
+      // trigger) on top of the generic saving state; cleared in finally on done/error.
+      const isGen = isGenerationCommand(commandId);
       setStatus("saving");
       setError("");
+      if (isGen) setGenerating(true);
       try {
         await runCommand(commandId, commandContext(payload));
         setStatus("idle");
       } catch (err) {
+        // Surface generation errors instead of failing silently (the indicator clears
+        // and the error-box shows the message).
         setError(err instanceof Error ? err.message : "Command failed");
         setStatus("error");
+      } finally {
+        if (isGen) setGenerating(false);
       }
     },
     [commandContext]
@@ -785,6 +825,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (!trimmed) return;
       setStatus("saving");
       setError("");
+      // Classify can hit the AI form-router (low-confidence fallback), so it's a
+      // generation flow too — show the shared indicator while it runs.
+      setGenerating(true);
       try {
         const anchor = await focus.materializeAnchor();
         const form = await resolveFormAsync({ text: trimmed }, { classify: aiClassify });
@@ -801,6 +844,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to classify reply");
         setStatus("error");
+      } finally {
+        setGenerating(false);
       }
     },
     [focus, activeSourceId, aiClassify]
@@ -1106,6 +1151,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       dispatch,
       pendingDraft,
       regenerating,
+      generating,
       savePendingDraft,
       regeneratePendingDraft,
       discardPendingDraft,
@@ -1182,6 +1228,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       dispatch,
       pendingDraft,
       regenerating,
+      generating,
       savePendingDraft,
       regeneratePendingDraft,
       discardPendingDraft,
