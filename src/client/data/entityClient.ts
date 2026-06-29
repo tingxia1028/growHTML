@@ -524,6 +524,29 @@ export const entityClient = {
     return sendJson<{ content: unknown; provider: string }>("POST", "/api/kits/generate", input);
   },
 
+  // —— Adaptive note forms · Phase 4 ——
+  // Form router (item 1): one structured call where the MODEL picks the form AND fills
+  // it. Returns the unwrapped, registry-ready { contentType, content }. `sample` forces
+  // a deterministic form against the offline mock (used by the e2e).
+  generateBlock(input: { text: string; context?: ChatContext; sample?: unknown }) {
+    return sendJson<{ contentType: string; content: unknown; provider: string }>(
+      "POST",
+      "/api/notes/generate-block",
+      input
+    );
+  },
+
+  // AI-assisted classification (item 2): the low-confidence fallback. Returns a
+  // ClassifiedForm-shaped result (contentType + content + confidence). Called by the
+  // client's resolveFormAsync ONLY when its pure heuristic is low-confidence.
+  classifyForm(input: { text: string; context?: ChatContext; sample?: unknown }) {
+    return sendJson<{ contentType: string; content: unknown; confidence: "high" | "low"; provider: string }>(
+      "POST",
+      "/api/notes/classify",
+      input
+    );
+  },
+
   // —— Workspace ——
   workspace() {
     return getJson<{ workspace: WorkspaceState }>("/api/workspace");

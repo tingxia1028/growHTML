@@ -546,6 +546,16 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
                   >
                     Save full reply
                   </button>
+                  {/* Form router (Phase 4 item 1): the MODEL picks the best form AND
+                      fills it in one structured call, then previews like any draft. */}
+                  <button
+                    className="link-button"
+                    type="button"
+                    title="Ask the model to pick the best note form for this reply and generate it"
+                    onClick={() => void dispatch("note.generate-block", { text: message.content })}
+                  >
+                    Generate as best form
+                  </button>
                 </div>
               ) : null}
             </div>

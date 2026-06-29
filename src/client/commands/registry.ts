@@ -69,6 +69,7 @@ export type CommandContext = {
     | "createLayer"
     | "deleteLayer"
     | "generateStructured"
+    | "generateBlock"
     | "notes"
   > &
     // Streaming chat is optional so hosts/tests that only wire `chat` still satisfy
@@ -502,6 +503,55 @@ const runOperation: Command = {
   }
 };
 
+// —— note.generate-block (the form router — adaptive note forms §4 Phase 4 item 1) ——
+// A chat/selection action: "Generate as best form". It asks the model (one structured
+// call against the form-router schema, server-side) to BOTH pick the render form AND
+// fill it in, then emits the chosen form as a GeneratedDraft into the EXISTING
+// generation-preview loop — no preview-side change. Unlike previewClassifiedReply (a
+// pure heuristic over the text), here the MODEL decides the form. Save persists it like
+// any other draft (it attaches to the materialized anchor). When no preview host is
+// wired (a bare test), it auto-saves the note directly.
+const generateBlock: Command = {
+  id: "note.generate-block",
+  title: "Generate as best form",
+  group: "anchor",
+  isAvailable: (ctx) => !!ctx.payload.text?.trim(),
+  run: async (ctx) => {
+    const text = ctx.payload.text?.trim();
+    if (!text) return;
+    // Materialize the focused passage (if any) so Save attaches the note there — the
+    // same path the kit/operation drafts use.
+    const anchor = await ctx.focus.materializeAnchor();
+    const { contentType, content } = await ctx.client.generateBlock({
+      text,
+      context: ctx.chatContext,
+      // An explicit deterministic sample (e.g. an e2e forcing a markmap) flows through.
+      sample: ctx.payload.content
+    });
+    if (ctx.actions.onGenerated) {
+      ctx.actions.onGenerated({
+        promptId: "note.generate-block",
+        contentType,
+        input: { text },
+        content,
+        anchorId: anchor?.id,
+        sourceId: ctx.sourceId,
+        // The model already chose the form; treat it like a classified draft so the
+        // preview's Regenerate doesn't try to re-run a kit prompt that doesn't exist.
+        classified: true
+      });
+      return;
+    }
+    const { note } = await ctx.client.createNote({
+      sourceId: ctx.sourceId,
+      anchorIds: anchor ? [anchor.id] : [],
+      contentType,
+      content
+    });
+    ctx.actions.onNoteCreated?.(note);
+  }
+};
+
 const registry = new Map<string, Command>();
 
 export function registerCommand(command: Command): void {
@@ -535,6 +585,7 @@ for (const command of [
   createRelation,
   toggleLayer,
   setNoteLayers,
-  runOperation
+  runOperation,
+  generateBlock
 ])
   registerCommand(command);

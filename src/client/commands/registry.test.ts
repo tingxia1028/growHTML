@@ -41,6 +41,7 @@ function baseCtx(over: Partial<CommandContext> = {}): CommandContext {
       createLayer: vi.fn(async () => ({ layer: { id: "layer_1" } as never })),
       deleteLayer: vi.fn(async () => ({ ok: true as const })),
       generateStructured: vi.fn(async () => ({ content: {}, provider: "mock" })),
+      generateBlock: vi.fn(async () => ({ contentType: "markdown", content: "routed", provider: "mock" })),
       notes: vi.fn(async () => ({ notes: [] as never }))
     },
     sourceId: "src_1",
@@ -490,5 +491,66 @@ describe("command: operation.run", () => {
         baseCtx({ payload: { operationId: "op_1", outputType: "markdown", scope: "anchor" } })
       )
     ).toBe(true);
+  });
+});
+
+describe("command: note.generate-block (form router)", () => {
+  it("materializes the passage, runs the form router, and emits the chosen form as a draft", async () => {
+    const onGenerated = vi.fn();
+    const generateBlock = vi.fn(async () => ({
+      contentType: "markmap",
+      content: "# Root\n## A",
+      provider: "mock"
+    }));
+    const ctx = baseCtx({
+      payload: { text: "make a mind map of photosynthesis" },
+      chatContext: { quote: "passage", sourceTitle: "Bio" },
+      client: { ...baseCtx().client, generateBlock },
+      actions: { onGenerated }
+    });
+
+    const ran = await runCommand("note.generate-block", ctx);
+
+    expect(ran).toBe(true);
+    expect(ctx.focus.materializeAnchor).toHaveBeenCalledOnce();
+    // The MODEL picks the form — the command passes the text + chat context (and any
+    // explicit deterministic sample from the payload).
+    expect(generateBlock).toHaveBeenCalledWith({
+      text: "make a mind map of photosynthesis",
+      context: { quote: "passage", sourceTitle: "Bio" },
+      sample: undefined
+    });
+    // The detected form lands in the EXISTING preview loop, anchored, marked classified.
+    expect(onGenerated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        promptId: "note.generate-block",
+        contentType: "markmap",
+        content: "# Root\n## A",
+        anchorId: "anchor_1",
+        sourceId: "src_1",
+        classified: true
+      })
+    );
+    expect(ctx.client.createNote).not.toHaveBeenCalled();
+  });
+
+  it("falls back to auto-save when no preview host is wired", async () => {
+    const onNoteCreated = vi.fn();
+    const generateBlock = vi.fn(async () => ({ contentType: "mermaid", content: "graph TD; A-->B", provider: "mock" }));
+    const ctx = baseCtx({
+      payload: { text: "draw a flowchart" },
+      client: { ...baseCtx().client, generateBlock },
+      actions: { onNoteCreated }
+    });
+    await runCommand("note.generate-block", ctx);
+    expect(ctx.client.createNote).toHaveBeenCalledWith(
+      expect.objectContaining({ anchorIds: ["anchor_1"], contentType: "mermaid", content: "graph TD; A-->B" })
+    );
+    expect(onNoteCreated).toHaveBeenCalledOnce();
+  });
+
+  it("is unavailable with empty text", () => {
+    expect(getCommand("note.generate-block")!.isAvailable(baseCtx({ payload: { text: "  " } }))).toBe(false);
+    expect(getCommand("note.generate-block")!.isAvailable(baseCtx({ payload: { text: "go" } }))).toBe(true);
   });
 });

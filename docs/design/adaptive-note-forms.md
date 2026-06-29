@@ -910,6 +910,104 @@ in V1 (deferred per §5 / plan Phase 4) — interactive notes are self-contained
 
 ---
 
+## Impl-log — Phase 4 (items 1 + 2 · model-driven form selection) — SHIPPED
+
+Phase 4 items 1 + 2 (plan §4 Phase 4; research §4.1 Design A + §3 classifier) landed as
+ONE coherent "the model decides the form" feature. NO new rendered contentTypes (every
+offered form already renders); NO item 3 (.xmind) or item 4 (postMessage/score). The
+recognition law (§0.5) is preserved: every produced note resolves to a REGISTERED
+contentType and renders via `getNoteType().render` — the router output is a transport
+envelope unwrapped into a real `{ contentType, content }`, never a bypass.
+
+**1. `formRouterSchema` + `routerOutputToNote` — pure core transport**
+(`src/core/notes/formRouter.ts`, unit-tested in `formRouter.test.ts`). Pure +
+dependency-free (no React/fetch/DOM/state), so server and client share it.
+  - `formRouterSchema` = a zod `z.discriminatedUnion("form", […])` over the
+    CURRENTLY-SUPPORTED forms: `markdown` (`{markdown}`), `markmap` (`{outline}`),
+    `mermaid` (`{diagram}`), `code-snippet` (`{language(default "text"), code}`),
+    `video-embed` (`{url}`), `html-interactive` (`{html}`), `flashcard`
+    (`{front, back}`), `quiz` (`{question, options(min 2), answerIndex, explanation?}`).
+    It is a TRANSPORT envelope — NOT a stored content shape.
+  - `routerOutputToNote(output) → { contentType, content }` unwraps each member into the
+    real shape for that type's existing NoteContentSpec: markdown→`markdown`(string);
+    markmap→`markmap`(string); mermaid→`mermaid`(string); code-snippet→`code-snippet`
+    `{language, code}`; **video-embed→`video` `{kind:"embed", provider, videoId, url}`**
+    via the SHARED `parseVideoUrl` (an unparseable URL DEGRADES to a markdown note
+    carrying the link — pure + total, never throws); **html-interactive→`html-sandbox`
+    `{html, interactive:true}`** (the persisted id stays `html-sandbox`, not renamed);
+    flashcard→`flashcard`; quiz→`quiz` (explanation omitted when absent). Every arm is
+    unit-tested AND re-validated against the LIVE core spec (`getNoteContentSpec(...).
+    schema.parse`) so the routed note is provably persistable.
+  - `formRouterSample` (the first union member, a markdown note) is the deterministic
+    default the mock echoes.
+
+**2. Mock determinism for the discriminated union** (`src/ai/mockProvider.ts`). The
+mock's `completeStructured` previously echoed `request.sample` only (an empty `{}` when
+absent — which can NEVER validate a discriminated union). Now: if a `sample` is supplied
+it is echoed verbatim (real providers ignore it; the e2e passes a specific form — e.g. a
+markmap — to force a deterministic verdict); else, when the request carries the router
+marker `contentType === FORM_ROUTER_CONTENT_TYPE` (`"form-router"`, exported from
+`src/ai`), it synthesizes the FIRST valid union member `{form:"markdown", markdown:""}`
+so `generateStructured`'s `schema.parse` succeeds offline. All existing mock-based tests
+(which always pass a sample) are unaffected. The marker constant is defined in `src/ai`
+(not imported from core) to keep the `src/ai` layer free of core/kit imports.
+
+**3. `note.generate-block` command — the model picks the form**
+(`src/client/commands/registry.ts`; UI button in `src/client/workspace/views.tsx`). A
+chat/selection action "Generate as best form" on assistant replies. It materializes the
+focused passage (so Save attaches there), calls `entityClient.generateBlock({text,
+context, sample?})` → `POST /api/notes/generate-block`, and emits the routed
+`{contentType, content}` as the EXISTING `GeneratedDraft` via `onGenerated` (marked
+`classified` so the preview's Regenerate is a no-op) → the shipped preview/edit/save
+loop renders + saves it with ZERO preview-side change. When no preview host is wired (a
+bare test) it auto-saves the note directly. The server route
+(`src/server/app.ts`) runs `generateStructured(provider, {schema: formRouterSchema,
+contentType: FORM_ROUTER_CONTENT_TYPE, sample})`, unwraps via `routerOutputToNote`, and
+re-validates the content against the target type's core schema before returning it.
+
+**4. `resolveFormAsync` — gated AI-classify fallback** (`src/core/notes/resolveForm.ts`,
+unit-tested in `resolveForm.test.ts`). The pure sync `resolveForm` is left INTACT for
+callers that don't want a model call. The new async variant keeps `resolveForm` as the
+single choke point with the SAME ordering plus an optional AI pass:
+  1. declared `contentType` → TRUST (high), never a model call;
+  2. else run the pure `classifyContent(text)` heuristic (PRIMARY);
+  3. HIGH-confidence heuristic → use it (NO model call);
+  4. LOW confidence AND a `classify` callback provided → ask the model; use its verdict,
+     else keep the heuristic's markdown fallback;
+  5. no callback (offline / no provider) → today's behavior EXACTLY (heuristic +
+     markdown fallback). It NEVER throws — a failing AI pass degrades to the heuristic.
+  The model dependency lives at the CALL SITE (an `AiClassify` callback), NOT inside the
+  pure core; `classifyContent` stays pure (no model/fetch). The client wires the callback
+  in `WorkspaceContext.previewClassifiedReply` (now async via `resolveFormAsync`): it
+  calls `entityClient.classifyForm` → `POST /api/notes/classify`, which reuses the form
+  router. **Determinism guard:** the classify route returns the ORIGINAL text for a
+  markdown verdict (the AI pass is a no-op on content for prose — it only changes the
+  FORM when it picks a richer one), so the default offline mock keeps the save-a-reply
+  flow byte-identical to the pure heuristic (a regression caught + fixed in e2e).
+
+**Self-test:** `npm run check` clean; `npm test` 600 passing (71 files; +1 new file
+`formRouter.test.ts`, +cases in `resolveForm.test.ts` and `registry.test.ts`);
+`npm run e2e` 45 passing (`adaptive-note-forms.spec.ts` +1: the form router returns a
+markmap form from the mock, the routed note unwraps + saves + renders AS A MARKMAP — not
+markdown — and the "Generate as best form" action surfaces on an assistant reply).
+Contract guard stays green (the router output unwraps to registered contentTypes; the new
+command emits the standard `GeneratedDraft`; no host `contentType ===` branch, no
+hardcoded-literal save). Before e2e the 4177/5173/5174 servers were killed so Playwright
+used `.e2e-vault`; after the run no server is left and `data/vault` is untouched.
+
+**Caveats / deviations:** (a) The form router + AI classify live behind two server routes
+(`/api/notes/generate-block`, `/api/notes/classify`) mirroring `/api/kits/generate` — the
+model dependency stays server-side; the client passes only text/context (+ an optional
+deterministic `sample`). (b) The AI classify fallback is wired into the chat-save path
+but, with the default mock, is a content no-op for prose (markdown verdict → original
+text), so deterministic/offline flows are unchanged; a richer-form verdict would override
+the heuristic only when a real provider returns one. (c) The e2e forces a markmap via the
+seeded `sample` (the deterministic mock prepends a header to free chat replies, so a real
+chat reply never classifies as a pure rich form) — the router→unwrap→save→render contract
+is proven end-to-end through the server with the real mock.
+
+---
+
 ## Appendix — cited symbols / paths
 
 - `src/core/notes/contentTypes.ts:11-32,40-44,100-185` — `NoteContentSpec`,

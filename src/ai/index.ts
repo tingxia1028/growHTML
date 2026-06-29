@@ -11,7 +11,7 @@ export {
   StructuredGenerationError,
   type StructuredGenerateRequest
 } from "./structured";
-export { MockModelProvider } from "./mockProvider";
+export { MockModelProvider, FORM_ROUTER_CONTENT_TYPE } from "./mockProvider";
 export { ClaudeCliProvider, buildSubprocessEnv } from "./claudeCliProvider";
 export { ClaudePtyProvider } from "./claudePtyProvider";
 export type { PtySession, PtySessionFactory } from "./pty/session";

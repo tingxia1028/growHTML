@@ -44,7 +44,15 @@ import {
   readSourceContent,
   readSourceFile
 } from "../core/store/sources";
-import { chatRequestSchema, createModelProvider, type ModelProvider } from "../ai";
+import {
+  chatContextSchema,
+  chatRequestSchema,
+  createModelProvider,
+  generateStructured,
+  FORM_ROUTER_CONTENT_TYPE,
+  type ModelProvider
+} from "../ai";
+import { formRouterSchema, routerOutputToNote, type FormRouterOutput } from "../core/notes/formRouter";
 import { installServerKits } from "../kits/server";
 import { generateStructuredContent, StructuredGenerationError } from "../kits/structured";
 import { readFile } from "node:fs/promises";
@@ -59,6 +67,17 @@ const kitGenerateSchema = z.object({
   promptId: z.string().min(1),
   contentType: z.string().min(1),
   input: z.record(z.string(), z.unknown()).optional()
+});
+
+// Body for POST /api/notes/generate-block — the form-router request (adaptive note
+// forms §4 Phase 4 item 1). The model is given the user's text + optional study
+// context and returns a discriminated-union member (formRouterSchema); the server
+// unwraps it into a real { contentType, content }. An optional `sample` lets a caller
+// force a deterministic form against the offline mock (the e2e seeds a markmap).
+const generateBlockSchema = z.object({
+  text: z.string().min(1),
+  context: chatContextSchema.optional(),
+  sample: z.unknown().optional()
 });
 
 export type CreateAppOptions = {
@@ -1304,6 +1323,77 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
         res.status(400).json({ error: error.message });
         return;
       }
+      next(error);
+    }
+  });
+
+  // —— Adaptive note forms · Phase 4 ——————————————————————————————————————————
+  // Run the FORM ROUTER (item 1): one structured call where the MODEL picks the form
+  // AND fills it. We generate against `formRouterSchema` (a discriminated union), then
+  // unwrap the chosen member into a real { contentType, content } shaped for that
+  // type's NoteContentSpec — so the result flows through the normal preview/save/render
+  // path (§0.5: a registered contentType, no bypass). The mock is deterministic for
+  // this schema (echoes `sample`, else synthesizes the first union member).
+  async function runFormRouter(text: string, context: unknown, sample: unknown): Promise<FormRouterOutput> {
+    const output = (await generateStructured(provider, {
+      messages: [
+        {
+          role: "user",
+          content:
+            "Choose the BEST note form for the following content and return it as the router " +
+            "JSON (pick the single most appropriate `form`).\n\n" +
+            text
+        }
+      ],
+      schema: formRouterSchema,
+      contentType: FORM_ROUTER_CONTENT_TYPE,
+      sample,
+      context: chatContextSchema.optional().parse(context) ?? undefined
+    })) as FormRouterOutput;
+    return output;
+  }
+
+  app.post("/api/notes/generate-block", async (req, res, next) => {
+    try {
+      const input = generateBlockSchema.parse(req.body);
+      const output = await runFormRouter(input.text, input.context, input.sample);
+      const routed = routerOutputToNote(output);
+      // Validate the unwrapped content against the target type's core schema before it
+      // leaves the server — the routed form must be a real, persistable note.
+      const spec = getNoteContentSpec(routed.contentType);
+      const content = spec ? spec.schema.parse(routed.content) : routed.content;
+      res.json({ contentType: routed.contentType, content, provider: provider.id });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // AI-assisted classification (item 2) — the low-confidence FALLBACK behind the
+  // client's resolveFormAsync. It reuses the SAME form-router to decide the form for
+  // ambiguous prose, returning a ClassifiedForm. The client only calls this when its
+  // pure heuristic was low-confidence (heuristic stays primary; this is gated on the
+  // client by provider availability), so offline/deterministic flows are unaffected.
+  app.post("/api/notes/classify", async (req, res, next) => {
+    try {
+      const input = generateBlockSchema.parse(req.body);
+      const output = await runFormRouter(input.text, input.context, input.sample);
+      const routed = routerOutputToNote(output);
+      // A MARKDOWN verdict means "this is prose, keep it as-is" — so PRESERVE the
+      // original text rather than the router's (possibly regenerated/empty) markdown.
+      // This makes the AI pass a no-op on content for the markdown case (it only changes
+      // the FORM when it picks a richer one), so the heuristic's safe markdown fallback
+      // is honored verbatim and deterministic offline flows keep the original text.
+      if (routed.contentType === "markdown") {
+        res.json({ contentType: "markdown", content: input.text, confidence: "low", provider: provider.id });
+        return;
+      }
+      const spec = getNoteContentSpec(routed.contentType);
+      const content = spec ? spec.schema.parse(routed.content) : routed.content;
+      // The model picked a RICHER form → high confidence (an explicit, non-fallback
+      // choice). The client only reaches here on a low heuristic, so this never
+      // overrides a confident heuristic.
+      res.json({ contentType: routed.contentType, content, confidence: "high", provider: provider.id });
+    } catch (error) {
       next(error);
     }
   });

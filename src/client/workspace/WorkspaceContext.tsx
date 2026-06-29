@@ -33,7 +33,7 @@ import {
 } from "../data/entityClient";
 import { useFocus, draftQuoteText, type FocusContextValue } from "../focus/FocusContext";
 import { BOOKMARK_CONTENT_TYPE } from "../../core/notes/contentTypes";
-import { resolveForm } from "../../core/notes/resolveForm";
+import { resolveFormAsync, type AiClassify } from "../../core/notes/resolveForm";
 import { createDefaultContent, isTextContentType } from "../notes/noteTypeRegistry";
 import { getSourceViewer, type SourceViewer } from "../viewers";
 import { getCommand, runCommand, type CommandContext, type GeneratedDraft } from "../commands/registry";
@@ -750,6 +750,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // it is saved, instead of the old hardcoded contentType:"markdown". Materialize the
   // focused passage first (if any) so Save attaches the note to it (matching the
   // generation-preview Save path), then mark the draft `classified` (Regenerate no-ops).
+  // The OPTIONAL AI classify pass (Phase 4 item 2), wired as resolveFormAsync's gated
+  // callback. It is invoked ONLY when the pure heuristic is low-confidence (the
+  // heuristic stays primary). It asks the model — via the server's /api/notes/classify
+  // (the form router) — to decide the form for ambiguous prose. Best-effort: a failure
+  // returns null so resolveFormAsync keeps the heuristic's markdown fallback. With the
+  // default offline mock the router returns markdown, so the deterministic flow is
+  // unchanged (today's heuristic + markdown fallback).
+  const aiClassify = useCallback<AiClassify>(async (text) => {
+    try {
+      const result = await entityClient.classifyForm({ text });
+      return { contentType: result.contentType, content: result.content, confidence: result.confidence };
+    } catch {
+      return null;
+    }
+  }, []);
+
   const previewClassifiedReply = useCallback(
     async (text: string) => {
       const trimmed = (text ?? "").trim();
@@ -758,7 +774,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setError("");
       try {
         const anchor = await focus.materializeAnchor();
-        const form = resolveForm({ text: trimmed });
+        const form = await resolveFormAsync({ text: trimmed }, { classify: aiClassify });
         setPendingDraft({
           promptId: "",
           contentType: form.contentType,
@@ -774,7 +790,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setStatus("error");
       }
     },
-    [focus, activeSourceId]
+    [focus, activeSourceId, aiClassify]
   );
 
   const changePatchStatus = useCallback(

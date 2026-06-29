@@ -231,6 +231,59 @@ test("interactive html ESCAPE guard: game runs but cannot reach parent/top, fetc
   await expect(overlay).toHaveCount(0);
 });
 
+// —— Phase 4: form router (the MODEL picks the form) ——————————————————————————
+//
+// The form-router endpoint runs ONE structured call against the discriminated-union
+// formRouterSchema and unwraps the chosen member into a real { contentType, content }.
+// With the deterministic mock returning a MARKMAP form (via the seeded `sample`), the
+// routed note saves + renders AS A MARKMAP (not markdown) through the normal note path.
+
+test("form router: a markmap form from the model unwraps + saves + renders as a markmap note (not markdown)", async ({
+  page,
+  request
+}) => {
+  const title = `Form Router ${Date.now()}`;
+  const source = await seedHtmlSource(request, title, "<article><p>Body about routing forms.</p></article>");
+
+  // Run the form router against the deterministic mock, forcing a MARKMAP form via the
+  // sample (a valid discriminated-union member). The server unwraps form→contentType.
+  const routed = await request.post(`${SERVER}/api/notes/generate-block`, {
+    data: {
+      text: "make a mind map of the water cycle",
+      sample: { form: "markmap", outline: "# Water Cycle\n## Evaporation\n## Condensation" }
+    }
+  });
+  expect(routed.ok(), `generate-block failed: ${routed.status()}`).toBeTruthy();
+  const body = (await routed.json()) as { contentType: string; content: unknown };
+  // The MODEL chose markmap — NOT the markdown fallback.
+  expect(body.contentType).toBe("markmap");
+  expect(body.content).toBe("# Water Cycle\n## Evaporation\n## Condensation");
+
+  // Save the routed form as a note (the preview/save loop does exactly this on Save) and
+  // verify it renders IN ITS FORM (a live markmap SVG), proving the routed note is a real
+  // registered contentType that flows through getNoteType().render — no bypass.
+  const noteRes = await request.post(`${SERVER}/api/notes`, {
+    data: { sourceId: source.id, contentType: body.contentType, content: body.content }
+  });
+  expect(noteRes.ok(), `save routed note failed: ${noteRes.status()}`).toBeTruthy();
+
+  await openSource(page, title);
+  const card = page.locator(".note-list .record-card", { hasText: "markmap" }).first();
+  await expect(card).toBeVisible();
+  await expect(card.locator(".note-diagram-markmap svg")).toBeVisible({ timeout: 15_000 });
+
+  // The chat composer surfaces the "Generate as best form" action on assistant replies
+  // (item 1's UI entry point). Ask a question so a reply appears, then assert the button.
+  await page.locator(".composer-input").fill("What is the water cycle?");
+  await page.locator(".composer-input").press("Enter");
+  await expect(page.locator(".chat-log .chat-msg.chat-assistant").first()).toBeVisible({ timeout: 15_000 });
+  await expect(
+    page.locator(".chat-log .chat-msg.chat-assistant .row-actions .link-button", {
+      hasText: "Generate as best form"
+    }).first()
+  ).toBeVisible();
+});
+
 test("GET /api/assets/:id honors HTTP Range: 206 + correct Content-Range for a sub-range, 416 past EOF", async ({
   request
 }) => {
