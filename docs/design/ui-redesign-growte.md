@@ -130,7 +130,7 @@
 
 - **TopBar**(新组件 `TopBar.tsx`):三段;中段分段控件 = 三视图;`Document`=正常阅读,`Notes Overlay`=批注卡浮层模式(margin 卡显隐),`Anchor Focus`=聚焦当前锚点(右栏 Anchor 放大/居中)。右段图标按钮。
 - **IconRail**(新组件 `IconRail.tsx`):见 §4;底部头像。
-- **Library**:头部 `Library` + chevron;树用现有 `FileTree`/source 列表重构成"章/节"层级;当前节 `--sv-active-bg` + 左强调条。
+- **Library**(用户已定 = **基于本地文件夹**):头部 `Library`;主体 = 现有 **`FileTree`**(桌面"打开文件夹"的 IDE 式懒加载树,`folderRoot`/`openLocalFile`)按参考重绘 —— 文件夹图标 + chevron + 多级缩进,文件=source;当前项 `--sv-active-bg` + accent 文字。**无需新集合数据模型**(根目录子文件夹=章节,文件=source)。旧的 Refresh/Open/Import-URL 等按钮收进头部 `⋯`/底部。
 - **Reader chrome**:文档 tab 条 + 工具条(现有 PDF 工具条样式对齐稿:页码框、`− 100% +`、各图标按钮)。段落**锚点 ⚓** 在左 margin;**高亮**用 `--sv-select-bg`/`--sv-highlight-bg`;**内联操作簇**(现有 SelectionToolbar 概念,改为 hover/常驻在段落下的小图标行)。
 - **批注卡 gutter**:即现有 `annotationMode:"margin"` 卡,重绘成稿中卡片(图标+标题+⋯+正文+时间戳),并加**虚线连线**到锚点(新增连线层,在 annotationLayer/DomReader margin 渲染里画 SVG/canvas 连线)。
 - **Right 面板**:拆成 **Anchor**(摘录卡:focus 当前锚点文本 + 页码 + 操作)与 **AI Chat**(现有 chat,重绘气泡/操作/输入)。dock 右栏改为上下两段(column split)。
@@ -140,7 +140,7 @@
 - **R0 令牌(浅默认 + 深)**:改 `styles.css :root` + `builtins.ts` 的 DEFAULT/DARK 为本规范令牌;浅色设为默认主题。**纯令牌、低风险、立刻换肤**。先做。
 - **R1 Shell/顶栏/图标栏**:新 `TopBar` + `IconRail` + 改 `presets.ts` dock 树为"iconrail | library | reader | (anchor/aichat 上下)";现有面板收进图标栏/⋯;三视图分段控件接 annotationMode/focus。
 - **R1.5 排版与图标精修**:真正打包加载 **Inter**(离线安全,非 CDN;此前只声明未加载 → 实际渲染成 Segoe UI)+ 阅读器正文衬线 `--sv-font-serif` + 字号字重对齐;TopBar 的 Layers/Concepts 改 labeled pill、三 tab 加图标、active 段控样式;IconRail active 高亮 + 头像用真实用户名(非写死 Alex)。**纯排版/图标/标签,不加功能**。
-- **R2 Library**:树层级 + 头部 + active 态按稿。
+- **R2 Library**(=本地文件夹树):`FileTree` 按参考重绘(文件夹图标+chevron+多级缩进+active),旧按钮收进 ⋯;无新数据模型。**本轮与 R3/R4 一起作为"整体 IA 重建"推进**,再用截图闭环整体逐像素磨。
 - **R3 Note 展示统一(§10,组件地基)+ Reader chrome**:先收敛 `ArtifactCard`/`FocusOverlay` → 一套 **PreviewCard(三态)+ CenterView**(双击打开)+ per-type 预览规则 + 尺寸;再做 tab 条、工具条、锚点标记、**note-type 图标→点开预览卡**(§10.4)、内联簇(= Selection Toolbar 表面,§7)、margin 卡 + 虚线连线。**R4/R5 消费同一套卡**。
 - **R4 Right(Anchor + Anchor Tools + AI Log)**:摘录卡 + Anchor Action Bar 表面(§7)+ 聊天气泡/操作/输入重绘;Anchor 下 / Chat 里的 Note **复用 §10 PreviewCard**。
 - **R5 通用件**:卡片三态/Center View 收尾 + 按钮/输入/滚动条对齐两套令牌。

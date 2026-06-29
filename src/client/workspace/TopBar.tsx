@@ -128,15 +128,6 @@ export function TopBar({ ctx, leftPaneKind, onSelectPane }: TopBarProps) {
       <div className="topbar-right">
         <button
           type="button"
-          className="topbar-opacity"
-          disabled
-          title="Anchor layer opacity (coming soon)"
-        >
-          Anchor layer
-        </button>
-
-        <button
-          type="button"
           className={`topbar-pill${leftPaneKind === "layer.switcher" ? " active" : ""}`}
           aria-pressed={leftPaneKind === "layer.switcher"}
           title="Layers"
