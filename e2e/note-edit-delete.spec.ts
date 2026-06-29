@@ -12,6 +12,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 // the .note-list cards). Markdown notes author through the shared .composer-input.
 
 const SERVER = "http://127.0.0.1:4177";
+const READER = 'iframe[title="Source reader"]';
 
 async function seedHtmlSource(request: APIRequestContext, title: string, body: string) {
   const res = await request.post(`${SERVER}/api/sources/html`, { data: { title, content: body } });
@@ -23,6 +24,14 @@ async function openSource(page: Page, title: string) {
   await page.goto("/");
   await page.locator(".source-item-open", { hasText: title }).click();
   await expect(page.locator(".reader-header h2")).toHaveText(title);
+}
+
+// Select a passage in the reader iframe → focus it (its quote fills .chat-source), so
+// a saved note materializes an ANCHOR on it and paints its highlight (.sv-annotated).
+async function selectPassage(page: Page, passage: string) {
+  const reader = page.frameLocator(READER);
+  await reader.getByText(passage, { exact: false }).click();
+  await expect(page.locator(".chat-source")).toContainText(passage);
 }
 
 // Write a markdown note through the composer's shared textarea (the existing path).
@@ -82,4 +91,43 @@ test("delete a note → it disappears from the list and stays gone", async ({ pa
   // …and still gone after a reload (deleted server-side, not just from local state).
   await openSource(page, title);
   await expect(page.locator(".note-list .record-card", { hasText: text })).toHaveCount(0);
+});
+
+test("delete an anchored note → its highlight is removed from the reader", async ({ page, request }) => {
+  const stamp = Date.now();
+  const title = `Delete Highlight ${stamp}`;
+  const passage = `Highlighted passage to delete ${stamp}`;
+  await seedHtmlSource(request, title, `<article><section><p>${passage}</p></section></article>`);
+
+  // Wide viewport so the secondary panes (note list) stay expanded.
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await openSource(page, title);
+
+  // note.delete asks window.confirm — auto-accept it.
+  page.on("dialog", (dialog) => void dialog.accept());
+
+  // Select the passage → save a note on it. This materializes an exclusive anchor and
+  // paints its highlight (.sv-annotated) in the reader iframe.
+  const reader = page.frameLocator(READER);
+  await selectPassage(page, passage);
+  const noteText = `Note on highlighted passage ${stamp}`;
+  await addMarkdownNote(page, noteText);
+
+  const card = page.locator(".note-list .record-card", { hasText: noteText });
+  await expect(card).toBeVisible();
+  // The highlight is painted on the passage.
+  await expect(reader.locator(".sv-annotated", { hasText: passage })).toHaveCount(1);
+
+  // Delete the note → server cascade-deletes the now-orphaned anchor → refreshAnnotations
+  // re-fetches an anchors list without it → the reader repaints WITHOUT the highlight.
+  await card.locator(".note-delete").click();
+  await expect(page.locator(".note-list .record-card", { hasText: noteText })).toHaveCount(0);
+
+  // The highlight (.sv-annotated for that passage) is GONE from the reader — not just the
+  // list row. This is the regression the orphan-anchor cascade fixes.
+  await expect(reader.locator(".sv-annotated", { hasText: passage })).toHaveCount(0);
+
+  // And it stays gone after a reload (deleted server-side).
+  await openSource(page, title);
+  await expect(page.frameLocator(READER).locator(".sv-annotated", { hasText: passage })).toHaveCount(0);
 });

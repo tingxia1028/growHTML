@@ -13,12 +13,21 @@ contract guard stays green).
 Mirrors `DELETE /api/operations/:id` and `/api/relations/:id`: `vault.stores.notes.delete(id)`
 → `200 {ok:true}` on success, `404 {error}` if the id is absent.
 
-**Orphan-anchor decision (V1):** delete ONLY the note record; **leave its anchors**.
-Painting is *derived* from notes (`paintAnchors` maps notes → `anchorIds`), so a deleted
-note simply stops painting. An anchor may also be shared by other notes, and cascade-
-deleting it would break them; an unreferenced anchor is inert. Leaving anchors is therefore
-safe and avoids a risky ownership scan. (A future cleanup pass could prune anchors that no
-note references, but it is out of scope here.)
+**Orphan-anchor cascade (corrected):** painting is *anchor*-derived — the reader maps
+**every** anchor on a source to a highlight (the note text is only the hover content). So
+deleting only the note record would leave its anchors behind and the **highlight would stay
+painted**. The handler therefore:
+
+1. Loads the note first (404 if absent) to capture its `anchorIds`.
+2. Deletes the note record (as before).
+3. Loads the remaining notes + all patches **once**, then for each of the deleted note's
+   `anchorIds` deletes that anchor **iff it is now orphaned** — referenced by **no remaining
+   note** (none whose `anchorIds` includes it) **and no patch** (none whose `anchorId` === it).
+
+Anchors still shared by another note (multi-anchor / shared) or referenced by a patch are
+**kept**. After the cascade, `refreshAnnotations` re-fetches an `anchors` list without the
+orphan → the reader's clear-then-paint repaint drops the highlight. (Earlier V1 deliberately
+"left anchors", which is what caused the stale-highlight bug; that decision is superseded.)
 
 ### `PATCH /api/notes/:noteId` — content extension
 `updateNoteRequestSchema` gains an optional `content` field. When present, the handler
@@ -63,11 +72,17 @@ here" comment was updated.
 ## Tests
 
 - Server (`app.test.ts`): delete 200 then 404; content edit persists + contentType fixed;
-  invalid content → 400 (unchanged); content + attachment edits coexist.
+  invalid content → 400 (unchanged); content + attachment edits coexist. **Orphan-anchor
+  cascade:** delete a note whose anchor is exclusive → the anchor is also removed; delete a
+  note whose anchor is shared by another note → anchor kept; an anchor referenced by a patch
+  → kept; a multi-anchor note → only the now-orphaned anchor is removed, the shared one stays.
 - Entity client (`entityClient.test.ts`): `updateNote({content})` PATCH body; `deleteNote`
   DELETE method/url.
 - Commands (`registry.test.ts`): `note.delete` confirm/decline/unwired + availability;
   `note.edit` patch + refresh + availability.
 - Bookmarks (`bookmarkViews.test.tsx`): delete button dispatches `note.delete`.
 - e2e (`note-edit-delete.spec.ts`): create → edit content → persists across reload;
-  create → delete (confirm accepted) → gone, stays gone after reload.
+  create → delete (confirm accepted) → gone, stays gone after reload; **select a passage →
+  save an anchored note (highlight painted) → delete → the `.sv-annotated` highlight is gone
+  from the reader (not just the list row), and stays gone after reload** — the regression the
+  orphan-anchor cascade fixes.

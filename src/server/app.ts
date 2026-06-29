@@ -777,18 +777,37 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
   });
 
   // Delete a note. Mirrors the operations/relations delete route: 200 {ok:true} on
-  // success, 404 if the id is absent. ORPHAN-ANCHOR DECISION (V1): we delete ONLY the
-  // note record and intentionally LEAVE its anchors. Painting is DERIVED from notes
-  // (paintAnchors maps notes→anchorIds), so a deleted note simply stops painting; an
-  // anchor may also be shared by other notes, and cascade-deleting it would break them.
-  // Leaving anchors is safe (an unreferenced anchor is inert) and avoids a risky
-  // ownership scan. See docs/design/note-edit-delete.md.
+  // success, 404 if the id is absent. ORPHAN-ANCHOR CASCADE: painting is DERIVED from
+  // anchors (the reader maps every anchor in a source to a highlight), so deleting only
+  // the note record would leave its anchors behind and the highlight would STAY painted.
+  // So after deleting the note we cascade-delete each of its anchors that is now
+  // ORPHANED — referenced by NO remaining note (none whose anchorIds includes it) AND NO
+  // patch (none whose anchorId === it). Anchors still shared by another note (multi-
+  // anchor / shared) or referenced by a patch are KEPT. See docs/design/note-edit-delete.md.
   app.delete("/api/notes/:noteId", async (req, res, next) => {
     try {
+      // Capture the note's anchorIds BEFORE deleting it, so we know which anchors to
+      // re-check for orphan-hood.
+      const note = await vault.stores.notes.get(req.params.noteId);
       const removed = await vault.stores.notes.delete(req.params.noteId);
-      if (!removed) {
+      if (!removed || !note) {
         res.status(404).json({ error: "Note not found" });
         return;
+      }
+      // Load the remaining notes + all patches ONCE (efficiency), then drop any of this
+      // note's anchors no longer referenced by either. The note is already gone from the
+      // store, so `notes.list()` reflects the post-delete set.
+      if (note.anchorIds.length > 0) {
+        const remainingNotes = await vault.stores.notes.list();
+        const patches = await vault.stores.patches.list();
+        const referencedByNote = new Set<string>();
+        for (const other of remainingNotes) for (const anchorId of other.anchorIds) referencedByNote.add(anchorId);
+        const referencedByPatch = new Set(patches.map((patch) => patch.anchorId));
+        for (const anchorId of note.anchorIds) {
+          if (!referencedByNote.has(anchorId) && !referencedByPatch.has(anchorId)) {
+            await vault.stores.anchors.delete(anchorId);
+          }
+        }
       }
       res.json({ ok: true });
     } catch (error) {

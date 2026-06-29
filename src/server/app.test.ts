@@ -645,6 +645,137 @@ describe("vault server API", () => {
     await request(app).delete("/api/notes/note_does_not_exist").expect(404);
   });
 
+  // —— Orphan-anchor cascade on note delete (the "highlight stays after delete" bug). ——
+  // Painting is anchor-derived, so a note delete must also remove anchors that no other
+  // note/patch references; shared / patch-referenced anchors are preserved.
+  it("deleting a note cascade-deletes its now-orphaned (exclusive) anchor", async () => {
+    const source = (
+      await request(app).post("/api/sources/html").send({ title: "Doc", content: fixtureHtmlBody }).expect(201)
+    ).body.source;
+    const anchor = (
+      await request(app)
+        .post("/api/anchors")
+        .send({ sourceId: source.id, studyId: "p-render-thread", quote: "Render Thread submits rendering commands." })
+        .expect(201)
+    ).body.anchor;
+    const note = (
+      await request(app)
+        .post("/api/notes")
+        .send({ sourceId: source.id, anchorIds: [anchor.id], contentType: "markdown", content: "only note" })
+        .expect(201)
+    ).body.note;
+
+    await request(app).delete(`/api/notes/${note.id}`).expect(200);
+
+    // The exclusive anchor is gone → the painted-anchors list (what the reader uses) no
+    // longer carries it, so the highlight disappears on refresh.
+    const anchors = (await request(app).get(`/api/sources/${source.id}/anchors`).expect(200)).body.anchors;
+    expect(anchors.find((a: { id: string }) => a.id === anchor.id)).toBeUndefined();
+  });
+
+  it("deleting a note KEEPS an anchor still shared by another note", async () => {
+    const source = (
+      await request(app).post("/api/sources/html").send({ title: "Doc", content: fixtureHtmlBody }).expect(201)
+    ).body.source;
+    const anchor = (
+      await request(app)
+        .post("/api/anchors")
+        .send({ sourceId: source.id, studyId: "p-render-thread", quote: "Render Thread submits rendering commands." })
+        .expect(201)
+    ).body.anchor;
+    const noteA = (
+      await request(app)
+        .post("/api/notes")
+        .send({ sourceId: source.id, anchorIds: [anchor.id], contentType: "markdown", content: "note A" })
+        .expect(201)
+    ).body.note;
+    await request(app)
+      .post("/api/notes")
+      .send({ sourceId: source.id, anchorIds: [anchor.id], contentType: "markdown", content: "note B" })
+      .expect(201);
+
+    await request(app).delete(`/api/notes/${noteA.id}`).expect(200);
+
+    // Still referenced by note B → kept (and still painted).
+    const anchors = (await request(app).get(`/api/sources/${source.id}/anchors`).expect(200)).body.anchors;
+    expect(anchors.find((a: { id: string }) => a.id === anchor.id)).toBeDefined();
+  });
+
+  it("deleting a note KEEPS an anchor referenced by a patch", async () => {
+    const source = (
+      await request(app).post("/api/sources/html").send({ title: "Doc", content: fixtureHtmlBody }).expect(201)
+    ).body.source;
+    const anchor = (
+      await request(app)
+        .post("/api/anchors")
+        .send({ sourceId: source.id, studyId: "p-render-thread", quote: "Render Thread submits rendering commands." })
+        .expect(201)
+    ).body.anchor;
+    const note = (
+      await request(app)
+        .post("/api/notes")
+        .send({ sourceId: source.id, anchorIds: [anchor.id], contentType: "markdown", content: "note" })
+        .expect(201)
+    ).body.note;
+    await request(app)
+      .post("/api/patches")
+      .send({
+        sourceId: source.id,
+        anchorId: anchor.id,
+        action: "replace_selection",
+        oldText: "Render Thread submits rendering commands.",
+        newContent: '<p data-study-id="p-render-thread">Updated.</p>'
+      })
+      .expect(201);
+
+    await request(app).delete(`/api/notes/${note.id}`).expect(200);
+
+    // Even with no remaining note, the patch reference keeps the anchor alive.
+    const all = (await request(app).get("/api/notes").expect(200)).body.notes;
+    expect(all.find((n: { id: string }) => n.id === note.id)).toBeUndefined();
+    const anchorStillExists = await vault.stores.anchors.get(anchor.id);
+    expect(anchorStillExists).not.toBeNull();
+  });
+
+  it("multi-anchor note delete removes ONLY the now-orphaned anchors", async () => {
+    const source = (
+      await request(app).post("/api/sources/html").send({ title: "Doc", content: fixtureHtmlBody }).expect(201)
+    ).body.source;
+    const orphanAnchor = (
+      await request(app)
+        .post("/api/anchors")
+        .send({ sourceId: source.id, studyId: "p-render-thread", quote: "Render Thread submits rendering commands." })
+        .expect(201)
+    ).body.anchor;
+    const sharedAnchor = (
+      await request(app)
+        .post("/api/anchors")
+        .send({ sourceId: source.id, studyId: "p-game-thread", quote: "Game Thread runs gameplay." })
+        .expect(201)
+    ).body.anchor;
+    // Note 1 owns both anchors; note 2 also references the shared one.
+    const note1 = (
+      await request(app)
+        .post("/api/notes")
+        .send({
+          sourceId: source.id,
+          anchorIds: [orphanAnchor.id, sharedAnchor.id],
+          contentType: "markdown",
+          content: "note 1"
+        })
+        .expect(201)
+    ).body.note;
+    await request(app)
+      .post("/api/notes")
+      .send({ sourceId: source.id, anchorIds: [sharedAnchor.id], contentType: "markdown", content: "note 2" })
+      .expect(201);
+
+    await request(app).delete(`/api/notes/${note1.id}`).expect(200);
+
+    expect(await vault.stores.anchors.get(orphanAnchor.id)).toBeNull();
+    expect(await vault.stores.anchors.get(sharedAnchor.id)).not.toBeNull();
+  });
+
   it("creates and deletes relations between concepts", async () => {
     const a = (await request(app).post("/api/concepts").send({ name: "Render Thread" }).expect(201)).body.concept;
     const b = (await request(app).post("/api/concepts").send({ name: "Game Thread" }).expect(201)).body.concept;
