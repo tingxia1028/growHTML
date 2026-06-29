@@ -24,7 +24,12 @@ export default defineConfig({
     {
       command: "npm run dev:server",
       url: "http://127.0.0.1:4177/api/health",
-      reuseExistingServer: !process.env.CI,
+      // NEVER reuse an already-running server. reuseExistingServer:true would make
+      // Playwright reuse a dev server bound to the REAL data/vault (the env override
+      // below only applies when Playwright STARTS the server), leaking test seed data
+      // into data/vault. Always boot our own server on the isolated .e2e-vault.
+      // Cost: ports 4177/5173 must be free before `npm run e2e` (kill any dev server).
+      reuseExistingServer: false,
       timeout: 60_000,
       // Space out mock stream chunks so the streaming-chat spec can observe the
       // reply arriving progressively (deterministic; content is unchanged).
@@ -33,7 +38,7 @@ export default defineConfig({
     {
       command: "npm run dev:client",
       url: "http://127.0.0.1:5173",
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       timeout: 60_000
     }
   ]

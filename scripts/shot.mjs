@@ -14,12 +14,17 @@ const page = await browser.newPage({
 });
 await page.goto(url, { waitUntil: "networkidle" });
 
-// Open the first source the way a user would.
-try {
-  await page.locator(".source-item-open").first().click({ timeout: 8000 });
-  await page.waitForTimeout(2000);
-} catch (e) {
-  console.log("could not open a source:", e.message);
+// Open the first source the way a user would (skip in lens mode so the default-open
+// Layer Lens popover isn't dismissed by the source click).
+if (process.env.SHOT_LENS) {
+  await page.waitForTimeout(800);
+} else {
+  try {
+    await page.locator(".source-item-open").first().click({ timeout: 8000 });
+    await page.waitForTimeout(2000);
+  } catch (e) {
+    console.log("could not open a source:", e.message);
+  }
 }
 
 if (theme === "dark") {
