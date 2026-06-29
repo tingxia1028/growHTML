@@ -17,6 +17,7 @@ import {
   Layers,
   ListRestart,
   NotebookPen,
+  Pencil,
   RefreshCcw,
   RotateCcw,
   Send,
@@ -399,8 +400,24 @@ function NoteLayerControl({
 // same capability the chat ArtifactCard uses (one impl, not re-done per surface), so a
 // 思维导图/diagram note can be viewed CENTERED and interactive. Bookmarks (chips) and
 // unknown types don't get the overlay — there's nothing richer to focus into.
-function NoteContentView({ note }: { note: NoteRecord }) {
+// `onEdit` persists an in-place content edit (dispatch note.edit with {noteId, content});
+// `onDelete` removes the note (dispatch note.delete with {noteId}). Both flow through the
+// command layer so the host stays free of contentType branching.
+function NoteContentView({
+  note,
+  onEdit,
+  onDelete
+}: {
+  note: NoteRecord;
+  onEdit: (content: unknown) => void;
+  onDelete: () => void;
+}) {
   const [open, setOpen] = useState(false);
+  // Edit-in-place: when set, the note shows the SAME registry editor the composer uses
+  // (getNoteType(contentType).edit), seeded with this working copy of the content. Save
+  // persists it; Cancel discards (drops the working copy). null = not editing.
+  const [draft, setDraft] = useState<unknown>(undefined);
+  const editing = draft !== undefined;
   const contentType = note.contentType ?? "markdown";
   const plugin = getNoteType(contentType);
   // Diagrams (and any future rich, interactive form) gain the centered overlay; plain
@@ -411,11 +428,42 @@ function NoteContentView({ note }: { note: NoteRecord }) {
   // Derived from registry capabilities, NOT a contentType branch — so any focusable form
   // gets the overlay for free.
   const focusable = !!plugin && (isDiagramType(contentType) || plugin.focusable === true);
+  // Editing reuses the registry editor — the SAME getNoteType().edit the composer uses,
+  // not a bespoke per-type editor (contract law §0.5 / contract guard). Seed it with the
+  // current content; the editor calls back with the next value on every keystroke.
+  if (editing && plugin) {
+    return (
+      <div className="note-edit-inline">
+        {plugin.edit({ content: draft, onChange: setDraft })}
+        <div className="row-actions">
+          <button
+            type="button"
+            className="link-button note-edit-save"
+            title="Save changes to this note"
+            onClick={() => {
+              onEdit(draft);
+              setDraft(undefined);
+            }}
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            className="link-button note-edit-cancel"
+            title="Discard changes"
+            onClick={() => setDraft(undefined)}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
   return (
     <>
       {plugin ? plugin.render({ content: note.content, note }) : <InertNote content={note.content} />}
-      {focusable ? (
-        <div className="row-actions">
+      <div className="row-actions note-actions">
+        {focusable ? (
           <button
             type="button"
             className="link-button note-open-overlay"
@@ -425,8 +473,30 @@ function NoteContentView({ note }: { note: NoteRecord }) {
           >
             Open interactively
           </button>
-        </div>
-      ) : null}
+        ) : null}
+        {/* Edit in place via the registry editor — only when the type has an editor
+            registered (every built-in does). */}
+        {plugin ? (
+          <button
+            type="button"
+            className="link-button note-edit-start"
+            title="Edit this note"
+            onClick={() => setDraft(note.content)}
+          >
+            <Pencil size={14} />
+            Edit
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="link-button note-delete"
+          title="Delete this note"
+          onClick={onDelete}
+        >
+          <Trash2 size={14} />
+          Delete
+        </button>
+      </div>
       {open ? (
         <FocusOverlay block={{ contentType, content: note.content, note }} onClose={() => setOpen(false)} />
       ) : null}
@@ -662,7 +732,11 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
                   {/* The note rendered IN ITS FORM (requirement 2), through the one
                       getNoteType().render path, with an "Open interactively" affordance
                       that focuses rich forms into the shared FocusOverlay. */}
-                  <NoteContentView note={note} />
+                  <NoteContentView
+                    note={note}
+                    onEdit={(content) => void dispatch("note.edit", { noteId: note.id, content })}
+                    onDelete={() => void dispatch("note.delete", { noteId: note.id })}
+                  />
                   {/* A note's lens(es) + the "move / add to layer" action: chips show its
                       current layers, the picker toggles membership (note.set-layers sends
                       the full set). A note can sit in several layers at once. */}

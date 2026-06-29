@@ -352,12 +352,21 @@ export const entityClient = {
     });
   },
   /**
-   * Patch a note's attachments (concept/anchor links) and/or its layer membership
-   * after creation. `layerIds` is a FULL REPLACE — to add a layer send the union, to
-   * remove send the remainder, to move send the new single-element array.
+   * Patch a note's attachments (concept/anchor links), its layer membership, and/or
+   * its CONTENT after creation. `layerIds` is a FULL REPLACE — to add a layer send the
+   * union, to remove send the remainder, to move send the new single-element array.
+   * `content` rewrites the note in place; the server re-validates it against the note's
+   * existing contentType (the type is fixed on edit) and rejects an invalid shape 400.
    */
-  updateNote(noteId: string, input: { conceptIds?: string[]; anchorIds?: string[]; layerIds?: string[] }) {
+  updateNote(
+    noteId: string,
+    input: { conceptIds?: string[]; anchorIds?: string[]; layerIds?: string[]; content?: unknown }
+  ) {
     return sendJson<{ note: NoteRecord }>("PATCH", `/api/notes/${noteId}`, input);
+  },
+  /** Delete a note. 200 {ok:true} on success; throws on 404 (the server's error body). */
+  deleteNote(noteId: string) {
+    return sendJson<{ ok: true }>("DELETE", `/api/notes/${noteId}`, undefined);
   },
 
   // —— Patches ——

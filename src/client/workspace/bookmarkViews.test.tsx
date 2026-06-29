@@ -33,6 +33,7 @@ function ctxWith(over: Partial<WorkspaceContext>): WorkspaceContext {
     anchors: [],
     activeSourceId: "src_1",
     focus: { setAnchor: vi.fn() },
+    dispatch: vi.fn(),
     ...over
   } as unknown as WorkspaceContext;
 }
@@ -82,6 +83,19 @@ describe("bookmark.list view", () => {
     const { container, cleanup } = renderPanel(ctx);
     const row = container.querySelector(".bookmark-row") as HTMLButtonElement;
     expect(row.disabled).toBe(true);
+    cleanup();
+  });
+
+  it("deleting a bookmark dispatches note.delete with its id", () => {
+    const dispatch = vi.fn();
+    const ctx = ctxWith({
+      visibleNotes: [bookmark("note_b1", "Key", ["anchor_1"])],
+      anchors: [anchor],
+      dispatch
+    });
+    const { container, cleanup } = renderPanel(ctx);
+    act(() => (container.querySelector(".bookmark-delete") as HTMLButtonElement).click());
+    expect(dispatch).toHaveBeenCalledWith("note.delete", { noteId: "note_b1" });
     cleanup();
   });
 

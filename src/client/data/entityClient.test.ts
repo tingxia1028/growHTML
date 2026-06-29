@@ -61,6 +61,22 @@ describe("entityClient", () => {
     });
   });
 
+  it("patches a note's content (edit in place)", async () => {
+    const calls = mockFetch({ note: { id: "note_x" } });
+    await entityClient.updateNote("note_x", { content: "edited" });
+    expect(calls[0]).toMatchObject({
+      url: "/api/notes/note_x",
+      method: "PATCH",
+      body: { content: "edited" }
+    });
+  });
+
+  it("deletes a note", async () => {
+    const calls = mockFetch({ ok: true });
+    await entityClient.deleteNote("note_x");
+    expect(calls[0]).toMatchObject({ url: "/api/notes/note_x", method: "DELETE" });
+  });
+
   it("creates a custom layer over a source", async () => {
     const calls = mockFetch({ layer: { id: "layer_1" } });
     await entityClient.createLayer("src_1", { title: "Key terms", order: 4 });

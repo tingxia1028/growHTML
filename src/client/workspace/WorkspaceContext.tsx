@@ -642,6 +642,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       chatContext: buildChatContext(),
       actions: {
         onNoteCreated: () => void refreshAnnotations(),
+        // A note was deleted: re-fetch notes + repaint (painting is derived from
+        // notes, so a removed note stops painting automatically).
+        onNoteDeleted: () => void refreshAnnotations(),
+        // Destructive-action gate (note.delete). Desktop/web both have window.confirm;
+        // SSR/tests fall through to proceed (tests inject their own confirm).
+        confirm: (message) => (typeof window !== "undefined" ? window.confirm(message) : true),
         // A kit AI action generated content: divert it to the preview stage instead
         // of auto-saving. The host renders it and only persists on Save.
         onGenerated: (draft) => setPendingDraft(draft),

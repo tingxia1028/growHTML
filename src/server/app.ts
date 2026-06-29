@@ -147,21 +147,30 @@ const createNoteRequestSchema = z.object({
   content: z.unknown()
 });
 
-// Partial note update — used by the manual concept-linking UI to attach/detach a
-// note to concepts (and, if needed, anchors) after creation. Content itself is not
-// editable here; only the attachment arrays. At least one field must be present.
+// Partial note update — attach/detach a note to concepts/anchors/layers after
+// creation AND (since note-edit-delete V1) edit the note's CONTENT in place. When
+// `content` is present it is re-validated against the note's own contentType spec
+// (getNoteContentSpec(...).schema) before persisting, exactly like create — an
+// unknown/invalid shape never reaches storage. The contentType itself is fixed on
+// edit (editing content within the same type; changing type is out of scope).
+// At least one field must be present.
 const updateNoteRequestSchema = z
   .object({
     conceptIds: z.array(z.string().min(1)).optional(),
     anchorIds: z.array(z.string().min(1)).optional(),
     // Study Layer membership — add/remove/move a note between layers (the full set
     // replaces the note's current layerIds, spec §8).
-    layerIds: z.array(z.string().min(1)).optional()
+    layerIds: z.array(z.string().min(1)).optional(),
+    // The note's structured content, re-validated per-type at the handler (not here).
+    content: z.unknown().optional()
   })
   .refine(
     (input) =>
-      input.conceptIds !== undefined || input.anchorIds !== undefined || input.layerIds !== undefined,
-    { message: "note update requires conceptIds, anchorIds, or layerIds" }
+      input.conceptIds !== undefined ||
+      input.anchorIds !== undefined ||
+      input.layerIds !== undefined ||
+      input.content !== undefined,
+    { message: "note update requires conceptIds, anchorIds, layerIds, or content" }
   );
 
 const createPatchRequestSchema = z.object({
@@ -726,9 +735,13 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
     }
   });
 
-  // Patch a note's attachments (concept/anchor links). The manual concept UI uses
-  // this to link an EXISTING note to a concept (its conceptIds gain the concept id),
-  // so the note then back-references in `GET /api/concepts/:id`. Unknown id → 404.
+  // Patch a note's attachments (concept/anchor/layer links) AND/OR its CONTENT. The
+  // manual concept UI uses this to link an EXISTING note to a concept (its conceptIds
+  // gain the concept id), so the note then back-references in `GET /api/concepts/:id`.
+  // The note-edit UI uses `content` to rewrite the note in place — re-validated here
+  // against the note's OWN contentType spec (same gate as create), so an invalid shape
+  // is rejected 400 and never persisted. The contentType is FIXED on edit. Unknown
+  // note id → 404.
   app.patch("/api/notes/:noteId", async (req, res, next) => {
     try {
       const input = updateNoteRequestSchema.parse(req.body);
@@ -737,15 +750,42 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
         res.status(404).json({ error: "Note not found" });
         return;
       }
+      // Re-validate edited content against the note's existing contentType (ZodError →
+      // 400 via the handler); when absent the stored content is kept unchanged.
+      const content =
+        input.content !== undefined
+          ? parseNoteContent(existing.contentType, input.content)
+          : existing.content;
       const note = noteSchema.parse({
         ...existing,
         conceptIds: input.conceptIds ?? existing.conceptIds,
         anchorIds: input.anchorIds ?? existing.anchorIds,
         layerIds: input.layerIds ?? existing.layerIds,
+        content,
         updatedAt: new Date().toISOString()
       });
       await vault.stores.notes.upsert(note);
       res.json({ note });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Delete a note. Mirrors the operations/relations delete route: 200 {ok:true} on
+  // success, 404 if the id is absent. ORPHAN-ANCHOR DECISION (V1): we delete ONLY the
+  // note record and intentionally LEAVE its anchors. Painting is DERIVED from notes
+  // (paintAnchors maps notes→anchorIds), so a deleted note simply stops painting; an
+  // anchor may also be shared by other notes, and cascade-deleting it would break them.
+  // Leaving anchors is safe (an unreferenced anchor is inert) and avoids a risky
+  // ownership scan. See docs/design/note-edit-delete.md.
+  app.delete("/api/notes/:noteId", async (req, res, next) => {
+    try {
+      const removed = await vault.stores.notes.delete(req.params.noteId);
+      if (!removed) {
+        res.status(404).json({ error: "Note not found" });
+        return;
+      }
+      res.json({ ok: true });
     } catch (error) {
       next(error);
     }

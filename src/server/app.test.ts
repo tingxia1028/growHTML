@@ -549,6 +549,102 @@ describe("vault server API", () => {
     await request(app).patch(`/api/notes/${note.id}`).send({}).expect(400);
   });
 
+  it("edits a note's CONTENT via PATCH, re-validating against its contentType", async () => {
+    const source = (
+      await request(app).post("/api/sources/html").send({ title: "Doc", content: fixtureHtmlBody }).expect(201)
+    ).body.source;
+
+    // A markdown note (content is a string).
+    const note = (
+      await request(app)
+        .post("/api/notes")
+        .send({ sourceId: source.id, contentType: "markdown", content: "original" })
+        .expect(201)
+    ).body.note;
+
+    // Edit just the content — it persists and the contentType stays fixed.
+    const edited = (
+      await request(app).patch(`/api/notes/${note.id}`).send({ content: "rewritten" }).expect(200)
+    ).body.note;
+    expect(edited.content).toBe("rewritten");
+    expect(edited.contentType).toBe("markdown");
+    const refetched = (await request(app).get(`/api/notes?sourceId=${source.id}`).expect(200)).body.notes.find(
+      (n: { id: string }) => n.id === note.id
+    );
+    expect(refetched.content).toBe("rewritten");
+  });
+
+  it("rejects an edit whose content fails the type's schema with 400", async () => {
+    const source = (
+      await request(app).post("/api/sources/html").send({ title: "Doc", content: fixtureHtmlBody }).expect(201)
+    ).body.source;
+
+    // A flashcard note requires { front, back }.
+    const note = (
+      await request(app)
+        .post("/api/notes")
+        .send({ sourceId: source.id, contentType: "flashcard", content: { front: "Q", back: "A" } })
+        .expect(201)
+    ).body.note;
+
+    // A string (markdown-shaped) content is invalid for a flashcard → 400, unchanged.
+    await request(app).patch(`/api/notes/${note.id}`).send({ content: "not a flashcard" }).expect(400);
+    const unchanged = (await request(app).get(`/api/notes?sourceId=${source.id}`).expect(200)).body.notes.find(
+      (n: { id: string }) => n.id === note.id
+    );
+    expect(unchanged.content).toEqual({ front: "Q", back: "A" });
+  });
+
+  it("content edit and attachment edits coexist (conceptIds/anchorIds/layerIds still work)", async () => {
+    const source = (
+      await request(app).post("/api/sources/html").send({ title: "Doc", content: fixtureHtmlBody }).expect(201)
+    ).body.source;
+    const concept = (await request(app).post("/api/concepts").send({ name: "Topic" }).expect(201)).body.concept;
+    const note = (
+      await request(app)
+        .post("/api/notes")
+        .send({ sourceId: source.id, contentType: "markdown", content: "before" })
+        .expect(201)
+    ).body.note;
+
+    // Concept link still works after introducing content support.
+    const linked = (
+      await request(app).patch(`/api/notes/${note.id}`).send({ conceptIds: [concept.id] }).expect(200)
+    ).body.note;
+    expect(linked.conceptIds).toEqual([concept.id]);
+    expect(linked.content).toBe("before");
+
+    // Content + attachment in one PATCH.
+    const both = (
+      await request(app)
+        .patch(`/api/notes/${note.id}`)
+        .send({ content: "after", conceptIds: [] })
+        .expect(200)
+    ).body.note;
+    expect(both.content).toBe("after");
+    expect(both.conceptIds).toEqual([]);
+  });
+
+  it("deletes a note (200), then 404 on the second delete", async () => {
+    const source = (
+      await request(app).post("/api/sources/html").send({ title: "Doc", content: fixtureHtmlBody }).expect(201)
+    ).body.source;
+    const note = (
+      await request(app)
+        .post("/api/notes")
+        .send({ sourceId: source.id, contentType: "markdown", content: "to be deleted" })
+        .expect(201)
+    ).body.note;
+
+    await request(app).delete(`/api/notes/${note.id}`).expect(200);
+    // It is gone from the list.
+    const remaining = (await request(app).get(`/api/notes?sourceId=${source.id}`).expect(200)).body.notes;
+    expect(remaining.find((n: { id: string }) => n.id === note.id)).toBeUndefined();
+    // A second delete (or an unknown id) → 404.
+    await request(app).delete(`/api/notes/${note.id}`).expect(404);
+    await request(app).delete("/api/notes/note_does_not_exist").expect(404);
+  });
+
   it("creates and deletes relations between concepts", async () => {
     const a = (await request(app).post("/api/concepts").send({ name: "Render Thread" }).expect(201)).body.concept;
     const b = (await request(app).post("/api/concepts").send({ name: "Game Thread" }).expect(201)).body.concept;

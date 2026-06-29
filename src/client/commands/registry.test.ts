@@ -42,7 +42,8 @@ function baseCtx(over: Partial<CommandContext> = {}): CommandContext {
       deleteLayer: vi.fn(async () => ({ ok: true as const })),
       generateStructured: vi.fn(async () => ({ content: {}, provider: "mock" })),
       generateBlock: vi.fn(async () => ({ contentType: "markdown", content: "routed", provider: "mock" })),
-      notes: vi.fn(async () => ({ notes: [] as never }))
+      notes: vi.fn(async () => ({ notes: [] as never })),
+      deleteNote: vi.fn(async () => ({ ok: true as const }))
     },
     sourceId: "src_1",
     payload: {},
@@ -490,6 +491,66 @@ describe("command: operation.run", () => {
       getCommand("operation.run")!.isAvailable(
         baseCtx({ payload: { operationId: "op_1", outputType: "markdown", scope: "anchor" } })
       )
+    ).toBe(true);
+  });
+});
+
+describe("command: note.delete", () => {
+  it("confirms, deletes the note, and fires onNoteDeleted", async () => {
+    const onNoteDeleted = vi.fn();
+    const confirm = vi.fn(() => true);
+    const ctx = baseCtx({ payload: { noteId: "note_1" }, actions: { onNoteDeleted, confirm } });
+
+    const ran = await runCommand("note.delete", ctx);
+
+    expect(ran).toBe(true);
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(ctx.client.deleteNote).toHaveBeenCalledWith("note_1");
+    expect(onNoteDeleted).toHaveBeenCalledWith("note_1");
+  });
+
+  it("does NOT delete when confirm is declined", async () => {
+    const onNoteDeleted = vi.fn();
+    const confirm = vi.fn(() => false);
+    const ctx = baseCtx({ payload: { noteId: "note_1" }, actions: { onNoteDeleted, confirm } });
+
+    await runCommand("note.delete", ctx);
+
+    expect(ctx.client.deleteNote).not.toHaveBeenCalled();
+    expect(onNoteDeleted).not.toHaveBeenCalled();
+  });
+
+  it("proceeds (no confirm wired) and is unavailable without a noteId", async () => {
+    const ctx = baseCtx({ payload: { noteId: "note_1" } });
+    await runCommand("note.delete", ctx);
+    expect(ctx.client.deleteNote).toHaveBeenCalledWith("note_1");
+
+    expect(getCommand("note.delete")!.isAvailable(baseCtx({ payload: {} }))).toBe(false);
+  });
+});
+
+describe("command: note.edit", () => {
+  it("patches the note's content and refreshes via onNoteCreated", async () => {
+    const onNoteCreated = vi.fn();
+    const updateNote = vi.fn(async () => ({ note: { id: "note_1" } as never }));
+    const ctx = baseCtx({
+      payload: { noteId: "note_1", content: "edited body" },
+      actions: { onNoteCreated },
+      client: { ...baseCtx().client, updateNote }
+    });
+
+    const ran = await runCommand("note.edit", ctx);
+
+    expect(ran).toBe(true);
+    expect(updateNote).toHaveBeenCalledWith("note_1", { content: "edited body" });
+    expect(onNoteCreated).toHaveBeenCalledOnce();
+  });
+
+  it("is unavailable without a noteId or without content", () => {
+    expect(getCommand("note.edit")!.isAvailable(baseCtx({ payload: { content: "x" } }))).toBe(false);
+    expect(getCommand("note.edit")!.isAvailable(baseCtx({ payload: { noteId: "note_1" } }))).toBe(false);
+    expect(
+      getCommand("note.edit")!.isAvailable(baseCtx({ payload: { noteId: "note_1", content: "x" } }))
     ).toBe(true);
   });
 });

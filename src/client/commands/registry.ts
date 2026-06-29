@@ -53,6 +53,17 @@ export type CommandActions = {
   onRelationChanged?(relation?: RelationRecord): void;
   /** A study layer changed (toggled / imported) — reload the list + repaint anchors. */
   onLayersChanged?(): void;
+  /**
+   * A note was deleted — refresh the note list (+ repaint, since painting is derived
+   * from notes). Distinct from onNoteCreated so a host can react to a removal.
+   */
+  onNoteDeleted?(noteId: string): void;
+  /**
+   * Confirm a DESTRUCTIVE action before it runs (note.delete). Returns true to
+   * proceed. Injectable so the host can wrap window.confirm while tests pass a stub.
+   * When unwired, the command treats the action as confirmed (host UI always wires it).
+   */
+  confirm?(message: string): boolean | Promise<boolean>;
 };
 
 export type CommandContext = {
@@ -71,6 +82,7 @@ export type CommandContext = {
     | "generateStructured"
     | "generateBlock"
     | "notes"
+    | "deleteNote"
   > &
     // Streaming chat is optional so hosts/tests that only wire `chat` still satisfy
     // the context; `askAi` feature-detects it and falls back to `chat`.
@@ -420,6 +432,50 @@ const setNoteLayers: Command = {
   }
 };
 
+// —— Delete a note ————————————————————————————————————————————————————————
+// Removal of a saved note (any contentType — markdown, flashcard, bookmark, …). It is
+// DESTRUCTIVE, so it asks `actions.confirm` first (the host wraps window.confirm; an
+// unwired confirm = proceed). The server deletes ONLY the note record and leaves its
+// anchors (painting is derived from notes — a deleted note simply stops painting). On
+// success `onNoteDeleted` refreshes the list + repaints. No contentType branching —
+// one command deletes every note type (the contract law applies to render/save, and
+// delete is type-agnostic anyway).
+const deleteNote: Command = {
+  id: "note.delete",
+  title: "Delete Note",
+  group: "anchor",
+  isAvailable: (ctx) => !!ctx.payload.noteId,
+  run: async (ctx) => {
+    const { noteId } = ctx.payload;
+    if (!noteId) return;
+    const ok = ctx.actions.confirm ? await ctx.actions.confirm("Delete this note? This cannot be undone.") : true;
+    if (!ok) return;
+    await ctx.client.deleteNote(noteId);
+    ctx.actions.onNoteDeleted?.(noteId);
+  }
+};
+
+// —— Edit a note's content ————————————————————————————————————————————————
+// Persist an in-place content edit of a saved note. The contentType is FIXED (editing
+// content within the same type; changing type is out of scope). The host opens the SAME
+// registry editor the composer uses — getNoteType(contentType).edit(...) — pre-filled
+// with the note's current content, and dispatches this command with the edited
+// `content` on Save. The server re-validates against the note's contentType spec.
+// Reuses onNoteCreated to refresh the list (it re-fetches notes + repaints, which also
+// covers an edited note).
+const editNote: Command = {
+  id: "note.edit",
+  title: "Edit Note",
+  group: "anchor",
+  isAvailable: (ctx) => !!ctx.payload.noteId && ctx.payload.content !== undefined,
+  run: async (ctx) => {
+    const { noteId, content } = ctx.payload;
+    if (!noteId || content === undefined) return;
+    const { note } = await ctx.client.updateNote(noteId, { content });
+    ctx.actions.onNoteCreated?.(note);
+  }
+};
+
 // —— Operation (generic custom AI action) ——————————————————————————————————
 // One command backs EVERY custom Operation (op_ id). It follows the EXACT shape of
 // the textbook kit commands (materialize the passage → generate structured content →
@@ -585,6 +641,8 @@ for (const command of [
   createRelation,
   toggleLayer,
   setNoteLayers,
+  deleteNote,
+  editNote,
   runOperation,
   generateBlock
 ])

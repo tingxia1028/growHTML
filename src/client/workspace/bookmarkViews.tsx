@@ -10,13 +10,13 @@
 // note carries an anchorId, and clicking calls focus.setAnchor on the matching anchor
 // from ctx.anchors (which scrolls/selects it and the reader repaints from paintAnchors).
 
-import { Bookmark } from "lucide-react";
+import { Bookmark, Trash2 } from "lucide-react";
 import { BOOKMARK_CONTENT_TYPE } from "../../core/notes/contentTypes";
 import { getNoteType } from "../notes/noteTypeRegistry";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 
 function BookmarksView({ ctx }: { ctx: WorkspaceContext }) {
-  const { visibleNotes, anchors, focus, activeSourceId } = ctx;
+  const { visibleNotes, anchors, focus, activeSourceId, dispatch } = ctx;
   // Filter to bookmark notes only — the same OR-filtered `visibleNotes` the note list
   // uses, so a hidden layer's bookmark doesn't show here either.
   const bookmarks = visibleNotes.filter((note) => (note.contentType ?? "") === BOOKMARK_CONTENT_TYPE);
@@ -43,17 +43,31 @@ function BookmarksView({ ctx }: { ctx: WorkspaceContext }) {
           const anchorId = note.anchorIds[0];
           const jumpable = !!anchorId && anchors.some((a) => a.id === anchorId);
           return (
-            <button
-              key={note.id}
-              type="button"
-              className="bookmark-row"
-              data-note-id={note.id}
-              disabled={!jumpable}
-              title={jumpable ? "Jump to this bookmark" : "This bookmark's passage isn't visible"}
-              onClick={() => jump(anchorId)}
-            >
-              {plugin ? plugin.render({ content: note.content, note }) : null}
-            </button>
+            // A bookmark IS a note, so it gets the same delete affordance as any note
+            // (dispatch note.delete → confirm → refresh). The jump button KEEPS the
+            // `.bookmark-row` class + data-note-id (existing e2e/unit selectors); the
+            // delete button is a sibling (a button can't nest a button).
+            <div key={note.id} className="bookmark-item">
+              <button
+                type="button"
+                className="bookmark-row"
+                data-note-id={note.id}
+                disabled={!jumpable}
+                title={jumpable ? "Jump to this bookmark" : "This bookmark's passage isn't visible"}
+                onClick={() => jump(anchorId)}
+              >
+                {plugin ? plugin.render({ content: note.content, note }) : null}
+              </button>
+              <button
+                type="button"
+                className="link-button bookmark-delete note-delete"
+                title="Delete this bookmark"
+                aria-label="Delete bookmark"
+                onClick={() => void dispatch("note.delete", { noteId: note.id })}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
           );
         })}
         {bookmarks.length === 0 ? (
