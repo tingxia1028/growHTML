@@ -7,68 +7,72 @@
    Keep this block in sync with DEFAULT_THEME_TOKENS in src/client/theme/builtins.ts
    (a unit test asserts they match). See docs/design/theme-plugin.md §3. */
 :root {
-  /* —— Surfaces & text —— */
-  --sv-bg: #f4f1ea;            /* app paper background */
-  --sv-surface: #fbfaf7;       /* panel surface */
+  /* —— Surfaces & text —— (Growte light, docs/design/ui-redesign-growte.md §2) */
+  --sv-bg: #f3f4f6;            /* app background (cool light grey) */
+  --sv-surface: #ffffff;       /* panel surface */
   --sv-surface-card: #ffffff;  /* cards, inputs, raised actives */
-  --sv-surface-tag: #efe9dc;   /* badge / code-chip / tag background */
-  --sv-surface-muted: #f1ece1; /* sunken track / row hover surface */
-  --sv-active-bg: #e2efe9;     /* selected/active row background */
-  --sv-select-bg: #fffdf5;     /* header dropdown background */
-  --sv-select-text: #5c5340;   /* header dropdown text */
-  --sv-icon-muted: #8a8579;    /* muted tree icon / hint text */
-  --sv-text: #202124;          /* primary text */
-  --sv-text-strong: #24302c;   /* strong / button labels */
-  --sv-text-heading: #39423e;  /* panel titles, nav, tree, address */
-  --sv-text-muted: #66756a;    /* secondary text (most common) */
-  --sv-text-muted-soft: #68706a; /* secondary text variant */
-  --sv-text-faint: #70766f;    /* empty states */
-  --sv-text-subtle: #5b6058;   /* subtle text (mode tab, aliases) */
-  --sv-text-quote: #4a4f48;    /* blockquote, flashcard back, inactive tab */
-  --sv-border: #d8d2c6;        /* primary hairline border */
-  --sv-border-soft: #e2dccd;   /* lighter inner divider */
-  --sv-border-muted: #ddd7cc;  /* card borders */
+  --sv-surface-tag: #eef0f4;   /* badge / code-chip / tag background */
+  --sv-surface-muted: #f6f7f9; /* sunken track / row hover surface */
+  --sv-active-bg: #eef2fb;     /* selected/active row background */
+  --sv-select-bg: #cfe0fb;     /* text-selection highlight (blue) / header dropdown bg */
+  --sv-select-text: #1f2329;   /* selected text / header dropdown text */
+  --sv-icon-muted: #6b7280;    /* muted tree icon / hint text */
+  --sv-text: #1f2329;          /* primary text */
+  --sv-text-strong: #11141a;   /* strong / button labels */
+  --sv-text-heading: #11141a;  /* panel titles, nav, tree, address */
+  --sv-text-muted: #6b7280;    /* secondary text (most common) */
+  --sv-text-muted-soft: #7b828c; /* secondary text variant */
+  --sv-text-faint: #9aa1ab;    /* empty states / placeholder */
+  --sv-text-subtle: #6b7280;   /* subtle text (mode tab, aliases) */
+  --sv-text-quote: #4b515a;    /* blockquote, flashcard back, inactive tab */
+  --sv-border: #e6e8ee;        /* primary hairline border */
+  --sv-border-soft: #eef0f4;   /* lighter inner divider */
+  --sv-border-muted: #e6e8ee;  /* card borders */
 
-  /* —— Accent ramp (the teal/green) —— */
-  --sv-accent: #2f6f64;
-  --sv-accent-strong: #285c52;     /* hover / pressed */
-  --sv-accent-weak: #edf6f3;       /* tinted active background */
-  --sv-accent-weak-hover: #ddeee8; /* tinted active hover */
-  --sv-accent-border: #cfe3dd;     /* accent-tinted border */
-  --sv-accent-text: #1f5c4f;       /* text on tinted accent chips */
-  --sv-accent-text-strong: #1f534b; /* darker accent text (active tree row, anchor chip) */
-  --sv-accent-weak-preview: #f3faf7; /* generation-preview tinted surface */
+  /* —— Accent ramp (the Growte blue) —— */
+  --sv-accent: #3b6fe0;
+  --sv-accent-strong: #2b5bd0;     /* hover / pressed */
+  --sv-accent-weak: #eaf1fe;       /* tinted active background */
+  --sv-accent-weak-hover: #dbe7fd; /* tinted active hover */
+  --sv-accent-border: #cfe0fb;     /* accent-tinted border */
+  --sv-accent-text: #2b5bd0;       /* text on tinted accent chips */
+  --sv-accent-text-strong: #2451c4; /* darker accent text (active tree row, anchor chip) */
+  --sv-accent-weak-preview: #f3f7fe; /* generation-preview tinted surface */
   --sv-on-accent: #ffffff;         /* text on a filled accent */
 
   /* —— Semantic status —— */
-  --sv-danger: #b3261e;
-  --sv-danger-strong: #842020;    /* error text */
-  --sv-danger-2: #9a3127;         /* muted brick red */
-  --sv-danger-bg: #fff5f5;
-  --sv-danger-bg-strong: #f4dada;
+  --sv-danger: #d23a32;
+  --sv-danger-strong: #a32820;    /* error text */
+  --sv-danger-2: #b3362c;         /* muted brick red */
+  --sv-danger-bg: #fdf2f1;
+  --sv-danger-bg-strong: #f6dad7;
   --sv-danger-bg-tint: #f6dad7;
   --sv-warn-accent: #e0a800;      /* amber hover/border accent */
   --sv-warn-region: #f0a500;      /* region marquee/box amber */
-  --sv-warn-text: #604510;
-  --sv-warn-bg: #f5e8be;
-  --sv-fuzzy-bg: #fbeed2;         /* fuzzy/partial layer-match background */
+  --sv-warn-text: #5b4a1e;
+  --sv-warn-bg: #fdeec3;
+  --sv-fuzzy-bg: #fdeec3;         /* fuzzy/partial layer-match background */
   --sv-fuzzy-text: #8a6d1f;       /* fuzzy/partial layer-match text */
-  --sv-success: #1f6b4a;
-  --sv-success-strong: #2f7d54;   /* stronger success variant (quiz answer) */
-  --sv-success-bg: #d6efe3;
+  --sv-success: #1f8a5b;
+  --sv-success-strong: #1a7a4f;   /* stronger success variant (quiz answer) */
+  --sv-success-bg: #d9f1e4;
 
-  /* —— Intrinsic dark surfaces (terminal / code / reader backdrop) —— */
-  --sv-dark-surface: #1e1b16;    /* xterm host */
-  --sv-dark-surface-2: #1f2622;  /* sv-code-pre */
-  --sv-dark-surface-3: #2c2a26;  /* inline sv-code */
-  --sv-reader-backdrop: #555049; /* pdf/image reader canvas backdrop */
-  --sv-dark-text: #e6e3da;
-  --sv-dark-text-2: #f1ece1;
+  /* —— Intrinsic dark surfaces (terminal / code; reader backdrop overridden per theme) —— */
+  --sv-dark-surface: #13161c;    /* xterm host */
+  --sv-dark-surface-2: #181c23;  /* sv-code-pre */
+  --sv-dark-surface-3: #1b1f27;  /* inline sv-code */
+  --sv-reader-backdrop: #ffffff; /* pdf/image reader canvas backdrop (light = white paper) */
+  --sv-dark-text: #e6e9ee;
+  --sv-dark-text-2: #f2f4f7;
 
   /* —— Component accents —— */
-  --sv-chat-user-bg: #e8efe4;      /* chat user bubble */
-  --sv-chat-assistant-bg: #f2ede0; /* chat assistant bubble */
-  --sv-bookmark-dot: #3b82f6;      /* bookmark indicator dot */
+  --sv-chat-user-bg: #e9f1fe;      /* chat user bubble */
+  --sv-chat-assistant-bg: #f5f6f8; /* chat assistant bubble */
+  --sv-bookmark-dot: #3b6fe0;      /* bookmark indicator dot */
+  --sv-highlight-bg: #fdeec3;      /* annotation highlight (amber) */
+  --sv-highlight-text: #5b4a1e;    /* text on amber highlight */
+  --sv-connector: #cdd3dc;         /* margin-note → anchor dashed connector */
+  --sv-anchor-marker: #9aa1ab;     /* paragraph anchor marker */
 
   /* —— Typography —— */
   --sv-font-sans: Inter, "Segoe UI", Arial, sans-serif;

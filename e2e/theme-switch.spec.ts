@@ -31,8 +31,8 @@ test("default theme on load, switch to Dark re-skins the app, switch back restor
   // 1. Boots on the default theme (applied before React mounts — the FOUC guard).
   await expect(page.locator("html")).toHaveAttribute("data-theme", "default");
   const defaultBg = await bodyBackground(page);
-  // Default paper is #f4f1ea → rgb(244, 241, 234).
-  expect(defaultBg).toBe("rgb(244, 241, 234)");
+  // Default app bg is #f3f4f6 → rgb(243, 244, 246).
+  expect(defaultBg).toBe("rgb(243, 244, 246)");
 
   // 2. Switch to Dark → the attribute flips and the token-driven body background changes.
   await themeSelect.selectOption({ label: "Dark" });
@@ -40,8 +40,8 @@ test("default theme on load, switch to Dark re-skins the app, switch back restor
   await expect(page.locator("html")).toHaveJSProperty("style.colorScheme", "dark");
   const darkBg = await bodyBackground(page);
   expect(darkBg).not.toBe(defaultBg);
-  // Dark paper is #1b1a17 → rgb(27, 26, 23).
-  expect(darkBg).toBe("rgb(27, 26, 23)");
+  // Dark app bg is #0b0d11 → rgb(11, 13, 17).
+  expect(darkBg).toBe("rgb(11, 13, 17)");
 
   // 3. Switch back to Default → attribute + background restored.
   await themeSelect.selectOption({ label: "Default" });

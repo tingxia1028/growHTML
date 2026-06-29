@@ -1,0 +1,176 @@
+# UI 重构 — "Growte" 默认外观(浅 + 深)
+
+> 依据两张设计稿:**浅色(默认)**与**深色(Dark)**,同一套布局、两套令牌。后台 agent 看不到原图,**本规范是唯一实现依据**。落在现有体系上:布局 = `src/client/workspace/presets.ts`(dock 树)+ `WorkspaceShell.tsx`;视图 = `viewRegistry.tsx` 插件;主题 = `src/client/styles.css :root` + `src/client/theme/builtins.ts`(`DEFAULT_THEME_TOKENS`/`DARK_THEME_TOKENS`)+ `[data-theme]`。
+
+## 0. 总布局(浅深一致)
+
+从左到右四个区 + 顶部通栏:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ TOPBAR: [⚓ Growte  «] │  [Document | Notes Overlay | Anchor Focus]  │ 🔍 🔖 ⛶ ⋯ │
+├──┬───────────┬──────────────────────────────────────────┬───────────────┤
+│  │ Library ▲ │  tab: 2.2 Pressure…pdf  ✕                 │ ⚓ Anchor   📌⋯ │
+│IC│ ───────── │  ← →  56/256  − 100% +  ⛶ 📖 🔍 🔖 ⋯       │ [Excerpt card]│
+│ON│ tree:     │  ┌───────────────────────┐  ┌──────────┐ │ ───────────── │
+│RA│ Univ Phys │  │ ⚓ paragraph…          │  │KeyConcept│ │ ✦ AI Chat   ⋯ │
+│IL│  Ch1…     │  │ ⚓ p=ρgh  📄❔          │┄┄│ …body…   │ │ [you bubble]  │
+│  │  Ch2 ▾    │  │ ⚓ [highlighted]  ▶    │  └──────────┘ │ [AI msg]      │
+│  │   2.1     │  │   figure (navy)       │  ┌──────────┐ │  👍 👎 ⧉       │
+│⌂ │   2.2◀    │  │ ⚓ [amber highlight]   │┄┄│Visualizat│ │ ───────────── │
+│⚓│   2.3     │  │   📄❔                 │  └──────────┘ │ [Ask anything…│
+│📝│  Ch3…     │  └───────────────────────┘  ┌──────────┐ │            ➤ ]│
+│🔗│           │                             │Derivation│ │               │
+│⌗ │           │                             └──────────┘ │               │
+│  │           │  (margin note cards 虚线连到原文锚点)     │               │
+│👤│           │                                          │               │
+└──┴───────────┴──────────────────────────────────────────┴───────────────┘
+```
+
+- **TOPBAR**(通栏,高 ~56):左段(在 Library 列宽内)= 锚形 logo;中段 = 三视图分段控件(pill 组,选中态高亮)**Document / Notes Overlay / Anchor Focus**(`Anchor Focus` 可带计数徽标,如 `Anchor Focus 1`);右段 = **Anchor layer 透明度滑块**(`Anchor layer 18% ▾`,即现 layer.switcher 的锚点层不透明度)+ 图标按钮 图层 / 概念·关系 / 阅读·书 / 设置齿轮。(搜索/书签/全屏在阅读器工具条里,不在顶栏。)
+- **ICON RAIL**(最左竖条,宽 ~56):图标导航(锚 / 文档 / 笔记 / 链接·概念 / 代码·操作 …,见 §4)+ **底部头像**(浅色显示 `Alex ▾`)。用来收纳稿里没画的现有面板(图层、概念、书签、操作等)。
+- **Library**(宽 ~280):头部 `Library` + 折叠 chevron;来源**树**(University Physics → 章 → 节,可展开;Appendices)。
+- **CENTER**(flex):①文档 tab 条(文件名 + `✕`);②阅读器工具条(← → / `页/总` / `− 100% +` / 全屏 / 书页 / 搜索 / 书签 / `⋯`);③阅读体:段落左侧**锚点标记 ⚓**、**高亮**(蓝=选中、琥珀=标注)、段落下方**内联操作图标簇**(📄 文档 / ❔ 概念 / ▶ 播放 / `</>` 代码);④右侧**批注卡 gutter**(Key Concept / Visualization / Derivation 卡片,**虚线连到对应锚点**)。
+- **RIGHT**(宽 ~360):自上而下三段——
+  1. **Anchor**(标题 ⚓ Anchor + ⋯):`Current Anchor` 摘录卡(左强调条 + 锚定文本 + `Page 42 · 文件名` 页码行)。
+  2. **Anchor Tools**(= Anchor Action Bar,见 §7):纯图标网格,围绕当前 Anchor 的动作集 + `…` More。
+  3. **AI Log / AI Chat**(标题 ✦ + ⋯):消息流(You 右对齐带时间、AI Assistant 带 ✦+时间+👍👎⧉);底部 `Ask anything…` 输入 + 📎 + ➤。
+
+## 1. 视觉基调(浅深共通)
+
+- 圆角:卡片/面板 **10px**;输入/按钮 8px;分段/标签 **pill(999px)**;小标签 6px。
+- 阴影:卡片 `0 1px 2px rgba(0,0,0,.05), 0 6px 20px rgba(0,0,0,.06)`(深色用更深 alpha)。
+- 间距节奏:面板内边距 16;卡片内边距 12–14;元素间距 8/10/12。
+- 字体:无衬正文(系统 UI 栈);**阅读器正文用衬线**(教材感,稿中正文是衬线);代码/公式等宽。
+- 图标:沿用 **lucide-react**(currentColor),工具/簇 14–16px,标题 16px。
+- 连线:批注卡 → 锚点用 **1px 虚线**(`--sv-connector`),贝塞尔或折线均可,端点对齐锚点 ⚓ 与卡片左缘。
+
+## 2. 令牌表 —— 浅色(默认 `:root` / DEFAULT_THEME_TOKENS)
+
+> 起始值,落地后在 app 内微调。`colorScheme: "light"`。
+
+| 令牌 | 值 | 用途 |
+| --- | --- | --- |
+| `--sv-bg` | `#f3f4f6` | 应用底色(冷调浅灰) |
+| `--sv-surface` | `#ffffff` | 面板(库/中心/右栏) |
+| `--sv-surface-card` | `#ffffff` | 卡片(批注卡/摘录/消息) |
+| `--sv-surface-muted` | `#f6f7f9` | 次级底/hover |
+| `--sv-active-bg` | `#eef2fb` | 选中行(库当前节、active) |
+| `--sv-border` | `#e6e8ee` | 主边框 |
+| `--sv-border-soft` | `#eef0f4` | 弱分隔 |
+| `--sv-text` | `#1f2329` | 正文 |
+| `--sv-text-heading` | `#11141a` | 标题 |
+| `--sv-text-muted` | `#6b7280` | 次要文字/时间戳 |
+| `--sv-text-faint` | `#9aa1ab` | 占位/极弱 |
+| `--sv-icon-muted` | `#6b7280` | 默认图标 |
+| `--sv-accent` | `#3b6fe0` | 主强调(active 图标/链接/聚焦环) |
+| `--sv-accent-strong` | `#2b5bd0` | hover |
+| `--sv-accent-weak` | `#eaf1fe` | 强调弱底(active tab/选中节) |
+| `--sv-accent-border` | `#cfe0fb` | 强调描边 |
+| `--sv-select-bg` | `#cfe0fb` | 文本选中高亮(蓝) |
+| `--sv-highlight-bg` | `#fdeec3` | 标注高亮(琥珀) |
+| `--sv-highlight-text` | `#5b4a1e` | 琥珀高亮上的文字 |
+| `--sv-chat-user-bg` | `#e9f1fe` | 用户气泡 |
+| `--sv-chat-assistant-bg` | `#f5f6f8` | AI 气泡/卡片 |
+| `--sv-connector` | `#cdd3dc` | 批注卡虚线连线 |
+| `--sv-reader-backdrop` | `#ffffff` | 阅读器底(浅色=白纸) |
+| `--sv-anchor-marker` | `#9aa1ab` | 段落锚点 ⚓ 颜色 |
+
+## 3. 令牌表 —— 深色(`[data-theme="dark"]` / DARK_THEME_TOKENS)
+
+> `colorScheme: "dark"`。**深色阅读器正文是浅字深底**(稿中文档区也是深色),故 `--sv-reader-backdrop` 用深色。
+
+| 令牌 | 值 | 用途 |
+| --- | --- | --- |
+| `--sv-bg` | `#0b0d11` | 应用底色(近黑微冷) |
+| `--sv-surface` | `#13161c` | 面板 |
+| `--sv-surface-card` | `#181c23` | 卡片 |
+| `--sv-surface-muted` | `#1b1f27` | 次级底/hover |
+| `--sv-active-bg` | `#1d2740` | 选中行 |
+| `--sv-border` | `#262b34` | 主边框 |
+| `--sv-border-soft` | `#1e232b` | 弱分隔 |
+| `--sv-text` | `#e6e9ee` | 正文 |
+| `--sv-text-heading` | `#f2f4f7` | 标题 |
+| `--sv-text-muted` | `#9aa1ab` | 次要/时间戳 |
+| `--sv-text-faint` | `#6b727c` | 占位 |
+| `--sv-icon-muted` | `#9aa1ab` | 默认图标 |
+| `--sv-accent` | `#5b8cf5` | 主强调(active 图标发光) |
+| `--sv-accent-strong` | `#7aa2f7` | hover |
+| `--sv-accent-weak` | `#1d2740` | 强调弱底 |
+| `--sv-accent-border` | `#2f4a78` | 强调描边 |
+| `--sv-select-bg` | `#24344f` | 文本选中高亮(蓝) |
+| `--sv-highlight-bg` | `#3a3320` | 标注高亮(暖) |
+| `--sv-highlight-text` | `#e9d9a6` | 暖高亮文字 |
+| `--sv-chat-user-bg` | `#1e2a44` | 用户气泡 |
+| `--sv-chat-assistant-bg` | `#181c23` | AI 气泡/卡片 |
+| `--sv-connector` | `#2c333d` | 虚线连线 |
+| `--sv-reader-backdrop` | `#0e1116` | 阅读器底(深色) |
+| `--sv-anchor-marker` | `#6b727c` | 段落锚点 ⚓ |
+
+> 其余既有令牌(danger/warn/success/radius/space/font 等)按上述基调相应更新;DARK 仅覆盖差异项,radius/space/font 继承 :root。
+
+## 4. 左侧图标栏(收纳现有功能)
+
+竖排图标 → 切换/打开对应面板(沿用既有视图):
+
+| 图标 | 含义 | 映射现有 |
+| --- | --- | --- |
+| ⌂/folder | Library | library |
+| ⚓ | Anchors/Bookmarks | bookmark.list |
+| 📝 | Notes | 笔记列表(study 内) |
+| 🔗 | Concepts/Links | concept.list |
+| `</>` | Operations | operation.manager |
+| ▤ | Layers/Lens | layer.switcher |
+| ⚙(⋯ 内) | Theme/Layout 切换 | theme-select / layout-select |
+| 👤(底部) | 账号/设置 | — |
+
+- 点击切换左侧面板内容(或浮出);稿里默认显示 Library。**主题/布局切换**从原 reader-header 下放到图标栏底部或顶栏 `⋯` 菜单(稿中 reader-header 不再放这些下拉)。
+
+## 5. 分区组件要点
+
+- **TopBar**(新组件 `TopBar.tsx`):三段;中段分段控件 = 三视图;`Document`=正常阅读,`Notes Overlay`=批注卡浮层模式(margin 卡显隐),`Anchor Focus`=聚焦当前锚点(右栏 Anchor 放大/居中)。右段图标按钮。
+- **IconRail**(新组件 `IconRail.tsx`):见 §4;底部头像。
+- **Library**:头部 `Library` + chevron;树用现有 `FileTree`/source 列表重构成"章/节"层级;当前节 `--sv-active-bg` + 左强调条。
+- **Reader chrome**:文档 tab 条 + 工具条(现有 PDF 工具条样式对齐稿:页码框、`− 100% +`、各图标按钮)。段落**锚点 ⚓** 在左 margin;**高亮**用 `--sv-select-bg`/`--sv-highlight-bg`;**内联操作簇**(现有 SelectionToolbar 概念,改为 hover/常驻在段落下的小图标行)。
+- **批注卡 gutter**:即现有 `annotationMode:"margin"` 卡,重绘成稿中卡片(图标+标题+⋯+正文+时间戳),并加**虚线连线**到锚点(新增连线层,在 annotationLayer/DomReader margin 渲染里画 SVG/canvas 连线)。
+- **Right 面板**:拆成 **Anchor**(摘录卡:focus 当前锚点文本 + 页码 + 操作)与 **AI Chat**(现有 chat,重绘气泡/操作/输入)。dock 右栏改为上下两段(column split)。
+
+## 6. 分期计划(每期:实现 → tsc+单测+e2e → 我磁盘核验 → 提交)
+
+- **R0 令牌(浅默认 + 深)**:改 `styles.css :root` + `builtins.ts` 的 DEFAULT/DARK 为本规范令牌;浅色设为默认主题。**纯令牌、低风险、立刻换肤**。先做。
+- **R1 Shell/顶栏/图标栏**:新 `TopBar` + `IconRail` + 改 `presets.ts` dock 树为"iconrail | library | reader | (anchor/aichat 上下)";现有面板收进图标栏/⋯;三视图分段控件接 annotationMode/focus。
+- **R2 Library**:树层级 + 头部 + active 态按稿。
+- **R3 Reader chrome + 批注卡 + 连线**:tab 条、工具条、锚点标记、内联簇(= Selection Toolbar 表面,见 §7)、margin 卡重绘 + 虚线连线。
+- **R4 Right(Anchor + Anchor Tools + AI Log)**:摘录卡 + Anchor Action Bar 表面(§7)+ 聊天气泡/操作/输入重绘。
+- **R5 通用件**:笔记卡/ArtifactCard/FocusOverlay/按钮/输入/滚动条对齐两套令牌。
+- **R6 工具栏体系 + Customize(见 §7)**:抽 **Action Registry**(kit 提供动作集 + 用户自定义)→ 三表面统一渲染(Selection / Anchor / 全局底栏)+ Hover tooltip + More 菜单分组 + Disabled 态 + **Customize Toolbar**(排序/显隐/换图标/钉自定义 Operation/Reset)。复用现有 `commands/registry` + `operationViews`,对齐「AI Operation as Data」计划。
+
+> 全程保持功能不变 + 契约守卫绿;每期串行(改动多在 styles.css/presets/views,易冲突)。R6 可与 R3/R4 协同:R3/R4 先用占位的内联/Anchor 工具行,R6 再把它们替换成 Action Registry 的统一渲染。
+
+## 7. 工具栏体系(Action Toolbar System)
+
+> 核心原则(对齐「复现行为=一个能力挂共享契约后」):**不是三套工具栏,而是同一个 Action Registry 的三种渲染**。动作集由 **kit 提供**(不同 kit 一套 tools),用户可**自定义**(排序/显隐/换图标/钉自定义 AI Operation)。三个表面只决定「默认显示哪些 + 布局密度」,动作定义与执行共用。落地复用现有 `src/client/commands/registry`、`operationViews.tsx`、以及「AI Operation as Data」计划(`docs/design/ai-operation-as-data.md`)。
+
+### 7.1 Action 模型(共享契约)
+每个 action:`{ id, label, description(一句简介,用于 tooltip), icon(lucide), group, run(ctx) }`。
+- **group** 用于 More 菜单分组:`Create Note`(Note/Quiz/Flashcard/Media/Mermaid/HTML…)、`AI Actions`(Explain/Summarize/Translate/Generate Example/Extract Concept…)、`Study Actions`(Review/Practice/Mistake…)、`Custom Actions`(用户的 AI Operation,如 `My Operation 1/2`)。
+- 来源:**内置 + kit 注册 + 用户自定义 Operation**,统一进 Registry。
+
+### 7.2 三个表面(surfaces)
+1. **Selection Toolbar(内联)** —— 正文选区下浮出。状态:
+   - *Default*:一行常用图标(Quote / Explain / Note / Quiz / Media / Bookmark …)+ `…`。
+   - *Hover*:tooltip = `名称 — 一句简介`(如 `Explain — Ask AI to explain this selection in simple terms.`)。
+   - *More 菜单*:四列分组(Create Note / AI Actions / Study Actions / Custom Actions)+ 底部 `Customize Toolbar`。
+2. **Anchor Action Bar(右侧 Anchor 面板)** —— 围绕**当前 Anchor**,只图标、密度更高、放更多动作(Explain/Note/Quiz/Flashcard/Review/Mistake/Media/HTML/Mermaid/Concept/Practice…)。状态:Default 图标网格 / Hover tooltip(`Quiz — Generate questions to test understanding of this anchor.`)/ More 菜单(`More (Anchor Panel)`:Flashcard·Concept·Summarize / Media·Practice·Generate Example / HTML·Translate·Extract Concept + `Customize Anchor Toolbar`)/ **Disabled 态**(动作对当前 Anchor 不适用时灰显)。
+3. **全局底栏(参考条)** —— 所有可用动作的总览(Quote/Explain/Note/Quiz/Flashcard | Review/Mistake/Media/HTML/Mermaid/Concept/Practice/More)。
+
+### 7.3 Customize Toolbar(自定义面板)
+- 左导航:`Inline Toolbar` / `Anchor Toolbar` / `My Actions`(各表面独立配置)。
+- 主区:`Drag to reorder. Toggle to show or hide` —— 动作列表带**拖拽手柄 + 显隐开关**(如 Explain/Note/Quiz/Flashcard/Bookmark 开,Media/HTML 收到 `Hidden`)。
+- `Change Icon`:为某动作换图标(图标网格选择)。
+- 底部:`Reset to default` / `Cancel` / `Save`。
+- 自定义配置按**表面 + vault** 持久化(沿用 `operation-prefs.json` / workspace storage 模式)。
+
+### 7.4 服务对象
+- Selection Toolbar 作用于**当前选区**;Anchor Action Bar 作用于**右侧当前 Anchor**(生成解释/题目/复习卡/媒体/自定义 AI 输出)。
+- 产物一律经 **adaptive-note**(`resolveForm` → `getNoteType().render`)渲染,不走自定义渲染路径(见 [[adaptive-note-mandatory-contract]])。

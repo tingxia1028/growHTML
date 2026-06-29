@@ -32,9 +32,9 @@ describe("applyTheme", () => {
     expect(css).toContain(":root, [data-theme=\"default\"]");
     expect(css).toContain("[data-theme=\"dark\"]");
     // Dark's accent override is present; an intrinsic dark surface is NOT in the dark block.
-    expect(css).toContain("--sv-accent: #5fb6a4;");
+    expect(css).toContain("--sv-accent: #5b8cf5;");
     const darkBlock = css.slice(css.indexOf("[data-theme=\"dark\"]"));
-    expect(darkBlock).not.toContain("--sv-reader-backdrop");
+    expect(darkBlock).not.toContain("--sv-dark-surface");
   });
 
   it("setActiveTheme('dark') flips the data-theme attribute and color-scheme", () => {
