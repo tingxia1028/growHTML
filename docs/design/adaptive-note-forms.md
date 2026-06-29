@@ -1008,6 +1008,106 @@ is proven end-to-end through the server with the real mock.
 
 ---
 
+## Impl-log — Phase 4 (item 3 · .xmind import → markmap) — SHIPPED
+
+Phase 4 item 3 (plan §4 Phase 4; research §5.2 "import .xmind → convert to a markmap
+outline … no new renderer") landed: a user can IMPORT a `.xmind` file and get a
+`markmap` note (interactive mind map). The recognition law (§0.5) holds — the `.xmind`
+resolves to the ALREADY-REGISTERED `markmap` contentType and renders via
+`getNoteType("markmap").render`; NO new contentType, NO new renderer, NO bypass. The
+contract guard stays green.
+
+**1. Pure converter — `xmindToMarkmap`** (`src/core/notes/xmindToMarkmap.ts`,
+unit-tested in `xmindToMarkmap.test.ts`). Pure + dependency-free (no zip/fs/React/DOM/
+module-state), NEVER throws (bad input → `"# (empty mind map)"`). It takes the
+ALREADY-unzipped+parsed map and emits a markmap markdown outline:
+  - `xmindJsonToMarkmap(parsed)` — the modern `content.json` value: a sheet array (or a
+    single sheet), each sheet's `rootTopic` recursing through `children.attached[]`
+    (detached/floating topics are ignored). `xmindXmlToMarkmap(xml)` — the legacy
+    `content.xml` STRING, parsed by a tiny DOM-FREE tag tokenizer (so core stays pure):
+    it walks `<topic>/<title>/<children><topics>` nesting and decodes XML entities. A
+    `xmindToMarkmap({ json?, xml? })` dispatcher prefers `json`.
+  - **Depth → markdown:** a sheet's ROOT topic → `# H1`; depth-1 children → `## H2`;
+    depth ≥2 descendants → nested bullets (`- leaf`, +2 spaces of indent per extra
+    level). Headings only reach H1/H2 so a deep tree stays a clean outline; markmap
+    renders the nested bullets as lower branches. Titles are sanitized to a single line
+    (markmap is markdown — a multi-line title would break the outline); a titleless node
+    that has children renders a `(untitled)` placeholder.
+  - **Multi-sheet decision (documented):** EACH sheet becomes its own `#` H1 root,
+    concatenated in order with a blank line between (markmap supports multiple roots).
+    The common single-sheet file yields one rooted outline. Chosen as the simplest
+    sensible behavior — no sheet is dropped, no arbitrary "first sheet only".
+  - Tests cover: json tree (root/H2/nested-bullet mapping, single-sheet object,
+    multi-sheet, detached-ignored, title sanitize, titleless-with-children); xml tree
+    (same mapping, entity decode, multi-sheet); the dispatcher; empty/junk/pathological
+    inputs (never throws); AND that the output validates against the REAL `markmap` core
+    spec (`parseNoteContent("markmap", …)`) + classifies as a markmap form.
+
+**2. Unzip + parse layer (impure, thin)** (`src/server/xmindImport.ts`, unit-tested in
+`xmindImport.test.ts`). `.xmind` is a ZIP. `xmindBytesToMarkmap(bytes)` unzips with
+**`fflate`** (see "zip lib" below), finds `content.json` (PRIMARY) else `content.xml`
+(FALLBACK) — matching by basename so a nested archive entry (e.g.
+`Resources/content.json`) still resolves — and delegates ALL tree→outline mapping to the
+pure converter. `importXmindToMarkmap(filePath)` reads the file off disk (Node `fs`,
+desktop-only, exactly like `localFiles.ts`/`assets/local-file`) and returns
+`{ outline }`. It deliberately touches NEITHER the note schema NOR the vault — note
+creation goes through the normal path. A missing content.json/xml throws a clear error.
+Tests build a real in-memory `.xmind` with fflate's `zipSync` and assert json/xml/
+prefer-json/nested-entry/no-content cases.
+
+**3. Import wiring → a markmap note through the normal path.**
+  - **Server route** `POST /api/notes/import-xmind { path }` (`src/server/app.ts`) →
+    `importXmindToMarkmap` → returns `{ contentType: "markmap", content: <outline> }`
+    (an already-registered contentType — never a bespoke shape).
+  - **Client** `entityClient.importXmind(path)` (`src/client/data/entityClient.ts`).
+  - **UI + flow** `WorkspaceContext.importXmindFile()` (mirrors `previewClassifiedReply`):
+    opens the native file dialog (`window.studyVault.openFile`), calls the server, and
+    parks the result in the EXISTING `pendingDraft` → `GenerationPreview` → Save loop
+    (marked `classified`, so Regenerate is a no-op) — the user PREVIEWS the interactive
+    mind-map (rendered by the markmap plugin) before saving. The note is anchored to the
+    focused passage if any (`materializeAnchor`) and attached to the active source, else
+    saved standalone — exactly how the classify-a-reply flow places its note. A `.xmind`
+    button sits in the library panel's "Open" group, gated `disabled={!canOpenLocal}`
+    (desktop-only, like Open File/Folder). **The host never hardcodes a literal
+    contentType** — it comes from the server response — so the contract guard's
+    "no hardcoded contentType on save" rule stays green.
+
+**Zip lib chosen — `fflate` (^0.8.2), justification.** No zip lib existed in
+`package.json`. `fflate` is tiny (~12 kB, zero transitive deps), synchronous
+(`unzipSync`/`zipSync` — no async ceremony for a one-shot import), and works in both
+Node (the import layer) and a bundle. Preferred over `jszip` (much larger, more
+features we don't need). It is the ONLY new dependency. (XML parsing needed NO new lib —
+the legacy `content.xml` path uses the pure DOM-free tokenizer in the core converter, so
+`linkedom`/a DOM isn't pulled into core.)
+
+**No new renderer / no schema change.** The `markmap` contentType, its core spec, and
+its client plugin are untouched. The shared `ArtifactCard`/`FocusOverlay` (Phase 1b)
+serve the imported note for free via the one `getNoteType().render` entry.
+
+**Self-test:** `npm run check` clean; `npm test` 619 passing (73 files; +2 new files
+`xmindToMarkmap.test.ts` (+xmindImport.test.ts), +19 cases); `npm run e2e` 46 passing
+(`adaptive-note-forms.spec.ts` +1: a real `.xmind` fixture — built with fflate in
+`e2e/fixtures/xmind.ts` and written to a temp file — is imported via
+`/api/notes/import-xmind`, returns `markmap` + the depth-mapped outline, and the saved
+note renders a live markmap SVG). Contract guard stays green (the import resolves to the
+registered `markmap` contentType; the host passes the server-returned contentType, no
+literal; no `contentType ===` branch). Before e2e the 4177/5173/5174 servers were killed
+so Playwright used `.e2e-vault`; after the run no server is left and `data/vault` is
+untouched.
+
+**Caveats / deviations:** (a) Import is DESKTOP-ONLY — the file dialog + path-based
+server read require Electron (`window.studyVault.openFile`), mirroring the existing Open
+File/Folder + asset/local-file flows; a web `<input type=file>` upload path is a later
+add if web import is ever needed. (b) The `content.xml` fallback is best-effort (the JSON
+path is primary for modern XMind); it handles the standard `<topic><title>…<children>
+<topics>` structure, not exotic/older schema variants. (c) Per the plan's "don't
+over-engineer multi-sheet", multi-sheet is the simplest sensible behavior (one `#` root
+per sheet) — no sheet picker. (d) The e2e drives the import via the SERVER route with a
+fixture path (web mode has no file dialog), the same pattern the asset-Range test uses;
+the `importXmindFile` dialog wiring is desktop-only host glue around the proven route.
+
+---
+
 ## Appendix — cited symbols / paths
 
 - `src/core/notes/contentTypes.ts:11-32,40-44,100-185` — `NoteContentSpec`,

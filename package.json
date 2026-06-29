@@ -31,6 +31,7 @@
     "@xterm/xterm": "^6.0.0",
     "dotenv": "^17.4.2",
     "express": "latest",
+    "fflate": "^0.8.3",
     "grapesjs": "latest",
     "grapesjs-preset-webpage": "latest",
     "linkedom": "^0.18.12",

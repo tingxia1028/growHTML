@@ -91,7 +91,8 @@ function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
     importUrl,
     setImportUrl,
     importFromUrl,
-    openLiveUrl
+    openLiveUrl,
+    importXmindFile
   } = ctx;
 
   return (
@@ -131,6 +132,16 @@ function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
           >
             <FolderOpen size={16} />
             Folder
+          </button>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => void importXmindFile()}
+            disabled={!canOpenLocal}
+            title={canOpenLocal ? "Import a .xmind mind map (→ markmap note)" : "Desktop app only"}
+          >
+            <FilePlus2 size={16} />
+            .xmind
           </button>
         </div>
         {!canOpenLocal ? <small className="tree-hint">Available in the desktop app.</small> : null}

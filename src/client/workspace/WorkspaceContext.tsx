@@ -230,6 +230,13 @@ export type WorkspaceContextValue = {
    * preview (so the user previews the recognized form before it lands as a note).
    */
   previewClassifiedReply(text: string): Promise<void>;
+  /**
+   * Import a local .xmind file → a `markmap` note (Phase 4 item 3). Opens the native
+   * file dialog, has the server unzip+parse the .xmind into a markmap outline, and
+   * parks it in the generation preview (preview-then-save). Desktop-only (needs the
+   * file dialog); renders via the existing markmap plugin — no new renderer.
+   */
+  importXmindFile(): Promise<void>;
   changePatchStatus(patch: PatchRecord, nextStatus: "applied" | "reverted" | "rejected"): Promise<void>;
 
   // —— concepts / relations ——
@@ -793,6 +800,36 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [focus, activeSourceId, aiClassify]
   );
 
+  // .xmind import (adaptive-note-forms Phase 4 item 3). Open a native file dialog,
+  // ask the server to unzip+parse the .xmind into a markmap OUTLINE, and park the
+  // result in the SAME preview/save loop every other generated note uses — so the
+  // user previews the interactive mind-map (rendered via the existing `markmap`
+  // plugin) before saving. The contentType comes from the SERVER response (the
+  // already-registered `markmap`), never a host literal — no new renderer, no bypass.
+  const importXmindFile = useCallback(async () => {
+    const filePath = await window.studyVault?.openFile?.();
+    if (!filePath) return;
+    setStatus("saving");
+    setError("");
+    try {
+      const anchor = await focus.materializeAnchor();
+      const result = await entityClient.importXmind(filePath);
+      setPendingDraft({
+        promptId: "",
+        contentType: result.contentType,
+        input: {},
+        content: result.content,
+        anchorId: anchor?.id,
+        sourceId: activeSourceId || undefined,
+        classified: true
+      });
+      setStatus("idle");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to import .xmind");
+      setStatus("error");
+    }
+  }, [focus, activeSourceId]);
+
   const changePatchStatus = useCallback(
     async (patch: PatchRecord, nextStatus: "applied" | "reverted" | "rejected") => {
       if (!activeSource) return;
@@ -1068,6 +1105,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       discardPendingDraft,
       selectedTextOr,
       previewClassifiedReply,
+      importXmindFile,
       changePatchStatus,
       conceptsVersion,
       refreshConcepts,
@@ -1143,6 +1181,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       discardPendingDraft,
       selectedTextOr,
       previewClassifiedReply,
+      importXmindFile,
       changePatchStatus,
       conceptsVersion,
       refreshConcepts,

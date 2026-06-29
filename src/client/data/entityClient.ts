@@ -341,6 +341,17 @@ export const entityClient = {
     return sendJson<{ note: NoteRecord }>("POST", "/api/notes", input);
   },
   /**
+   * Import a local .xmind file → a markmap outline. The server unzips + parses the
+   * .xmind (content.json / content.xml) and returns an ALREADY-REGISTERED
+   * { contentType: "markmap", content: <markdown outline> } — the caller creates a
+   * real markmap note from it (no new renderer; renders via getNoteType("markmap")).
+   */
+  importXmind(filePath: string) {
+    return sendJson<{ contentType: string; content: unknown }>("POST", "/api/notes/import-xmind", {
+      path: filePath
+    });
+  },
+  /**
    * Patch a note's attachments (concept/anchor links) and/or its layer membership
    * after creation. `layerIds` is a FULL REPLACE — to add a layer send the union, to
    * remove send the remainder, to move send the new single-element array.

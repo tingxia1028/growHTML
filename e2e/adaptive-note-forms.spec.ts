@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { makeXmindBytes } from "./fixtures/xmind";
 
 // Adaptive note forms — Phase 1b (card + centered overlay UX) against the REAL app
 // (web mode). Covers the two browser-dependent capabilities this phase ships:
@@ -282,6 +283,57 @@ test("form router: a markmap form from the model unwraps + saves + renders as a 
       hasText: "Generate as best form"
     }).first()
   ).toBeVisible();
+});
+
+// —— Phase 4 item 3: .xmind import → markmap note —————————————————————————————
+//
+// A .xmind file (a ZIP of content.json/content.xml) is imported by the server, which
+// unzips + parses it and returns an ALREADY-REGISTERED { contentType:"markmap",
+// content:<outline> } — NO new contentType, NO new renderer. The saved note renders
+// via the existing markmap plugin (a live interactive SVG), proving the import lands a
+// real registered form that flows through getNoteType("markmap").render — no bypass.
+
+test(".xmind import: the server converts a .xmind to a markmap outline, and the saved note renders as a markmap", async ({
+  page,
+  request
+}) => {
+  const title = `Xmind Import ${Date.now()}`;
+  const source = await seedHtmlSource(request, title, "<article><p>Body about imports.</p></article>");
+
+  // Write a real .xmind fixture (a zip with content.json) to a temp file on disk, then
+  // have the server import it by PATH (the same path-based flow as asset/local-file).
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const fs = await import("node:fs/promises");
+  const xmindPath = path.join(os.tmpdir(), `e2e-fixture-${Date.now()}.xmind`);
+  await fs.writeFile(xmindPath, makeXmindBytes());
+
+  try {
+    const imported = await request.post(`${SERVER}/api/notes/import-xmind`, { data: { path: xmindPath } });
+    expect(imported.ok(), `import-xmind failed: ${imported.status()}`).toBeTruthy();
+    const body = (await imported.json()) as { contentType: string; content: string };
+
+    // The import resolves to the ALREADY-REGISTERED markmap type (no new renderer).
+    expect(body.contentType).toBe("markmap");
+    // Depth mapping: root→H1, depth-1→H2, deeper→nested bullet.
+    expect(body.content).toContain("# Water Cycle");
+    expect(body.content).toContain("## Evaporation");
+    expect(body.content).toContain("- Sun heats water");
+
+    // Create the markmap note from the imported outline (the preview/save loop does
+    // exactly this on Save) and verify it renders IN ITS FORM (a live markmap SVG).
+    const noteRes = await request.post(`${SERVER}/api/notes`, {
+      data: { sourceId: source.id, contentType: body.contentType, content: body.content }
+    });
+    expect(noteRes.ok(), `create markmap note failed: ${noteRes.status()}`).toBeTruthy();
+
+    await openSource(page, title);
+    const card = page.locator(".note-list .record-card", { hasText: "markmap" }).first();
+    await expect(card).toBeVisible();
+    await expect(card.locator(".note-diagram-markmap svg")).toBeVisible({ timeout: 15_000 });
+  } finally {
+    await fs.rm(xmindPath, { force: true });
+  }
 });
 
 test("GET /api/assets/:id honors HTTP Range: 206 + correct Content-Range for a sub-range, 416 past EOF", async ({

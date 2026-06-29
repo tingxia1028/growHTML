@@ -57,6 +57,7 @@ import { installServerKits } from "../kits/server";
 import { generateStructuredContent, StructuredGenerationError } from "../kits/structured";
 import { readFile } from "node:fs/promises";
 import { ingestLocalFile, listDirectory, mimeForPath } from "./localFiles";
+import { importXmindToMarkmap } from "./xmindImport";
 
 // Register Product Kit content specs + prompts (React-free) so the API validates
 // kit note content and can run kit structured generation. Idempotent.
@@ -670,6 +671,23 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
 
       await vault.stores.notes.upsert(note);
       res.status(201).json({ note });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // .xmind import (adaptive-note-forms Phase 4 item 3): read a local .xmind off disk,
+  // unzip + parse it (content.json primary, content.xml fallback), and convert to a
+  // `markmap` markdown OUTLINE — NO new contentType, NO new renderer. The client
+  // creates a real `markmap` note from `{ contentType, content }`, so it renders via
+  // the existing markmap plugin (getNoteType("markmap").render). The model/format
+  // resolution stays on the recognized-form side: the returned contentType is the
+  // already-registered `markmap`.
+  app.post("/api/notes/import-xmind", async (req, res, next) => {
+    try {
+      const { path: filePath } = z.object({ path: z.string().min(1) }).parse(req.body);
+      const { outline } = await importXmindToMarkmap(filePath);
+      res.status(200).json({ contentType: "markmap", content: outline });
     } catch (error) {
       next(error);
     }
