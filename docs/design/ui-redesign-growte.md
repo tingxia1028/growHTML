@@ -140,9 +140,9 @@
 - **R0 令牌(浅默认 + 深)**:改 `styles.css :root` + `builtins.ts` 的 DEFAULT/DARK 为本规范令牌;浅色设为默认主题。**纯令牌、低风险、立刻换肤**。先做。
 - **R1 Shell/顶栏/图标栏**:新 `TopBar` + `IconRail` + 改 `presets.ts` dock 树为"iconrail | library | reader | (anchor/aichat 上下)";现有面板收进图标栏/⋯;三视图分段控件接 annotationMode/focus。
 - **R2 Library**:树层级 + 头部 + active 态按稿。
-- **R3 Reader chrome + 批注卡 + 连线**:tab 条、工具条、锚点标记、内联簇(= Selection Toolbar 表面,见 §7)、margin 卡重绘 + 虚线连线。
-- **R4 Right(Anchor + Anchor Tools + AI Log)**:摘录卡 + Anchor Action Bar 表面(§7)+ 聊天气泡/操作/输入重绘。
-- **R5 通用件**:笔记卡/ArtifactCard/FocusOverlay/按钮/输入/滚动条对齐两套令牌。
+- **R3 Note 展示统一(§10,组件地基)+ Reader chrome**:先收敛 `ArtifactCard`/`FocusOverlay` → 一套 **PreviewCard(三态)+ CenterView**(双击打开)+ per-type 预览规则 + 尺寸;再做 tab 条、工具条、锚点标记、**note-type 图标→点开预览卡**(§10.4)、内联簇(= Selection Toolbar 表面,§7)、margin 卡 + 虚线连线。**R4/R5 消费同一套卡**。
+- **R4 Right(Anchor + Anchor Tools + AI Log)**:摘录卡 + Anchor Action Bar 表面(§7)+ 聊天气泡/操作/输入重绘;Anchor 下 / Chat 里的 Note **复用 §10 PreviewCard**。
+- **R5 通用件**:卡片三态/Center View 收尾 + 按钮/输入/滚动条对齐两套令牌。
 - **R6 工具栏体系 + Customize(见 §7)**:抽 **Action Registry**(kit 提供动作集 + 用户自定义)→ 三表面统一渲染(Selection / Anchor / 全局底栏)+ Hover tooltip + More 菜单分组 + Disabled 态 + **Customize Toolbar**(排序/显隐/换图标/钉自定义 Operation/Reset)。复用现有 `commands/registry` + `operationViews`,对齐「AI Operation as Data」计划。
 - **R7 Layer Lens + 层级(见 §8)**:顶栏 `Layers` pill → 弹层(过滤+管理合一);`studyLayerSchema` 加 `parentId`(导入/角色驱动)+ per-layer 计数 + roll-up + 父级级联;`Visible note count` 页脚。
 - **R8 右侧目录 / Bookmarks 索引(hover-reveal,见 §9)**:阅读器右边缘 hover 滑出的**书签**索引(按 category 分组),复用现有 bookmark 数据 + 跳转;折叠态=目录图标,可 pin。
@@ -223,4 +223,47 @@
 ### 9.4 需要的改动(R8)
 - core(小):`bookmarkSchema` 加可选 `category`(仅当确认要类目分组时;否则 R8 先按现有 label 平铺/按 color 分组)。
 - client:新 **BookmarkIndex** hover 面板组件(右边缘触发区 + 滑入过渡 + pin 状态持久化到 workspace storage),**复用 `bookmarkViews` 的数据 + 跳转**,只是换成分组 + hover 呈现(两者可共享一个 hook)。
+- 纯 `--sv-*` 令牌;两套主题。
+
+## 10. Note 展示统一(Preview Card + Center View)—— 组件地基
+
+> **核心原则**:Note 默认**不**完整展开,而是以**轻量预览卡**出现在各场景;要看全文/互动再**双击/点开** Center View。**同一个 Note,无论在源文档旁、Anchor 面板下、还是 AI Chat 里,都用同一套预览卡组件;点开统一在中间打开完整视图**。这是 [[abstract-recurring-capabilities]] + [[adaptive-note-mandatory-contract]] 的最强落点:卡片与完整视图都由 `getNoteType().render({mode})` 契约驱动,**不为每个来源单独设计**。
+>
+> 复用现状:Phase 1b 已有 `ArtifactCard`(card 模式)、`FocusOverlay`(full 模式)、`ChatMessageBody`、`NoteRenderInput.mode:"card"|"full"`。R3 把它们**收敛成一套** `PreviewCard` + `CenterView`,补 Hover 态 / per-type 预览规则 / 源文档 note-type 图标交互 / 尺寸。
+
+### 10.1 三种展示态
+1. **Preview Card(预览态,默认)**:出现在 Notes Overlay、Anchor 面板下、AI Chat、右侧相关 Note 列表、Anchor Focus。只显示:**类型图标 + 类型名 + 标题 + 少量摘要 + 来源页码/创建时间/Layer + 更多入口**。默认不铺全文。
+2. **Hover Preview(悬浮态)**:鼠标悬浮 → 卡片轻微高亮 + 浮出操作入口:**打开 / 固定(pin)/ 编辑 / 更多 / 跳转到 Anchor**。不大幅展开内容。
+3. **Center View(完整态)**:**双击预览卡或点"打开"** → 中间大浮层。支持:看全文 / 编辑 / 播放媒体 / 做 Quiz / 看 HTML·Mermaid·Mindmap / 翻 Flashcard / 读代码 / 复制·删除·**移动 Layer** / **跳回源 Anchor**。所有 Rich Note 的统一完整入口。顶部 pin/编辑/关闭,底部 `Page · Created …` + open-in-center + ⋯(对齐稿)。
+
+### 10.2 统一组件规则
+- 所有来源的 Note(Anchor 生成 / AI Chat 生成 / 手动创建 / 从别的 Layer 导入)**共用同一套 PreviewCard**,不单独设计样式 → 视觉/交互一致、维护低、新增 note 类型不用重做展示逻辑。
+- 稿中明确标注:`Same preview card across anchor and chat`、`Open in center view`。
+
+### 10.3 per-type 预览规则(card 模式各 NoteType 自管)
+| 类型 | 预览卡显示 |
+| --- | --- |
+| Markdown | 标题 + 正文前三行 |
+| Quiz | 题目摘要 + 题数(不展开选项) |
+| Flashcard | 正面摘要(不默认翻背面) |
+| Media | 缩略图 + 标题 + 时长/来源 |
+| HTML | 标题 + 简短说明 + `Interactive` 标识(**不默认运行**) |
+| Mermaid / Mindmap | 缩略预览或结构摘要(完整图在 Center View 缩放) |
+| Code | 语言 + 代码摘要 + 说明 |
+
+> 实现:各规则放进对应 NoteType 的 `render({mode:"card"})`;Center View = `render({mode:"full"})`。守卫测试已保证「展示侧硬契约」。
+
+### 10.4 源文档里的展示(关键交互)
+- ⚓ **Anchor 图标** = 「这里有一个锚点」;旁边的 **note-type 图标**(📄/❔/▶/`</>`…)= 「这个锚点下挂了哪些 Note」。
+- **点 note-type 图标** → 在文档旁显示该 Note 的 **Preview Card**;**双击卡** → Center View。**避免默认铺开大量卡**。
+- 与三 tab 配合:`Document` 模式 = 图标 + 点开预览;`Notes Overlay` 模式 = margin 把卡铺出来(+ 虚线连线,§5);`Anchor Focus` = 聚焦当前锚点的卡。
+
+### 10.5 推荐尺寸
+- Preview Card:宽 240–280px / 高 120–160px(**默认 260 × 140**)。
+- Center View:宽 720–920px / 高 70–85vh。
+
+### 10.6 需要的改动(R3 地基,R4/R5 消费)
+- client:收敛 `ArtifactCard`/`FocusOverlay` → 统一 **`PreviewCard`(三态)** + **`CenterView`**;双击 → Center View(`focus`/overlay 状态)。
+- 各 NoteType 补 `render({mode:"card"})` 的 per-type 预览规则(§10.3)。
+- 源 reader:anchor 旁渲染 note-type 图标簇 + 点击出预览卡(§10.4);Notes Overlay/Anchor Focus 复用同卡。
 - 纯 `--sv-*` 令牌;两套主题。
