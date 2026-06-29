@@ -601,6 +601,98 @@ adopt it unchanged later (the "harden the identification side" prerequisite, §6
 
 ---
 
+## Impl-log — Phase 1b (card + centered-overlay UX) — SHIPPED
+
+The shared "card → centered interactive overlay" capability landed (plan §3.5 reqs 1
+& 2; decision §6.2). It serves ONLY the forms that already render
+(markmap / mermaid / code-snippet / markdown). No new contentTypes, no video/html
+variants (Phase 2/3). One capability, one implementation, used uniformly by BOTH the
+chat thread and the note viewer (§0.5 / abstract-recurring-capabilities).
+
+**1. `mode` on the render contract** (`src/client/notes/noteTypeRegistry.tsx`). Added an
+optional `mode?: "card" | "full"` (`NoteRenderMode`) to `NoteRenderInput`. The SAME
+plugin renders two presentations through the ONE `getNoteType(contentType).render(...)`
+path — no second render path:
+  - `"full"` (default) = today's complete interactive view (the note list, the
+    generation preview, and the FocusOverlay all pass "full" — so card = overlay =
+    saved note are visually consistent).
+  - `"card"` = a lightweight preview. The diagram plugin (`builtinNoteTypes.tsx`) opts
+    into a nicer card: in `"card"` mode it renders a LIGHT static snippet
+    (`.sv-diagram-card`, icon + source preview) instead of mounting the heavy live
+    DiagramNote, so the thread never runs many SVG mounts inline; the live diagram only
+    mounts in `"full"` (the overlay). A plugin that IGNORES `mode` still renders fine.
+  - **Generic card fallback**: `ArtifactCard` always supplies a title + text snippet
+    derived from the content (any contentType → a usable card for free) and uses the
+    plugin's `"card"` render as the thumbnail body when present — so a form that doesn't
+    opt in still gets a card WITHOUT bypassing the registry.
+
+**2. `ArtifactCard`** (`src/client/workspace/ArtifactCard.tsx`) — the compact card: a
+per-form icon + title/snippet + a small form-label badge + an optional thumbnail via
+`render(mode:"card")`. It is a button; clicking opens the overlay. Holds its own
+open/close state.
+
+**3. `FocusOverlay`** (`src/client/workspace/FocusOverlay.tsx`) — a centered
+modal/lightbox (React portal to `document.body`) that renders the block's FULL
+interactive view via `getNoteType(contentType).render({ ..., mode:"full" })` — the exact
+renderer a saved note uses. The heavy render mounts ONLY while the overlay is open.
+Accessible: `role="dialog" aria-modal`, a labelled title, a Tab focus trap, focus moves
+in on open and is restored to the opener on close. Esc and a backdrop click close it. An
+unknown contentType falls back to the inert note (never crashes).
+
+**4. Chat thread wiring (req 1)** (`src/client/workspace/ChatMessageBody.tsx`, used in
+`views.tsx`). A rich assistant reply is classified through the SAME identification seam
+saving uses (`classifyContent`): a HIGH-confidence non-markdown form renders as an
+`ArtifactCard` (click → centered `FocusOverlay`); low-confidence / plain replies render
+inline as markdown via `getNoteType("markdown").render` (no card). The existing
+GenerationPreview save flow is unchanged.
+
+**5. Composer "detected · override" chip (decision #2)**
+(`src/client/workspace/ComposerTypePicker.tsx`, used in `views.tsx`, replacing the bare
+`<select>`). It LIVE-classifies the composer textarea and shows a "detected: <form> ·
+change" chip; the `<select>` is demoted to the OVERRIDE (still lists every non-hidden
+registered type incl. kit-contributed). A HIGH-confidence detection AUTO-SELECTS the
+detected type (via effect, so it can't fight a user override mid-render); LOW stays
+markdown. "change" reveals the override select; "auto" returns to the detected form;
+once the user overrides, auto-apply stops until they hit "auto".
+
+**6. Note viewer (req 2)** (`NoteContentView` in `views.tsx`). A saved note renders IN
+ITS FORM in the list (the plugin's full view, as before). For rich/interactive forms —
+gated by the diagram renderer REGISTRY (`isDiagramType`), NOT a `contentType ===` branch
+— it ALSO offers an "Open interactively" affordance that focuses the note into the SHARED
+`FocusOverlay` (same `render(mode:"full")`), so a 思维导图/diagram note is viewable
+centered and interactive rather than flattened. (Source-doc anchor highlights are a
+separate concern, untouched.)
+
+**Extraction note**: `ChatMessageBody` and `ComposerTypePicker` are small standalone
+host modules (not inlined in `views.tsx`) so they unit-test without pulling the whole
+workspace view tree (PdfReader/pdfjs need a real browser); both are still host surface
+and call only the sanctioned `getNoteType().render` / `classifyContent`.
+
+**Self-test:** `npm run check` clean; `npm test` 525 passing (67 files; +2 new test
+files: `artifactCard.test.tsx` covering mode routing / card-click→overlay / Esc·backdrop
+close / unknown-type fallback / chat rich→card·plain→markdown, and
+`composerTypePicker.test.tsx` covering detect·override·auto); `npm run e2e` green —
+`adaptive-note-forms.spec.ts` added: the composer chip auto-detects mermaid + reveals
+the override, and a saved markmap note renders in its form and "Open interactively"
+opens a centered overlay mounting a live markmap SVG (Esc closes).
+
+**Contract guard:** stays green with NO scope change. The new shared components live
+under `src/client/workspace/*` (host surface, scanned by the guard) and render ONLY via
+`getNoteType().render`; the `focusable` gate uses the diagram registry, not a
+`contentType ===` branch, and the picker's comparisons were written to avoid a
+`contentType ===` token — so no false positive and no allowlist widening was needed.
+
+**Caveats / deviations:** The e2e card→overlay capability is exercised end-to-end via
+the NOTE VIEWER ("Open interactively"), which shares the EXACT same `ArtifactCard`/
+`FocusOverlay` components as the chat thread. The thread ArtifactCard for a
+high-confidence AI reply is covered by the component test rather than e2e, because the
+deterministic mock provider prepends a `**Study assistant (mock)**` header to every
+reply (so a chat reply never classifies as a pure rich form) — the card/overlay path
+itself is identical and proven both in the component test and in the browser via the note
+viewer. No mock/infra change was made for this.
+
+---
+
 ## Appendix — cited symbols / paths
 
 - `src/core/notes/contentTypes.ts:11-32,40-44,100-185` — `NoteContentSpec`,

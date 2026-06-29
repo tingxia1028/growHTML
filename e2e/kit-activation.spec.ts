@@ -44,7 +44,14 @@ test("per-source kit activation: default on → switch to Core gates creation (r
 
   const explain = page.locator(".selection-toolbar-btn", { hasText: "Explain" });
   const kitSelect = page.locator(".kit-select");
-  const typeSelect = page.locator(".note-type-select");
+  const typeSelect = page.locator(".composer-type-picker select.note-type-select");
+  // The type picker now shows a "detected · change" chip by default (adaptive note
+  // forms Phase 1b); reveal the override <select> so its options can be inspected.
+  const revealTypeSelect = async () => {
+    if (!(await typeSelect.isVisible())) {
+      await page.locator(".composer-detected-change").click();
+    }
+  };
 
   // —— Default: the Textbook kit is the workspace default, so it's active here ——
   await expect(kitSelect).toHaveValue("textbook-learning");
@@ -62,6 +69,7 @@ test("per-source kit activation: default on → switch to Core gates creation (r
 
   // The kit's note type is offered in the composer picker while the kit is active.
   await page.locator(".composer-mode .mode-tab", { hasText: "Note" }).click();
+  await revealTypeSelect();
   await expect(typeSelect.locator('option[value="textbook.explanation"]')).toHaveCount(1);
 
   // —— Switch this document to Core: creation entry-points gate off ——
@@ -74,6 +82,7 @@ test("per-source kit activation: default on → switch to Core gates creation (r
 
   // Composer picker no longer offers the kit's types…
   await page.locator(".composer-mode .mode-tab", { hasText: "Note" }).click();
+  await revealTypeSelect();
   await expect(typeSelect.locator('option[value="textbook.explanation"]')).toHaveCount(0);
 
   // …but the already-created Study Block STILL renders (rendering is never gated).

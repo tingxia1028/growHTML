@@ -38,7 +38,13 @@ async function openSource(page: Page, title: string) {
 // type <select>. The select's option values are the contentType keys.
 async function chooseNoteType(page: Page, contentType: string) {
   await page.locator(".composer-mode .mode-tab", { hasText: "Note" }).click();
-  await page.locator(".note-type-select").selectOption(contentType);
+  // The type picker now shows a "detected · change" chip by default (adaptive note
+  // forms Phase 1b). Reveal the override <select> to pick a non-detected type.
+  const select = page.locator(".composer-type-picker select.note-type-select");
+  if (!(await select.isVisible())) {
+    await page.locator(".composer-detected-change").click();
+  }
+  await select.selectOption(contentType);
 }
 
 test("flashcard composer: front/back form → saved note renders a flip card", async ({ page, request }) => {

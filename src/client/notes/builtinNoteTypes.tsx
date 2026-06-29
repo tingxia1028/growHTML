@@ -89,11 +89,34 @@ registerNoteType({
 
 // —— mermaid / markmap ————————————————————————————————————————————————————
 // content is the diagram source string; rendered by the existing async DiagramNote.
+// A diagram is HEAVY (it mounts mermaid / markmap-view), so in "card" mode it opts
+// into a LIGHT preview (an icon + a source snippet) instead of mounting the live
+// renderer — the ArtifactCard shows this in the thread; the full interactive diagram
+// only mounts when the FocusOverlay opens (mode:"full"). This is the rich-form card
+// opt-in the contract allows; ignoring `mode` would still get the generic card.
+function DiagramCard({ contentType, content }: { contentType: string; content: string }) {
+  const snippet = content.replace(/\s+/g, " ").trim().slice(0, 120);
+  return (
+    <div className={`note-rendered sv-diagram-card sv-diagram-card-${contentType}`}>
+      <span className="sv-diagram-card-kind">{contentType}</span>
+      <pre className="sv-diagram-card-snippet">{snippet || "(empty diagram)"}</pre>
+    </div>
+  );
+}
 function diagramPlugin(contentType: string, label: string, placeholder: string) {
   registerNoteType({
     contentType,
     label,
-    render: ({ content }) => <DiagramNote contentType={contentType} content={typeof content === "string" ? content : ""} />,
+    render: ({ content, mode }) => {
+      const source = typeof content === "string" ? content : "";
+      // "card" → a light static preview (no live diagram mount); "full" (default) →
+      // the interactive DiagramNote a saved note uses.
+      return mode === "card" ? (
+        <DiagramCard contentType={contentType} content={source} />
+      ) : (
+        <DiagramNote contentType={contentType} content={source} />
+      );
+    },
     edit: (input) => <TextEditor {...input} placeholder={placeholder} />
   });
 }

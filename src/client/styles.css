@@ -2480,3 +2480,167 @@ textarea {
   height: 100%;
   border: 0;
 }
+
+/* —— Adaptive note forms · Phase 1b — shared card + centered overlay ————————
+   ArtifactCard (compact, clickable preview) + FocusOverlay (centered interactive
+   lightbox) + the diagram "card" preview + the composer "detected · override" chip.
+   One styling for the ONE shared capability used by chat AND the note viewer. */
+
+/* ArtifactCard — a compact card in the chat thread (icon + title + form badge +
+   optional thumbnail). It's a button: the whole card opens the FocusOverlay. */
+.sv-artifact-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid var(--sv-border-muted);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface-card);
+  color: var(--sv-text);
+  cursor: pointer;
+}
+.sv-artifact-card:hover {
+  border-color: var(--sv-accent-border);
+  background: var(--sv-accent-weak);
+}
+.sv-artifact-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.sv-artifact-icon {
+  display: inline-flex;
+  color: var(--sv-accent);
+  flex: 0 0 auto;
+}
+.sv-artifact-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--sv-text-strong);
+}
+.sv-artifact-badge {
+  flex: 0 0 auto;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--sv-surface-tag);
+  color: var(--sv-text-muted);
+}
+.sv-artifact-thumb {
+  display: block;
+  max-height: 120px;
+  overflow: hidden;
+  border-top: 1px solid var(--sv-border-soft);
+  padding-top: 6px;
+}
+
+/* Diagram "card" preview — a light static snippet (no live SVG mount) shown inside
+   the ArtifactCard for markmap/mermaid; the real diagram mounts in the overlay. */
+.sv-diagram-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sv-diagram-card-kind {
+  font-size: 11px;
+  color: var(--sv-text-muted);
+}
+.sv-diagram-card-snippet {
+  margin: 0;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--sv-text-quote);
+}
+
+/* FocusOverlay — a centered modal/lightbox over a dimmed backdrop. */
+.sv-focus-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4vh 4vw;
+  background: rgba(20, 18, 14, 0.55);
+}
+.sv-focus-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(900px, 92vw);
+  max-height: 90vh;
+  background: var(--sv-surface);
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.sv-focus-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--sv-border-soft);
+}
+.sv-focus-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--sv-text-strong);
+}
+.sv-focus-type {
+  flex: 0 0 auto;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--sv-surface-tag);
+  color: var(--sv-text-muted);
+}
+.sv-focus-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--sv-text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+}
+.sv-focus-close:hover {
+  background: var(--sv-surface-muted);
+  color: var(--sv-text-strong);
+}
+.sv-focus-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+/* Composer "detected · override" chip — the demoted type picker. */
+.composer-type-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.composer-detected-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--sv-text-muted);
+}
+.composer-detected-label strong {
+  color: var(--sv-accent-text);
+}

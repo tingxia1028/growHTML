@@ -28,7 +28,10 @@ test("textbook kit: composer creates an Explanation Study Block → renders as a
   // The kit's content type is available in the composer's (registry-fed) type picker,
   // labelled with the kit's domain name "Explanation".
   await page.locator(".composer-mode .mode-tab", { hasText: "Note" }).click();
-  const select = page.locator(".note-type-select");
+  // The type picker defaults to a "detected · change" chip (adaptive note forms Phase
+  // 1b); reveal the override <select> to pick the kit's type.
+  await page.locator(".composer-detected-change").click();
+  const select = page.locator(".composer-type-picker select.note-type-select");
   await expect(select.locator('option[value="textbook.explanation"]')).toHaveText("Explanation");
   await select.selectOption("textbook.explanation");
 

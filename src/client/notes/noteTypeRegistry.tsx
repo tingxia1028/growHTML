@@ -22,12 +22,29 @@ import {
 import type { NoteRecord } from "../data/entityClient";
 
 // What a renderer is handed: the parsed `content` (already validated by the core
-// spec before it was stored), the whole note (for ids / attachments), and an
-// optional render context the host can thread through (unused by built-ins today).
+// spec before it was stored), the whole note (for ids / attachments), an optional
+// render context the host can thread through (unused by built-ins today), and an
+// optional `mode`.
+//
+// `mode` lets the SAME plugin render two presentations through the ONE
+// getNoteType(contentType).render(...) path (design plan §3.5 / decision §6.6 — no
+// second render path):
+//   • "full" (default) — today's behavior: the complete, interactive view a saved
+//     note uses (the note list, the generation preview, and the FocusOverlay all
+//     pass "full").
+//   • "card"           — a lightweight/preview presentation for the ArtifactCard
+//     (a thumbnail / first-screen / scaled-or-truncated view). A plugin MAY opt into
+//     a nicer card; if it ignores `mode` (most built-ins) the shared GENERIC card
+//     fallback (ArtifactCard) supplies a title + snippet so every contentType gets a
+//     card for free without bypassing the registry.
+export type NoteRenderMode = "card" | "full";
+
 export type NoteRenderInput = {
   content: unknown;
   note?: NoteRecord;
   ctx?: unknown;
+  /** "full" (default) = the complete interactive view; "card" = a compact preview. */
+  mode?: NoteRenderMode;
 };
 
 // What an editor is handed: the current draft `content` (seeded from the spec's

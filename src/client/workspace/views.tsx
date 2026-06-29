@@ -42,6 +42,10 @@ import { InertNote } from "../notes/builtinNoteTypes";
 import { NoteAnchorControl } from "./noteAnchorControl";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { GenerationPreview } from "./GenerationPreview";
+import { FocusOverlay } from "./FocusOverlay";
+import { ChatMessageBody } from "./ChatMessageBody";
+import { ComposerTypePicker } from "./ComposerTypePicker";
+import { isDiagramType } from "../../adapters/notes/diagrams";
 import { SourceActionsToolbar } from "./SourceActionsToolbar";
 import { noteTypeOwnerKit } from "../../kits/clientContext";
 // Side-effect import: installs the Product Kits (Textbook Learning Kit, …), which
@@ -377,6 +381,44 @@ function NoteLayerControl({
   );
 }
 
+// A saved note's content, rendered IN ITS FORM (requirement 2 — the note viewer is
+// the corresponding rendering, not flattened to text). The in-list render is the
+// plugin's full view (today's behavior). For interactive/rich forms it ALSO offers an
+// "Open" affordance that focuses the note into the SHARED FocusOverlay — the exact
+// same capability the chat ArtifactCard uses (one impl, not re-done per surface), so a
+// 思维导图/diagram note can be viewed CENTERED and interactive. Bookmarks (chips) and
+// unknown types don't get the overlay — there's nothing richer to focus into.
+function NoteContentView({ note }: { note: NoteRecord }) {
+  const [open, setOpen] = useState(false);
+  const contentType = note.contentType ?? "markdown";
+  const plugin = getNoteType(contentType);
+  // Diagrams (and any future rich, interactive form) gain the centered overlay; plain
+  // text / chips render in place only. Derived from the diagram renderer REGISTRY (not
+  // a contentType branch) so any registered diagram form is focusable for free.
+  const focusable = !!plugin && isDiagramType(contentType);
+  return (
+    <>
+      {plugin ? plugin.render({ content: note.content, note }) : <InertNote content={note.content} />}
+      {focusable ? (
+        <div className="row-actions">
+          <button
+            type="button"
+            className="link-button note-open-overlay"
+            aria-haspopup="dialog"
+            title="Open this note centered and interactive"
+            onClick={() => setOpen(true)}
+          >
+            Open interactively
+          </button>
+        </div>
+      ) : null}
+      {open ? (
+        <FocusOverlay block={{ contentType, content: note.content, note }} onClose={() => setOpen(false)} />
+      ) : null}
+    </>
+  );
+}
+
 // —— study → the `.study-panel` aside (chat-box + terminal-box). Kept as ONE view:
 // the e2e depend on the exact `.study-panel > .chat-box`/`.terminal-box` structure,
 // and the chat-box's chip/log/composer/note-list/patch-fold all read shared draft +
@@ -476,9 +518,10 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
           {chatMessages.map((message, index) => (
             <div key={index} className={`chat-msg chat-${message.role}`}>
               {/* Display-side HARD contract (§0.5-B / §6.6): a chat reply is shown
-                  through the SAME single render path as a note — getNoteType().render —
-                  never a bespoke renderNoteContent() bypass. Chat replies are markdown. */}
-              {getNoteType("markdown")?.render({ content: message.content }) ?? null}
+                  through the SAME single render path as a note — getNoteType().render.
+                  Rich (high-confidence) replies surface as a clickable ArtifactCard
+                  that opens centered; plain replies render inline as markdown. */}
+              <ChatMessageBody role={message.role} content={message.content} />
               {message.role === "assistant" ? (
                 <div className="row-actions">
                   {/* Save routes through resolveForm/classifyContent → the generation
@@ -549,17 +592,12 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
             </button>
           </div>
           {composerMode === "note" ? (
-            <select
-              className="note-type-select"
+            <ComposerTypePicker
+              text={chatInput}
               value={noteContentType}
-              onChange={(event) => setNoteContentType(event.target.value)}
-            >
-              {noteTypeOptions(activeKitIds).map((option) => (
-                <option key={option.contentType} value={option.contentType}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+              onChange={setNoteContentType}
+              options={noteTypeOptions(activeKitIds)}
+            />
           ) : null}
           {/* Save routes by content shape: STRING types submit the textarea via
               submitComposer (the existing path, gated by composerDisabled); OBJECT
@@ -593,16 +631,13 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
           <div className="record-list note-list">
             {noteCards.map((note) => {
               const contentType = note.contentType ?? "markdown";
-              // Each note renders through its registered client NoteType plugin
-              // (content decoupled from renderer). An UNKNOWN type (no plugin) falls
-              // back to inert, escaped text so a foreign note can't crash the list.
-              const plugin = getNoteType(contentType);
               return (
                 <article key={note.id} className="record-card">
                   <strong>{contentType}</strong>
-                  {plugin
-                    ? plugin.render({ content: note.content, note })
-                    : <InertNote content={note.content} />}
+                  {/* The note rendered IN ITS FORM (requirement 2), through the one
+                      getNoteType().render path, with an "Open interactively" affordance
+                      that focuses rich forms into the shared FocusOverlay. */}
+                  <NoteContentView note={note} />
                   {/* A note's lens(es) + the "move / add to layer" action: chips show its
                       current layers, the picker toggles membership (note.set-layers sends
                       the full set). A note can sit in several layers at once. */}
