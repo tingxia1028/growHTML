@@ -11,70 +11,37 @@
 
 import { useState } from "react";
 import {
+  CornerDownLeft,
   File,
+  FileText,
   FilePlus2,
   FolderOpen,
-  Layers,
   ListRestart,
   Loader2,
-  NotebookPen,
   Pencil,
   RefreshCcw,
   RotateCcw,
-  Send,
   Sparkles,
   TerminalSquare,
   Trash2,
   X
 } from "lucide-react";
-import type { NoteRecord, StudyLayerRecord } from "../data/entityClient";
-import { noteCardsFrom } from "./noteCards";
+import type { NoteRecord } from "../data/entityClient";
 import { TerminalPanel } from "../TerminalPanel";
-import { FileTree, baseName } from "../FileTree";
+import { FileTree } from "../FileTree";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 import { PanelMenu } from "./PanelMenu";
 import { readerForSource } from "./readerForSource";
-import {
-  getNoteType,
-  isTextContentType,
-  listNoteTypes
-} from "../notes/noteTypeRegistry";
+import { getNoteType } from "../notes/noteTypeRegistry";
 // Side-effect import: registers the 12 built-in client NoteType plugins so the note
 // list + composer can render/edit every content type through the registry.
 import { InertNote } from "../notes/builtinNoteTypes";
-import { NoteAnchorControl } from "./noteAnchorControl";
-import { SelectionToolbar } from "./SelectionToolbar";
-import { GenerationPreview } from "./GenerationPreview";
 import { FocusOverlay } from "./FocusOverlay";
 import { ChatMessageBody } from "./ChatMessageBody";
-import { ComposerTypePicker } from "./ComposerTypePicker";
 import { isDiagramType } from "../../adapters/notes/diagrams";
-import { SourceActionsToolbar } from "./SourceActionsToolbar";
-import { noteTypeOwnerKit } from "../../kits/clientContext";
 // Side-effect import: installs the Product Kits (Textbook Learning Kit, …), which
 // register their note types + domain language into the same registries.
 import "../../kits/clientKits";
-
-// The composer's note-type picker lists the registered client NoteTypes, sorted so
-// markdown leads (it stays the default — the existing composer e2e types a markdown
-// note). Kit-owned types are gated by per-source activation: a built-in/core type
-// (no owning kit) is always offered; a kit type only when that kit is active here.
-// (Rendering is NOT gated — only this creation picker is.)
-function noteTypeOptions(activeKitIds: readonly string[]): { contentType: string; label: string }[] {
-  const all = listNoteTypes()
-    .filter((plugin) => {
-      if (plugin.hidden) return false;
-      const owner = noteTypeOwnerKit(plugin.contentType);
-      return !owner || activeKitIds.includes(owner);
-    })
-    .map((plugin) => ({
-      contentType: plugin.contentType,
-      label: plugin.label ?? plugin.contentType
-    }));
-  return all.sort((a, b) =>
-    a.contentType === "markdown" ? -1 : b.contentType === "markdown" ? 1 : a.contentType.localeCompare(b.contentType)
-  );
-}
 
 // —— library → the `.library-panel` aside. Reference IA: a clean header (`Library` +
 // a ⋯ actions menu) over the body. The body is the styled FileTree when a folderRoot is
@@ -87,11 +54,11 @@ function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
     canOpenLocal,
     openFileDialog,
     openFolderDialog,
-    folderRoot,
-    setFolderRoot,
+    folderRoots,
+    closeFolderRoot,
     openLocalFile,
     activeFilePath,
-    sources,
+    recentSources,
     activeSourceId,
     setActiveSourceId,
     deleteSourceItem,
@@ -165,21 +132,61 @@ function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
         </PanelMenu>
       </div>
 
-      <div className="library-body">
-        {folderRoot ? (
-          <div className="folder-root">
-            <div className="folder-root-head">
-              <span className="folder-root-name" title={folderRoot}>{baseName(folderRoot)}</span>
-              <button className="link-button" type="button" onClick={() => setFolderRoot(null)} title="Close folder">
-                <X size={14} />
-              </button>
-            </div>
-            <FileTree root={folderRoot} onOpenFile={(filePath) => void openLocalFile(filePath)} activePath={activeFilePath} />
+      <div className="library-body library-body-split">
+        <section
+          className={`library-section library-section-open${folderRoots.length > 0 ? " has-folders" : ""}`}
+          aria-label="Folders"
+        >
+          <div className="library-section-head">
+            <span>Folders</span>
+            <button
+              className="library-section-action"
+              type="button"
+              onClick={() => void openFolderDialog()}
+              disabled={!canOpenLocal}
+              title={canOpenLocal ? "Open a folder as a file tree" : "Desktop app only"}
+            >
+              <FolderOpen size={14} />
+              <span>Open</span>
+            </button>
           </div>
-        ) : (
-          <div className="source-list">
-            {sources.map((source) => (
-              <div key={source.id} className={`source-item${source.id === activeSourceId ? " active" : ""}`}>
+
+          <div className="open-folder-list">
+            {folderRoots.length > 0 ? (
+              folderRoots.map((root) => (
+                <div className="folder-tree-host" key={root}>
+                  <button
+                    className="folder-tree-close"
+                    type="button"
+                    onClick={() => closeFolderRoot(root)}
+                    title="Close folder"
+                    aria-label="Close folder"
+                  >
+                    <X size={14} />
+                  </button>
+                  <FileTree root={root} onOpenFile={(filePath) => void openLocalFile(filePath)} activePath={activeFilePath} />
+                </div>
+              ))
+            ) : null}
+          </div>
+        </section>
+
+        <section className="library-section library-section-recent" aria-label="Recent Read">
+          <div className="library-section-head">
+            <span>Recent Read</span>
+          </div>
+
+          <div className="source-list recent-source-list">
+            {recentSources.map((source) => (
+              <div
+                key={source.id}
+                className={`source-item${source.id === activeSourceId ? " active" : ""}`}
+                title={[
+                  source.title,
+                  `Type: ${source.sourceType}`,
+                  source.metadata?.originalPath ? `Path: ${source.metadata.originalPath}` : `ID: ${source.id}`
+                ].join("\n")}
+              >
                 <button className="source-item-open" type="button" onClick={() => setActiveSourceId(source.id)}>
                   <File size={15} className="source-item-icon" />
                   <span className="source-item-text">
@@ -198,19 +205,9 @@ function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
                 </button>
               </div>
             ))}
-            {sources.length === 0 ? <div className="empty-state">No sources yet.</div> : null}
-            <button
-              className="library-open-folder"
-              type="button"
-              onClick={() => void openFolderDialog()}
-              disabled={!canOpenLocal}
-              title={canOpenLocal ? "Open a folder as a file tree" : "Desktop app only"}
-            >
-              <FolderOpen size={15} />
-              Open folder…
-            </button>
+            {recentSources.length === 0 ? <div className="empty-state">No recent reads yet.</div> : null}
           </div>
-        )}
+        </section>
       </div>
 
       <div className="library-user" title="Account">
@@ -245,7 +242,7 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
         <div className="reader-tabs" role="tablist">
           {activeSource ? (
             <div className="reader-tab active" role="tab" aria-selected="true">
-              <File size={14} className="reader-tab-icon" />
+              <FileText size={14} className="reader-tab-icon" />
               <span className="reader-tab-title" title={activeSource.title}>{activeSource.title}</span>
               <button
                 className="reader-tab-close"
@@ -323,73 +320,6 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
 // checkboxes; toggling one sends the note's FULL next membership via `onSetLayers`
 // (note.set-layers). A note can belong to several layers, so this is multi-select, not
 // a single move. Chips use each layer's `color` so the lens is visible at a glance.
-function NoteLayerControl({
-  note,
-  layers,
-  onSetLayers
-}: {
-  note: NoteRecord;
-  layers: StudyLayerRecord[];
-  onSetLayers(layerIds: string[]): void;
-}) {
-  const [open, setOpen] = useState(false);
-  if (layers.length === 0) return null;
-  const memberIds = new Set(note.layerIds);
-  const chips = layers.filter((layer) => memberIds.has(layer.id));
-
-  // Toggle one layer in/out of the note's membership and emit the full next set.
-  const toggle = (layerId: string) => {
-    const next = memberIds.has(layerId)
-      ? note.layerIds.filter((id) => id !== layerId)
-      : [...note.layerIds, layerId];
-    onSetLayers(next);
-  };
-
-  return (
-    <div className="note-layers">
-      <div className="note-layer-chips">
-        {chips.map((layer) => (
-          <span
-            key={layer.id}
-            className="note-layer-chip"
-            style={layer.color ? { borderColor: layer.color, color: layer.color } : undefined}
-          >
-            {layer.title}
-          </span>
-        ))}
-        <button
-          type="button"
-          className="link-button note-layer-edit"
-          aria-label="Move or add this note to layers"
-          title="Move / add this note to layers"
-          onClick={() => setOpen((value) => !value)}
-        >
-          <Layers size={13} />
-          Layers
-        </button>
-      </div>
-      {open ? (
-        <div className="note-layer-picker">
-          {layers.map((layer) => (
-            <label key={layer.id} className="note-layer-option">
-              <input
-                type="checkbox"
-                checked={memberIds.has(layer.id)}
-                onChange={() => toggle(layer.id)}
-              />
-              <span
-                className="note-layer-swatch"
-                style={layer.color ? { background: layer.color } : undefined}
-              />
-              {layer.title}
-            </label>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 // A saved note's content, rendered IN ITS FORM (requirement 2 — the note viewer is
 // the corresponding rendering, not flattened to text). The in-list render is the
 // plugin's full view (today's behavior). For interactive/rich forms it ALSO offers an
@@ -511,40 +441,23 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
     focus,
     status,
     draftQuote,
-    hasRegionDraft,
     chatMessages,
     dispatch,
-    selectedTextOr,
-    previewClassifiedReply,
-    generating,
     chatInput,
     setChatInput,
-    composerMode,
-    setComposerMode,
     submitComposer,
-    noteContentType,
-    setNoteContentType,
-    noteContent,
-    setNoteContent,
-    submitNoteContent,
     composerDisabled,
-    visibleNotes,
-    anchors,
-    sourceLayers,
     patchHtml,
     setPatchHtml,
     activePatches,
     changePatchStatus,
     showTerminal,
     setShowTerminal,
-    activeFileDir,
-    activeKitIds
+    activeFileDir
   } = ctx;
 
   // Bookmarks are notes too, but they surface in the dedicated Bookmarks pane (and as
   // inline anchor markers), NOT as cards here — so they read as markers, not content.
-  const noteCards = noteCardsFrom(visibleNotes);
-
   return (
     <aside className="study-panel">
       <section className="chat-box">
@@ -552,17 +465,7 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
           <Sparkles size={16} />
           AI Chat
           <PanelMenu label="AI Chat actions" align="right">
-            {/* Relocated: kit source-level actions (Textbook: Review Pack), the
-                Edit-source patch fold, and the AI Terminal toggle — all reachable here,
-                none removed. */}
-            <div className="panel-menu-label">Source actions</div>
-            <SourceActionsToolbar
-              visible={!!ctx.activeSource}
-              items={ctx.sourceActions}
-              onRun={(action) => ctx.runAction(action)}
-              busy={generating}
-            />
-            <div className="panel-menu-sep" />
+            {/* Keep non-note utilities out of the main conversation surface. */}
             <details className="patch-fold">
               <summary>
                 <ListRestart size={14} /> Edit source (patch)
@@ -617,11 +520,11 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
         </div>
         {/* The passage everything below acts on — auto-filled from the reader
             selection (its anchor is created lazily when you ask or save). */}
-        {draftQuote || hasRegionDraft ? (
+        {false ? (
           <div className="chat-source">
             <span className="chat-source-label">Source</span>
             <span className="chat-source-quote">
-              {hasRegionDraft && !draftQuote ? (
+              {false && !draftQuote ? (
                 "Region selected"
               ) : (
                 <>
@@ -641,31 +544,6 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
           </div>
         ) : null}
 
-        {/* Kit-contributed quick actions on the focused passage (Textbook: Explain /
-            Practice / Mistake). Empty — and absent — when no kit is installed. */}
-        <SelectionToolbar
-          visible={!!focus.draft || !!focus.anchor}
-          items={ctx.selectionActions}
-          onRun={(action) => ctx.runAction(action)}
-          busy={generating}
-        />
-
-        {/* AI generation status: a single shared indicator for the in-flight structured
-            generation (Explain / Practice / operation.run / Generate-as-best-form /
-            classify-reply). Shows while `generating` is true, then clears when the draft
-            is ready (GenerationPreview appears) or an error surfaces in the error-box. */}
-        {generating ? (
-          <div className="generation-status" role="status" aria-live="polite" aria-busy="true">
-            <Loader2 size={14} className="spin" />
-            <span>AI 生成中…</span>
-          </div>
-        ) : null}
-
-        {/* generate → preview → edit → save: a kit AI draft awaiting Save. A SEPARATE
-            DOM subtree from .note-list below — a draft previews here before any note
-            exists. Renders nothing when no draft is pending. */}
-        <GenerationPreview />
-
         <div className="chat-log">
           {chatMessages.map((message, index) => (
             <div key={index} className={`chat-msg chat-${message.role}`}>
@@ -674,50 +552,14 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
                   Rich (high-confidence) replies surface as a clickable ArtifactCard
                   that opens centered; plain replies render inline as markdown. */}
               <ChatMessageBody role={message.role} content={message.content} />
-              {message.role === "assistant" ? (
-                <div className="row-actions">
-                  {/* Save routes through resolveForm/classifyContent → the generation
-                      preview loop: the user PREVIEWS the detected form before it lands,
-                      instead of a hardcoded contentType:"markdown". */}
-                  <button
-                    className="link-button"
-                    type="button"
-                    title="Save the highlighted part of this reply (or the whole reply if nothing is selected)"
-                    disabled={generating}
-                    onClick={() => void previewClassifiedReply(selectedTextOr(message.content))}
-                  >
-                    Save selection as note
-                  </button>
-                  <button
-                    className="link-button"
-                    type="button"
-                    disabled={generating}
-                    onClick={() => void previewClassifiedReply(message.content)}
-                  >
-                    Save full reply
-                  </button>
-                  {/* Form router (Phase 4 item 1): the MODEL picks the best form AND
-                      fills it in one structured call, then previews like any draft. */}
-                  <button
-                    className="link-button"
-                    type="button"
-                    title="Ask the model to pick the best note form for this reply and generate it"
-                    disabled={generating}
-                    onClick={() => void dispatch("note.generate-block", { text: message.content })}
-                  >
-                    {generating ? "AI 生成中…" : "Generate as best form"}
-                  </button>
-                </div>
-              ) : null}
             </div>
           ))}
           {/* Streaming ask-ai: until the FIRST token arrives, the last message is still
               the user's prompt while a request is in flight (status "saving"). Show a
               working row so the chat doesn't look frozen before progressive text begins.
               Once a delta lands, onAssistantChunk appends an assistant message and this
-              clears. Generation flows have their own .generation-status above. */}
+              clears. */}
           {status === "saving" &&
-          !generating &&
           chatMessages.length > 0 &&
           chatMessages[chatMessages.length - 1].role === "user" ? (
             <div className="chat-msg chat-assistant chat-pending" role="status" aria-live="polite">
@@ -727,17 +569,18 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
           ) : null}
         </div>
 
-        {/* One composer: toggle whether the text is sent to the AI or saved as a
-            note. Enter submits the current mode; Shift+Enter inserts a newline.
-            STRING note types (markdown/plain-text/mermaid/markmap) and "ask" author
-            through this shared textarea — this is the path the existing e2e drive.
-            OBJECT note types (flashcard/quiz/image/…) hide it and render the chosen
-            type's structured `edit()` editor below instead. */}
-        {composerMode === "ask" || isTextContentType(noteContentType) ? (
+        <form
+          className="chat-composer-bar"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submitComposer();
+          }}
+        >
           <textarea
-            className="composer-input"
+            className="composer-input chat-composer-input"
+            rows={1}
             value={chatInput}
-            placeholder={composerMode === "ask" ? "Ask the AI about this passage…" : "Write a note about this passage…"}
+            placeholder="Type / for commands"
             onChange={(event) => setChatInput(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
@@ -746,103 +589,10 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
               }
             }}
           />
-        ) : (
-          <div className="composer-note-editor">
-            {getNoteType(noteContentType)?.edit({ content: noteContent, onChange: setNoteContent }) ?? null}
-          </div>
-        )}
-        <div className="composer-actions">
-          <div className="composer-mode" role="tablist" aria-label="Composer mode">
-            <button
-              type="button"
-              className={`mode-tab${composerMode === "ask" ? " active" : ""}`}
-              onClick={() => setComposerMode("ask")}
-            >
-              <Sparkles size={14} />
-              Ask AI
-            </button>
-            <button
-              type="button"
-              className={`mode-tab${composerMode === "note" ? " active" : ""}`}
-              onClick={() => setComposerMode("note")}
-            >
-              <NotebookPen size={14} />
-              Note
-            </button>
-          </div>
-          {composerMode === "note" ? (
-            <ComposerTypePicker
-              text={chatInput}
-              value={noteContentType}
-              onChange={setNoteContentType}
-              options={noteTypeOptions(activeKitIds)}
-            />
-          ) : null}
-          {/* Save routes by content shape: STRING types submit the textarea via
-              submitComposer (the existing path, gated by composerDisabled); OBJECT
-              types submit the structured draft via submitNoteContent (always
-              enabled — the editor seeds a valid blank value). */}
-          {composerMode === "note" && !isTextContentType(noteContentType) ? (
-            <button
-              className="icon-button primary composer-submit"
-              type="button"
-              onClick={submitNoteContent}
-              title="Save note"
-            >
-              <NotebookPen size={16} />
-              Save Note
-            </button>
-          ) : (
-            <button
-              className="icon-button primary composer-submit"
-              type="button"
-              onClick={submitComposer}
-              disabled={composerDisabled}
-              title={composerMode === "ask" ? "Send to AI (Enter)" : "Save note (Enter)"}
-            >
-              {composerMode === "ask" ? <Send size={16} /> : <NotebookPen size={16} />}
-              {composerMode === "ask" ? "Send" : "Save Note"}
-            </button>
-          )}
-        </div>
-
-        {noteCards.length ? (
-          <div className="record-list note-list">
-            {noteCards.map((note) => {
-              const contentType = note.contentType ?? "markdown";
-              return (
-                <article key={note.id} className="record-card">
-                  <strong>{contentType}</strong>
-                  {/* The note rendered IN ITS FORM (requirement 2), through the one
-                      getNoteType().render path, with an "Open interactively" affordance
-                      that focuses rich forms into the shared FocusOverlay. */}
-                  <NoteContentView
-                    note={note}
-                    onEdit={(content) => void dispatch("note.edit", { noteId: note.id, content })}
-                    onDelete={() => void dispatch("note.delete", { noteId: note.id })}
-                  />
-                  {/* A note's lens(es) + the "move / add to layer" action: chips show its
-                      current layers, the picker toggles membership (note.set-layers sends
-                      the full set). A note can sit in several layers at once. */}
-                  <NoteLayerControl
-                    note={note}
-                    layers={sourceLayers}
-                    onSetLayers={(layerIds) => void dispatch("note.set-layers", { layerNoteId: note.id, layerIds })}
-                  />
-                  {/* A note's anchor(s): "link to selection" (anchor the note at the
-                      focused passage too) + per-anchor jump buttons for a multi-anchor
-                      note. Pure UX over note.anchorIds (no schema change). */}
-                  <NoteAnchorControl
-                    note={note}
-                    anchors={anchors}
-                    focus={focus}
-                    onLink={() => void dispatch("note.link-anchor", { noteId: note.id, noteAnchorIds: note.anchorIds })}
-                  />
-                </article>
-              );
-            })}
-          </div>
-        ) : null}
+          <button className="chat-submit" type="submit" disabled={composerDisabled} aria-label="Send message" title="Send">
+            <CornerDownLeft size={16} />
+          </button>
+        </form>
 
       </section>
     </aside>

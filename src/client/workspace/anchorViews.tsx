@@ -6,7 +6,7 @@
 //   • Linked notes — a row of note-type icons for the notes attached to this anchor.
 // When nothing is focused it shows the existing "Select a passage…" empty state.
 
-import { Anchor, ChevronRight, FileText } from "lucide-react";
+import { Anchor, Crosshair, FileText } from "lucide-react";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 import { draftQuoteText } from "../focus/FocusContext";
 import { PanelMenu } from "./PanelMenu";
@@ -57,6 +57,16 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
               <span className="anchor-context-name" title={activeSource?.title}>
                 {activeSource?.title ?? "Current source"}
               </span>
+              <button
+                className="anchor-context-jump"
+                type="button"
+                title="Reveal this anchor in the reader"
+                aria-label="Reveal this anchor in the reader"
+                disabled={!anchor}
+                onClick={() => anchor && focus.setAnchor(anchor)}
+              >
+                <Crosshair size={14} />
+              </button>
             </div>
             {page != null ? (
               <div className="anchor-context-meta">
@@ -64,16 +74,6 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
                 {section ? ` (${section}…)` : ""}
               </div>
             ) : null}
-            <button
-              className="anchor-context-jump"
-              type="button"
-              title="Reveal this anchor in the reader"
-              disabled={!anchor}
-              onClick={() => anchor && focus.setAnchor(anchor)}
-            >
-              <span>Anchor at this passage</span>
-              <ChevronRight size={14} />
-            </button>
           </div>
 
           {/* —— Excerpt —— amber highlight box */}

@@ -20,6 +20,11 @@ contextBridge.exposeInMainWorld("studyVault", {
   // Resolve a File (from an <input type=file>) back to its absolute disk path so
   // the terminal can default to the directory of the file being read.
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
+  windowControls: {
+    minimize: () => ipcRenderer.send("window:minimize"),
+    toggleMaximize: () => ipcRenderer.send("window:toggleMaximize"),
+    close: () => ipcRenderer.send("window:close")
+  },
   pty: {
     start: (request: { file: string; args?: string[]; cols?: number; rows?: number; cwd?: string }) =>
       ipcRenderer.invoke("pty:start", request) as Promise<{ id: string }>,

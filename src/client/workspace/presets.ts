@@ -36,12 +36,12 @@ export const threePane: WorkspaceLayout = {
 // are now reached via the IconRail (which swaps the left "library" slot's kind). Their
 // nodes stay LISTED so the rail's kind-swap resolves them and they remain reachable.
 const studyVaultDock: DockNode = split("row", [
-  { size: 280, node: leaf("library") },
+  { size: 250, node: leaf("library") },
   { size: "flex", node: leaf("source-viewer") },
   {
-    size: 360,
+    size: 340,
     node: split("column", [
-      { size: 200, node: leaf("anchor") },
+      { size: 372, node: leaf("anchor") },
       { size: "flex", node: leaf("study") }
     ])
   }

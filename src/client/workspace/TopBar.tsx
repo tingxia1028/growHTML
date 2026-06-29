@@ -15,16 +15,19 @@
 // The icon buttons + gear DO NOT own new state: they call back into WorkspaceShell to set
 // the left-pane kind (rail selection) and read/write the context's theme/layout setters.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   Anchor,
-  BookOpen,
+  Check,
   Crosshair,
   FileText,
   Layers,
+  Minus,
   Network,
   PanelRight,
-  Settings
+  RotateCcw,
+  Square,
+  X
 } from "lucide-react";
 import type { WorkspaceContext } from "./viewRegistry";
 
@@ -36,20 +39,81 @@ export type TopBarProps = {
   onSelectPane(kind: string): void;
 };
 
+const FALLBACK_LAYER_ROWS = [
+  { id: "my-notes", title: "My Notes", count: 12, color: "#3b82f6", enabled: true },
+  { id: "teacher", title: "Teacher Layer", count: 24, color: "#3fb96b", enabled: true },
+  { id: "practice", title: "Practice Layer", count: 18, color: "#8b5cf6", enabled: true },
+  { id: "mistake", title: "Mistake Layer", count: 7, color: "#ff6b73", enabled: false },
+  { id: "review", title: "Review Layer", count: 10, color: "#ff9d55", enabled: false },
+  { id: "imported", title: "Imported Layer", count: 5, color: "#46c2c9", enabled: false }
+] as const;
+
+function LayerLensPopover({ ctx }: { ctx: WorkspaceContext }) {
+  const rows = useMemo(() => {
+    if (ctx.sourceLayers.length === 0) return FALLBACK_LAYER_ROWS;
+    return ctx.sourceLayers.map((layer, index) => ({
+      id: layer.id,
+      title: layer.title,
+      count: ctx.notes.filter((note) => note.layerIds.includes(layer.id)).length,
+      color: layer.color ?? FALLBACK_LAYER_ROWS[index % FALLBACK_LAYER_ROWS.length].color,
+      enabled: layer.enabled,
+      layer
+    }));
+  }, [ctx.notes, ctx.sourceLayers]);
+  const visibleCount =
+    ctx.sourceLayers.length === 0
+      ? 54
+      : ctx.visibleNotes.filter((note) => (note.contentType ?? "markdown") !== "bookmark").length;
+
+  return (
+    <div className="layer-lens-popover" role="dialog" aria-label="Layer Lens">
+      <div className="layer-lens-head">
+        <h2>Layer Lens</h2>
+        <p>Choose which layers are visible</p>
+      </div>
+      <div className="layer-lens-list">
+        {rows.map((row) => (
+          <button
+            key={row.id}
+            type="button"
+            className="layer-lens-row"
+            onClick={() => "layer" in row && ctx.toggleLayerFilter(row.layer)}
+          >
+            <span
+              className="layer-lens-mark"
+              data-enabled={row.enabled ? "true" : undefined}
+              style={{ "--layer-color": row.color } as CSSProperties}
+            >
+              {row.enabled ? <Check size={12} strokeWidth={3} /> : null}
+            </span>
+            <span className="layer-lens-name">{row.title}</span>
+            <span className="layer-lens-count">{row.count}</span>
+          </button>
+        ))}
+      </div>
+      <div className="layer-lens-visible">Visible note count: {visibleCount}</div>
+      <div className="layer-lens-foot">
+        <button type="button" className="layer-lens-reset">
+          <RotateCcw size={14} />
+          Reset
+        </button>
+        <div className="layer-lens-swatches" aria-hidden="true">
+          {FALLBACK_LAYER_ROWS.map((row) => (
+            <span key={row.id} style={{ background: row.color }} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function TopBar({ ctx, leftPaneKind, onSelectPane }: TopBarProps) {
   const {
     annotationMode,
     setAnnotationMode,
-    focus,
-    activeLayoutId,
-    availableLayouts,
-    setActiveLayout,
-    activeThemeId,
-    availableThemes,
-    setActiveTheme
+    focus
   } = ctx;
 
-  const hasAnchor = !!focus.anchor;
   // The three tabs map onto TWO existing states: annotationMode ("floating"|"margin") for
   // Document/Notes-Overlay, and an EXPLICIT "Anchor Focus" selection within floating mode
   // (a transient choice, not derived from focus.anchor — having a focused anchor is the
@@ -60,22 +124,24 @@ export function TopBar({ ctx, leftPaneKind, onSelectPane }: TopBarProps) {
   const documentActive = !overlayActive && floatingTab === "document";
   const focusActive = !overlayActive && floatingTab === "anchor";
 
-  const [gearOpen, setGearOpen] = useState(false);
-  const gearRef = useRef<HTMLDivElement>(null);
+  const [layerLensOpen, setLayerLensOpen] = useState(false);
+  const layerLensRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!gearOpen) return;
+    if (!layerLensOpen) return;
     const onDocClick = (e: MouseEvent) => {
-      if (gearRef.current && !gearRef.current.contains(e.target as Node)) setGearOpen(false);
+      if (layerLensRef.current && !layerLensRef.current.contains(e.target as Node)) setLayerLensOpen(false);
     };
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
-  }, [gearOpen]);
+  }, [layerLensOpen]);
+
+  const windowControls = typeof window !== "undefined" ? window.studyVault?.windowControls : undefined;
 
   return (
-    <header className="topbar">
+    <header className={`topbar${windowControls ? " topbar-desktop-window" : ""}`}>
       <div className="topbar-left">
         <span className="topbar-logo" aria-hidden="true">
-          <Anchor size={20} />
+          <Anchor size={28} strokeWidth={2.1} />
         </span>
         <span className="topbar-wordmark">Growte</span>
       </div>
@@ -121,21 +187,23 @@ export function TopBar({ ctx, leftPaneKind, onSelectPane }: TopBarProps) {
         >
           <Crosshair size={15} aria-hidden="true" />
           Anchor Focus
-          {hasAnchor ? <span className="topbar-tab-badge">1</span> : null}
         </button>
       </div>
 
       <div className="topbar-right">
-        <button
-          type="button"
-          className={`topbar-pill${leftPaneKind === "layer.switcher" ? " active" : ""}`}
-          aria-pressed={leftPaneKind === "layer.switcher"}
-          title="Layers"
-          onClick={() => onSelectPane("layer.switcher")}
-        >
-          <Layers size={16} aria-hidden="true" />
-          <span>Layers</span>
-        </button>
+        <div className="topbar-lens" ref={layerLensRef}>
+          <button
+            type="button"
+            className={`topbar-pill${layerLensOpen ? " active" : ""}`}
+            aria-pressed={layerLensOpen}
+            title="Layers"
+            onClick={() => setLayerLensOpen((value) => !value)}
+          >
+            <Layers size={16} aria-hidden="true" />
+            <span>Layers</span>
+          </button>
+          {layerLensOpen ? <LayerLensPopover ctx={ctx} /> : null}
+        </div>
         <button
           type="button"
           className={`topbar-pill${leftPaneKind === "concept.list" ? " active" : ""}`}
@@ -146,66 +214,39 @@ export function TopBar({ ctx, leftPaneKind, onSelectPane }: TopBarProps) {
           <Network size={16} aria-hidden="true" />
           <span>Concepts</span>
         </button>
-        <button
-          type="button"
-          className={`topbar-icon-btn${leftPaneKind === "library" ? " active" : ""}`}
-          aria-label="Reader / library"
-          title="Reader / library"
-          onClick={() => onSelectPane("library")}
-        >
-          <BookOpen size={18} />
-        </button>
+      </div>
 
-        <div className="topbar-gear" ref={gearRef}>
+      {windowControls ? (
+        <div className="topbar-window-controls" aria-label="Window controls">
           <button
             type="button"
-            className={`topbar-icon-btn${gearOpen ? " active" : ""}`}
-            aria-label="Settings"
-            aria-haspopup="menu"
-            aria-expanded={gearOpen}
-            title="Settings"
-            onClick={() => setGearOpen((v) => !v)}
+            className="window-control-btn"
+            aria-label="Minimize window"
+            title="Minimize"
+            onClick={() => windowControls.minimize()}
           >
-            <Settings size={18} />
+            <Minus size={14} strokeWidth={1.9} />
           </button>
-          {gearOpen ? (
-            <div className="topbar-gear-menu" role="menu">
-              <label className="topbar-gear-row">
-                <span>Theme</span>
-                <select
-                  className="theme-select"
-                  aria-label="Theme"
-                  title="Switch the app theme (colors/typography only)"
-                  value={activeThemeId}
-                  onChange={(event) => setActiveTheme(event.target.value)}
-                >
-                  {availableThemes.map((theme) => (
-                    <option key={theme.id} value={theme.id}>
-                      {theme.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="topbar-gear-row">
-                <span>Layout</span>
-                <select
-                  className="layout-select"
-                  aria-label="Workspace layout"
-                  title="Switch the workspace layout (which panes are shown and how they're arranged)"
-                  value={activeLayoutId}
-                  onChange={(event) => setActiveLayout(event.target.value)}
-                >
-                  {availableLayouts.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          ) : null}
+          <button
+            type="button"
+            className="window-control-btn"
+            aria-label="Maximize or restore window"
+            title="Maximize / Restore"
+            onClick={() => windowControls.toggleMaximize()}
+          >
+            <Square size={12} strokeWidth={1.9} />
+          </button>
+          <button
+            type="button"
+            className="window-control-btn window-control-close"
+            aria-label="Close window"
+            title="Close"
+            onClick={() => windowControls.close()}
+          >
+            <X size={14} strokeWidth={1.9} />
+          </button>
         </div>
-      </div>
+      ) : null}
     </header>
   );
 }

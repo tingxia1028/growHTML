@@ -13,6 +13,11 @@ interface StudyVaultBridge {
   desktop: boolean;
   platform: string;
   webviewPreloadUrl?: string;
+  windowControls?: {
+    minimize(): void;
+    toggleMaximize(): void;
+    close(): void;
+  };
   pty?: StudyVaultPty;
   // Opens a native folder picker; resolves to the chosen path or null if cancelled.
   pickDirectory?(): Promise<string | null>;

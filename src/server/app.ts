@@ -265,6 +265,24 @@ const workspaceStateSchema = z.object({
 });
 const emptyWorkspaceState = { activeLayoutId: "", layouts: [] };
 
+async function deleteAnchorsWithoutNotes(vault: StudyVault, anchorIds: Iterable<string>) {
+  const candidates = [...new Set(anchorIds)];
+  if (candidates.length === 0) return;
+
+  const [notes, patches] = await Promise.all([vault.stores.notes.list(), vault.stores.patches.list()]);
+  const referencedByNote = new Set<string>();
+  for (const note of notes) {
+    for (const anchorId of note.anchorIds) referencedByNote.add(anchorId);
+  }
+  const referencedByPatch = new Set(patches.map((patch) => patch.anchorId));
+
+  for (const anchorId of candidates) {
+    if (!referencedByNote.has(anchorId) && !referencedByPatch.has(anchorId)) {
+      await vault.stores.anchors.delete(anchorId);
+    }
+  }
+}
+
 // `conflict` is system-set (never requested); other transitions follow a minimal state machine.
 const patchTransitions: Record<PatchStatus, readonly PatchStatus[]> = {
   pending: ["accepted", "rejected", "applied"],
@@ -612,18 +630,17 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
       // Anchor painting is DERIVED, not stored: an anchor paints iff it has a note in
       // an ENABLED layer (OR across that note's layers). One anchor can be shared by
       // several notes with different layers, so we can't read `anchor.layerId` (kept
-      // only for backward-compat). Fallback for note-less / legacy anchors: paint iff
-      // their own `anchor.layerId` is enabled-or-absent — so a highlight created without
-      // a note (and pre-layer data) doesn't silently vanish.
+      // only for backward-compat). Note-less anchors are no longer painted; truly
+      // orphaned ones are pruned so stale highlights cannot reappear.
       const sourceId = req.params.sourceId;
       const layers = await vault.stores.layers.list();
       const enabled = new Set(layers.filter((layer) => layer.enabled).map((layer) => layer.id));
-      const disabled = new Set(layers.filter((layer) => !layer.enabled).map((layer) => layer.id));
       const sourceNotes = (await vault.stores.notes.list()).filter((note) => note.sourceId === sourceId);
+      const sourceAnchors = (await vault.stores.anchors.list()).filter((anchor) => anchor.sourceId === sourceId);
 
-      // Anchor id -> does any note on it sit in an enabled layer? (and is it referenced
-      // by a note at all?) A note with EMPTY layerIds is "always visible" (never orphan
-      // it), so it paints its anchors regardless of the enabled set.
+      // Anchor id -> does any note on it sit in an enabled layer? A note with EMPTY
+      // layerIds is "always visible" (never orphan it), so it paints its anchors
+      // regardless of the enabled set.
       const paintedByNote = new Set<string>();
       const noted = new Set<string>();
       for (const note of sourceNotes) {
@@ -634,15 +651,13 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
         }
       }
 
-      const anchors = (await vault.stores.anchors.list()).filter((anchor) => {
-        if (anchor.sourceId !== sourceId) return false;
-        if (paintedByNote.has(anchor.id)) return true;
-        // Note-less anchor: fall back to its own (deprecated) layerId — paint unless it
-        // sits on a disabled layer.
-        if (!noted.has(anchor.id)) return !(anchor.layerId && disabled.has(anchor.layerId));
-        // Anchor only referenced by notes in disabled layers → not painted.
-        return false;
-      });
+      await deleteAnchorsWithoutNotes(
+        vault,
+        sourceAnchors.filter((anchor) => !noted.has(anchor.id)).map((anchor) => anchor.id)
+      );
+
+      // Current rule: only note-backed anchors paint; note-less anchors never do.
+      const anchors = sourceAnchors.filter((anchor) => paintedByNote.has(anchor.id));
       res.json({ anchors });
     } catch (error) {
       next(error);
@@ -761,6 +776,7 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
         input.content !== undefined
           ? parseNoteContent(existing.contentType, input.content)
           : existing.content;
+      const previousAnchorIds = existing.anchorIds;
       const note = noteSchema.parse({
         ...existing,
         conceptIds: input.conceptIds ?? existing.conceptIds,
@@ -770,6 +786,13 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
         updatedAt: new Date().toISOString()
       });
       await vault.stores.notes.upsert(note);
+      if (input.anchorIds !== undefined) {
+        const nextAnchorIds = new Set(note.anchorIds);
+        await deleteAnchorsWithoutNotes(
+          vault,
+          previousAnchorIds.filter((anchorId) => !nextAnchorIds.has(anchorId))
+        );
+      }
       res.json({ note });
     } catch (error) {
       next(error);
@@ -794,21 +817,7 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
         res.status(404).json({ error: "Note not found" });
         return;
       }
-      // Load the remaining notes + all patches ONCE (efficiency), then drop any of this
-      // note's anchors no longer referenced by either. The note is already gone from the
-      // store, so `notes.list()` reflects the post-delete set.
-      if (note.anchorIds.length > 0) {
-        const remainingNotes = await vault.stores.notes.list();
-        const patches = await vault.stores.patches.list();
-        const referencedByNote = new Set<string>();
-        for (const other of remainingNotes) for (const anchorId of other.anchorIds) referencedByNote.add(anchorId);
-        const referencedByPatch = new Set(patches.map((patch) => patch.anchorId));
-        for (const anchorId of note.anchorIds) {
-          if (!referencedByNote.has(anchorId) && !referencedByPatch.has(anchorId)) {
-            await vault.stores.anchors.delete(anchorId);
-          }
-        }
-      }
+      await deleteAnchorsWithoutNotes(vault, note.anchorIds);
       res.json({ ok: true });
     } catch (error) {
       next(error);

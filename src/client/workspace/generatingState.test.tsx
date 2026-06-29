@@ -60,9 +60,59 @@ beforeEach(() => {
   root = createRoot(container);
 });
 
+describe("library opened folders", () => {
+  async function mount() {
+    await act(async () => {
+      root.render(
+        <FocusProvider>
+          <WorkspaceProvider>
+            <Capture />
+          </WorkspaceProvider>
+        </FocusProvider>
+      );
+    });
+  }
+
+  it("keeps multiple opened folders, dedupes repeated picks, and closes one root", async () => {
+    const picks = ["C:\\Study\\One", "C:\\Study\\Two", "C:\\Study\\One\\"];
+    Object.defineProperty(window, "studyVault", {
+      configurable: true,
+      value: {
+        desktop: true,
+        platform: "win32",
+        openFile: vi.fn(),
+        pickDirectory: vi.fn(() => Promise.resolve(picks.shift() ?? null))
+      }
+    });
+
+    await mount();
+    expect(ctx.folderRoots).toEqual([]);
+
+    await act(async () => {
+      await ctx.openFolderDialog();
+    });
+    await act(async () => {
+      await ctx.openFolderDialog();
+    });
+    await act(async () => {
+      await ctx.openFolderDialog();
+    });
+
+    expect(ctx.folderRoots).toEqual(["C:\\Study\\One", "C:\\Study\\Two"]);
+
+    await act(async () => {
+      ctx.closeFolderRoot("C:\\Study\\One\\");
+    });
+
+    expect(ctx.folderRoots).toEqual(["C:\\Study\\Two"]);
+  });
+});
+
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  Reflect.deleteProperty(window, "studyVault");
+  window.localStorage.clear();
   vi.clearAllMocks();
 });
 

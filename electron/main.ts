@@ -1,11 +1,26 @@
 import path from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell } from "electron";
 import { startServer, type StartedServer } from "../src/server/start";
 import { DEV_SERVER_URL, isDevMode } from "./shell";
 import { registerPtyBridge } from "./pty-bridge";
 
 let started: StartedServer | null = null;
 let mainWindow: BrowserWindow | null = null;
+
+app.setName("Growte");
+if (process.platform === "win32") app.setAppUserModelId("com.growte.desktop");
+
+function loadAppIcon() {
+  const iconPath = app.isPackaged
+    ? path.join(process.resourcesPath, "assets", "growte-anchor.ico")
+    : path.join(process.cwd(), "electron", "assets", "growte-anchor.ico");
+  const icon = nativeImage.createFromPath(iconPath);
+  return icon.isEmpty() ? undefined : icon;
+}
+
+function windowForEvent(event: Electron.IpcMainEvent) {
+  return BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
+}
 
 async function resolveStartUrl(): Promise<string> {
   if (isDevMode(process.env, process.argv)) {
@@ -19,11 +34,15 @@ async function resolveStartUrl(): Promise<string> {
 
 async function createWindow() {
   const startUrl = await resolveStartUrl();
+  const appIcon = loadAppIcon();
 
   const window = new BrowserWindow({
     width: 1440,
     height: 900,
     title: "AI Study Vault",
+    icon: appIcon,
+    frame: false,
+    autoHideMenuBar: true,
     backgroundColor: "#f5f1e8",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -83,9 +102,25 @@ ipcMain.handle("dialog:openFile", async () => {
   return result.filePaths[0];
 });
 
+ipcMain.on("window:minimize", (event) => {
+  windowForEvent(event)?.minimize();
+});
+
+ipcMain.on("window:toggleMaximize", (event) => {
+  const target = windowForEvent(event);
+  if (!target) return;
+  if (target.isMaximized()) target.unmaximize();
+  else target.maximize();
+});
+
+ipcMain.on("window:close", (event) => {
+  windowForEvent(event)?.close();
+});
+
 app
   .whenReady()
   .then(() => {
+    Menu.setApplicationMenu(null);
     registerPtyBridge(() => mainWindow);
     return createWindow();
   })

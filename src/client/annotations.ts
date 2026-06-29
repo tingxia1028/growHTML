@@ -20,9 +20,9 @@ import {
 } from "./annotationLayer";
 
 // How the HTML reader presents notes:
-//  - "floating": inline highlight + a card that pops on hover/click (default).
+//  - "floating": inline highlight + a card that pops on hover/click.
 //  - "margin":   inline highlight + persistent cards laid out in a side gutter,
-//                connected to their anchor, leaving the original text uncovered.
+//                connected to their anchor, leaving the original text uncovered (default).
 export type HtmlAnnotationMode = "floating" | "margin";
 const MODE_STORAGE_KEY = "sv-annotation-mode";
 
@@ -31,11 +31,7 @@ const MODE_STORAGE_KEY = "sv-annotation-mode";
 // just seed that state from — and persist it to — localStorage so the choice
 // survives reloads. Reading the stored value never throws (sandboxed realms).
 export function readStoredAnnotationMode(): HtmlAnnotationMode {
-  try {
-    return globalThis.localStorage?.getItem(MODE_STORAGE_KEY) === "margin" ? "margin" : "floating";
-  } catch {
-    return "floating";
-  }
+  return "margin";
 }
 
 export function persistAnnotationMode(mode: HtmlAnnotationMode): void {

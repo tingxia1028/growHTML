@@ -142,6 +142,30 @@ function loadActiveTheme(): string {
   }
 }
 
+const RECENT_SOURCE_IDS_KEY = "sv-recent-source-ids";
+
+function readStoredRecentSourceIds(): string[] {
+  try {
+    const raw = globalThis.localStorage?.getItem(RECENT_SOURCE_IDS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistRecentSourceIds(ids: string[]): void {
+  try {
+    globalThis.localStorage?.setItem(RECENT_SOURCE_IDS_KEY, JSON.stringify(ids));
+  } catch {
+    // storage unavailable - keep the in-memory order
+  }
+}
+
+function normalizeFolderRoot(root: string): string {
+  return root.trim().replace(/[\\/]+$/, "");
+}
+
 // Note `content` is `unknown` (structured per contentType). For display we want a
 // string: string content passes through; structured content is shown as JSON.
 export function noteText(content: unknown): string {
@@ -168,6 +192,7 @@ export type WorkspaceContextValue = {
 
   // —— sources ——
   sources: SourceRecord[];
+  recentSources: SourceRecord[];
   activeSourceId: string;
   activeSource: SourceRecord | null;
   activeViewer: SourceViewer;
@@ -191,8 +216,8 @@ export type WorkspaceContextValue = {
 
   // —— opening / importing ——
   canOpenLocal: boolean;
-  folderRoot: string | null;
-  setFolderRoot(root: string | null): void;
+  folderRoots: string[];
+  closeFolderRoot(root: string): void;
   activeFilePath: string | undefined;
   importUrl: string;
   setImportUrl(url: string): void;
@@ -364,7 +389,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [showTerminal, setShowTerminal] = useState(false);
   const [patchHtml, setPatchHtml] = useState("");
   const [importUrl, setImportUrl] = useState("");
-  const [folderRoot, setFolderRoot] = useState<string | null>(null);
+  const [folderRoots, setFolderRoots] = useState<string[]>([]);
+  const [recentSourceIds, setRecentSourceIds] = useState<string[]>(readStoredRecentSourceIds);
   const [conceptsVersion, setConceptsVersion] = useState(0);
   const [activeLayoutId, setActiveLayoutId] = useState<string>(loadActiveLayout);
   const [activeThemeId, setActiveThemeId] = useState<string>(loadActiveTheme);
@@ -391,6 +417,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     (sources.find((source) => source.id === activeSourceId)?.metadata?.originalPath as string | undefined) ?? undefined;
 
   const activeSource = sources.find((source) => source.id === activeSourceId) ?? null;
+  const recentSources = useMemo(() => {
+    const byId = new Map(sources.map((source) => [source.id, source]));
+    const ordered = recentSourceIds.map((id) => byId.get(id)).filter((source): source is SourceRecord => !!source);
+    const seen = new Set(ordered.map((source) => source.id));
+    return [...ordered, ...sources.filter((source) => !seen.has(source.id))];
+  }, [sources, recentSourceIds]);
   const activeViewer = getSourceViewer(activeSource?.sourceType);
   const selectedAnchorId = focus.anchor?.id ?? "";
   const activeFileDir = parentDir((activeSource?.metadata?.originalPath as string | undefined) ?? "");
@@ -434,13 +466,34 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     return map;
   }, [visibleNotes]);
 
-  // ONE normalized paint list for the active source: every anchor it has, mapped to
-  // the uniform PaintAnchor shape with its merged note text. The host hands this
-  // SAME list to whichever reader matches the source; each reader filters it to the
-  // anchorKinds it understands and paints those.
+  // Anchors that exist ONLY to carry a bookmark (≥1 bookmark note and NO other note)
+  // must NOT paint — a bookmark is a marker/label surfaced in the Bookmarks pane, not a
+  // highlight on the passage. An anchor shared by a bookmark AND a real note still paints
+  // (for the real note). Classified off the full `notes` list so visibility filtering
+  // doesn't accidentally reclassify a bookmark anchor.
+  const bookmarkOnlyAnchorIds = useMemo(() => {
+    const bookmarked = new Set<string>();
+    const hasRealNote = new Set<string>();
+    for (const note of notes) {
+      const isBookmark = (note.contentType ?? "markdown") === BOOKMARK_CONTENT_TYPE;
+      for (const anchorId of note.anchorIds) {
+        (isBookmark ? bookmarked : hasRealNote).add(anchorId);
+      }
+    }
+    const out = new Set<string>();
+    for (const id of bookmarked) if (!hasRealNote.has(id)) out.add(id);
+    return out;
+  }, [notes]);
+
+  // ONE normalized paint list for the active source: every anchor it has (except
+  // bookmark-only ones), mapped to the uniform PaintAnchor shape with its merged note
+  // text. The host hands this SAME list to whichever reader matches the source; each
+  // reader filters it to the anchorKinds it understands and paints those.
   const paintAnchors = useMemo<PaintAnchor[]>(
     () =>
-      anchors.map((anchor) => ({
+      anchors
+        .filter((anchor) => !bookmarkOnlyAnchorIds.has(anchor.id))
+        .map((anchor) => ({
         id: anchor.id,
         anchorKind: anchor.anchorKind,
         quote: "quote" in anchor ? anchor.quote : undefined,
@@ -451,12 +504,47 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         rect: "rect" in anchor ? anchor.rect : undefined,
         note: noteTextByAnchorId.get(anchor.id) ?? ""
       })),
-    [anchors, noteTextByAnchorId]
+    [anchors, noteTextByAnchorId, bookmarkOnlyAnchorIds]
   );
   const activePatches = useMemo(
     () => patches.filter((patch) => !selectedAnchorId || patch.anchorId === selectedAnchorId),
     [patches, selectedAnchorId]
   );
+
+  const rememberSourceId = useCallback((sourceId: string) => {
+    if (!sourceId) return;
+    setRecentSourceIds((current) => {
+      const next = [sourceId, ...current.filter((id) => id !== sourceId)].slice(0, 40);
+      persistRecentSourceIds(next);
+      return next;
+    });
+  }, []);
+
+  const forgetSourceId = useCallback((sourceId: string) => {
+    setRecentSourceIds((current) => {
+      const next = current.filter((id) => id !== sourceId);
+      persistRecentSourceIds(next);
+      return next;
+    });
+  }, []);
+
+  const addFolderRoot = useCallback((root: string) => {
+    const normalized = normalizeFolderRoot(root);
+    if (!normalized) return;
+    const normalizedKey = normalized.toLocaleLowerCase();
+    setFolderRoots((current) =>
+      current.some((item) => normalizeFolderRoot(item).toLocaleLowerCase() === normalizedKey)
+        ? current
+        : [...current, normalized]
+    );
+  }, []);
+
+  const closeFolderRoot = useCallback((root: string) => {
+    const normalizedKey = normalizeFolderRoot(root).toLocaleLowerCase();
+    setFolderRoots((current) =>
+      current.filter((item) => normalizeFolderRoot(item).toLocaleLowerCase() !== normalizedKey)
+    );
+  }, []);
 
   const loadSources = useCallback(async () => {
     setStatus("loading");
@@ -582,8 +670,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const openFolderDialog = useCallback(async () => {
     const dir = await window.studyVault?.pickDirectory?.();
-    if (dir) setFolderRoot(dir);
-  }, []);
+    if (dir) addFolderRoot(dir);
+  }, [addFolderRoot]);
 
   const deleteSourceItem = useCallback(
     async (sourceId: string, title: string) => {
@@ -597,6 +685,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setError("");
       try {
         await entityClient.deleteSource(sourceId);
+        forgetSourceId(sourceId);
         if (activeSourceId === sourceId) {
           setActiveSourceId("");
           setRenderedHtml("");
@@ -612,12 +701,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setStatus("error");
       }
     },
-    [activeSourceId, loadSources]
+    [activeSourceId, forgetSourceId, loadSources]
   );
 
   useEffect(() => {
     void loadSources();
   }, [loadSources]);
+
+  useEffect(() => {
+    rememberSourceId(activeSourceId);
+  }, [activeSourceId, rememberSourceId]);
 
   useEffect(() => {
     if (activeSourceId) {
@@ -924,17 +1017,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [dispatch]
   );
 
-  // Whether the composer's primary action is available, via the command itself.
-  const composerCommandId = composerMode === "ask" ? "anchor.ask-ai" : "anchor.add-note";
-  const composerCtx = commandContext({ text: chatInput, contentType: noteContentType });
+  // The right-panel composer is pure AI Chat now: no Note mode or note-type routing.
+  const composerCommandId = "anchor.ask-ai";
+  const composerCtx = commandContext({ text: chatInput });
   const composerDisabled = !getCommand(composerCommandId)?.isAvailable(composerCtx);
 
   const submitComposer = useCallback(() => {
     if (composerDisabled) return;
     const text = chatInput;
     setChatInput("");
-    void dispatch(composerCommandId, { text, contentType: noteContentType });
-  }, [composerDisabled, chatInput, dispatch, composerCommandId, noteContentType]);
+    void dispatch(composerCommandId, { text });
+  }, [composerDisabled, chatInput, dispatch, composerCommandId]);
 
   // Switching the note type re-seeds the structured draft from the NEW type's core
   // default (object types only; string types author through the text textarea and
@@ -1104,6 +1197,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       status,
       error,
       sources,
+      recentSources,
       activeSourceId,
       activeSource,
       activeViewer,
@@ -1119,8 +1213,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       annotationMode,
       setAnnotationMode,
       canOpenLocal,
-      folderRoot,
-      setFolderRoot,
+      folderRoots,
+      closeFolderRoot,
       activeFilePath,
       importUrl,
       setImportUrl,
@@ -1189,6 +1283,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       status,
       error,
       sources,
+      recentSources,
       activeSourceId,
       activeSource,
       activeViewer,
@@ -1203,7 +1298,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       annotationMode,
       setAnnotationMode,
       canOpenLocal,
-      folderRoot,
+      folderRoots,
+      closeFolderRoot,
       activeFilePath,
       importUrl,
       openLocalFile,

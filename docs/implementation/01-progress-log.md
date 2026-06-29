@@ -4,6 +4,85 @@ Use this file as the live status board for implementation work.
 
 ## Current Status
 
+- Date: 2026-06-29
+- Phase: UI reference recreation
+- Active task: None
+- Overall status: Frameless desktop shell now has custom `- / square / x` controls.
+
+## 2026-06-29 - Frameless window controls
+
+- Goal: keep the title/menu bar removed while bringing back `- / square / x` window controls.
+- Result: added a narrow Electron window-control IPC bridge, desktop-only TopBar buttons, Windows-like hover styling, and no-drag handling. Restarted the desktop client so the new preload is active.
+- Verification: `npm run check`, browser hidden-controls smoke, Electron main/preload builds, Electron DOM smoke, and `npm run build` passed.
+
+## 2026-06-29 - Opened-file reader tab header
+
+- Goal: make the active file tab in the reader header match the reference crop instead of looking like a blue selected button.
+- Result: replaced the active file icon with the document-style icon and restyled the active tab as a white neutral page tab with gray text/icons, soft border, top-only radius, and a hidden bottom border that connects to the reader surface.
+- Verification: `npm run check`, browser computed-style/screenshot smoke, and `npm run build` passed.
+
+## 2026-06-29 - UI typography and grayscale calibration
+
+- Goal: make controls, labels, muted text, borders, and icons closer to the reference's lighter neutral hierarchy.
+- Result: softened the default light theme tokens, control text weights, active blue states, neutral borders, muted labels, chat bubbles, and Layer Lens/card shadows. Runtime default-theme injection now matches the CSS calibration.
+- Verification: `npm run check`, focused theme registry test, in-app browser computed-style/screenshot smoke, and `npm run build` passed.
+
+## 2026-06-29 - UI pure AI chat
+
+- Goal: make AI Chat use a bottom command-style input with the conversation history above it, and remove note support from the chat panel.
+- Result: removed Note mode, note type detection, save-reply-as-note actions, selection note toolbar, and generation preview from AI Chat. The panel is now title/context, a scrollable conversation history, and a bottom `Type / for commands` input with a return-arrow send button. The composer submit path is fixed to `anchor.ask-ai`.
+- Verification: `npm run check`, browser DOM smoke against `http://127.0.0.1:5173`, and `npm run build` passed.
+
+## 2026-06-29 - UI no-note anchor cleanup
+
+- Goal: remove the Layer Lens control for showing anchors without visible notes, and automatically clear anchors that no note references.
+- Result: removed the Layer Lens no-note anchor switch; source anchor painting now only returns anchors backed by visible notes; note-less orphan anchors are pruned when reading anchors, deleting notes, or detaching anchors from notes. Patch-referenced anchors are kept internally for patch integrity but no longer paint without a note.
+- Verification: `npm run check`, `npx vitest run src/server/app.test.ts`, browser DOM smoke against `http://127.0.0.1:5173`, and `npm run build` passed.
+
+## 2026-06-29 - UI panel containment
+
+- Goal: make all docked columns adapt their contents to the panel border width, fixing the AI Chat composer row clipping the `Save Note` button.
+- Result: major panel containers now clamp content to their border boxes; compact rows such as `.composer-actions` wrap; the detected-type chip, note type picker, and primary composer button shrink or move to the next line instead of overflowing.
+- Verification: `npm run check` and `npm run build` passed; Playwright DOM width check confirmed `.library-panel`, `.reader-panel`, `.anchor-panel`, `.study-panel`, and `.composer-actions` all have `scrollWidth <= clientWidth`.
+
+## 2026-06-29 - UI brand mark refinement
+
+- Goal: make the top-left anchor icon and `Growte` wordmark match the reference crop more closely.
+- Result: the anchor icon is larger and black with the original line weight, and the wordmark now uses the bundled Source Serif 4 at a lighter weight instead of the heavier sans-serif rendering.
+- Verification: `npm run check` and `npm run build` passed; browser crop screenshot `C:/Users/Jump/AppData/Local/Temp/growte-top-left-after.png` confirms the serif wordmark and larger icon.
+
+## 2026-06-29 - UI native title bar removal
+
+- Goal: remove the OS-level strip showing the app icon and `GrowHTML` title above the React UI.
+- Result: Electron now creates the main window with `frame: false`; the in-app `.topbar` is marked as the drag region, while its buttons/popovers are explicitly no-drag so controls remain clickable.
+- Verification: `npm run check`, `npm run electron:build:main`, and `npm run electron:build:preload` passed; Electron dev client was restarted with the rebuilt `dist-electron/main.cjs`.
+
+## 2026-06-29 - UI folder tree shell removal
+
+- Goal: remove the extra card shell around the open-folder tree headed by the folder name, such as `testinput`.
+- Result: `LibraryView` now renders the `FileTree` directly in a lightweight host; the duplicate `.folder-root-head` title bar is gone, and the close affordance is a small overlay button rather than a bordered panel header.
+- Verification: `npm run check` and `npm run build` passed; build emitted only the existing chunk-size warning.
+
+## 2026-06-29 - UI collapsed rail removal
+
+- Goal: remove folded vertical dock tabs such as "Sources" from the simplified reference UI.
+- Result: pane collapse is disabled at the dock model level; explicit user collapse state and narrow-viewport auto-collapse are both ignored, so `.dock-rail` and `.dock-collapse-btn` are no longer rendered.
+- Verification: `npm run check`, targeted `dock.test.ts`, DOM smoke against the running app, and `npm run build` passed; the Playwright spec command was blocked by the already-running dev server on port 4177, so the same absence checks were verified with the live app DOM smoke.
+
+## 2026-06-29 - UI chrome cleanup
+
+- Goal: remove the native desktop menu, the top-right book/settings buttons, and the saved note list in the right sidebar.
+- Result: Electron now hides the application menu, TopBar only keeps Layers and Concepts on the right, and StudyView no longer renders `.note-list` cards.
+- Verification: `npm run check` and `npm run build` passed; DOM smoke confirmed the two top-right buttons and right-panel note list are absent; Electron dev client relaunched.
+
+## 2026-06-29 - UI reference recreation
+
+- Goal: recreate the supplied Growte workspace screenshot in the existing React/Vite workspace shell.
+- Result: added a TopBar Layer Lens popover, tightened the default dock widths, polished topbar/rail/panels/PDF toolbar/right chat styling, and changed the empty-vault demo to a physics textbook page.
+- Verification: `npm run check`, `npx vitest run scripts/seed.test.ts`, `npm run test`, Playwright screenshot at 1600x900, and `npm run build` passed.
+
+## Previous Status
+
 - Date: 2026-06-23
 - Phase: Post-Slice-1 — desktop shell in place; read+annotate experience runs in web + Electron
 - Active task: PTY transport provider (`claude-pty`) done (token-efficient persistent session). Next: visible xterm terminal plugin + Electron node-pty bridge (needs `@electron/rebuild`, display verify). Backlog: mobile Capacitor adapter, packaging, per-author shared-note filtering.
@@ -65,6 +144,14 @@ Use this file as the live status board for implementation work.
 | None | None | None |
 
 ## Next Action
+
+Current UI task: LIB-001 is complete; desktop client restarted for review.
+
+## 2026-06-30 - Library Open Folder + Recent Read
+
+| Task ID | Status | Owner | Last Update | Next Step |
+| --- | --- | --- | --- | --- |
+| LIB-001 | Complete | Codex | Library now shows Open Folder above Recent Read, supports multiple folder roots, dedupes repeated picks, and closes each folder independently. | User visual review in the restarted desktop client. |
 
 Ordered read+annotate build ①–④ + Electron shell all DONE (each with unit + click-E2E or build self-tests). To run the desktop app: `npm run electron` (builds client + bundles main/preload + launches the window). Remaining follow-ups: (a) launch the Electron window on a display machine to confirm the GUI (headless env here can't); (b) PDF anchoring/notes-on-PDF (needs a PDF.js text layer; current PDF reader is display-only); (c) real diagram libs (mermaid/markmap) + tier-C sandboxed artifact notes; (d) webview-based live web-page annotation (the Electron-specific superpower); (e) wire/verify the real `claude-cli` provider against an authenticated CLI; (f) packaging (electron-builder).
 

@@ -6,6 +6,58 @@ Record verification evidence here as work proceeds. Include both automated and m
 
 | Task ID | Verification Type | Command Or Method | Expected Result | Actual Result | Status |
 | --- | --- | --- | --- | --- | --- |
+| UI-REF-014 | Type check | `npm run check` | TypeScript passes after CSS calibration and right-column preset adjustment | Passed | Passed |
+| UI-REF-014 | Browser screenshot + computed-style smoke | Playwright against `http://127.0.0.1:5173`, viewport 1576x890; screenshots saved to `C:/Users/Jump/AppData/Local/Temp/growte-current-full-after-ui-ref-014c.png` | Whole shell aligns closer to the supplied reference: panel bottom/right margins, right Anchor/AI split, topbar tab sizing/no wrapping, lighter borders/gray scale, and compact controls | Panels end at y=870 with a 20px bottom gap; right column x=1222 and right edge=1562; Anchor/AI heights 372/418; topbar center 398x40; three topbar tabs 131x34 with nowrap and no overflow | Passed |
+| UI-REF-014 | Production build | `npm run build` | Vite production build succeeds after calibration pass | Passed; existing chunk-size warnings only | Passed |
+| UI-REF-013 | Type check | `npm run check` | TypeScript passes after adding the left-pane CSS normalization layer | Passed | Passed |
+| UI-REF-013 | Browser computed-style + screenshot smoke | Playwright against `http://127.0.0.1:5173`; switched Library, Anchors/Bookmarks, Concepts, Operations, and Layers from the left icon rail; screenshots saved to `C:/Users/Jump/AppData/Local/Temp/growte-left-operation-ui-ref-013b.png` and `C:/Users/Jump/AppData/Local/Temp/growte-left-layer-ui-ref-013c.png` | Left rail panes share the same shell/header metrics and checkbox controls are compact | All five panes measured `250x818`, 16px panel padding, 10px radius, `#e9edf3` border, 13px panel text, 14px/600 headers; Operations/Layers checkbox controls measured 16x16 | Passed |
+| UI-REF-013 | Production build | `npm run build` | Vite production build succeeds after CSS-only left-pane changes | Passed; existing chunk-size warnings only | Passed |
+| UI-REF-012 | Type check | `npm run check` | TypeScript passes after adding window-control IPC bridge and TopBar buttons | Passed | Passed |
+| UI-REF-012 | Browser DOM smoke | Playwright against `http://127.0.0.1:5173` | Window controls are absent in plain browser mode | `windowControls:0`, `desktopClass:0` | Passed |
+| UI-REF-012 | Electron bundles | `npm run electron:build:main`; `npm run electron:build:preload` | Main and preload bundles compile with the new IPC bridge | Both passed | Passed |
+| UI-REF-012 | Electron DOM smoke | Temporary Electron dev launch against Vite | Desktop bridge exists and topbar renders three controls | `desktop:true`, `hasWindowControlsBridge:true`, one `.topbar-window-controls`, three buttons: Minimize, Maximize/Restore, Close | Passed |
+| UI-REF-012 | Production build | `npm run build` | Vite production build succeeds after TopBar/CSS changes | Passed; existing chunk-size warnings only | Passed |
+| UI-REF-012 | Desktop restart | Restart current project Electron dev client | Running window picks up new main/preload | Old project Electron main stopped; new main process started as PID 17564 | Passed |
+| UI-REF-011 | Type check | `npm run check` | TypeScript passes after swapping the reader tab icon and CSS overrides | Passed | Passed |
+| UI-REF-011 | Browser computed-style + screenshot smoke | Playwright against `http://127.0.0.1:5173`; screenshot saved to `C:/Users/Jump/AppData/Local/Temp/growte-reader-tab-after.png` | Active reader tab is white, neutral gray, file-tab shaped, and no longer blue-selected | `.reader-tab.active` height 40px, white bg, `#e9edf3` side/top border, white bottom border, 13px/500 gray title, gray document icon/close | Passed |
+| UI-REF-011 | Production build | `npm run build` | Vite production build succeeds after reader tab changes | Passed; existing chunk-size warnings only | Passed |
+| UI-REF-010 | Type check | `npm run check` | TypeScript passes after typography/token calibration | Passed | Passed |
+| UI-REF-010 | Focused theme test | `npm test -- src/client/theme/registry.test.ts` | Default theme tokens match the updated lighter base palette | 1 file, 7 tests passed | Passed |
+| UI-REF-010 | Browser computed-style + screenshot smoke | In-app browser at `http://127.0.0.1:5173`, viewport 1600x900, screenshot saved to `C:/Users/Jump/AppData/Local/Temp/growte-current-ui-after-typography.png` | UI controls use lighter body text/background, softer active blue, neutral PDF tab border, and lighter control weights | Body `#252b34/#f7f8fa`; topbar active `#2f67d7` on `#f1f6ff`; reader tab border `#e9edf3`; source item text 13px/500 or active 600 | Passed |
+| UI-REF-010 | Production build | `npm run build` | Vite production build succeeds after CSS/theme changes | Passed; existing chunk-size warnings only | Passed |
+| UI-REF-009 | Type check | `npm run check` | TypeScript passes after simplifying AI Chat | Passed | Passed |
+| UI-REF-009 | DOM + interaction smoke | Playwright against `http://127.0.0.1:5173` | Note controls absent; bottom input uses `Type / for commands`; history is above input; Enter sends to chat history and clears input | Note control counts all 0; bar height 46, input height 42; `userMessages:1`, `inputValue:""` | Passed |
+| UI-REF-009 | Production build | `npm run build` | Vite production build succeeds after chat UI changes | Passed; existing chunk-size warnings only | Passed |
+| UI-REF-008 | Type check | `npm run check` | TypeScript passes after removing the Layer Lens toggle and changing anchor cleanup | Passed | Passed |
+| UI-REF-008 | Focused server tests | `npx vitest run src/server/app.test.ts` | Anchor list is note-derived; note-less anchors prune; delete/edit cleanup and patch-reference protection pass | 1 file, 45 tests passed | Passed |
+| UI-REF-008 | DOM smoke | Playwright against `http://127.0.0.1:5173` | `Show anchors with no visible notes` text and `.layer-lens-toggle-row` are absent | `{"textCount":0,"rowCount":0}` | Passed |
+| UI-REF-008 | Production build | `npm run build` | Vite production build succeeds after UI/server changes | Passed; existing chunk-size warnings only | Passed |
+| UI-REF-007 | Type check | `npm run check` | TypeScript passes after responsive containment CSS changes | Passed | Passed |
+| UI-REF-007 | DOM width check | Playwright against `http://127.0.0.1:5173` in Note composer mode | Major panels and `.composer-actions` stay within their border width | `.library-panel`, `.reader-panel`, `.anchor-panel`, `.study-panel`, `.composer-actions` all reported `scrollWidth <= clientWidth` | Passed |
+| UI-REF-007 | Production build | `npm run build` | Vite production build succeeds after responsive CSS changes | Passed; existing chunk-size warnings only | Passed |
+| UI-REF-006 | Type check | `npm run check` | TypeScript passes after brand mark sizing/font changes | Passed | Passed |
+| UI-REF-006 | Browser crop | Playwright screenshot of `http://127.0.0.1:5173` top-left area | Top-left brand uses larger black anchor icon and serif `Growte` wordmark | Saved `C:/Users/Jump/AppData/Local/Temp/growte-top-left-after.png`; visually matches reference more closely | Passed |
+| UI-REF-006 | Production build | `npm run build` | Vite production build succeeds after brand mark changes | Passed; existing chunk-size warnings only | Passed |
+| UI-REF-005 | Type check | `npm run check` | TypeScript passes after frameless-window and drag-region changes | Passed | Passed |
+| UI-REF-005 | Electron main bundle | `npm run electron:build:main` | Main process bundle includes the frameless BrowserWindow config | Passed | Passed |
+| UI-REF-005 | Electron preload bundle | `npm run electron:build:preload` | Preload bundle still builds before relaunch | Passed | Passed |
+| UI-REF-005 | Desktop restart | Relaunch `npx electron dist-electron/main.cjs --dev` | Electron dev client restarts with one process group | Running: node parent plus Electron main/gpu/utility/renderer children | Passed |
+| UI-REF-004 | Type check | `npm run check` | TypeScript passes after removing the open-folder wrapper shell | Passed | Passed |
+| UI-REF-004 | Production build | `npm run build` | Vite production build succeeds after folder-tree styling changes | Passed; existing chunk-size warnings only | Passed |
+| UI-REF-003 | Type check | `npm run check` | TypeScript passes after disabling collapsed dock rails | Passed | Passed |
+| UI-REF-003 | Focused unit test | `npx vitest run src/client/workspace/dock.test.ts` | Dock collapse helpers report no collapsible/collapsed panes | 1 file, 21 tests passed | Passed |
+| UI-REF-003 | DOM smoke | Playwright against the already-running `http://127.0.0.1:5173` | `.dock-rail`, `.dock-collapse-btn`, Settings, and right note-list counts are all 0 | Counts all 0 | Passed |
+| UI-REF-003 | Targeted Playwright spec attempt | `npx playwright test e2e/layout-engine.spec.ts e2e/theme-switch.spec.ts` | Simplified UI specs run | Blocked before tests by existing dev server using API port 4177 (`EADDRINUSE`); covered by DOM smoke above | Blocked |
+| UI-REF-003 | Production build | `npm run build` | Production build succeeds after dock changes | Passed; existing chunk-size warnings only | Passed |
+| UI-REF-002 | Type check | `npm run check` | TypeScript passes after removing desktop menu/topbar buttons/note-list rendering | Passed | Passed |
+| UI-REF-002 | DOM smoke | Playwright against `http://127.0.0.1:5173` | Settings button, Reader/library button, and `.study-panel .note-list` are absent | Counts all 0 | Passed |
+| UI-REF-002 | Desktop restart | `npm run electron:dev` | Desktop client relaunches with rebuilt Electron main/preload | Electron process running (`dist-electron/main.cjs --dev`) | Passed |
+| UI-REF-002 | Production build | `npm run build` | Production client build succeeds after cleanup | Passed; existing chunk-size warnings only | Passed |
+| UI-REF-001 | Type check | `npm run check` | TypeScript passes after TopBar/CSS/seed changes | Passed | Passed |
+| UI-REF-001 | Focused unit test | `npx vitest run scripts/seed.test.ts` | Empty-vault demo seed still creates exactly one deterministic source | 1 file, 3 tests passed | Passed |
+| UI-REF-001 | Full unit suite | `npm run test` | Existing unit/component tests pass after UI changes | 74 files, 645 tests passed; jsdom canvas warning unchanged | Passed |
+| UI-REF-001 | Visual browser check | Playwright screenshot at 1600x900 against `http://127.0.0.1:5173` | Growte shell shows the reference-style topbar, rail, Layer Lens popover, rounded panels, and right chat panel | Passed; current local content differs because the active vault opens the user's existing Chinese PDF and notes | Passed |
+| UI-REF-001 | Production build | `npm run build` | Vite production build succeeds | Passed; Vite emitted existing chunk-size warnings only | Passed |
 | MECH-001 | File review | Confirm `docs/implementation/` files exist | Workflow files are present | Six workflow files are present. | Passed |
 | MECH-001 | Git status | `git status --short --branch` | New Markdown files are visible as untracked changes | `?? docs/` is visible on `main...origin/main`. | Passed |
 | PLAN-001 | Git branch | `git status --short --branch` | Current branch is `codex/ai-study-vault` | Passed | Passed |
@@ -308,3 +360,10 @@ Verified by automated tests (no network flakiness):
 - `e2e/generation-preview.spec.ts` (NEW, web/chromium, mock provider) — drives the REAL app: select a passage → Explain → the preview appears (`.generation-preview`, type `textbook.explanation`) with NOTHING in the note list yet (`.tb-explanation` count 0) → Edit toggles the kit editor, fill a unique sentinel title → Save persists exactly one card carrying the sentinel and clears the preview → Explain again → Regenerate keeps it pending (mock deterministic — content-change NOT asserted) with the saved count unchanged → Discard removes the preview, count still 1. Proves nothing crosses into `.note-list` until Save.
 - Backward-compat verified: the feature is gated on the host wiring `onGenerated`; without it the textbook commands keep their original `createNote`+`onNoteCreated` path (existing `commands.test.ts` cases stay green), and `anchor.add-note` without `payload.anchorIds` is its old materialize-from-focus self. `src/ai` + server untouched (Save reuses `POST /api/notes` via `anchor.add-note`; Regenerate reuses `POST /api/kits/generate`).
 - Suite green 2026-06-26: `npm run check` (clean), `npm run test` (**50** files, **351** tests; +5), `npm run e2e` (**26** web — all prior flows + the new generation-preview test, zero regression). `npm run e2e:electron` NOT run by this task (no webview/Electron/IPC/preload path changed; the preview is a host-page React view over the existing client+server fetch paths the web suite drives) — flagged, not claimed.
+## 2026-06-30 - LIB-001 Library Open Folder + Recent Read
+
+- `npm run check` - passed.
+- `npx vitest run src/client/workspace/generatingState.test.tsx` - passed: 1 file, 4 tests. Added coverage for multiple opened folders, duplicate folder picks, and closing one root.
+- Playwright browser smoke against `http://127.0.0.1:5173` - passed. Confirmed `.library-body-split` renders `Open Folder` above `Recent Read`, both lists use `overflow:auto`, and Recent Read remains below the Open Folder section. Screenshot: `C:/Users/Jump/AppData/Local/Temp/growte-library-split-smoke-2.png`.
+- `npm run build` - passed. Vite reported only the existing large-chunk warning.
+- Desktop restart - passed. `npm run electron:dev` relaunched and Electron process `60716` is running against the live Vite server; `http://127.0.0.1:5173` returned 200.

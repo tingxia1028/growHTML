@@ -282,6 +282,11 @@ describe("vault server API", () => {
     expect(anchor.normalizedUrl).toBe("https://example.com/post");
     expect(anchor.quote).toBe("render thread");
 
+    await request(app)
+      .post("/api/notes")
+      .send({ sourceId: source.id, anchorIds: [anchor.id], contentType: "markdown", content: "web note" })
+      .expect(201);
+
     const list = await request(app).get(`/api/sources/${source.id}/anchors`).expect(200);
     expect(list.body.anchors).toHaveLength(1);
     expect(list.body.anchors[0].anchorKind).toBe("web_text_quote");
@@ -370,6 +375,11 @@ describe("vault server API", () => {
 
     expect(anchor.anchorKind).toBe("image_region");
     expect(anchor.rect).toEqual([0, 0, 0.5, 0.5]);
+
+    await request(app)
+      .post("/api/notes")
+      .send({ sourceId: source.id, anchorIds: [anchor.id], contentType: "markdown", content: "image note" })
+      .expect(201);
 
     const list = await request(app).get(`/api/sources/${source.id}/anchors`).expect(200);
     expect(list.body.anchors[0].anchorKind).toBe("image_region");
@@ -648,6 +658,23 @@ describe("vault server API", () => {
   // —— Orphan-anchor cascade on note delete (the "highlight stays after delete" bug). ——
   // Painting is anchor-derived, so a note delete must also remove anchors that no other
   // note/patch references; shared / patch-referenced anchors are preserved.
+  it("prunes note-less anchors from the source anchor list", async () => {
+    const source = (
+      await request(app).post("/api/sources/html").send({ title: "Doc", content: fixtureHtmlBody }).expect(201)
+    ).body.source;
+    const anchor = (
+      await request(app)
+        .post("/api/anchors")
+        .send({ sourceId: source.id, studyId: "p-render-thread", quote: "Render Thread submits rendering commands." })
+        .expect(201)
+    ).body.anchor;
+
+    const anchors = (await request(app).get(`/api/sources/${source.id}/anchors`).expect(200)).body.anchors;
+
+    expect(anchors.find((a: { id: string }) => a.id === anchor.id)).toBeUndefined();
+    expect(await vault.stores.anchors.get(anchor.id)).toBeNull();
+  });
+
   it("deleting a note cascade-deletes its now-orphaned (exclusive) anchor", async () => {
     const source = (
       await request(app).post("/api/sources/html").send({ title: "Doc", content: fixtureHtmlBody }).expect(201)
@@ -735,6 +762,8 @@ describe("vault server API", () => {
     expect(all.find((n: { id: string }) => n.id === note.id)).toBeUndefined();
     const anchorStillExists = await vault.stores.anchors.get(anchor.id);
     expect(anchorStillExists).not.toBeNull();
+    const anchors = (await request(app).get(`/api/sources/${source.id}/anchors`).expect(200)).body.anchors;
+    expect(anchors.find((a: { id: string }) => a.id === anchor.id)).toBeUndefined();
   });
 
   it("multi-anchor note delete removes ONLY the now-orphaned anchors", async () => {
@@ -774,6 +803,40 @@ describe("vault server API", () => {
 
     expect(await vault.stores.anchors.get(orphanAnchor.id)).toBeNull();
     expect(await vault.stores.anchors.get(sharedAnchor.id)).not.toBeNull();
+  });
+
+  it("editing a note's anchorIds deletes anchors that no note references anymore", async () => {
+    const source = (
+      await request(app).post("/api/sources/html").send({ title: "Doc", content: fixtureHtmlBody }).expect(201)
+    ).body.source;
+    const removedAnchor = (
+      await request(app)
+        .post("/api/anchors")
+        .send({ sourceId: source.id, studyId: "p-render-thread", quote: "Render Thread submits rendering commands." })
+        .expect(201)
+    ).body.anchor;
+    const keptAnchor = (
+      await request(app)
+        .post("/api/anchors")
+        .send({ sourceId: source.id, studyId: "p-game-thread", quote: "Game Thread runs gameplay." })
+        .expect(201)
+    ).body.anchor;
+    const note = (
+      await request(app)
+        .post("/api/notes")
+        .send({
+          sourceId: source.id,
+          anchorIds: [removedAnchor.id, keptAnchor.id],
+          contentType: "markdown",
+          content: "retargeted note"
+        })
+        .expect(201)
+    ).body.note;
+
+    await request(app).patch(`/api/notes/${note.id}`).send({ anchorIds: [keptAnchor.id] }).expect(200);
+
+    expect(await vault.stores.anchors.get(removedAnchor.id)).toBeNull();
+    expect(await vault.stores.anchors.get(keptAnchor.id)).not.toBeNull();
   });
 
   it("creates and deletes relations between concepts", async () => {

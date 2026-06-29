@@ -93,15 +93,21 @@ export const RESPONSIVE_BREAKPOINT_PX = 1280;
 // The side panes that auto-collapse when narrow (the flex reader + the study panel stay).
 export const SECONDARY_KINDS = new Set(["library", "concept.list", "layer.switcher", "bookmark.list"]);
 
-// A pane is collapsible if it's a FIXED-size leaf (the flex reader is never collapsible).
+// Collapse rails are disabled by product direction: no pane should render as a vertical
+// "Sources"/"Layers" strip. Keep this seam stable for callers, but always opt out.
 export function isCollapsibleLeaf(child: DockChild, kind: string): boolean {
-  return child.node.type === "leaf" && !isFlexChild(child) && kind !== "source.viewer";
+  void child;
+  void kind;
+  return false;
 }
 
-// Effective collapsed state = the user's explicit toggle OR (on a narrow viewport) a
-// secondary side pane auto-collapsing. Pure, so the rule is unit-testable.
+// Stored/user collapse state and narrow-view auto-collapse are ignored so old
+// localStorage cannot bring collapsed rails back.
 export function isPaneCollapsed(kind: string, userCollapsed: boolean, viewportWidth: number): boolean {
-  return userCollapsed || (viewportWidth < RESPONSIVE_BREAKPOINT_PX && SECONDARY_KINDS.has(kind));
+  void kind;
+  void userCollapsed;
+  void viewportWidth;
+  return false;
 }
 
 // Stable key for persisting a pane's collapsed state (scoped per layout + node).

@@ -98,9 +98,23 @@ function titleFromPath(filePath: string): string {
  *  - image / word / unknown-binary → binary, generic file viewer
  *  - anything textual (code, md, txt, json, csv, …) → text, generic file viewer
  */
-export async function ingestLocalFile(vault: StudyVault, filePath: string): Promise<SourceRecord> {
-  const resolved = path.resolve(filePath);
+// Coalesce concurrent opens of the SAME path. The dedupe below is check-then-create
+// (list() → not found → upsert), which is NOT atomic: two rapid opens (a double-click,
+// or a StrictMode double-invoked effect in dev) both pass the existence check before
+// either upserts, piling up duplicate sources for one file. Keyed by resolved path, the
+// second concurrent caller awaits the first's promise instead of re-ingesting.
+const inFlightIngest = new Map<string, Promise<SourceRecord>>();
 
+export function ingestLocalFile(vault: StudyVault, filePath: string): Promise<SourceRecord> {
+  const resolved = path.resolve(filePath);
+  const pending = inFlightIngest.get(resolved);
+  if (pending) return pending;
+  const run = ingestLocalFileInner(vault, resolved);
+  inFlightIngest.set(resolved, run);
+  return run.finally(() => inFlightIngest.delete(resolved));
+}
+
+async function ingestLocalFileInner(vault: StudyVault, resolved: string): Promise<SourceRecord> {
   // Opening the same file again should reuse its existing source, not pile up
   // duplicate entries in the sidebar.
   const existing = (await vault.stores.sources.list()).find(

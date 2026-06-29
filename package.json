@@ -20,8 +20,8 @@
     "electron:build:preload": "esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-electron/preload.cjs",
     "electron:build:webview-preload": "esbuild electron/webview-preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-electron/webview-preload.cjs",
     "electron:build": "vite build && npm run electron:build:main && npm run electron:build:preload && npm run electron:build:webview-preload",
-    "electron": "npm run electron:build && electron dist-electron/main.cjs",
-    "electron:dev": "npm run electron:build:main && npm run electron:build:preload && electron dist-electron/main.cjs --dev",
+    "electron": "npm run electron:build && node scripts/launch-electron.cjs",
+    "electron:dev": "npm run electron:build:main && npm run electron:build:preload && node scripts/launch-electron.cjs --dev",
     "electron:rebuild": "electron-rebuild -f -w node-pty"
   },
   "dependencies": {
@@ -60,6 +60,7 @@
     "electron": "^42.4.1",
     "esbuild": "^0.28.1",
     "jsdom": "^29.1.1",
+    "rcedit": "^5.0.2",
     "supertest": "^7.2.2",
     "tsx": "latest",
     "typescript": "latest",
