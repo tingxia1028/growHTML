@@ -1,7 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openGearMenu } from "./helpers";
 
 // Theme V1 end-to-end against the REAL running app (web mode). Drives the whole-app
-// re-skin through the actual reader-header dropdown — no JS shortcuts for the behaviour
+// re-skin through the actual control — R1 relocated the theme dropdown from the
+// reader-header into the TopBar Settings gear menu — no JS shortcuts for the behaviour
 // under test:
 //
 //   1. DEFAULT ON LOAD — with no persisted choice the app boots on the default theme
@@ -11,9 +13,9 @@ import { expect, test, type Page } from "@playwright/test";
 //      changes away from the default paper colour.
 //   3. SWITCH BACK — picking "Default" restores both the attribute and the background.
 //
-// It only touches the theme chrome (.theme-select) + <html> data-theme; the theme switcher
-// is a strict SIBLING of the layout switcher and never reads its state, so the dock layout
-// is untouched here.
+// It only touches the theme chrome (the gear menu's .theme-select) + <html> data-theme;
+// the theme switcher is a strict SIBLING of the layout switcher and never reads its state,
+// so the dock layout is untouched here.
 
 // Computed background-color of document.body (reads var(--sv-bg)); compared before/after a
 // theme flip to prove the token layer actually re-skins the app, not just the attribute.
@@ -24,7 +26,8 @@ async function bodyBackground(page: Page): Promise<string> {
 test("default theme on load, switch to Dark re-skins the app, switch back restores it", async ({ page }) => {
   await page.goto("/");
 
-  // The theme switcher lives in the reader header next to the layout + kit selects.
+  // The theme switcher now lives in the TopBar Settings gear menu (R1).
+  await openGearMenu(page);
   const themeSelect = page.locator("select.theme-select");
   await expect(themeSelect).toBeVisible();
 
@@ -52,6 +55,7 @@ test("default theme on load, switch to Dark re-skins the app, switch back restor
 
 test("the chosen theme persists across a reload", async ({ page }) => {
   await page.goto("/");
+  await openGearMenu(page);
   const themeSelect = page.locator("select.theme-select");
 
   await themeSelect.selectOption({ label: "Dark" });
@@ -60,6 +64,7 @@ test("the chosen theme persists across a reload", async ({ page }) => {
   // Reload: the persisted id (localStorage "sv-active-theme") is applied before mount,
   // so the app comes back dark with no flash beyond default→chosen.
   await page.reload();
+  await openGearMenu(page);
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await expect(page.locator("select.theme-select")).toHaveValue("dark");
 });

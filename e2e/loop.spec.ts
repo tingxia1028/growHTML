@@ -94,25 +94,29 @@ test("marginalia: toggle Notes Floating ↔ Margin lays the note card in the gut
   await page.getByRole("button", { name: "Save Note" }).click();
   await expect(page.locator(".note-list")).toContainText(noteText);
 
-  // Default is Floating: the toggle says so, and there's no gutter in the reader.
-  const toggle = page.locator(".annot-mode-toggle");
-  await expect(toggle).toHaveText("Notes: Floating");
+  // R1: the Floating ↔ Margin toggle moved to the TopBar segmented control —
+  // "Document" = floating (default), "Notes Overlay" = margin/gutter.
+  const documentTab = page.locator(".topbar-tab", { hasText: "Document" });
+  const overlayTab = page.locator(".topbar-tab", { hasText: "Notes Overlay" });
+
+  // Default is Document/Floating: that tab is active, and there's no gutter in the reader.
+  await expect(documentTab).toHaveClass(/active/);
   await expect(reader.locator("#sv-margin-layer")).toHaveCount(0);
 
-  // Switch to Margin → a persistent card with the note text appears in the gutter,
+  // Switch to Notes Overlay → a persistent card with the note text appears in the gutter,
   // a dashed leader connects it to the anchor, and the body reserves right padding.
-  await toggle.click();
-  await expect(toggle).toHaveText("Notes: Margin");
+  await overlayTab.click();
+  await expect(overlayTab).toHaveClass(/active/);
   const marginCard = reader.locator("#sv-margin-layer .sv-margin-note").first();
   await expect(marginCard).toBeVisible();
   await expect(marginCard).toContainText("This note lives in the gutter");
   await expect(reader.locator("#sv-margin-connectors path")).toHaveCount(1);
   await expect(reader.locator("body.sv-annot-margin")).toHaveCount(1);
 
-  // Toggle back to Floating → the gutter cards are gone; the inline highlight stays
+  // Back to Document/Floating → the gutter cards are gone; the inline highlight stays
   // and the floating hover card still works (hover shows it).
-  await toggle.click();
-  await expect(toggle).toHaveText("Notes: Floating");
+  await documentTab.click();
+  await expect(documentTab).toHaveClass(/active/);
   await expect(reader.locator("#sv-margin-layer")).toHaveCount(0);
   await expect(reader.locator("body.sv-annot-margin")).toHaveCount(0);
   const annotated = reader.locator(".sv-annotated").first();

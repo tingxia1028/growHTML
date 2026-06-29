@@ -100,8 +100,7 @@ function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
   return (
     <aside className="library-panel">
       <div className="brand-block">
-        <p>AI Study Vault</p>
-        <h1>Sources</h1>
+        <h1>Library</h1>
       </div>
 
       <button className="icon-button primary" type="button" onClick={() => void loadSources()} title="Reload sources">
@@ -212,31 +211,16 @@ function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
 function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
   const {
     activeSource,
-    activeViewer,
-    activeFilePath,
     status,
     error,
     paintAnchors,
     focus,
     renderedHtml,
     annotationMode,
-    setAnnotationMode,
     activeKitIds,
     installedKits,
-    setActiveKit,
-    activeLayoutId,
-    availableLayouts,
-    setActiveLayout,
-    activeThemeId,
-    availableThemes,
-    setActiveTheme
+    setActiveKit
   } = ctx;
-
-  // The Floating ↔ Margin note toggle is scoped to the DOM-iframe HTML reader —
-  // the one surface the AnnotationRenderer registry paints into (decorateAnnotations).
-  // That's exactly the imported-HTML pipeline that ISN'T a local file (local HTML uses
-  // the webview, which keeps its own painting). Mirrors readerForSource's DomReader gate.
-  const showAnnotToggle = activeViewer.htmlPipeline && !activeFilePath;
 
   return (
     <main className="reader-panel">
@@ -246,32 +230,6 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
           <h2>{activeSource?.title ?? "Open or import a source"}</h2>
         </div>
         <div className="reader-header-actions">
-          <select
-            className="layout-select"
-            aria-label="Workspace layout"
-            title="Switch the workspace layout (which panes are shown and how they're arranged)"
-            value={activeLayoutId}
-            onChange={(event) => setActiveLayout(event.target.value)}
-          >
-            {availableLayouts.map((preset) => (
-              <option key={preset.id} value={preset.id}>
-                {preset.name}
-              </option>
-            ))}
-          </select>
-          <select
-            className="theme-select"
-            aria-label="Theme"
-            title="Switch the app theme (colors/typography only)"
-            value={activeThemeId}
-            onChange={(event) => setActiveTheme(event.target.value)}
-          >
-            {availableThemes.map((theme) => (
-              <option key={theme.id} value={theme.id}>
-                {theme.name}
-              </option>
-            ))}
-          </select>
           {activeSource ? (
             <select
               className="kit-select"
@@ -287,16 +245,6 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
                 </option>
               ))}
             </select>
-          ) : null}
-          {showAnnotToggle ? (
-            <button
-              type="button"
-              className="annot-mode-toggle"
-              onClick={() => setAnnotationMode(annotationMode === "margin" ? "floating" : "margin")}
-              title="Toggle how notes are shown: a card on hover, or persistent cards in the side margin"
-            >
-              {annotationMode === "margin" ? "Notes: Margin" : "Notes: Floating"}
-            </button>
           ) : null}
           <span className={`status-pill status-${status}`}>{status}</span>
         </div>

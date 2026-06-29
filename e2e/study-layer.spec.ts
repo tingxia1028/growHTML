@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
+import { openLayers } from "./helpers";
 
 // Study Layer V2 end-to-end (web mode): the full local `.studypack` import UX in the
 // Layers pane. Seed an HTML source, then import a pack whose three anchors are built
@@ -47,6 +48,9 @@ test("study layer: import a .studypack → 3-state preview → commit paints mat
   await page.goto("/");
   await page.locator(".source-item-open", { hasText: title }).click();
   await expect(page.locator(".reader-header h2")).toHaveText(title);
+
+  // R1: the Layers pane is reached via the IconRail (not an always-on column).
+  await openLayers(page);
 
   // The matched passage isn't highlighted yet (no layer imported).
   const reader = page.frameLocator(READER);

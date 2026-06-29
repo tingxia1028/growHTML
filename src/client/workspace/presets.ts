@@ -26,16 +26,25 @@ export const threePane: WorkspaceLayout = {
   layout: threePaneDock
 };
 
-// The app default (P5 + V2): the three panes PLUS the concept/relation pane and the
-// Study Layer switcher, still a single row so the existing DOM order is unchanged.
+// The app default (R1 "Growte" shell): three regions left→right —
+//   library (switchable left slot, ~280) | reader (flex) | RIGHT column (~360).
+// The IconRail is CHROME (rendered by WorkspaceShell outside this tree), not a dock leaf.
+// The RIGHT column is a nested column split: Anchor excerpt (top) over the Study/AI-Chat
+// pane (bottom) — the spec's Anchor / Anchor-Tools / AI-Chat stack, with Anchor-Tools
+// folded into the study pane for R1 (the clean three-way split is deferred to R4).
+// The previously always-on bookmarks/concepts/layers/operations COLUMNS are gone — they
+// are now reached via the IconRail (which swaps the left "library" slot's kind). Their
+// nodes stay LISTED so the rail's kind-swap resolves them and they remain reachable.
 const studyVaultDock: DockNode = split("row", [
-  { size: 300, node: leaf("library") },
+  { size: 280, node: leaf("library") },
   { size: "flex", node: leaf("source-viewer") },
-  { size: 380, node: leaf("study") },
-  { size: 240, node: leaf("bookmarks") },
-  { size: 340, node: leaf("concepts") },
-  { size: 280, node: leaf("layers") },
-  { size: 320, node: leaf("operations") }
+  {
+    size: 360,
+    node: split("column", [
+      { size: 200, node: leaf("anchor") },
+      { size: "flex", node: leaf("study") }
+    ])
+  }
 ]);
 
 export const studyVaultLayout: WorkspaceLayout = {
@@ -44,12 +53,14 @@ export const studyVaultLayout: WorkspaceLayout = {
   mode: "dock",
   nodes: [
     ...threePane.nodes,
-    // Bookmark V1 jump strip — additive pane, like concepts/layers.
+    // The Anchor excerpt section (top of the right column).
+    { id: "anchor", kind: "anchor.excerpt" },
+    // Bookmark V1 jump strip — now reached via the IconRail, not an always-on column.
     { id: "bookmarks", kind: "bookmark.list" },
     { id: "concepts", kind: "concept.list" },
-    // V2 Study Layer switcher — additive pane, like concepts.
+    // V2 Study Layer switcher — reached via the IconRail.
     { id: "layers", kind: "layer.switcher" },
-    // operation-as-data builder + manager — additive pane, like concepts/layers.
+    // operation-as-data builder + manager — reached via the IconRail.
     { id: "operations", kind: "operation.manager" }
   ],
   layout: studyVaultDock

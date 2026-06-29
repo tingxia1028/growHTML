@@ -13,7 +13,7 @@
 // consumer only has to render <WorkspaceShell layout={…} /> inside a WorkspaceProvider.
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import type { WorkspaceLayout } from "../data/entityClient";
+import type { WorkspaceLayout, WorkspaceNode } from "../data/entityClient";
 import { renderNode } from "./viewRegistry";
 import { useWorkspace } from "./WorkspaceContext";
 import {
@@ -43,6 +43,10 @@ import "./bookmarkViews";
 import "./practiceViews";
 //   ./operationViews → operation.manager (the operation-as-data builder + manager)
 import "./operationViews";
+//   ./anchorViews    → anchor.excerpt (the right column's Anchor section, R1)
+import "./anchorViews";
+import { TopBar } from "./TopBar";
+import { IconRail } from "./IconRail";
 
 // px size overrides keyed by dock child key (leaf nodeId, else its tree path).
 const SIZES_KEY = "sv-panel-widths";
@@ -50,6 +54,13 @@ const SIZES_KEY = "sv-panel-widths";
 const COLLAPSED_KEY = "sv-pane-collapsed";
 // Width of a collapsed pane's rail (just enough for the rotated label + expand hit area).
 const RAIL_PX = 34;
+
+// The dock leaf nodeId that the IconRail / TopBar buttons SWAP: selecting a rail entry
+// renders that view-kind in this slot instead of the static "library" view. Keeps the
+// previously always-on side panes (bookmarks/concepts/layers/operations) reachable without
+// always-on columns. Default selection = library.
+const LEFT_SLOT_NODE_ID = "library";
+const DEFAULT_LEFT_KIND = "library";
 
 function loadSizes(): Record<string, number> {
   try {
@@ -87,6 +98,9 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
   const [sizes, setSizes] = useState<Record<string, number>>(loadSizes);
   const sizesRef = useRef(sizes);
   sizesRef.current = sizes;
+
+  // Which view-kind the switchable LEFT_SLOT renders (IconRail / TopBar buttons set it).
+  const [leftPaneKind, setLeftPaneKind] = useState<string>(DEFAULT_LEFT_KIND);
 
   // User collapse flags (explicit toggles) + the live viewport width (drives responsive
   // auto-collapse of secondary panes). Both feed `isPaneCollapsed`.
@@ -231,15 +245,35 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
           </div>
         );
       }
+      // The switchable left slot renders the IconRail-selected kind, not its static one,
+      // so the panes that used to be always-on columns are reached here on demand.
+      if (wsNode.id === LEFT_SLOT_NODE_ID && leftPaneKind !== wsNode.kind) {
+        const swapped: WorkspaceNode = { ...wsNode, kind: leftPaneKind };
+        return renderNode(swapped, ctx);
+      }
       return renderNode(wsNode, ctx);
     }
     return <div className={`dock-split dock-${node.direction}`}>{renderChildren(node, path)}</div>;
   }
 
-  // The root split IS the .app-shell flex container (keeps the top-level DOM flat). A
-  // degenerate single-leaf root is wrapped so .app-shell always exists.
-  if (root.type !== "split") {
-    return <div className="app-shell dock-row">{renderDock(root, "root")}</div>;
-  }
-  return <div className={`app-shell dock-${root.direction}`}>{renderChildren(root, "root")}</div>;
+  // R1 shell chrome: TopBar across the top, then a body row of IconRail (fixed strip) +
+  // the resizable dock tree (.app-shell). The dock's root split IS the .app-shell flex
+  // container (keeps the dock DOM flat); a degenerate single-leaf root is wrapped so
+  // .app-shell always exists.
+  const dock =
+    root.type !== "split" ? (
+      <div className="app-shell dock-row">{renderDock(root, "root")}</div>
+    ) : (
+      <div className={`app-shell dock-${root.direction}`}>{renderChildren(root, "root")}</div>
+    );
+
+  return (
+    <div className="app-frame">
+      <TopBar ctx={ctx} leftPaneKind={leftPaneKind} onSelectPane={setLeftPaneKind} />
+      <div className="app-body">
+        <IconRail selected={leftPaneKind} onSelect={setLeftPaneKind} />
+        {dock}
+      </div>
+    </div>
+  );
 }

@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import { openLayers } from "./helpers";
 
 // Layer-as-lens V1 end-to-end (web mode). A study layer is a LENS, not a container: a
 // note can belong to SEVERAL layers, the multi-select filter is OR across the enabled
@@ -41,6 +42,9 @@ async function openSource(page: Page, source: { id: string; title: string }) {
   await page.goto("/");
   await page.locator(".source-item-open").filter({ hasText: source.id }).click();
   await expect(page.locator(".reader-header h2")).toHaveText(source.title);
+  // R1: the Layers pane is reached via the IconRail (not an always-on column). Every test
+  // in this spec drives the layer filter, so surface it right after opening the source.
+  await openLayers(page);
 }
 
 // A per-test unique stamp so source titles + note text never collide across tests or

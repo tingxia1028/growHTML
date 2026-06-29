@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { openBookmarks } from "./helpers";
 
 // Bookmark V1 end-to-end (web mode). A bookmark IS a note (contentType "bookmark"),
 // created on the focused passage's anchor — the SAME materialize path every note uses —
@@ -33,6 +34,8 @@ async function openSource(page: Page, source: { id: string; title: string }) {
   await page.goto("/");
   await page.locator(".source-item-open").filter({ hasText: source.id }).click();
   await expect(page.locator(".reader-header h2")).toHaveText(source.title);
+  // R1: the Bookmarks pane is reached via the IconRail (not an always-on column).
+  await openBookmarks(page);
 }
 
 // A per-test unique stamp so titles + passages never collide across tests/iterations.

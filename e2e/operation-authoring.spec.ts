@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { openOperations } from "./helpers";
 
 // AI operation-as-data V1 — the "custom plugin" authoring loop. Driving the real app in
 // web mode (mock provider = deterministic), this proves the whole data-defined-operation
@@ -53,6 +54,8 @@ test("operation authoring: build a custom action → 试一下 preview → save 
   await selectPassage(page);
   await expect(page.locator(".selection-toolbar-btn", { hasText: "Explain" })).toBeVisible();
 
+  // R1: the Actions/Operations pane is reached via the IconRail (not an always-on column).
+  await openOperations(page);
   const panel = page.locator(".operation-panel");
   await expect(panel).toBeVisible();
 

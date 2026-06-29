@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
+import { openConcepts } from "./helpers";
 
 // FULL manual concept/relation flow against the REAL running app, web mode (concepts
 // are server-backed, so the browser e2e covers them). Drives the P5 UI end to end:
@@ -59,6 +60,8 @@ test("manual concept flow: create → link note → inspector back-ref → relat
   const note = await seedNote(request, source.id, noteText);
 
   await page.goto("/");
+  // R1: the Concepts pane is no longer an always-on column — open it via the IconRail.
+  await openConcepts(page);
   const pane = page.locator(".concept-panel");
   await expect(pane).toBeVisible();
 
