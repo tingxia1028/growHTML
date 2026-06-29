@@ -31,7 +31,7 @@ async function seedHtmlSource(request: APIRequestContext, title: string, body: s
 async function openSource(page: Page, title: string) {
   await page.goto("/");
   await page.locator(".source-item-open", { hasText: title }).click();
-  await expect(page.locator(".reader-header h2")).toHaveText(title);
+  await expect(page.locator(".reader-tab-title")).toHaveText(title);
 }
 
 // Switch the composer into Note mode and pick a content type from the (registry-fed)

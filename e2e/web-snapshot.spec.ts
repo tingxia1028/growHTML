@@ -1,5 +1,6 @@
 import { createServer, type Server } from "node:http";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { openLibraryMenu } from "./helpers";
 
 // WEBPAGE SNAPSHOT flow through the UNIFIED Web viewer (snapshot sub-mode). A saved
 // webpage now renders inside the SAME tabbed shell as live web — its first tab is the
@@ -66,7 +67,9 @@ test("webpage snapshot: unified shell + select → chip → note → html_select
   const source = await seedWebpage(request);
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Refresh" }).click();
+  // Refresh moved into the Library ⋯ menu by the IA rebuild.
+  await openLibraryMenu(page);
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await page.locator(".source-item-open", { hasText: SNAPSHOT_TITLE }).click();
 
   // STEP 1 — the UNIFIED Web shell renders for a snapshot: the tab strip with a

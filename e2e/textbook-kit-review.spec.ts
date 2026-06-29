@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { openChatMenu } from "./helpers";
 
 // Textbook Learning Kit (Product Kit) phase 3 — Review Pack + propagation policy.
 // Driving the real app in web mode (mock provider = deterministic):
@@ -20,7 +21,7 @@ async function seedHtmlSource(request: APIRequestContext, title: string, body: s
 async function openSource(page: Page, title: string) {
   await page.goto("/");
   await page.locator(".source-item-open", { hasText: title }).click();
-  await expect(page.locator(".reader-header h2")).toHaveText(title);
+  await expect(page.locator(".reader-tab-title")).toHaveText(title);
 }
 
 test("textbook kit: source-level Review Pack action → review-pack Study Block card", async ({ page, request }) => {
@@ -29,7 +30,9 @@ test("textbook kit: source-level Review Pack action → review-pack Study Block 
   await seedHtmlSource(request, title, body);
   await openSource(page, title);
 
-  // The source-actions toolbar (no passage needed) carries the kit's Review Pack action.
+  // The source-actions toolbar (no passage needed) carries the kit's Review Pack action,
+  // relocated into the AI Chat ⋯ menu by the IA rebuild.
+  await openChatMenu(page);
   const reviewBtn = page.locator(".source-actions-btn", { hasText: "Review Pack" });
   await expect(reviewBtn).toBeVisible();
   await reviewBtn.click();

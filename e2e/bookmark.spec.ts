@@ -33,7 +33,7 @@ async function seedHtmlSource(request: APIRequestContext, title: string, body: s
 async function openSource(page: Page, source: { id: string; title: string }) {
   await page.goto("/");
   await page.locator(".source-item-open").filter({ hasText: source.id }).click();
-  await expect(page.locator(".reader-header h2")).toHaveText(source.title);
+  await expect(page.locator(".reader-tab-title")).toHaveText(source.title);
   // R1: the Bookmarks pane is reached via the IconRail (not an always-on column).
   await openBookmarks(page);
 }

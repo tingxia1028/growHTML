@@ -2415,10 +2415,26 @@ button {
 .chat-user {
   background: var(--sv-chat-user-bg);
   align-self: flex-end;
+  max-width: 85%;
 }
 
 .chat-assistant {
+  position: relative;
   background: var(--sv-chat-assistant-bg);
+  align-self: flex-start;
+  max-width: 90%;
+  padding-left: 26px;
+}
+
+/* Assistant bubbles lead with a ✦ spark marker (reference). Decorative only. */
+.chat-assistant::before {
+  content: "✦";
+  position: absolute;
+  left: 9px;
+  top: 8px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--sv-accent);
 }
 
 .link-button {
@@ -3043,4 +3059,519 @@ textarea {
 }
 .composer-detected-label strong {
   color: var(--sv-accent-text);
+}
+
+/* ============================================================================
+   整体 IA 重建 (Growte structural rebuild) — Library / Reader chrome / Right panel.
+   Token-only color; both themes inherit from the --sv-* vocabulary above.
+   ========================================================================= */
+
+/* —— Shared ⋯ overflow menu (PanelMenu) —————————————————————————————————————— */
+.panel-menu {
+  position: relative;
+  display: inline-flex;
+  margin-left: auto;
+}
+
+.panel-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--sv-radius-sm);
+  background: transparent;
+  color: var(--sv-icon-muted);
+}
+
+.panel-menu-trigger:hover,
+.panel-menu-trigger.active {
+  background: var(--sv-surface-muted);
+  color: var(--sv-text);
+}
+
+.panel-menu-popover {
+  position: absolute;
+  top: 32px;
+  z-index: 40;
+  display: grid;
+  gap: 4px;
+  min-width: 220px;
+  max-width: 320px;
+  padding: 8px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface-card);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+}
+
+.panel-menu-right {
+  right: 0;
+}
+
+.panel-menu-left {
+  left: 0;
+}
+
+.panel-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--sv-radius-sm);
+  background: transparent;
+  color: var(--sv-text);
+  font-size: 13px;
+  text-align: left;
+}
+
+.panel-menu-item:hover:not(:disabled) {
+  background: var(--sv-surface-muted);
+}
+
+.panel-menu-item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.panel-menu-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--sv-border-soft);
+}
+
+.panel-menu-label {
+  padding: 2px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--sv-text-muted);
+}
+
+.panel-menu-hint {
+  padding: 2px 4px;
+  font-size: 12px;
+  color: var(--sv-text-faint);
+}
+
+.panel-menu-input {
+  height: 32px;
+}
+
+.panel-menu-field {
+  display: grid;
+  gap: 4px;
+}
+
+.panel-menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* The relocated patch-fold / terminal sit inside the menu — let them breathe + scroll. */
+.panel-menu-popover .patch-fold {
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 0;
+}
+
+.panel-menu-popover .terminal-box-title {
+  margin: 0;
+}
+
+.panel-menu-popover .terminal-panel {
+  height: 260px;
+}
+
+/* —— Library panel (folder tree / source list + header menu + user chip) ——————— */
+.library-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--sv-space-3);
+}
+
+.library-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 8px;
+}
+
+.library-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--sv-text-heading);
+}
+
+.library-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.library-open-folder {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px dashed var(--sv-border);
+  border-radius: var(--sv-radius);
+  background: transparent;
+  color: var(--sv-text-muted);
+  font-size: 13px;
+}
+
+.library-open-folder:hover:not(:disabled) {
+  background: var(--sv-surface-muted);
+  color: var(--sv-text);
+}
+
+.library-open-folder:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Restyled source list rows — same icon + title rhythm as the tree. */
+.library-panel .source-list {
+  margin-top: 0;
+  gap: 2px;
+}
+
+.library-panel .source-item {
+  border: 0;
+  border-radius: var(--sv-radius-sm);
+  background: transparent;
+}
+
+.library-panel .source-item:hover {
+  background: var(--sv-surface-muted);
+}
+
+.library-panel .source-item.active {
+  border: 0;
+  background: var(--sv-active-bg);
+}
+
+.library-panel .source-item-open {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+}
+
+.source-item-icon {
+  flex: 0 0 auto;
+  color: var(--sv-icon-muted);
+}
+
+.source-item.active .source-item-icon {
+  color: var(--sv-accent);
+}
+
+.source-item-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.source-item-text span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.source-item.active .source-item-text span {
+  color: var(--sv-accent-text-strong);
+}
+
+.library-panel .source-item-delete {
+  border-left: 0;
+}
+
+/* Bottom user chip (reuses the rail neutral identity look). */
+.library-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 8px 6px 2px;
+  border-top: 1px solid var(--sv-border-soft);
+}
+
+.library-user-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--sv-radius-pill);
+  background: var(--sv-accent-weak);
+  color: var(--sv-accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.library-user-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sv-text);
+}
+
+/* File-tree row polish: chevron column + 30px rows + accent active folder. */
+.tree-row {
+  min-height: 30px;
+  border-radius: var(--sv-radius-sm);
+}
+
+.tree-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  flex: 0 0 14px;
+  color: var(--sv-text-faint);
+}
+
+/* —— Reader chrome: tab strip + toolbar —————————————————————————————————————— */
+.reader-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+  padding-bottom: 10px;
+}
+
+.reader-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.reader-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 320px;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface-card);
+  color: var(--sv-text);
+}
+
+.reader-tab.active {
+  border-color: var(--sv-accent-border);
+  background: var(--sv-accent-weak);
+}
+
+.reader-tab-empty {
+  border-style: dashed;
+  color: var(--sv-text-faint);
+  background: transparent;
+}
+
+.reader-tab-icon {
+  flex: 0 0 auto;
+  color: var(--sv-icon-muted);
+}
+
+.reader-tab.active .reader-tab-icon {
+  color: var(--sv-accent);
+}
+
+.reader-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.reader-tab-close {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  padding: 2px;
+  border: 0;
+  border-radius: var(--sv-radius-xs);
+  background: transparent;
+  color: var(--sv-text-muted);
+}
+
+.reader-tab-close:hover {
+  background: var(--sv-surface-muted);
+  color: var(--sv-text);
+}
+
+.reader-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.reader-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sv-text-faint);
+}
+
+.reader-status-dot.status-idle {
+  background: var(--sv-success);
+}
+
+.reader-status-dot.status-loading,
+.reader-status-dot.status-saving {
+  background: var(--sv-warn-accent);
+}
+
+.reader-status-dot.status-error {
+  background: var(--sv-danger);
+}
+
+/* —— Right panel · Anchor section —————————————————————————————————————————— */
+.anchor-panel-title {
+  margin-bottom: 12px;
+}
+
+.anchor-context {
+  display: grid;
+  gap: 6px;
+  padding-bottom: 4px;
+}
+
+.anchor-context-source {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--sv-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.anchor-context-source svg {
+  color: var(--sv-icon-muted);
+}
+
+.anchor-context-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.anchor-context-meta {
+  font-size: 12px;
+  color: var(--sv-text-muted);
+}
+
+.anchor-context-jump {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface-card);
+  color: var(--sv-accent-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.anchor-context-jump:hover:not(:disabled) {
+  background: var(--sv-accent-weak);
+  border-color: var(--sv-accent-border);
+}
+
+.anchor-context-jump:disabled {
+  color: var(--sv-text-faint);
+  cursor: default;
+}
+
+/* Excerpt = amber highlight box (spec). */
+.anchor-excerpt-card {
+  padding: 12px;
+  border: 0;
+  border-radius: var(--sv-radius);
+  background: var(--sv-highlight-bg);
+}
+
+.anchor-excerpt-card .anchor-excerpt-quote {
+  color: var(--sv-highlight-text);
+}
+
+.anchor-excerpt-formula {
+  margin: 8px 0 0;
+  font-family: var(--sv-font-mono);
+  font-size: 13px;
+  color: var(--sv-highlight-text);
+}
+
+.anchor-linked {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.anchor-linked-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--sv-text-muted);
+}
+
+.anchor-linked-icons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.anchor-linked-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface-card);
+  color: var(--sv-icon-muted);
+}
+
+.anchor-linked-icon:hover {
+  border-color: var(--sv-accent-border);
+  background: var(--sv-accent-weak);
+  color: var(--sv-accent);
+}
+
+.anchor-linked-empty {
+  font-size: 12px;
+  color: var(--sv-text-faint);
+}
+
+/* —— Right panel · AI Chat header —————————————————————————————————————————— */
+.chat-panel-title {
+  align-items: center;
 }

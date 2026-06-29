@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
+import { openChatMenu } from "./helpers";
 
 // Click-driven self-test of the no-AI study loop against the REAL running app,
 // matching the current UI (library + reader iframe + study panel). The current UI
@@ -35,7 +36,7 @@ test("no-AI study loop: select → note → patch → apply → revert → persi
 
   // Open the seeded source from the library list.
   await page.locator(".source-item-open", { hasText: title }).click();
-  await expect(page.locator(".reader-header h2")).toHaveText(title);
+  await expect(page.locator(".reader-tab-title")).toHaveText(title);
 
   // Select a passage in the reader iframe → the study panel "source" chip fills in
   // (a draft anchor; the real anchor is created lazily on save).
@@ -56,7 +57,8 @@ test("no-AI study loop: select → note → patch → apply → revert → persi
   await expect(annotated).toBeVisible();
   await expect(annotated).toContainText("Original paragraph");
 
-  // Create a Patch (folded under "Edit source (patch)").
+  // Create a Patch (folded under "Edit source (patch)", relocated into the AI Chat ⋯ menu).
+  await openChatMenu(page);
   await page.locator(".patch-fold summary").click();
   await page.locator(".patch-input").fill(`<p>${patchedText}</p>`);
   await page.getByRole("button", { name: "Create Patch" }).click();
@@ -83,7 +85,7 @@ test("marginalia: toggle Notes Floating ↔ Margin lays the note card in the gut
   await seedHtmlSource(request, title, body);
   await page.goto("/");
   await page.locator(".source-item-open", { hasText: title }).click();
-  await expect(page.locator(".reader-header h2")).toHaveText(title);
+  await expect(page.locator(".reader-tab-title")).toHaveText(title);
 
   // Select a passage → save a note, so a highlight + note exist to lay out.
   const reader = page.frameLocator(READER);
@@ -132,7 +134,7 @@ test("AI chat: ask about a passage → reply → save reply as a note", async ({
   await seedHtmlSource(request, title, body);
   await page.goto("/");
   await page.locator(".source-item-open", { hasText: title }).click();
-  await expect(page.locator(".reader-header h2")).toHaveText(title);
+  await expect(page.locator(".reader-tab-title")).toHaveText(title);
 
   // Select a passage → fills the source chip.
   const reader = page.frameLocator(READER);

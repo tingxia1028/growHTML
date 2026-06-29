@@ -28,7 +28,7 @@ async function seedHtmlSource(request: APIRequestContext, title: string, body: s
 async function openSource(page: Page, title: string) {
   await page.goto("/");
   await page.locator(".source-item-open", { hasText: title }).click();
-  await expect(page.locator(".reader-header h2")).toHaveText(title);
+  await expect(page.locator(".reader-tab-title")).toHaveText(title);
 }
 
 test("composer 'detected · override' chip: a mermaid source auto-detects mermaid, 'change' reveals the override", async ({

@@ -32,6 +32,7 @@ import { noteCardsFrom } from "./noteCards";
 import { TerminalPanel } from "../TerminalPanel";
 import { FileTree, baseName } from "../FileTree";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
+import { PanelMenu } from "./PanelMenu";
 import { readerForSource } from "./readerForSource";
 import {
   getNoteType,
@@ -75,7 +76,11 @@ function noteTypeOptions(activeKitIds: readonly string[]): { contentType: string
   );
 }
 
-// —— library → the `.library-panel` aside (sources list, Open file/folder, URL import).
+// —— library → the `.library-panel` aside. Reference IA: a clean header (`Library` +
+// a ⋯ actions menu) over the body. The body is the styled FileTree when a folderRoot is
+// set, else the restyled source list (web/e2e fallback). All the OLD chrome controls
+// (Refresh, Open File, Open Folder, Import .xmind, Import from URL/Open Live) are
+// relocated into the ⋯ menu — reachable, never removed.
 function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
   const {
     loadSources,
@@ -94,58 +99,73 @@ function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
     setImportUrl,
     importFromUrl,
     openLiveUrl,
-    importXmindFile
+    importXmindFile,
+    activeThemeId
   } = ctx;
+
+  // A neutral identity initial for the optional bottom user chip (reference shows one).
+  const userInitial = "A";
 
   return (
     <aside className="library-panel">
-      <div className="brand-block">
-        <h1>Library</h1>
-      </div>
-
-      <button className="icon-button primary" type="button" onClick={() => void loadSources()} title="Reload sources">
-        <RefreshCcw size={17} />
-        Refresh
-      </button>
-
-      <section className="open-box">
-        <div className="panel-title">
-          <FolderOpen size={16} />
-          Open
-        </div>
-        <div className="open-actions">
+      <div className="library-head">
+        <h1 className="library-title">Library</h1>
+        <PanelMenu label="Library actions">
+          <button className="panel-menu-item" type="button" onClick={() => void loadSources()}>
+            <RefreshCcw size={15} />
+            Refresh
+          </button>
           <button
-            className="icon-button"
+            className="panel-menu-item"
             type="button"
             onClick={() => void openFileDialog()}
             disabled={!canOpenLocal}
             title={canOpenLocal ? "Open a local file" : "Desktop app only"}
           >
-            <File size={16} />
-            File
+            <File size={15} />
+            Open File
           </button>
           <button
-            className="icon-button"
+            className="panel-menu-item"
             type="button"
             onClick={() => void openFolderDialog()}
             disabled={!canOpenLocal}
             title={canOpenLocal ? "Open a folder as a file tree" : "Desktop app only"}
           >
-            <FolderOpen size={16} />
-            Folder
+            <FolderOpen size={15} />
+            Open Folder
           </button>
           <button
-            className="icon-button"
+            className="panel-menu-item"
             type="button"
             onClick={() => void importXmindFile()}
             disabled={!canOpenLocal}
             title={canOpenLocal ? "Import a .xmind mind map (→ markmap note)" : "Desktop app only"}
           >
-            <FilePlus2 size={16} />
-            .xmind
+            <FilePlus2 size={15} />
+            Import .xmind
           </button>
-        </div>
-        {!canOpenLocal ? <small className="tree-hint">Available in the desktop app.</small> : null}
+          {!canOpenLocal ? <div className="panel-menu-hint">File/folder open is desktop-only.</div> : null}
+          <div className="panel-menu-sep" />
+          <div className="panel-menu-label">Import from URL</div>
+          <input
+            className="panel-menu-input"
+            value={importUrl}
+            placeholder="https://…"
+            onChange={(event) => setImportUrl(event.target.value)}
+          />
+          <button className="panel-menu-item" type="button" onClick={() => void importFromUrl()}>
+            <FilePlus2 size={15} />
+            Fetch URL
+          </button>
+          <button className="panel-menu-item" type="button" onClick={() => void openLiveUrl()}>
+            <FilePlus2 size={15} />
+            Open Live
+          </button>
+        </PanelMenu>
+      </div>
+
+      <div className="library-body">
         {folderRoot ? (
           <div className="folder-root">
             <div className="folder-root-head">
@@ -156,52 +176,47 @@ function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
             </div>
             <FileTree root={folderRoot} onOpenFile={(filePath) => void openLocalFile(filePath)} activePath={activeFilePath} />
           </div>
-        ) : null}
-      </section>
-
-      <div className="source-list">
-        {sources.map((source) => (
-          <div
-            key={source.id}
-            className={`source-item${source.id === activeSourceId ? " active" : ""}`}
-          >
-            <button className="source-item-open" type="button" onClick={() => setActiveSourceId(source.id)}>
-              <span>{source.title}</span>
-              <small>{source.sourceType} · {source.id}</small>
-            </button>
+        ) : (
+          <div className="source-list">
+            {sources.map((source) => (
+              <div key={source.id} className={`source-item${source.id === activeSourceId ? " active" : ""}`}>
+                <button className="source-item-open" type="button" onClick={() => setActiveSourceId(source.id)}>
+                  <File size={15} className="source-item-icon" />
+                  <span className="source-item-text">
+                    <span>{source.title}</span>
+                    <small>{source.sourceType} · {source.id}</small>
+                  </span>
+                </button>
+                <button
+                  className="source-item-delete"
+                  type="button"
+                  title="Remove this document"
+                  aria-label="Remove this document"
+                  onClick={() => void deleteSourceItem(source.id, source.title)}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            ))}
+            {sources.length === 0 ? <div className="empty-state">No sources yet.</div> : null}
             <button
-              className="source-item-delete"
+              className="library-open-folder"
               type="button"
-              title="Remove this document"
-              aria-label="Remove this document"
-              onClick={() => void deleteSourceItem(source.id, source.title)}
+              onClick={() => void openFolderDialog()}
+              disabled={!canOpenLocal}
+              title={canOpenLocal ? "Open a folder as a file tree" : "Desktop app only"}
             >
-              <Trash2 size={15} />
+              <FolderOpen size={15} />
+              Open folder…
             </button>
           </div>
-        ))}
-        {sources.length === 0 ? <div className="empty-state">No sources yet.</div> : null}
+        )}
       </div>
 
-      <section className="url-import-box">
-        <div className="panel-title">
-          <FilePlus2 size={16} />
-          Import from URL
-        </div>
-        <input
-          value={importUrl}
-          placeholder="https://…"
-          onChange={(event) => setImportUrl(event.target.value)}
-        />
-        <button className="icon-button" type="button" onClick={() => void importFromUrl()}>
-          <FilePlus2 size={16} />
-          Fetch URL
-        </button>
-        <button className="icon-button" type="button" onClick={() => void openLiveUrl()}>
-          <FilePlus2 size={16} />
-          Open Live
-        </button>
-      </section>
+      <div className="library-user" title="Account">
+        <span className="library-user-avatar" data-theme-id={activeThemeId}>{userInitial}</span>
+        <span className="library-user-name">Alex</span>
+      </div>
     </aside>
   );
 }
@@ -219,34 +234,67 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
     annotationMode,
     activeKitIds,
     installedKits,
-    setActiveKit
+    setActiveKit,
+    setActiveSourceId
   } = ctx;
 
   return (
     <main className="reader-panel">
       <header className="reader-header">
-        <div>
-          <p>{activeSource?.sourceType ?? "source"}</p>
-          <h2>{activeSource?.title ?? "Open or import a source"}</h2>
-        </div>
-        <div className="reader-header-actions">
+        {/* Tab strip — a single document tab (file icon + title + close). */}
+        <div className="reader-tabs" role="tablist">
           {activeSource ? (
-            <select
-              className="kit-select"
-              aria-label="Product Kit"
-              title="Apply a Product Kit to this document (gates create actions; Core = none)"
-              value={activeKitIds[0] ?? "core"}
-              onChange={(event) => void setActiveKit(event.target.value)}
-            >
-              <option value="core">Core</option>
-              {installedKits.map((kit) => (
-                <option key={kit.id} value={kit.id}>
-                  {kit.name}
-                </option>
-              ))}
-            </select>
-          ) : null}
-          <span className={`status-pill status-${status}`}>{status}</span>
+            <div className="reader-tab active" role="tab" aria-selected="true">
+              <File size={14} className="reader-tab-icon" />
+              <span className="reader-tab-title" title={activeSource.title}>{activeSource.title}</span>
+              <button
+                className="reader-tab-close"
+                type="button"
+                aria-label="Close document"
+                title="Close document"
+                onClick={() => setActiveSourceId("")}
+              >
+                <X size={13} />
+              </button>
+            </div>
+          ) : (
+            <div className="reader-tab reader-tab-empty">
+              <span className="reader-tab-title">Open or import a source</span>
+            </div>
+          )}
+        </div>
+
+        {/* Toolbar — ghost icon affordances + the ⋯ overflow holding the kit selector
+            and status. Page/zoom controls live in the per-reader body toolbar (PdfReader),
+            left as-is this pass. */}
+        <div className="reader-toolbar">
+          <span className={`reader-status-dot status-${status}`} title={`Status: ${status}`} aria-label={`Status: ${status}`} />
+          <PanelMenu label="Reader actions">
+            {activeSource ? (
+              <div className="panel-menu-field">
+                <span className="panel-menu-label">Product Kit</span>
+                <select
+                  className="kit-select"
+                  aria-label="Product Kit"
+                  title="Apply a Product Kit to this document (gates create actions; Core = none)"
+                  value={activeKitIds[0] ?? "core"}
+                  onChange={(event) => void setActiveKit(event.target.value)}
+                >
+                  <option value="core">Core</option>
+                  {installedKits.map((kit) => (
+                    <option key={kit.id} value={kit.id}>
+                      {kit.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+            <div className="panel-menu-sep" />
+            <div className="panel-menu-row">
+              <span className="panel-menu-label">Status</span>
+              <span className={`status-pill status-${status}`}>{status}</span>
+            </div>
+          </PanelMenu>
         </div>
       </header>
 
@@ -500,18 +548,73 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
   return (
     <aside className="study-panel">
       <section className="chat-box">
-        <div className="panel-title">
+        <div className="panel-title chat-panel-title">
           <Sparkles size={16} />
-          AI Chat &amp; Notes
+          AI Chat
+          <PanelMenu label="AI Chat actions" align="right">
+            {/* Relocated: kit source-level actions (Textbook: Review Pack), the
+                Edit-source patch fold, and the AI Terminal toggle — all reachable here,
+                none removed. */}
+            <div className="panel-menu-label">Source actions</div>
+            <SourceActionsToolbar
+              visible={!!ctx.activeSource}
+              items={ctx.sourceActions}
+              onRun={(action) => ctx.runAction(action)}
+              busy={generating}
+            />
+            <div className="panel-menu-sep" />
+            <details className="patch-fold">
+              <summary>
+                <ListRestart size={14} /> Edit source (patch)
+              </summary>
+              <textarea
+                className="patch-input"
+                value={patchHtml}
+                onChange={(event) => setPatchHtml(event.target.value)}
+              />
+              <button
+                className="icon-button"
+                type="button"
+                onClick={() => void dispatch("anchor.create-patch", { newContent: patchHtml, oldText: draftQuote })}
+                disabled={!focus.draft && !focus.anchor}
+              >
+                <ListRestart size={16} />
+                Create Patch
+              </button>
+              <div className="record-list patch-list">
+                {activePatches.map((patch) => (
+                  <article key={patch.id} className="record-card">
+                    <strong>{patch.status}</strong>
+                    <code>{patch.id}</code>
+                    <p>{patch.newContent}</p>
+                    <div className="row-actions">
+                      <button type="button" onClick={() => void changePatchStatus(patch, "applied")}>
+                        Apply
+                      </button>
+                      <button type="button" onClick={() => void changePatchStatus(patch, "reverted")}>
+                        <RotateCcw size={14} />
+                        Revert
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </details>
+            <div className="panel-menu-sep" />
+            <div className="panel-title terminal-box-title">
+              <TerminalSquare size={16} />
+              AI Terminal
+              <button
+                className="link-button"
+                type="button"
+                onClick={() => setShowTerminal((value) => !value)}
+              >
+                {showTerminal ? "Hide" : "Show"}
+              </button>
+            </div>
+            {showTerminal ? <TerminalPanel defaultCwd={activeFileDir} /> : null}
+          </PanelMenu>
         </div>
-        {/* Kit-contributed source-level actions (Textbook: Review Pack). Absent when
-            no kit is installed or no source is open. */}
-        <SourceActionsToolbar
-          visible={!!ctx.activeSource}
-          items={ctx.sourceActions}
-          onRun={(action) => ctx.runAction(action)}
-          busy={generating}
-        />
         {/* The passage everything below acts on — auto-filled from the reader
             selection (its anchor is created lazily when you ask or save). */}
         {draftQuote || hasRegionDraft ? (
@@ -741,59 +844,6 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
           </div>
         ) : null}
 
-        {/* Source-editing (reviewable patches) folded away — same selection. */}
-        <details className="patch-fold">
-          <summary>
-            <ListRestart size={14} /> Edit source (patch)
-          </summary>
-          <textarea
-            className="patch-input"
-            value={patchHtml}
-            onChange={(event) => setPatchHtml(event.target.value)}
-          />
-          <button
-            className="icon-button"
-            type="button"
-            onClick={() => void dispatch("anchor.create-patch", { newContent: patchHtml, oldText: draftQuote })}
-            disabled={!focus.draft && !focus.anchor}
-          >
-            <ListRestart size={16} />
-            Create Patch
-          </button>
-          <div className="record-list patch-list">
-            {activePatches.map((patch) => (
-              <article key={patch.id} className="record-card">
-                <strong>{patch.status}</strong>
-                <code>{patch.id}</code>
-                <p>{patch.newContent}</p>
-                <div className="row-actions">
-                  <button type="button" onClick={() => void changePatchStatus(patch, "applied")}>
-                    Apply
-                  </button>
-                  <button type="button" onClick={() => void changePatchStatus(patch, "reverted")}>
-                    <RotateCcw size={14} />
-                    Revert
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        </details>
-      </section>
-
-      <section className="terminal-box">
-        <div className="panel-title">
-          <TerminalSquare size={16} />
-          AI Terminal
-          <button
-            className="link-button"
-            type="button"
-            onClick={() => setShowTerminal((value) => !value)}
-          >
-            {showTerminal ? "Hide" : "Show"}
-          </button>
-        </div>
-        {showTerminal ? <TerminalPanel defaultCwd={activeFileDir} /> : null}
       </section>
     </aside>
   );

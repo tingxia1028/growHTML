@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { openReaderMenu } from "./helpers";
 
 // Per-source Product Kit activation. The Textbook kit is the workspace default, so a
 // fresh source starts with it active (selection toolbar + its note types). Switching
@@ -19,7 +20,7 @@ async function seedHtmlSource(request: APIRequestContext, title: string, body: s
 async function openSource(page: Page, title: string) {
   await page.goto("/");
   await page.locator(".source-item-open", { hasText: title }).click();
-  await expect(page.locator(".reader-header h2")).toHaveText(title);
+  await expect(page.locator(".reader-tab-title")).toHaveText(title);
 }
 
 async function selectPassage(page: Page) {
@@ -54,6 +55,8 @@ test("per-source kit activation: default on → switch to Core gates creation (r
   };
 
   // —— Default: the Textbook kit is the workspace default, so it's active here ——
+  // The Kit dropdown was relocated into the Reader chrome ⋯ menu by the IA rebuild.
+  await openReaderMenu(page);
   await expect(kitSelect).toHaveValue("textbook-learning");
   await selectPassage(page);
   await expect(explain).toBeVisible();
@@ -73,6 +76,7 @@ test("per-source kit activation: default on → switch to Core gates creation (r
   await expect(typeSelect.locator('option[value="textbook.explanation"]')).toHaveCount(1);
 
   // —— Switch this document to Core: creation entry-points gate off ——
+  await openReaderMenu(page);
   await kitSelect.selectOption("core");
   await expect(kitSelect).toHaveValue("core");
 
@@ -89,6 +93,7 @@ test("per-source kit activation: default on → switch to Core gates creation (r
   await expect(page.locator(".note-list .tb-explanation").first()).toBeVisible();
 
   // —— Switch back to Textbook: the toolbar returns (per-source override) ——
+  await openReaderMenu(page);
   await kitSelect.selectOption("textbook-learning");
   await expect(kitSelect).toHaveValue("textbook-learning");
   await selectPassage(page);

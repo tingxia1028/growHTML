@@ -76,13 +76,18 @@ function DirNode({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, path]);
 
-  const indent = (level: number) => ({ paddingLeft: level * 12 + 8 });
+  const indent = (level: number) => ({ paddingLeft: level * 16 + 8 });
 
   return (
     <div>
-      <button className="tree-row" type="button" style={indent(depth)} onClick={() => setOpen((value) => !value)}>
-        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        {open ? <FolderOpen size={14} /> : <Folder size={14} />}
+      <button
+        className={`tree-row tree-dir${open ? " open" : ""}`}
+        type="button"
+        style={indent(depth)}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span className="tree-chevron">{open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</span>
+        {open ? <FolderOpen size={15} /> : <Folder size={15} />}
         <span className="tree-label">{name}</span>
       </button>
       {open ? (
@@ -108,7 +113,8 @@ function DirNode({
                 onClick={() => onOpenFile(entry.path)}
                 title={entry.path}
               >
-                <File size={14} />
+                <span className="tree-chevron" />
+                <File size={15} />
                 <span className="tree-label">{entry.name}</span>
               </button>
             )

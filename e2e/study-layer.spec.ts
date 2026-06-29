@@ -47,7 +47,7 @@ test("study layer: import a .studypack → 3-state preview → commit paints mat
 
   await page.goto("/");
   await page.locator(".source-item-open", { hasText: title }).click();
-  await expect(page.locator(".reader-header h2")).toHaveText(title);
+  await expect(page.locator(".reader-tab-title")).toHaveText(title);
 
   // R1: the Layers pane is reached via the IconRail (not an always-on column).
   await openLayers(page);
