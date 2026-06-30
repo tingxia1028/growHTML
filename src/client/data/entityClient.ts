@@ -139,6 +139,10 @@ export type OperationPrefs = {
   order: string[];
   disabled: string[];
   params: Record<string, Record<string, string>>;
+  /** Per-surface override (R6.3): each surface key (inline/anchor/source/bottom) carries
+      its own action `order` + `hidden` set; absent → that surface uses the global
+      `order`/`disabled` above. Optional so pre-R6.3 prefs files stay valid. */
+  surfaces?: Record<string, { order: string[]; hidden: string[] }>;
 };
 
 export type NodeRef =

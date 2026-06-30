@@ -28,13 +28,19 @@ function dedupById(actions: ToolbarAction[]): ToolbarAction[] {
 }
 
 function BottomBar({ ctx }: { ctx: WorkspaceContext }) {
-  const { selectionActions, sourceActions, runAction, generating } = ctx;
+  const { selectionActions, sourceActions, runAction, generating, openOperationManager } = ctx;
   const items = dedupById([...selectionActions, ...sourceActions]);
 
   return (
     <div className="action-bottom-bar" role="toolbar" aria-label="Action bar">
       <ActionGrid density="row" items={items} onRun={runAction} disabled={false} busy={generating} />
-      <ActionMoreMenu items={items} onRun={runAction} busy={generating} surface="bottom" />
+      <ActionMoreMenu
+        items={items}
+        onRun={runAction}
+        busy={generating}
+        surface="bottom"
+        onCustomize={openOperationManager}
+      />
     </div>
   );
 }

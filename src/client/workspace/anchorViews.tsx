@@ -23,7 +23,7 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
   // its PreviewCard. Double-clicking the card opens the shared CenterView (handled by the
   // PreviewCard itself).
   const [openNoteId, setOpenNoteId] = useState<string | null>(null);
-  const { focus, activeSource, visibleNotes, selectionActions, runAction, generating } = ctx;
+  const { focus, activeSource, visibleNotes, anchorBarActions, runAction, generating, openOperationManager } = ctx;
   const anchor = focus.anchor;
   const quote = anchor?.quote ?? draftQuoteText(focus.draft);
   const page =
@@ -96,7 +96,7 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
               flow through the existing GenerationPreview / note render, not here. */}
           <div className="anchor-action-bar">
             <ActionGrid
-              items={selectionActions}
+              items={anchorBarActions}
               onRun={runAction}
               disabled={!anchor && !focus.draft}
               busy={generating}
@@ -104,8 +104,15 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
             />
             {/* The grouped overflow (R6.2): mirrors the full anchor-scope action list in
                 fixed group sections + a Customize footer. The grid shows the actions; this
-                menu is the searchable/grouped twin (same runAction; no render path). */}
-            <ActionMoreMenu items={selectionActions} onRun={runAction} busy={generating} surface="anchor" />
+                menu is the searchable/grouped twin (same runAction; no render path). The
+                footer's Customize Toolbar opens the operation manager (R6.3). */}
+            <ActionMoreMenu
+              items={anchorBarActions}
+              onRun={runAction}
+              busy={generating}
+              surface="anchor"
+              onCustomize={openOperationManager}
+            />
           </div>
 
           {/* —— Linked notes (visible layers) —— §10.4: a row of note-type icons; clicking
@@ -167,7 +174,7 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
           {/* The Action Bar still shows in the empty state, but disabled — so the user
               sees what's available before focusing a passage. */}
           <div className="anchor-action-bar">
-            <ActionGrid items={selectionActions} onRun={runAction} disabled busy={generating} density="grid" />
+            <ActionGrid items={anchorBarActions} onRun={runAction} disabled busy={generating} density="grid" />
           </div>
         </>
       )}

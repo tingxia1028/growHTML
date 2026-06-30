@@ -1222,6 +1222,78 @@ button {
   padding: 1px 6px;
 }
 
+/* —— Customize Toolbar: surface tabs + per-surface list (R6.3) —— */
+.operation-surface-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--sv-border);
+  padding-bottom: 6px;
+}
+
+.operation-surface-tab {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sv-text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--sv-radius);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.operation-surface-tab:hover {
+  background: var(--sv-surface-muted);
+}
+
+.operation-surface-tab.active {
+  color: var(--sv-accent-text);
+  background: var(--sv-accent-weak);
+  border-color: var(--sv-accent-border);
+}
+
+.operation-surface-customize {
+  display: grid;
+  gap: 8px;
+}
+
+.operation-surface-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.operation-surface-title {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.operation-surface-list {
+  display: grid;
+  gap: 8px;
+}
+
+.operation-surface-row {
+  border: 1px solid var(--sv-border-muted);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface-card);
+  padding: 8px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.operation-surface-row.hidden {
+  opacity: 0.55;
+}
+
+.operation-surface-move {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 4px;
+}
+
 .operation-params {
   display: grid;
   gap: 6px;

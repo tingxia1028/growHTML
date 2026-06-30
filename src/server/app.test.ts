@@ -932,7 +932,7 @@ describe("vault server API", () => {
 
   it("returns default operation prefs and round-trips a saved set", async () => {
     const empty = await request(app).get("/api/operation-prefs").expect(200);
-    expect(empty.body.prefs).toEqual({ order: [], disabled: [], params: {} });
+    expect(empty.body.prefs).toEqual({ order: [], disabled: [], params: {}, surfaces: {} });
 
     const prefs = {
       order: ["textbook.explain-concept", "op_1"],
@@ -1095,6 +1095,42 @@ describe("form router — html path result degrades, never saved as html", () =>
     expect(res.body.contentType).toBe("html-sandbox");
     expect((res.body.content as { html: string }).html).toBe("<canvas></canvas>");
     expect((res.body.content as { interactive: boolean }).interactive).toBe(true);
+  });
+});
+
+describe("operation prefs — per-surface (R6.3)", () => {
+  it("round-trips the new `surfaces` shape through PUT then GET", async () => {
+    const prefs = {
+      order: ["bookmark.add", "op_x"],
+      disabled: ["op_y"],
+      params: { "textbook.explain-concept": { grade: "5" } },
+      surfaces: {
+        inline: { order: ["bookmark.add"], hidden: ["op_x"] },
+        anchor: { order: ["op_x", "bookmark.add"], hidden: [] }
+      }
+    };
+    const put = await request(app).put("/api/operation-prefs").send(prefs).expect(200);
+    expect(put.body.prefs.surfaces.inline).toEqual({ order: ["bookmark.add"], hidden: ["op_x"] });
+    expect(put.body.prefs.surfaces.anchor).toEqual({ order: ["op_x", "bookmark.add"], hidden: [] });
+
+    const get = await request(app).get("/api/operation-prefs").expect(200);
+    expect(get.body.prefs).toEqual(prefs);
+  });
+
+  it("parses OLD-shape prefs (no `surfaces`) and defaults it to {}", async () => {
+    // Write a prefs file in the PRE-R6.3 shape (no `surfaces` key) straight to the vault,
+    // proving an existing vault keeps loading after the schema change (no migration).
+    const prefsPath = path.join(vault.paths.studyDir, "operation-prefs.json");
+    await writeFile(
+      prefsPath,
+      `${JSON.stringify({ order: ["a", "b"], disabled: ["c"], params: { p: { grade: "5" } } }, null, 2)}\n`,
+      "utf8"
+    );
+    const get = await request(app).get("/api/operation-prefs").expect(200);
+    expect(get.body.prefs.order).toEqual(["a", "b"]);
+    expect(get.body.prefs.disabled).toEqual(["c"]);
+    expect(get.body.prefs.params).toEqual({ p: { grade: "5" } });
+    expect(get.body.prefs.surfaces).toEqual({});
   });
 });
 

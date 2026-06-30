@@ -106,6 +106,15 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
   // Which view-kind the switchable LEFT_SLOT renders (IconRail / TopBar buttons set it).
   const [leftPaneKind, setLeftPaneKind] = useState<string>(DEFAULT_LEFT_KIND);
 
+  // Register the "show the operation manager" handler the Customize-Toolbar seam fires
+  // (R6.3): the manager is reachable as the left-slot kind, so showing it = swapping the
+  // left pane to "operation.manager". This is how an ActionMoreMenu's Customize footer
+  // opens the panel without reaching into the shell (IRON LAW).
+  const { registerOpenOperationManager } = ctx;
+  useEffect(() => {
+    registerOpenOperationManager(() => setLeftPaneKind("operation.manager"));
+  }, [registerOpenOperationManager]);
+
   // User collapse flags (explicit toggles) + the live viewport width (drives responsive
   // auto-collapse of secondary panes). Both feed `isPaneCollapsed`.
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(loadCollapsed);

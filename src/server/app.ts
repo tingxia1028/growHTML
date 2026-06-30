@@ -238,12 +238,27 @@ const updateOperationRequestSchema = z
 // pattern as workspace.json) holding the action ORDER + DISABLED set (built-in
 // command ids + op_ ids) and per-built-in placeholder PARAMS the server merges
 // into generate input before build().
+// `surfaces` (R6.3) is the optional PER-SURFACE override: for each surface key
+// (inline / anchor / source / bottom) its own action `order` + `hidden` set. When a
+// surface entry is absent the surface falls back to the GLOBAL `order`/`disabled`
+// above, so old prefs files (no `surfaces`) keep working unchanged — no migration.
 const operationPrefsSchema = z.object({
   order: z.array(z.string()).default([]),
   disabled: z.array(z.string()).default([]),
-  params: z.record(z.string(), z.record(z.string(), z.string())).default({})
+  params: z.record(z.string(), z.record(z.string(), z.string())).default({}),
+  surfaces: z
+    .record(
+      z.string(),
+      z.object({ order: z.array(z.string()).default([]), hidden: z.array(z.string()).default([]) })
+    )
+    .default({})
 });
-const emptyOperationPrefs: z.infer<typeof operationPrefsSchema> = { order: [], disabled: [], params: {} };
+const emptyOperationPrefs: z.infer<typeof operationPrefsSchema> = {
+  order: [],
+  disabled: [],
+  params: {},
+  surfaces: {}
+};
 
 // Workspace layout is UI state, not a core entity: stored as a single JSON file
 // in the vault and validated only structurally.

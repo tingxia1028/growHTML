@@ -77,7 +77,10 @@ export type ToolbarAction = {
   variables?: OperationVariable[];
 };
 
-const EMPTY_OPERATION_PREFS: OperationPrefs = { order: [], disabled: [], params: {} };
+const EMPTY_OPERATION_PREFS: OperationPrefs = { order: [], disabled: [], params: {}, surfaces: {} };
+
+/** The surface keys an action list can be configured for (R6.3). */
+export type ActionSurface = "inline" | "anchor" | "source" | "bottom";
 
 // Command ids whose `run` performs an AI STRUCTURED GENERATION (a single non-streamed
 // request that emits a GeneratedDraft). Dispatching one flips the shared `generating`
@@ -113,17 +116,39 @@ const BOOKMARK_ACTION: ToolbarAction = {
   scope: "anchor"
 };
 
-// Order a merged action list by operation-prefs: ordered ids first (in prefs.order),
-// unlisted ids keep their incoming order after them; disabled ids are dropped. JS sort
-// is stable, so built-in priority order + custom insertion order are preserved on ties.
-function orderActions(actions: ToolbarAction[], prefs: OperationPrefs): ToolbarAction[] {
+// Filter + sort an action list by an (order, excluded) pair: excluded ids are dropped,
+// then the rest are sorted by their index in `order` (unlisted ids keep their incoming
+// order after the listed ones). JS sort is stable, so built-in priority + custom
+// insertion order are preserved on ties.
+function arrangeActions(actions: ToolbarAction[], order: string[], excluded: string[]): ToolbarAction[] {
   const indexOf = (id: string) => {
-    const i = prefs.order.indexOf(id);
+    const i = order.indexOf(id);
     return i === -1 ? Number.MAX_SAFE_INTEGER : i;
   };
   return actions
-    .filter((action) => !prefs.disabled.includes(action.id))
+    .filter((action) => !excluded.includes(action.id))
     .sort((a, b) => indexOf(a.id) - indexOf(b.id));
+}
+
+// Order a merged action list FOR A SURFACE (R6.3). If the prefs carry a per-surface entry
+// for `surface`, that surface's own `order` + `hidden` drive the arrangement so each
+// surface configures independently; otherwise it falls back to the GLOBAL `order`/`disabled`
+// (pre-R6.3 behavior, shared by every surface). This is the single ordering seam every
+// toolbar list flows through.
+function orderActionsForSurface(
+  actions: ToolbarAction[],
+  prefs: OperationPrefs,
+  surface: ActionSurface
+): ToolbarAction[] {
+  const perSurface = prefs.surfaces?.[surface];
+  if (perSurface) return arrangeActions(actions, perSurface.order, perSurface.hidden);
+  return arrangeActions(actions, prefs.order, prefs.disabled);
+}
+
+// Back-compat: the global ordering (no surface). Kept for any caller that wants the
+// pre-R6.3 behavior; implemented via the same primitive.
+function orderActions(actions: ToolbarAction[], prefs: OperationPrefs): ToolbarAction[] {
+  return arrangeActions(actions, prefs.order, prefs.disabled);
 }
 
 // Active dock layout preset id, persisted so the chosen layout sticks across reloads.
@@ -358,12 +383,21 @@ export type WorkspaceContextValue = {
   operationPrefs: OperationPrefs;
   operationsVersion: number;
   refreshOperations(): void;
-  /** Anchor-scope actions (built-in selection items + anchor ops), in prefs order. */
+  /** Anchor-scope actions ordered for the INLINE selection toolbar surface. */
   selectionActions: ToolbarAction[];
-  /** Source-scope actions (built-in source items + source ops), in prefs order. */
+  /** The SAME anchor-scope pool ordered for the ANCHOR BAR surface (configured
+      independently of the inline toolbar via its own per-surface prefs). */
+  anchorBarActions: ToolbarAction[];
+  /** Source-scope actions (built-in source items + source ops), ordered for "source". */
   sourceActions: ToolbarAction[];
   /** Run a merged action: a built-in command, or operation.run for a custom op. */
   runAction(action: ToolbarAction): void;
+  /** Persist a full next-prefs object (the Customize panel's single write seam). */
+  saveActionPrefs(next: OperationPrefs): Promise<void>;
+  /** Open the operation manager / Customize panel (fires the shell's registered handler). */
+  openOperationManager(): void;
+  /** Shell-only: register the "show operation manager" handler the seam fires. */
+  registerOpenOperationManager(handler: () => void): void;
 
   // —— workspace layout (dock presets) ——
   // The active layout preset id (persisted) + the available presets for the layout
@@ -429,6 +463,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [operations, setOperations] = useState<OperationRecord[]>([]);
   const [operationPrefs, setOperationPrefs] = useState<OperationPrefs>(EMPTY_OPERATION_PREFS);
   const [operationsVersion, setOperationsVersion] = useState(0);
+  // The shell owns which view-kind fills the switchable left slot (it's local shell
+  // state, not in the dock tree), so it REGISTERS a "show the operation manager" handler
+  // here. The Customize-Toolbar footer in any ActionMoreMenu calls openOperationManager()
+  // (the seam), which fires that handler — the panel never reaches into the shell.
+  const [showOperationManager, setShowOperationManager] = useState<(() => void) | null>(null);
 
   // Native file/folder dialogs come from the Electron preload; absent in a browser.
   const canOpenLocal = typeof window !== "undefined" && !!window.studyVault?.openFile;
@@ -1142,6 +1181,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // —— operations (custom AI actions as data) ——
   const refreshOperations = useCallback(() => setOperationsVersion((value) => value + 1), []);
 
+  // The single WRITE seam for action prefs (IRON LAW): the Customize panel hands a full
+  // next-prefs object here; we persist it through the entity client and bump the
+  // operations token so the loader re-fetches (mirrors the operation manager's own
+  // savePrefs → refreshOperations). The panel never calls entityClient directly.
+  const saveActionPrefs = useCallback(
+    async (next: OperationPrefs) => {
+      await entityClient.saveOperationPrefs(next);
+      refreshOperations();
+    },
+    [refreshOperations]
+  );
+
+  // The shell registers its "show operation manager" handler (sets the left-slot kind).
+  // Wrapped in a function-setter so React stores the callback itself, not invokes it.
+  const registerOpenOperationManager = useCallback((handler: () => void) => {
+    setShowOperationManager(() => handler);
+  }, []);
+
+  // The Customize-Toolbar seam: fire the shell's registered handler (no-op if the shell
+  // hasn't mounted yet). Used by ActionMoreMenu's footer.
+  const openOperationManager = useCallback(() => {
+    showOperationManager?.();
+  }, [showOperationManager]);
+
   // Load custom operations + prefs on mount and whenever the builder/manager mutates
   // them. Additive + best-effort: a failure leaves the toolbars showing only built-in
   // kit actions (operations never gate the base app).
@@ -1191,8 +1254,38 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         outputType: op.outputContentType,
         variables: op.declaredVariables
       }));
-    // The core Bookmark action leads, then kit selection items, then custom ops.
-    return orderActions([BOOKMARK_ACTION, ...builtin, ...custom], operationPrefs);
+    // The core Bookmark action leads, then kit selection items, then custom ops. Ordered
+    // for the INLINE selection toolbar surface (its own per-surface prefs, else global).
+    return orderActionsForSurface([BOOKMARK_ACTION, ...builtin, ...custom], operationPrefs, "inline");
+  }, [activeKitIds, operations, operationPrefs]);
+
+  // The SAME anchor-scope action pool as `selectionActions`, but ordered for the ANCHOR
+  // BAR surface — so the Anchor Action Bar configures show/hide + order INDEPENDENTLY of
+  // the inline selection toolbar. Built from the same builtin+custom merge so the two
+  // surfaces always offer the same actions; only the per-surface arrangement differs.
+  const anchorBarActions = useMemo<ToolbarAction[]>(() => {
+    const builtin: ToolbarAction[] = kitSurfaceItems("selection-toolbar", activeKitIds).map((item) => ({
+      id: item.commandId,
+      title: item.title,
+      icon: item.icon,
+      group: item.group,
+      description: item.description,
+      kind: "builtin",
+      scope: "anchor"
+    }));
+    const custom: ToolbarAction[] = operations
+      .filter((op) => op.scope === "anchor")
+      .map((op) => ({
+        id: op.id,
+        title: op.name,
+        group: "Custom Actions",
+        description: op.description,
+        kind: "operation",
+        scope: "anchor",
+        outputType: op.outputContentType,
+        variables: op.declaredVariables
+      }));
+    return orderActionsForSurface([BOOKMARK_ACTION, ...builtin, ...custom], operationPrefs, "anchor");
   }, [activeKitIds, operations, operationPrefs]);
 
   const sourceActions = useMemo<ToolbarAction[]>(() => {
@@ -1217,7 +1310,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         outputType: op.outputContentType,
         variables: op.declaredVariables
       }));
-    return orderActions([...builtin, ...custom], operationPrefs);
+    return orderActionsForSurface([...builtin, ...custom], operationPrefs, "source");
   }, [activeKitIds, operations, operationPrefs]);
 
   // Fire a merged action: a built-in dispatches its command id directly; a custom op
@@ -1343,8 +1436,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       operationsVersion,
       refreshOperations,
       selectionActions,
+      anchorBarActions,
       sourceActions,
       runAction,
+      saveActionPrefs,
+      openOperationManager,
+      registerOpenOperationManager,
       activeLayoutId,
       availableLayouts,
       setActiveLayout,
@@ -1424,8 +1521,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       operationsVersion,
       refreshOperations,
       selectionActions,
+      anchorBarActions,
       sourceActions,
       runAction,
+      saveActionPrefs,
+      openOperationManager,
+      registerOpenOperationManager,
       activeLayoutId,
       availableLayouts,
       setActiveLayout,
