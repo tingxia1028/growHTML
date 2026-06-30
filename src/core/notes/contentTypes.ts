@@ -140,7 +140,10 @@ export const BOOKMARK_CONTENT_TYPE = "bookmark";
 const bookmarkSchema = z.object({
   label: z.string(),
   color: z.string().optional(),
-  order: z.number().optional()
+  order: z.number().optional(),
+  // R8: an OPTIONAL grouping label for the hover-reveal Bookmark index. Additive — no
+  // migration (absent = "Ungrouped"). Doesn't enter search text (the label is enough).
+  category: z.string().optional()
 });
 
 const stripTags = (html: string) => html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();

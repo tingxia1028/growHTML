@@ -18,6 +18,7 @@
 // escaped text, mirroring `renderNoteContent`'s contract (so a hand-rolled or stale
 // note can't crash the note list).
 
+import { useState } from "react";
 import { escapeHtml, renderNoteContent } from "../../adapters/notes/render";
 import { videoEmbedSrc, type VideoProvider } from "../../core/notes/parseVideoUrl";
 import { DiagramNote } from "../DiagramNote";
@@ -28,6 +29,7 @@ import {
   type NoteEditInput,
   type NoteRenderInput
 } from "./noteTypeRegistry";
+import { getRecentCategories } from "./recentCategories";
 
 // Whether the desktop file picker is available (media EDIT needs it; render is
 // browser-friendly). Checked lazily so SSR / jsdom without a window don't crash.
@@ -740,13 +742,14 @@ registerNoteType({
 // panel (render is handed the note, not focus). EDIT is a tiny label + color editor,
 // not the rich note editor. asBookmark is inert-safe (mirrors asFlashcard) so a
 // foreign/mis-shaped content can't crash the chip.
-type Bookmark = { label: string; color?: string; order?: number };
+type Bookmark = { label: string; color?: string; order?: number; category?: string };
 function asBookmark(content: unknown): Bookmark {
   const c = (content ?? {}) as Partial<Bookmark>;
   return {
     label: typeof c.label === "string" ? c.label : "",
     color: typeof c.color === "string" ? c.color : undefined,
-    order: typeof c.order === "number" ? c.order : undefined
+    order: typeof c.order === "number" ? c.order : undefined,
+    category: typeof c.category === "string" ? c.category : undefined
   };
 }
 function BookmarkChip({ content }: NoteRenderInput) {
@@ -761,22 +764,52 @@ function BookmarkChip({ content }: NoteRenderInput) {
     </span>
   );
 }
+// A module-stable id so the category input can reference its <datalist> sibling.
+let bookmarkCategoryListSeq = 0;
 function BookmarkEditor({ content, onChange }: NoteEditInput) {
   const bookmark = asBookmark(content);
+  // R8: category is an OPTIONAL grouping field for the hover-reveal Bookmark index. The
+  // text input is backed by a <datalist> of recently-used categories (published by the
+  // bookmark hook — the editor has no ctx access). An empty value drops `category` so the
+  // bookmark falls back to the "Ungrouped" section. Saving flows through the existing
+  // note.edit path (the inline rename editor passes this whole content object on save).
+  const [listId] = useState(() => `bookmark-categories-${++bookmarkCategoryListSeq}`);
+  const recent = getRecentCategories();
+  const setCategory = (value: string) => {
+    const trimmed = value.trim();
+    const next: Bookmark = { ...bookmark };
+    if (trimmed) next.category = value;
+    else delete next.category;
+    onChange(next);
+  };
   return (
     <div className="note-edit note-edit-bookmark">
+      <div className="note-edit-bookmark-row">
+        <input
+          className="note-edit-field bookmark-label"
+          placeholder="Bookmark label"
+          value={bookmark.label}
+          onChange={(event) => onChange({ ...bookmark, label: event.target.value })}
+        />
+        <input
+          type="color"
+          className="note-edit-field bookmark-color"
+          value={bookmark.color ?? "#3b82f6"}
+          onChange={(event) => onChange({ ...bookmark, color: event.target.value })}
+        />
+      </div>
       <input
-        className="note-edit-field bookmark-label"
-        placeholder="Bookmark label"
-        value={bookmark.label}
-        onChange={(event) => onChange({ ...bookmark, label: event.target.value })}
+        className="note-edit-field bookmark-category"
+        placeholder="Category (optional)"
+        list={listId}
+        value={bookmark.category ?? ""}
+        onChange={(event) => setCategory(event.target.value)}
       />
-      <input
-        type="color"
-        className="note-edit-field bookmark-color"
-        value={bookmark.color ?? "#3b82f6"}
-        onChange={(event) => onChange({ ...bookmark, color: event.target.value })}
-      />
+      <datalist id={listId}>
+        {recent.map((category) => (
+          <option key={category} value={category} />
+        ))}
+      </datalist>
     </div>
   );
 }

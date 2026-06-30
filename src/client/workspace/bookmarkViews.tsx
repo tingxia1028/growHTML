@@ -14,22 +14,14 @@ import { Bookmark, Trash2 } from "lucide-react";
 import { BOOKMARK_CONTENT_TYPE } from "../../core/notes/contentTypes";
 import { getNoteType } from "../notes/noteTypeRegistry";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
+import { useBookmarks } from "./useBookmarks";
 
 function BookmarksView({ ctx }: { ctx: WorkspaceContext }) {
-  const { visibleNotes, anchors, focus, activeSourceId, dispatch } = ctx;
-  // Filter to bookmark notes only — the same OR-filtered `visibleNotes` the note list
-  // uses, so a hidden layer's bookmark doesn't show here either.
-  const bookmarks = visibleNotes.filter((note) => (note.contentType ?? "") === BOOKMARK_CONTENT_TYPE);
+  const { activeSourceId, dispatch } = ctx;
+  // The bookmark data + jump come from the ONE shared hook (R8), so this pane and the
+  // hover-reveal BookmarkIndex stay behavior-identical with no parallel data path.
+  const { bookmarks, jump, isJumpable } = useBookmarks(ctx);
   const plugin = getNoteType(BOOKMARK_CONTENT_TYPE);
-
-  // Jump to the bookmark's passage by focusing its anchor. setAnchor needs the anchor
-  // RECORD (cached for context/painting), so resolve it from ctx.anchors by the note's
-  // first anchorId; guard when layer painting filtered the anchor out (no jump).
-  const jump = (anchorId: string | undefined) => {
-    if (!anchorId) return;
-    const anchor = anchors.find((a) => a.id === anchorId);
-    if (anchor) focus.setAnchor(anchor);
-  };
 
   return (
     <aside className="bookmark-panel">
@@ -41,7 +33,7 @@ function BookmarksView({ ctx }: { ctx: WorkspaceContext }) {
       <div className="bookmark-list record-list">
         {bookmarks.map((note) => {
           const anchorId = note.anchorIds[0];
-          const jumpable = !!anchorId && anchors.some((a) => a.id === anchorId);
+          const jumpable = isJumpable(anchorId);
           return (
             // A bookmark IS a note, so it gets the same delete affordance as any note
             // (dispatch note.delete → confirm → refresh). The jump button KEEPS the
