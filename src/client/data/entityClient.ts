@@ -143,6 +143,10 @@ export type OperationPrefs = {
       its own action `order` + `hidden` set; absent → that surface uses the global
       `order`/`disabled` above. Optional so pre-R6.3 prefs files stay valid. */
   surfaces?: Record<string, { order: string[]; hidden: string[] }>;
+  /** Per-action chosen icon NAME (R6 polish): action id → lucide icon name (from the
+      shared ICON_CHOICES set). GLOBAL, not per-surface, so an action's glyph is
+      consistent everywhere. Optional so pre-existing prefs files stay valid. */
+  icons?: Record<string, string>;
 };
 
 export type NodeRef =

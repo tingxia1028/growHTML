@@ -251,13 +251,18 @@ const operationPrefsSchema = z.object({
       z.string(),
       z.object({ order: z.array(z.string()).default([]), hidden: z.array(z.string()).default([]) })
     )
-    .default({})
+    .default({}),
+  // `icons` (R6 polish) — a TOP-LEVEL action id → chosen lucide icon NAME map (global,
+  // not per-surface, so an action's glyph is consistent across surfaces). Absent in old
+  // prefs files → defaults to {} (additive, no migration).
+  icons: z.record(z.string(), z.string()).default({})
 });
 const emptyOperationPrefs: z.infer<typeof operationPrefsSchema> = {
   order: [],
   disabled: [],
   params: {},
-  surfaces: {}
+  surfaces: {},
+  icons: {}
 };
 
 // Workspace layout is UI state, not a core entity: stored as a single JSON file

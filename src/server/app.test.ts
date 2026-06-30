@@ -932,7 +932,7 @@ describe("vault server API", () => {
 
   it("returns default operation prefs and round-trips a saved set", async () => {
     const empty = await request(app).get("/api/operation-prefs").expect(200);
-    expect(empty.body.prefs).toEqual({ order: [], disabled: [], params: {}, surfaces: {} });
+    expect(empty.body.prefs).toEqual({ order: [], disabled: [], params: {}, surfaces: {}, icons: {} });
 
     const prefs = {
       order: ["textbook.explain-concept", "op_1"],
@@ -1107,7 +1107,8 @@ describe("operation prefs — per-surface (R6.3)", () => {
       surfaces: {
         inline: { order: ["bookmark.add"], hidden: ["op_x"] },
         anchor: { order: ["op_x", "bookmark.add"], hidden: [] }
-      }
+      },
+      icons: {}
     };
     const put = await request(app).put("/api/operation-prefs").send(prefs).expect(200);
     expect(put.body.prefs.surfaces.inline).toEqual({ order: ["bookmark.add"], hidden: ["op_x"] });
@@ -1115,6 +1116,34 @@ describe("operation prefs — per-surface (R6.3)", () => {
 
     const get = await request(app).get("/api/operation-prefs").expect(200);
     expect(get.body.prefs).toEqual(prefs);
+  });
+
+  it("round-trips the new `icons` map through PUT then GET, and old-shape (no `icons`) still parses", async () => {
+    // PUT a prefs set carrying the new top-level `icons` map (action id → glyph NAME).
+    const prefs = {
+      order: ["bookmark.add", "op_x"],
+      disabled: [],
+      params: {},
+      surfaces: {},
+      icons: { "bookmark.add": "star", op_x: "highlighter" }
+    };
+    const put = await request(app).put("/api/operation-prefs").send(prefs).expect(200);
+    expect(put.body.prefs.icons).toEqual({ "bookmark.add": "star", op_x: "highlighter" });
+
+    const get = await request(app).get("/api/operation-prefs").expect(200);
+    expect(get.body.prefs).toEqual(prefs);
+
+    // OLD-shape prefs (no `icons` key) still parse and default `icons` to {} — additive,
+    // no migration. Write the pre-icons shape straight to the vault and reload.
+    const prefsPath = path.join(vault.paths.studyDir, "operation-prefs.json");
+    await writeFile(
+      prefsPath,
+      `${JSON.stringify({ order: ["a"], disabled: [], params: {}, surfaces: {} }, null, 2)}\n`,
+      "utf8"
+    );
+    const reloaded = await request(app).get("/api/operation-prefs").expect(200);
+    expect(reloaded.body.prefs.order).toEqual(["a"]);
+    expect(reloaded.body.prefs.icons).toEqual({});
   });
 
   it("parses OLD-shape prefs (no `surfaces`) and defaults it to {}", async () => {

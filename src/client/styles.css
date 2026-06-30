@@ -1296,6 +1296,87 @@ button {
   gap: 4px;
 }
 
+/* Per-action icon picker (R6 polish): a small glyph button on each surface row that opens
+   an inline grid of the curated ICON_CHOICES. Tokenized like the rest of the panel. */
+.operation-icon-picker {
+  position: relative;
+  display: inline-flex;
+}
+
+.operation-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface-card);
+  color: var(--sv-text-muted);
+  cursor: pointer;
+}
+
+.operation-icon-btn:hover,
+.operation-icon-btn.active {
+  border-color: var(--sv-accent-border);
+  background: var(--sv-accent-weak);
+  color: var(--sv-accent);
+}
+
+.operation-icon-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 1000;
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface-card);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+}
+
+.operation-icon-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+}
+
+.operation-icon-choice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--sv-radius-sm);
+  background: transparent;
+  color: var(--sv-text-muted);
+  cursor: pointer;
+}
+
+.operation-icon-choice:hover {
+  background: var(--sv-accent-weak);
+  color: var(--sv-accent);
+}
+
+.operation-icon-choice.active {
+  border-color: var(--sv-accent-border);
+  background: var(--sv-accent-weak);
+  color: var(--sv-accent);
+}
+
+.operation-icon-reset {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+
 .operation-params {
   display: grid;
   gap: 6px;

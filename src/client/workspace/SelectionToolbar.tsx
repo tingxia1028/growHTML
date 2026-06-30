@@ -28,9 +28,12 @@ export type SelectionToolbarProps = {
   onRun(action: ToolbarAction): void;
   /** Whether a command is currently running (disables the buttons). */
   busy?: boolean;
+  /** Open the Customize panel (the host wires this to openOperationManager); the More
+      menu's footer deep-links to this surface's Customize tab. */
+  onCustomize?(surface: "inline" | "anchor" | "bottom"): void;
 };
 
-export function SelectionToolbar({ visible, items, onRun, busy }: SelectionToolbarProps) {
+export function SelectionToolbar({ visible, items, onRun, busy, onCustomize }: SelectionToolbarProps) {
   if (!visible || items.length === 0) return null;
 
   return (
@@ -56,7 +59,7 @@ export function SelectionToolbar({ visible, items, onRun, busy }: SelectionToolb
       {/* The grouped overflow twin (R6.2): the primary `.selection-toolbar-btn` row stays
           as-is; this trailing menu mirrors the full list bucketed by group + a Customize
           footer. Same items, same onRun — actions trigger, results render elsewhere. */}
-      <ActionMoreMenu items={items} onRun={onRun} busy={busy} surface="inline" />
+      <ActionMoreMenu items={items} onRun={onRun} busy={busy} surface="inline" onCustomize={onCustomize} />
     </div>
   );
 }

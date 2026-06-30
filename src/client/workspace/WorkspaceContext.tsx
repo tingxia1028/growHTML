@@ -77,10 +77,14 @@ export type ToolbarAction = {
   variables?: OperationVariable[];
 };
 
-const EMPTY_OPERATION_PREFS: OperationPrefs = { order: [], disabled: [], params: {}, surfaces: {} };
+const EMPTY_OPERATION_PREFS: OperationPrefs = { order: [], disabled: [], params: {}, surfaces: {}, icons: {} };
 
 /** The surface keys an action list can be configured for (R6.3). */
 export type ActionSurface = "inline" | "anchor" | "source" | "bottom";
+
+/** The surface a Customize deep-link can pre-select: a configurable toolbar surface, or
+    "my" (the builder/manager). undefined behaves like "my" (default open). */
+export type CustomizeSurface = "inline" | "anchor" | "bottom" | "my" | undefined;
 
 // Command ids whose `run` performs an AI STRUCTURED GENERATION (a single non-streamed
 // request that emits a GeneratedDraft). Dispatching one flips the shared `generating`
@@ -394,10 +398,16 @@ export type WorkspaceContextValue = {
   runAction(action: ToolbarAction): void;
   /** Persist a full next-prefs object (the Customize panel's single write seam). */
   saveActionPrefs(next: OperationPrefs): Promise<void>;
-  /** Open the operation manager / Customize panel (fires the shell's registered handler). */
-  openOperationManager(): void;
+  /** Open the operation manager / Customize panel (fires the shell's registered handler).
+      An optional `surface` deep-links to that surface's Customize tab (inline/anchor/bottom);
+      "my" or omitted opens the My Actions builder/manager. */
+  openOperationManager(surface?: CustomizeSurface): void;
   /** Shell-only: register the "show operation manager" handler the seam fires. */
   registerOpenOperationManager(handler: () => void): void;
+  /** The surface tab the Customize panel should PRE-SELECT on its next open (set by
+      openOperationManager). operationViews consumes it ONCE via an effect, so the tab
+      stays user-controllable afterward. */
+  customizeSurface: CustomizeSurface;
 
   // —— workspace layout (dock presets) ——
   // The active layout preset id (persisted) + the available presets for the layout
@@ -468,6 +478,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // here. The Customize-Toolbar footer in any ActionMoreMenu calls openOperationManager()
   // (the seam), which fires that handler — the panel never reaches into the shell.
   const [showOperationManager, setShowOperationManager] = useState<(() => void) | null>(null);
+  // The surface tab the Customize panel should pre-select on its next open (deep-link from
+  // an ActionMoreMenu's "Customize Toolbar" footer). operationViews consumes it once.
+  const [customizeSurface, setCustomizeSurface] = useState<CustomizeSurface>(undefined);
 
   // Native file/folder dialogs come from the Electron preload; absent in a browser.
   const canOpenLocal = typeof window !== "undefined" && !!window.studyVault?.openFile;
@@ -1199,11 +1212,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setShowOperationManager(() => handler);
   }, []);
 
-  // The Customize-Toolbar seam: fire the shell's registered handler (no-op if the shell
-  // hasn't mounted yet). Used by ActionMoreMenu's footer.
-  const openOperationManager = useCallback(() => {
-    showOperationManager?.();
-  }, [showOperationManager]);
+  // The Customize-Toolbar seam: record the requested surface (so operationViews can
+  // pre-select that tab on open), then fire the shell's registered handler (no-op if the
+  // shell hasn't mounted yet). Used by ActionMoreMenu's footer, which passes its surface.
+  const openOperationManager = useCallback(
+    (surface?: CustomizeSurface) => {
+      setCustomizeSurface(surface);
+      showOperationManager?.();
+    },
+    [showOperationManager]
+  );
 
   // Load custom operations + prefs on mount and whenever the builder/manager mutates
   // them. Additive + best-effort: a failure leaves the toolbars showing only built-in
@@ -1236,7 +1254,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const builtin: ToolbarAction[] = kitSurfaceItems("selection-toolbar", activeKitIds).map((item) => ({
       id: item.commandId,
       title: item.title,
-      icon: item.icon,
+      icon: operationPrefs.icons?.[item.commandId] ?? item.icon,
       group: item.group,
       description: item.description,
       kind: "builtin",
@@ -1247,6 +1265,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       .map((op) => ({
         id: op.id,
         title: op.name,
+        icon: operationPrefs.icons?.[op.id],
         group: "Custom Actions",
         description: op.description,
         kind: "operation",
@@ -1254,9 +1273,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         outputType: op.outputContentType,
         variables: op.declaredVariables
       }));
+    const bookmark: ToolbarAction = { ...BOOKMARK_ACTION, icon: operationPrefs.icons?.[BOOKMARK_ACTION.id] ?? BOOKMARK_ACTION.icon };
     // The core Bookmark action leads, then kit selection items, then custom ops. Ordered
     // for the INLINE selection toolbar surface (its own per-surface prefs, else global).
-    return orderActionsForSurface([BOOKMARK_ACTION, ...builtin, ...custom], operationPrefs, "inline");
+    return orderActionsForSurface([bookmark, ...builtin, ...custom], operationPrefs, "inline");
   }, [activeKitIds, operations, operationPrefs]);
 
   // The SAME anchor-scope action pool as `selectionActions`, but ordered for the ANCHOR
@@ -1267,7 +1287,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const builtin: ToolbarAction[] = kitSurfaceItems("selection-toolbar", activeKitIds).map((item) => ({
       id: item.commandId,
       title: item.title,
-      icon: item.icon,
+      icon: operationPrefs.icons?.[item.commandId] ?? item.icon,
       group: item.group,
       description: item.description,
       kind: "builtin",
@@ -1278,6 +1298,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       .map((op) => ({
         id: op.id,
         title: op.name,
+        icon: operationPrefs.icons?.[op.id],
         group: "Custom Actions",
         description: op.description,
         kind: "operation",
@@ -1285,14 +1306,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         outputType: op.outputContentType,
         variables: op.declaredVariables
       }));
-    return orderActionsForSurface([BOOKMARK_ACTION, ...builtin, ...custom], operationPrefs, "anchor");
+    const bookmark: ToolbarAction = { ...BOOKMARK_ACTION, icon: operationPrefs.icons?.[BOOKMARK_ACTION.id] ?? BOOKMARK_ACTION.icon };
+    return orderActionsForSurface([bookmark, ...builtin, ...custom], operationPrefs, "anchor");
   }, [activeKitIds, operations, operationPrefs]);
 
   const sourceActions = useMemo<ToolbarAction[]>(() => {
     const builtin: ToolbarAction[] = kitSurfaceItems("source-actions", activeKitIds).map((item) => ({
       id: item.commandId,
       title: item.title,
-      icon: item.icon,
+      icon: operationPrefs.icons?.[item.commandId] ?? item.icon,
       group: item.group,
       description: item.description,
       kind: "builtin",
@@ -1303,6 +1325,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       .map((op) => ({
         id: op.id,
         title: op.name,
+        icon: operationPrefs.icons?.[op.id],
         group: "Custom Actions",
         description: op.description,
         kind: "operation",
@@ -1442,6 +1465,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       saveActionPrefs,
       openOperationManager,
       registerOpenOperationManager,
+      customizeSurface,
       activeLayoutId,
       availableLayouts,
       setActiveLayout,
@@ -1527,6 +1551,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       saveActionPrefs,
       openOperationManager,
       registerOpenOperationManager,
+      customizeSurface,
       activeLayoutId,
       availableLayouts,
       setActiveLayout,

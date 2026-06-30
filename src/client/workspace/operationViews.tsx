@@ -19,7 +19,7 @@
 // through the WorkspaceContext + entity client. The toolbars read the SAME prefs, so the
 // order / enable-disable configured here is exactly what the study panel renders.
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Wand2, Plus, Play, RotateCcw, Trash2, Copy, GripVertical } from "lucide-react";
 import {
   entityClient,
@@ -28,8 +28,9 @@ import {
   type OperationVariable
 } from "../data/entityClient";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
-import type { ActionSurface } from "./WorkspaceContext";
+import type { ActionSurface, CustomizeSurface } from "./WorkspaceContext";
 import type { OperationPrefs } from "../data/entityClient";
+import { ICON_CHOICES, actionIcon } from "./actionIcons";
 import { extractVariables, renderTemplate } from "../../ai/template";
 import { listNoteContentSpecs } from "../../core/notes/contentTypes";
 import { kitSurfaceItems } from "../../kits/clientContext";
@@ -73,6 +74,12 @@ const SURFACE_TABS: { id: SurfaceTab; label: string }[] = [
   { id: "bottom", label: "Bottom" },
   { id: "manage", label: "My Actions" }
 ];
+
+// Map a Customize deep-link surface (from openOperationManager) to the tab to pre-select:
+// the three configurable surfaces map to their own tab; "my"/undefined → the builder.
+function mapCustomizeSurfaceToTab(surface: CustomizeSurface): SurfaceTab {
+  return surface === "inline" || surface === "anchor" || surface === "bottom" ? surface : "manage";
+}
 
 // A flattened action a surface tab can show/hide/reorder (id + label + scope/kind tags).
 type SurfaceAction = { id: string; title: string; scope: "anchor" | "source"; kind: "builtin" | "operation" };
@@ -152,7 +159,7 @@ function scopeForVariables(variables: OperationVariable[]): "anchor" | "source" 
 }
 
 function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
-  const { operations, operationPrefs, refreshOperations, dispatch, saveActionPrefs } = ctx;
+  const { operations, operationPrefs, refreshOperations, dispatch, saveActionPrefs, customizeSurface } = ctx;
   const [error, setError] = useState("");
   // Which Customize tab is active: a surface tab (per-surface show/hide + order) or the
   // existing builder/manager ("manage"). Defaults to "manage" so the panel opens to the
@@ -160,6 +167,17 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
   const [surfaceTab, setSurfaceTab] = useState<SurfaceTab>("manage");
   // The drag source id within a SURFACE tab's list (separate from the manager's dragId).
   const [surfaceDragId, setSurfaceDragId] = useState<string | null>(null);
+  // The action id whose icon-picker popover is open (one at a time), or null when closed.
+  const [iconPickerFor, setIconPickerFor] = useState<string | null>(null);
+
+  // Deep-link (R6 polish): when the panel is opened via a surface's More menu, the ctx
+  // carries the requested surface. Pre-select that tab ONCE per request — keyed on
+  // customizeSurface so a later manual tab change isn't overridden on the next render.
+  // "anchor"/"inline"/"bottom" map to the matching tab; "my"/undefined → the manager.
+  useEffect(() => {
+    if (customizeSurface === undefined) return;
+    setSurfaceTab(mapCustomizeSurfaceToTab(customizeSurface));
+  }, [customizeSurface]);
 
   // —— builder draft state ——
   const [editId, setEditId] = useState<string | null>(null);
@@ -481,6 +499,25 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
     [operationPrefs, saveActionPrefs]
   );
 
+  // —— per-action icon picker (R6 polish) ——————————————————————————————————————————————
+  // Write the chosen icon NAME for an action id into the GLOBAL `prefs.icons` map (so the
+  // glyph is consistent across every surface), through the ctx seam. `name === null`
+  // RESETS (deletes the entry → actionIcon falls back to the action's default glyph).
+  const setActionIcon = useCallback(
+    (actionId: string, name: string | null) => {
+      const icons = { ...(operationPrefs.icons ?? {}) };
+      if (name === null) delete icons[actionId];
+      else icons[actionId] = name;
+      const next: OperationPrefs = { ...operationPrefs, icons };
+      setError("");
+      setIconPickerFor(null);
+      void saveActionPrefs(next).catch((err) =>
+        setError(err instanceof Error ? err.message : "Failed to save icon")
+      );
+    },
+    [operationPrefs, saveActionPrefs]
+  );
+
   // Toggle show/hide for an id on a surface (writes the surface's `hidden` set).
   const toggleHiddenOnSurface = useCallback(
     (surface: ActionSurface, id: string) => {
@@ -617,6 +654,19 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
           <div className="operation-surface-list">
             {surfaceList.map((action, index) => {
               const hidden = isHiddenOnSurface(surfaceTab, action.id);
+              const override = operationPrefs.icons?.[action.id];
+              // Resolve the row's current glyph via the SHARED actionIcon (so the picker
+              // button shows exactly what the toolbars render): the override wins, else the
+              // action's default. (SurfaceAction has no outputType, so an un-overridden op
+              // shows the wand here — the override is what the picker sets.)
+              const CurrentIcon = actionIcon({
+                id: action.id,
+                title: action.title,
+                icon: override,
+                kind: action.kind,
+                scope: action.scope
+              });
+              const pickerOpen = iconPickerFor === action.id;
               return (
                 <div
                   key={action.id}
@@ -629,6 +679,53 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
                   onDrop={() => dropOnSurface(surfaceTab, action.id)}
                 >
                   <GripVertical size={14} className="operation-drag-handle" />
+                  {/* Per-action icon picker (R6 polish): the button shows the current glyph;
+                      clicking opens an inline grid of ICON_CHOICES. Selecting writes the
+                      GLOBAL prefs.icons[id] (consistent across surfaces); "Reset" clears it. */}
+                  <span className="operation-icon-picker">
+                    <button
+                      type="button"
+                      className={`operation-icon-btn${pickerOpen ? " active" : ""}`}
+                      aria-label="Change icon"
+                      aria-haspopup="menu"
+                      aria-expanded={pickerOpen}
+                      title="Change icon"
+                      onClick={() => setIconPickerFor(pickerOpen ? null : action.id)}
+                    >
+                      <CurrentIcon size={15} />
+                    </button>
+                    {pickerOpen ? (
+                      <div className="operation-icon-pop" role="menu">
+                        <div className="operation-icon-grid">
+                          {ICON_CHOICES.map((choice) => {
+                            const ChoiceIcon = choice.Icon;
+                            return (
+                              <button
+                                key={choice.name}
+                                type="button"
+                                className={`operation-icon-choice${override === choice.name ? " active" : ""}`}
+                                data-icon-name={choice.name}
+                                title={choice.name}
+                                aria-label={choice.name}
+                                onClick={() => setActionIcon(action.id, choice.name)}
+                              >
+                                <ChoiceIcon size={16} />
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <button
+                          type="button"
+                          className="link-button operation-icon-reset"
+                          disabled={!override}
+                          onClick={() => setActionIcon(action.id, null)}
+                        >
+                          <RotateCcw size={12} />
+                          Reset icon
+                        </button>
+                      </div>
+                    ) : null}
+                  </span>
                   <label className="operation-toggle-label">
                     <input
                       type="checkbox"

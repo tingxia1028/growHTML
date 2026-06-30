@@ -39,9 +39,10 @@ export type ActionMoreMenuProps = {
   busy?: boolean;
   /** Which surface this menu hangs off (drives the header title + a data attribute). */
   surface: "inline" | "anchor" | "bottom";
-  /** Open the toolbar-customization UI. Undefined for now (R6.3 wires it); the footer
-      button still renders, disabled, so the affordance is visible. */
-  onCustomize?(): void;
+  /** Open the toolbar-customization UI for THIS menu's surface (the footer passes its
+      own `surface`, so the panel deep-links to the matching Customize tab). Undefined →
+      the footer button renders disabled, so the affordance stays visible. */
+  onCustomize?(surface: "inline" | "anchor" | "bottom"): void;
 };
 
 export function ActionMoreMenu({ items, onRun, busy, surface, onCustomize }: ActionMoreMenuProps) {
@@ -160,7 +161,7 @@ export function ActionMoreMenu({ items, onRun, busy, surface, onCustomize }: Act
               className="action-more-customize"
               disabled={!onCustomize}
               onClick={() => {
-                onCustomize?.();
+                onCustomize?.(surface);
                 setOpen(false);
               }}
             >
