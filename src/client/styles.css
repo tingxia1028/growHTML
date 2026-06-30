@@ -6302,6 +6302,7 @@ select {
 }
 
 .right-tabs-body {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
@@ -6329,4 +6330,159 @@ select {
 
 .note-list-head-static {
   cursor: default;
+}
+
+/* —— Right sidebar vertical split (drag a tab out, V1) —— */
+
+/* The tab-group pane: tab bar over its body. Used both standalone (no split) and as one
+   of the two stacked panes. Fills its container. */
+.right-tabs-group {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* When a split is active, the root becomes a vertical stack of two panes + a divider. */
+.right-tabs-split {
+  flex-direction: column;
+}
+
+.right-tabs-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex-grow: 0;
+  flex-shrink: 1;
+  overflow: hidden;
+}
+
+/* The drag handle between the two stacked panes. */
+.right-tabs-divider {
+  flex: 0 0 6px;
+  cursor: row-resize;
+  background: var(--sv-border);
+  position: relative;
+}
+
+.right-tabs-divider::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 28px;
+  height: 2px;
+  border-radius: 2px;
+  transform: translate(-50%, -50%);
+  background: var(--sv-text-muted);
+  opacity: 0.5;
+}
+
+.right-tabs-divider:hover {
+  background: var(--sv-accent);
+}
+
+.right-tabs-divider:hover::after {
+  opacity: 0.9;
+  background: var(--sv-accent-text);
+}
+
+/* The popped pane: a small header (label + merge-back ×) over the single sub-view. */
+.right-tabs-popped {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.right-tabs-popped-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 6px 8px 6px 10px;
+  border-bottom: 1px solid var(--sv-border);
+  background: var(--sv-surface-muted, var(--sv-surface));
+}
+
+.right-tabs-popped-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sv-accent-text);
+  white-space: nowrap;
+}
+
+.right-tabs-popped-merge {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--sv-radius);
+  background: transparent;
+  color: var(--sv-text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.right-tabs-popped-merge:hover {
+  background: var(--sv-border);
+  color: var(--sv-text);
+}
+
+.right-tabs-popped-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Drop-zone overlay: two stacked halves over the tab-group body while a tab is dragged. */
+.right-tabs-dropzones {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.right-tabs-dropzone {
+  flex: 1 1 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  border: 2px dashed transparent;
+  transition: background 0.1s ease, border-color 0.1s ease;
+}
+
+.right-tabs-dropzone.top {
+  border-bottom-style: solid;
+  border-bottom-color: var(--sv-border);
+}
+
+.right-tabs-dropzone.over {
+  background: color-mix(in srgb, var(--sv-accent) 18%, transparent);
+  border-color: var(--sv-accent);
+}
+
+.right-tabs-dropzone-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sv-text-muted);
+  padding: 4px 10px;
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface);
+  border: 1px solid var(--sv-border);
+  opacity: 0;
+}
+
+.right-tabs-dropzone.over .right-tabs-dropzone-label {
+  opacity: 1;
+  color: var(--sv-accent-text);
+  border-color: var(--sv-accent);
 }
