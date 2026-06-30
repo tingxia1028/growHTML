@@ -3,22 +3,29 @@
 // restores it inside the right column's Anchor pane as a COLLAPSIBLE section so it costs
 // only a header line until opened. It lists the active source's VISIBLE notes (the layer
 // filter applies) as the §10 shared PreviewCards — click a card → CenterView; the row's
-// crosshair reveals the note's passage in the reader; the trash deletes it. Bookmarks are
-// excluded (they surface as chips in the Bookmarks pane, not as content cards). ONE
-// render path: every card is an ArtifactCard (getNoteType().render, mode:"card").
+// crosshair reveals the note's passage in the reader; pencil edits it in place; the trash
+// deletes it. Bookmarks are excluded (they surface as chips in the Bookmarks pane, not as
+// content cards). ONE render path: every card is an ArtifactCard (getNoteType().render,
+// mode:"card"); editing reuses the SAME registry editor the composer used
+// (getNoteType().edit) so card · overlay · editor all flow through the registry.
 //
 // It collaborates only through `useWorkspace()` — like every other workspace view — so it
 // can be dropped into any pane without prop threading.
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Crosshair, StickyNote, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Crosshair, Pencil, StickyNote, Trash2 } from "lucide-react";
 import { useWorkspace } from "./WorkspaceContext";
 import { ArtifactCard } from "./ArtifactCard";
+import { getNoteType } from "../notes/noteTypeRegistry";
 import { BOOKMARK_CONTENT_TYPE } from "../../core/notes/contentTypes";
 
 export function NoteListPanel({ defaultOpen = false }: { defaultOpen?: boolean }) {
   const { visibleNotes, anchors, focus, dispatch } = useWorkspace();
   const [open, setOpen] = useState(defaultOpen);
+  // Edit-in-place: the id of the note being edited + a working copy of its content
+  // (seeded from the note, discarded on Cancel). null = not editing any row.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<unknown>(undefined);
 
   // Content notes only (bookmarks render as chips elsewhere). Newest first so a
   // just-added chat reply / note lands at the top where the user is looking.
@@ -26,6 +33,19 @@ export function NoteListPanel({ defaultOpen = false }: { defaultOpen?: boolean }
     .filter((note) => (note.contentType ?? "markdown") !== BOOKMARK_CONTENT_TYPE)
     .slice()
     .reverse();
+
+  const startEdit = (noteId: string, content: unknown) => {
+    setEditingId(noteId);
+    setDraft(content);
+  };
+  const cancelEdit = () => {
+    setEditingId(null);
+    setDraft(undefined);
+  };
+  const saveEdit = (noteId: string) => {
+    void dispatch("note.edit", { noteId, content: draft });
+    cancelEdit();
+  };
 
   return (
     <section className="note-list-panel">
@@ -45,14 +65,48 @@ export function NoteListPanel({ defaultOpen = false }: { defaultOpen?: boolean }
         listed.length ? (
           <div className="note-list-body">
             {listed.map((note) => {
+              const contentType = note.contentType ?? "markdown";
               const anchorId = note.anchorIds[0];
               const anchor = anchorId ? anchors.find((item) => item.id === anchorId) : undefined;
               const page = anchor && "page" in anchor ? (anchor as { page?: number }).page : undefined;
+              const plugin = getNoteType(contentType);
+              const editing = editingId === note.id;
+
+              // Edit-in-place via the SAME registry editor the composer used (contract
+              // law §0.5 / contract guard) — only when the type has an editor registered.
+              if (editing && plugin) {
+                return (
+                  <div key={note.id} className="note-list-row note-list-row-editing">
+                    <div className="note-edit-inline">
+                      {plugin.edit({ content: draft, onChange: setDraft })}
+                      <div className="note-list-row-actions note-list-edit-actions">
+                        <button
+                          type="button"
+                          className="note-edit-save"
+                          title="Save changes"
+                          onClick={() => saveEdit(note.id)}
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          className="note-edit-cancel"
+                          title="Discard changes"
+                          onClick={cancelEdit}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
               return (
                 <div key={note.id} className="note-list-row">
                   <ArtifactCard
                     block={{
-                      contentType: note.contentType ?? "markdown",
+                      contentType,
                       content: note.content,
                       note,
                       page: page ?? undefined,
@@ -71,9 +125,20 @@ export function NoteListPanel({ defaultOpen = false }: { defaultOpen?: boolean }
                         <Crosshair size={14} />
                       </button>
                     ) : null}
+                    {plugin ? (
+                      <button
+                        type="button"
+                        className="note-list-row-edit note-edit-start"
+                        title="Edit this note"
+                        aria-label="Edit note"
+                        onClick={() => startEdit(note.id, note.content)}
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    ) : null}
                     <button
                       type="button"
-                      className="note-list-row-delete"
+                      className="note-list-row-delete note-delete"
                       title="Delete this note"
                       aria-label="Delete note"
                       onClick={() => void dispatch("note.delete", { noteId: note.id })}

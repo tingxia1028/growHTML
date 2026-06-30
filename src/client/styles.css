@@ -6092,3 +6092,45 @@ select {
   opacity: 0.55;
   cursor: default;
 }
+
+/* Note-list inline edit (reuses the registry editor, like the old composer). */
+.note-list-row-editing .note-edit-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--sv-accent-border);
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-accent-weak-preview, var(--sv-surface));
+}
+
+.note-list-edit-actions {
+  position: static;
+  opacity: 1;
+  justify-content: flex-end;
+}
+
+.note-edit-save,
+.note-edit-cancel {
+  padding: 3px 10px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface);
+  color: var(--sv-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.note-edit-save {
+  border-color: var(--sv-accent-border);
+  background: var(--sv-accent);
+  color: #fff;
+}
+
+.note-edit-save:hover {
+  background: var(--sv-accent-strong);
+}
+
+.note-edit-cancel:hover {
+  background: var(--sv-accent-weak);
+}
