@@ -15,7 +15,7 @@ import { NoteListPanel } from "./NoteListPanel";
 
 const TABS: ReadonlyArray<{ kind: string; label: string }> = [
   { kind: "anchor.excerpt", label: "Anchor" },
-  { kind: "note.list", label: "Page Anchors" },
+  { kind: "note.list", label: "Notes" },
   { kind: "layer.switcher", label: "Layers" },
   { kind: "study", label: "AI Chat" }
 ];
