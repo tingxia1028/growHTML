@@ -86,7 +86,8 @@ test("pdf scroll: the scroll container scrolls and later pages are present", asy
 
 // PDF TEXT selection → quote draft (read direction), against the text layer.
 // Selecting text in page 1's .textLayer must surface a text quote in the chip.
-test("pdf quote: selecting text in the text layer → quote source chip", async ({ page, request }) => {
+// SKIP: selection -> Save Note materialization removed with the composer; pending note-creation UX decision
+test.skip("pdf quote: selecting text in the text layer → quote source chip", async ({ page, request }) => {
   const source = await seedPdf(request, `Quote PDF ${Date.now()}`);
   await page.goto("/");
   await page.locator(".source-item-open").filter({ hasText: source.id }).click();
@@ -149,7 +150,8 @@ test("pdf zoom: zoom-in grows the page and Fit width returns it", async ({ page,
     .toBeLessThan(2);
 });
 
-test("pdf region: rubber-band a figure → pdf_selection anchor with rect + region box", async ({ page, request }) => {
+// SKIP: selection -> Save Note materialization removed with the composer; pending note-creation UX decision
+test.skip("pdf region: rubber-band a figure → pdf_selection anchor with rect + region box", async ({ page, request }) => {
   const source = await seedPdf(request, `Region PDF ${Date.now()}`);
   await page.goto("/");
   await page.locator(".source-item-open").filter({ hasText: source.id }).click();
@@ -181,7 +183,8 @@ test("pdf region: rubber-band a figure → pdf_selection anchor with rect + regi
   await expect(page.locator(".pdf-region-box").first()).toBeVisible();
 });
 
-test("image region: rubber-band an area → image_region anchor + region box", async ({ page, request }) => {
+// SKIP: selection -> Save Note materialization removed with the composer; pending note-creation UX decision
+test.skip("image region: rubber-band an area → image_region anchor + region box", async ({ page, request }) => {
   const source = await seedImage(request, `Region IMG ${Date.now()}`);
   await page.goto("/");
   await page.locator(".source-item-open").filter({ hasText: source.id }).click();

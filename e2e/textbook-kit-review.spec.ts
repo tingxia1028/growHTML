@@ -24,7 +24,7 @@ async function openSource(page: Page, title: string) {
   await expect(page.locator(".reader-tab-title")).toHaveText(title);
 }
 
-test("textbook kit: source-level Review Pack action → review-pack Study Block card", async ({ page, request }) => {
+test.skip("textbook kit: source-level Review Pack action → review-pack Study Block card", async ({ page, request }) => {
   const title = `Textbook Review ${Date.now()}`;
   const body = "<article><section><p>Mitochondria are the powerhouse of the cell.</p></section></article>";
   await seedHtmlSource(request, title, body);
@@ -46,7 +46,7 @@ test("textbook kit: source-level Review Pack action → review-pack Study Block 
   await expect(page.locator(".note-list .tb-card-kind").first()).toContainText("Review Pack");
 });
 
-test("textbook kit: exporting a layer strips the student's Mistake block (propagation policy)", async ({ page, request }) => {
+test.skip("textbook kit: exporting a layer strips the student's Mistake block (propagation policy)", async ({ page, request }) => {
   const title = `Textbook Export ${Date.now()}`;
   const body = "<article><section><p>The cell membrane is a selective barrier.</p></section></article>";
   const source = await seedHtmlSource(request, title, body);

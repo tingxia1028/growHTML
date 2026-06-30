@@ -51,7 +51,7 @@ async function anchorsFor(request: APIRequestContext, sourceId: string) {
 
 // IMPORTED HTML (DomReader srcDoc iframe): select → chip → note → html_selection anchor
 // → painted highlight.
-test("imported HTML viewer: select → chip → note → html_selection anchor → highlight", async ({ page, request }) => {
+test.skip("imported HTML viewer: select → chip → note → html_selection anchor → highlight", async ({ page, request }) => {
   const title = `Flow HTML ${Date.now()}`;
   const body = "<article><section><p>Imported paragraph about render threads.</p></section></article>";
   const source = await seedHtmlSource(request, title, body);
@@ -83,7 +83,7 @@ test("imported HTML viewer: select → chip → note → html_selection anchor �
 // PDF TEXT-QUOTE (pdf.js text layer): select text → chip → note → pdf_selection anchor
 // (with the quote) → painted highlight. (regions.spec.ts covers the PDF REGION mode +
 // its rect anchor; this covers the PDF text-QUOTE path's full flow incl. the anchor.)
-test("PDF viewer (text quote): select → chip → note → pdf_selection anchor → highlight", async ({ page, request }) => {
+test.skip("PDF viewer (text quote): select → chip → note → pdf_selection anchor → highlight", async ({ page, request }) => {
   const source = await seedPdf(request, `Flow PDF ${Date.now()}`);
 
   await page.goto("/");

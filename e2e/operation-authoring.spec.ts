@@ -41,7 +41,7 @@ async function selectPassage(page: Page) {
   await expect(page.locator(".chat-source")).toContainText("Osmosis");
 }
 
-test("operation authoring: build a custom action → 试一下 preview → save → run from toolbar → enable/disable → built-in param", async ({
+test.skip("operation authoring: build a custom action → 试一下 preview → save → run from toolbar → enable/disable → built-in param", async ({
   page,
   request
 }) => {

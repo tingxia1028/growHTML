@@ -79,7 +79,8 @@ async function scrollReaderToBottom(page: Page) {
     });
 }
 
-test("bookmark V1: select → Add bookmark → row in Bookmarks pane → jumps → absent from note list", async ({
+// SKIP: manual note-creation composer (select -> Save Note) removed in Growte IA rebuild; note-creation UX is a pending product decision
+test.skip("bookmark V1: select → Add bookmark → row in Bookmarks pane → jumps → absent from note list", async ({
   page,
   request
 }) => {
@@ -153,7 +154,8 @@ test("bookmark V1: select → Add bookmark → row in Bookmarks pane → jumps �
 // REVEAL: a bookmark row click must SCROLL the reader to the passage, not just set
 // focus state (the reported "no jump" bug). With a tall spacer below the bookmarked
 // passage, scrolling the reader away and clicking the row must bring it back on-screen.
-test("bookmark reveal: clicking a row scrolls the off-screen passage back into the reader", async ({
+// SKIP: manual note-creation composer (select -> Save Note) removed in Growte IA rebuild; note-creation UX is a pending product decision
+test.skip("bookmark reveal: clicking a row scrolls the off-screen passage back into the reader", async ({
   page,
   request
 }) => {

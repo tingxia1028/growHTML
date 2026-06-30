@@ -382,3 +382,47 @@ Verified by automated tests (no network flakiness):
 ### Follow-up (same day) — persistent blue selection in webview/local-HTML guests
 - Extended the blue selected-anchor highlight to the cross-realm webview surfaces (live `WebviewReader` + `LocalHtmlReader`). New `sv:select` IPC channel: `selectWebviewAnchor(webview, id)` (host, in `webviewSelection.ts`) → guest preload (`electron/webview-preload.ts`) calls the SAME `setSelectedAnchorInDoc`, and remembers the id to re-apply it after each `sv:anchors` repaint (which `clearAnnotations` would wipe). Wired into both readers' reveal effects (sends select on focus change + clears on focus-none). Now ALL five surfaces (iframe HTML / PDF / image / live web / local HTML) paint the focused anchor blue uniformly.
 - Tests: `src/client/selection/webviewSelection.test.ts` (+4 `selectWebviewAnchor`: sends id / empty-id clears / null-webview no-op / swallows throwing send). `npm run check` clean; webview-preload esbuild bundle clean; suite **661** green.
+
+## 2026-06-30 — e2e reconciliation after the Growte IA rebuild (non-creation specs)
+
+The Growte IA rebuild made the right-panel composer AI-only, removing the manual
+"select passage → write note" flow (`.chat-source` chip, Note-mode composer,
+`.note-list .record-card`) AND several note-card affordances (per-note `.note-layer-*`
+picker; `.note-anchor-*` multi-anchor controls are orphaned/not rendered). Per the user's
+decision (先只修非创建类), the NON-creation specs were fixed to drive the new UI and the
+manual-creation/generation specs were `test.skip`ped pending the note-creation UX decision.
+
+Approach for fixes: seed sources/anchors/notes (and layer membership) via the API
+(`POST /api/anchors` with a placeholder studyId + real quote → paints via the text-quote
+fallback; `POST /api/notes` with `anchorIds`/`layerIds`; `PATCH /api/notes/:id` for
+membership moves), then drive the surviving UI — the right-sidebar NoteListPanel fold
+(`.note-list-head` → `.note-list-row`, `.note-edit-start`/`.note-edit-save`,
+`.note-delete`), the Layers pane filter (`.layer-toggle`), and the shared CenterView
+(click `.sv-preview-card` → `.sv-focus-overlay`). The focused-passage assertion moved from
+`.chat-source` to `.anchor-excerpt-quote`. The chat "save reply as note" path moved to the
+§10 `.chat-artifact-add` action.
+
+FIXED (now green):
+- note-edit-delete.spec.ts (3): seed note via API → NoteListPanel edit/delete + highlight removal.
+- layer-as-lens.spec.ts (4): seed notes with `layerIds` via API, membership moves via PATCH, drive the Layers-pane filter, assert NoteListPanel visibility + derived `.sv-annotated` painting.
+- streaming-chat.spec.ts (2): `.chat-source`→`.anchor-excerpt-quote`; the mermaid save-reply now uses `.chat-artifact-add` (waits for it to enable after streaming; selects the substring + clicks in one synchronous step so the selection is live).
+- loop.spec.ts (2 of 3): marginalia (seed anchored note via API + toggle Document/Notes-Overlay; the default annotation mode is no longer guaranteed floating, so it clicks Document first); AI-chat save-reply via `.chat-artifact-add`.
+- adaptive-note-forms.spec.ts (2 of 7 failing): markmap note-viewer + interactive-html ESCAPE guard — open from the NoteListPanel via card click → CenterView (the card is a light preview now; the live diagram/`.sv-interactive-frame` mounts only in the overlay). The two API-only tests (path-like-html degrade, Range) were already passing.
+
+SKIPPED (manual-creation / generation / removed note-card UI — pending product decision):
+- viewer-flows (2), web-snapshot (1), regions (3 of 6: pdf-quote-chip, pdf-region, image-region), loop:21, bookmark (2), textbook-kit (1), textbook-kit-ai (1), textbook-kit-review (2), kit-activation (1), generation-preview (1), operation-authoring (1), adaptive-note-forms (5: composer chip, bare-YouTube, form-router, .xmind import, generating-indicator).
+- multi-anchor (2): the `.note-anchor-link/count/jump` card affordances are orphaned (not rendered) after the IA rebuild — deviation from the original "fix" classification (their interactive UI is gone, so they belong with the pending note-card-UX decision).
+- concepts (1): NOT a note-IA issue — the concept-pane inspector overlaps the concept list (`.concept-inspector-host` intercepts clicks on `.concept-item`); a R7 concept-pane LAYOUT regression. Flagged for the concept/layer-pane work.
+
+Product changes (minimal): `WorkspaceContext.addReplyAsNote` now respects the in-reply text
+selection (`selectedTextOr`) — restores the old "save just the selected part" parity so a
+selected diagram classifies on its own. `e2e-electron/{viewer-flows,local-html-highlight}`
+pixel predicates were already updated yellow→blue by the prior commit.
+
+Result: web e2e **23 passed / 24 skipped / 0 failed**; `npm run check` clean; `npm run test`
+**661** unit green. NOT run: `e2e:electron` (needs a desktop build; the changes here are
+web-spec + a tiny shared WorkspaceContext tweak covered by web e2e + unit).
+
+Follow-ups for the parent / a later pass: decide the note-creation UX (manual composer vs
+AI-only) to un-skip the ~24 creation specs; fix the concept-pane inspector/list overlap
+(concepts.spec); the multi-anchor card affordance if multi-anchor UX is kept.

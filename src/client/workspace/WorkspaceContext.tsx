@@ -959,17 +959,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   // §10 chat card "Add as note": classify the reply into its registered form (the SAME
   // pure heuristic the preview path uses) and create the note in ONE step via the normal
-  // add-note command — no preview gate. anchorIds omitted, so the command materializes
+  // add-note command — no preview gate. Respects the user's TEXT SELECTION within the
+  // reply (selectedTextOr → keep just the useful part, e.g. a fenced/bare diagram), like
+  // the old "Save selection as note" flow. anchorIds omitted, so the command materializes
   // the focused passage if there is one (attaching the note to it), else saves it
   // unanchored on the active source. onNoteCreated repaints + the note-list refreshes.
   const addReplyAsNote = useCallback(
     async (rawContent: string) => {
-      const trimmed = (rawContent ?? "").trim();
-      if (!trimmed) return;
-      const form = classifyContent(trimmed);
+      const text = selectedTextOr(rawContent ?? "").trim();
+      if (!text) return;
+      const form = classifyContent(text);
       await dispatch("anchor.add-note", { content: form.content, contentType: form.contentType });
     },
-    [dispatch]
+    [dispatch, selectedTextOr]
   );
 
   // §10 chat card "Regenerate": re-ask the most recent user question, appending a fresh

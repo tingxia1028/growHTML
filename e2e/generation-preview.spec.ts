@@ -23,7 +23,7 @@ async function openSource(page: Page, title: string) {
   await expect(page.locator(".reader-tab-title")).toHaveText(title);
 }
 
-test("generation preview: Explain → preview (nothing saved) → edit + Save → Regenerate stays pending → Discard", async ({
+test.skip("generation preview: Explain → preview (nothing saved) → edit + Save → Regenerate stays pending → Discard", async ({
   page,
   request
 }) => {

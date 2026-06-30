@@ -69,7 +69,7 @@ async function scrollReaderToBottom(page: Page) {
     });
 }
 
-test("multi-anchor V1: note on A → link to B → paints at both → 'Anchored at 2 places' → jumps", async ({
+test.skip("multi-anchor V1: note on A → link to B → paints at both → 'Anchored at 2 places' → jumps", async ({
   page,
   request
 }) => {
@@ -168,7 +168,7 @@ test("multi-anchor V1: note on A → link to B → paints at both → 'Anchored 
 // reader: with a tall spacer between two anchors, jumping to the OFF-SCREEN one must
 // bring it into the reader viewport, and RE-clicking the same button (revealSeq) must
 // re-reveal after scrolling away again.
-test("multi-anchor reveal: jumping to an off-screen anchor scrolls it back into the reader", async ({
+test.skip("multi-anchor reveal: jumping to an off-screen anchor scrolls it back into the reader", async ({
   page,
   request
 }) => {

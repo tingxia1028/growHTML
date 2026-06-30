@@ -23,7 +23,7 @@ async function openSource(page: Page, title: string) {
   await expect(page.locator(".reader-tab-title")).toHaveText(title);
 }
 
-test("textbook kit: select passage → Explain/Practice toolbar → generated Study Block cards", async ({ page, request }) => {
+test.skip("textbook kit: select passage → Explain/Practice toolbar → generated Study Block cards", async ({ page, request }) => {
   const title = `Textbook AI ${Date.now()}`;
   const body = "<article><section><p>Photosynthesis converts light into chemical energy.</p></section></article>";
   await seedHtmlSource(request, title, body);

@@ -29,10 +29,12 @@ test("ask AI: reply streams in progressively over SSE with a deterministic final
   await seedHtmlSource(request, title, body);
   await openSource(page, title);
 
-  // Select the passage → fills the source chip so the mock weaves the quote in.
+  // Select the passage → focuses it (the Anchor pane shows the quote) so the mock weaves
+  // it into the reply. The old `.chat-source` chip was removed in the Growte IA rebuild;
+  // the focused passage now surfaces in the Anchor excerpt.
   const reader = page.frameLocator(READER);
   await reader.getByText("Photosynthesis converts", { exact: false }).click();
-  await expect(page.locator(".chat-source")).toContainText("Photosynthesis");
+  await expect(page.locator(".anchor-excerpt-quote")).toContainText("Photosynthesis");
 
   // The streaming endpoint must be the one that answers (not the /api/chat fallback).
   const streamResponse = page.waitForResponse(
@@ -73,12 +75,14 @@ test("ask AI: reply streams in progressively over SSE with a deterministic final
   expect(positive.length, `observed bubble lengths: ${lengths.join(",")}`).toBeGreaterThan(1);
 });
 
-// Adaptive note forms (Phase 1a): saving a chat reply routes the text through
-// resolveForm/classifyContent and DETECTS the form, then parks it in the generation
-// preview (so the user previews the recognized form) — NOT a hardcoded markdown note.
-// Here the reply contains a bare mermaid diagram source; selecting it and "Save
-// selection as note" must yield a `mermaid` note, not markdown. The mock provider is
-// deterministic (the reply echoes the asked question verbatim), so we assert structure.
+// Adaptive note forms (Phase 1a): the chat reply's "Add as note" action routes the text
+// through classifyContent and DETECTS the form — NOT a hardcoded markdown note. Here the
+// reply contains a bare mermaid diagram source; selecting it and clicking "Add as note"
+// (the §10 chat-artifact action, which respects the window selection) must yield a
+// `mermaid` note, not markdown. The mock provider is deterministic (the reply echoes the
+// asked question verbatim). Old→new: the removed "Save selection as note" + generation-
+// preview path is replaced by the chat card's `.chat-artifact-add`, landing the note in
+// the right-sidebar NoteListPanel.
 test("save a chat reply: a mermaid block is detected and saved as a `mermaid` note (not markdown)", async ({
   page,
   request
@@ -91,7 +95,7 @@ test("save a chat reply: a mermaid block is detected and saved as a `mermaid` no
   // Select a passage so the assistant has context (and so the saved note can anchor).
   const reader = page.frameLocator(READER);
   await reader.getByText("Cellular respiration", { exact: false }).click();
-  await expect(page.locator(".chat-source")).toContainText("Cellular respiration");
+  await expect(page.locator(".anchor-excerpt-quote")).toContainText("Cellular respiration");
 
   // Ask a question that IS a bare mermaid source. The mock echoes it verbatim as
   // "You asked: flowchart LR; Start --> End", so that exact diagram text appears in
@@ -103,13 +107,23 @@ test("save a chat reply: a mermaid block is detected and saved as a `mermaid` no
   const assistant = page.locator(ASSISTANT).last();
   await expect(assistant).toContainText(`You asked: ${diagram}`, { timeout: 15_000 });
 
-  // Select EXACTLY the mermaid source within the rendered reply (window selection is
-  // what `selectedTextOr` reads). We build a Range over the text node that contains it.
+  // Wait for streaming to FINISH so the reply's "Add as note" is enabled (it's disabled
+  // while a request is in flight) — otherwise the click is a no-op and nothing saves.
+  const addBtn = page.locator(".chat-msg.chat-assistant .chat-artifact-add").last();
+  await expect(addBtn).toBeEnabled({ timeout: 15_000 });
+
+  // Select EXACTLY the mermaid source within the rendered reply AND fire "Add as note"
+  // in the SAME synchronous step, so the window selection is intact when the click
+  // handler reads it (`addReplyAsNote`/`selectedTextOr`). A Playwright .click() between
+  // setting and reading the selection can collapse it in headless Chromium.
   await page.evaluate((needle) => {
-    const root = document.querySelector(".chat-log .chat-msg.chat-assistant .note-rendered");
+    const msgs = document.querySelectorAll(".chat-log .chat-msg.chat-assistant");
+    const msg = msgs[msgs.length - 1];
+    const root = msg?.querySelector(".note-rendered");
     if (!root) throw new Error("assistant reply not found");
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     let node: Node | null;
+    let selected = false;
     while ((node = walker.nextNode())) {
       const text = node.textContent ?? "";
       const idx = text.indexOf(needle);
@@ -120,24 +134,23 @@ test("save a chat reply: a mermaid block is detected and saved as a `mermaid` no
         const sel = window.getSelection()!;
         sel.removeAllRanges();
         sel.addRange(range);
-        return;
+        selected = true;
+        break;
       }
     }
-    throw new Error("mermaid source text node not found");
+    if (!selected) throw new Error("mermaid source text node not found");
+    // Click the reply's "Add as note" synchronously while the selection is live →
+    // classifies the SELECTION → creates a `mermaid` note (no preview gate).
+    const addBtn = msg.querySelector(".chat-artifact-add") as HTMLButtonElement | null;
+    if (!addBtn) throw new Error("Add as note button not found");
+    addBtn.click();
   }, diagram);
 
-  // Save the selection → routes through resolveForm/classifyContent → the preview seam.
-  await page.locator(".row-actions .link-button", { hasText: "Save selection as note" }).click();
-
-  // The preview shows the DETECTED form = mermaid (not markdown).
-  const preview = page.locator(".generation-preview");
-  await expect(preview).toBeVisible({ timeout: 15_000 });
-  await expect(preview.locator(".generation-preview-type")).toHaveText("mermaid");
-
-  // Save it → a note of contentType `mermaid` lands in the note list.
-  await preview.locator(".gen-preview-save").click();
-  const mermaidCard = page.locator(".note-list .record-card", { hasText: "mermaid" });
-  await expect(mermaidCard.first()).toBeVisible({ timeout: 15_000 });
-  // The card header names the detected type; assert it is mermaid, not markdown.
-  await expect(mermaidCard.first().locator("strong").first()).toHaveText("mermaid");
+  // Expand the Notes fold and assert a mermaid card (its type badge reads "mermaid",
+  // not "markdown").
+  const head = page.locator(".note-list-head");
+  await expect(head).toBeVisible();
+  if ((await head.getAttribute("aria-expanded")) !== "true") await head.click();
+  const mermaidRow = page.locator(".note-list-row", { has: page.locator(".sv-artifact-badge", { hasText: "mermaid" }) });
+  await expect(mermaidRow.first()).toBeVisible({ timeout: 15_000 });
 });

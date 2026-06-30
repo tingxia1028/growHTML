@@ -63,7 +63,7 @@ async function saveNote(page: Page, text: string) {
   await expect(page.locator(".note-list")).toContainText(text);
 }
 
-test("webpage snapshot: unified shell + select → chip → note → html_selection anchor → highlight", async ({ page, request }) => {
+test.skip("webpage snapshot: unified shell + select → chip → note → html_selection anchor → highlight", async ({ page, request }) => {
   const source = await seedWebpage(request);
 
   await page.goto("/");

@@ -34,7 +34,7 @@ async function selectPassage(page: Page) {
   await expect(page.locator(".chat-source")).toContainText("Photosynthesis");
 }
 
-test("per-source kit activation: default on → switch to Core gates creation (render stays) → back on", async ({
+test.skip("per-source kit activation: default on → switch to Core gates creation (render stays) → back on", async ({
   page,
   request
 }) => {

@@ -1,15 +1,18 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 // Note EDIT + DELETE end-to-end (web mode). Both flow through the command layer:
-//   • Edit  — the saved note's "Edit" affordance opens the SAME registry editor the
-//             composer uses (getNoteType(contentType).edit), seeded with the current
-//             content; Save dispatches note.edit → PATCH /api/notes/:id {content} →
-//             the list refreshes and the change persists across a reload.
-//   • Delete — the note's "Delete" affordance dispatches note.delete (confirm gated) →
-//             DELETE /api/notes/:id → the note disappears from the list and stays gone.
+//   • Edit  — the note row's pencil (.note-edit-start) opens the SAME registry editor the
+//             composer used (getNoteType(contentType).edit), seeded with the current
+//             content; Save dispatches note.edit → PATCH /api/notes/:id {content} → the
+//             list refreshes and the change persists across a reload.
+//   • Delete — the row's trash (.note-delete) dispatches note.delete → DELETE
+//             /api/notes/:id → the note disappears from the list and stays gone.
 //
-// Modeled on e2e/note-types.spec.ts (SERVER 4177, seed an html source, open it, drive
-// the .note-list cards). Markdown notes author through the shared .composer-input.
+// Old→new: the Growte IA rebuild removed the right-panel Note-mode COMPOSER and the old
+// source-side `.note-list .record-card`. Notes are now SEEDED via the API and surface in
+// the right-sidebar NoteListPanel (a collapsed "Notes" fold in the Anchor pane); edit +
+// delete live on each `.note-list-row`. So we seed via the API (deterministic) and drive
+// the new fold — the manual create-a-note-via-composer flow is a separate pending decision.
 
 const SERVER = "http://127.0.0.1:4177";
 const READER = 'iframe[title="Source reader"]';
@@ -20,114 +23,129 @@ async function seedHtmlSource(request: APIRequestContext, title: string, body: s
   return (await res.json()).source as { id: string; title: string };
 }
 
-async function openSource(page: Page, title: string) {
+// Seed an html_selection anchor on a passage. A placeholder studyId satisfies the API
+// (html_selection requires a non-empty studyId + quote); the DomReader paints it via the
+// text-quote FALLBACK (decorateAnnotations re-finds the quote when the studyId is absent),
+// so the highlight shows on the passage without us knowing the injected study-ids.
+async function seedAnchor(request: APIRequestContext, sourceId: string, quote: string) {
+  const res = await request.post(`${SERVER}/api/anchors`, {
+    data: { sourceId, anchorKind: "html_selection", studyId: `seed-${Date.now()}`, quote, contextBefore: "", contextAfter: "" }
+  });
+  expect(res.ok(), `seed anchor failed: ${res.status()}`).toBeTruthy();
+  return (await res.json()).anchor as { id: string };
+}
+
+async function seedNote(request: APIRequestContext, sourceId: string, content: string, anchorIds: string[] = []) {
+  const res = await request.post(`${SERVER}/api/notes`, {
+    data: { sourceId, anchorIds, contentType: "markdown", content }
+  });
+  expect(res.ok(), `seed note failed: ${res.status()}`).toBeTruthy();
+  return (await res.json()).note as { id: string };
+}
+
+async function openSource(page: Page, source: { id: string; title: string }) {
+  await page.setViewportSize({ width: 1400, height: 900 });
   await page.goto("/");
-  await page.locator(".source-item-open", { hasText: title }).click();
-  await expect(page.locator(".reader-tab-title")).toHaveText(title);
+  await page.locator(".source-item-open").filter({ hasText: source.id }).click();
+  await expect(page.locator(".reader-tab-title")).toHaveText(source.title);
 }
 
-// Select a passage in the reader iframe → focus it (its quote fills .chat-source), so
-// a saved note materializes an ANCHOR on it and paints its highlight (.sv-annotated).
-async function selectPassage(page: Page, passage: string) {
-  const reader = page.frameLocator(READER);
-  await reader.getByText(passage, { exact: false }).click();
-  await expect(page.locator(".chat-source")).toContainText(passage);
+// Expand the right-sidebar Notes fold (collapsed by default) and return the row locator.
+async function expandNotes(page: Page) {
+  const head = page.locator(".note-list-head");
+  await expect(head).toBeVisible();
+  if ((await head.getAttribute("aria-expanded")) !== "true") await head.click();
 }
-
-// Write a markdown note through the composer's shared textarea (the existing path).
-async function addMarkdownNote(page: Page, text: string) {
-  await page.locator(".composer-mode .mode-tab", { hasText: "Note" }).click();
-  await page.locator(".composer-input").fill(text);
-  await page.getByRole("button", { name: "Save Note" }).click();
-}
+const noteRow = (page: Page, text: string) => page.locator(".note-list-row", { hasText: text });
 
 test("edit a note's content → the change persists across a reload", async ({ page, request }) => {
-  const title = `Edit Note ${Date.now()}`;
-  await seedHtmlSource(request, title, "<article><p>Body about editing notes.</p></article>");
-  await openSource(page, title);
+  const stamp = Date.now();
+  const title = `Edit Note ${stamp}`;
+  const source = await seedHtmlSource(request, title, "<article><p>Body about editing notes.</p></article>");
 
-  const original = `Original body ${Date.now()}`;
+  const original = `Original body ${stamp}`;
   const edited = `${original} — EDITED`;
-  await addMarkdownNote(page, original);
+  await seedNote(request, source.id, original);
 
-  const card = page.locator(".note-list .record-card", { hasText: original });
-  await expect(card).toBeVisible();
+  await openSource(page, source);
+  await expandNotes(page);
+  await expect(noteRow(page, original)).toBeVisible();
 
-  // Open the registry editor in place (the SAME markdown editor the composer uses).
-  await card.locator(".note-edit-start").click();
-  const editor = card.locator(".note-edit-inline textarea");
+  // Open the registry editor in place (the SAME markdown editor the composer used).
+  await noteRow(page, original).locator(".note-edit-start").click();
+  const editor = page.locator(".note-list-row-editing .note-edit-inline textarea");
   await expect(editor).toBeVisible();
   await editor.fill(edited);
-  await card.locator(".note-edit-save").click();
+  await page.locator(".note-list-row-editing .note-edit-save").click();
 
-  // The card now shows the edited content.
-  const editedCard = page.locator(".note-list .record-card", { hasText: edited });
-  await expect(editedCard).toBeVisible();
+  // The row now shows the edited content.
+  await expect(noteRow(page, edited)).toBeVisible();
 
   // Reload → the edit persisted server-side (refetched note shows the new content).
-  await openSource(page, title);
-  await expect(page.locator(".note-list .record-card", { hasText: edited })).toBeVisible();
+  await openSource(page, source);
+  await expandNotes(page);
+  await expect(noteRow(page, edited)).toBeVisible();
 });
 
 test("delete a note → it disappears from the list and stays gone", async ({ page, request }) => {
-  const title = `Delete Note ${Date.now()}`;
-  await seedHtmlSource(request, title, "<article><p>Body about deleting notes.</p></article>");
-  await openSource(page, title);
+  const stamp = Date.now();
+  const title = `Delete Note ${stamp}`;
+  const source = await seedHtmlSource(request, title, "<article><p>Body about deleting notes.</p></article>");
+
+  const text = `Disposable note ${stamp}`;
+  await seedNote(request, source.id, text);
 
   // note.delete asks window.confirm — auto-accept it.
   page.on("dialog", (dialog) => void dialog.accept());
 
-  const text = `Disposable note ${Date.now()}`;
-  await addMarkdownNote(page, text);
+  await openSource(page, source);
+  await expandNotes(page);
+  await expect(noteRow(page, text)).toBeVisible();
 
-  const card = page.locator(".note-list .record-card", { hasText: text });
-  await expect(card).toBeVisible();
-
-  await card.locator(".note-delete").click();
+  await noteRow(page, text).locator(".note-delete").click();
 
   // Gone from the list immediately…
-  await expect(page.locator(".note-list .record-card", { hasText: text })).toHaveCount(0);
+  await expect(noteRow(page, text)).toHaveCount(0);
 
   // …and still gone after a reload (deleted server-side, not just from local state).
-  await openSource(page, title);
-  await expect(page.locator(".note-list .record-card", { hasText: text })).toHaveCount(0);
+  await openSource(page, source);
+  await expandNotes(page);
+  await expect(noteRow(page, text)).toHaveCount(0);
 });
 
 test("delete an anchored note → its highlight is removed from the reader", async ({ page, request }) => {
   const stamp = Date.now();
   const title = `Delete Highlight ${stamp}`;
   const passage = `Highlighted passage to delete ${stamp}`;
-  await seedHtmlSource(request, title, `<article><section><p>${passage}</p></section></article>`);
+  const source = await seedHtmlSource(request, title, `<article><section><p>${passage}</p></section></article>`);
 
-  // Wide viewport so the secondary panes (note list) stay expanded.
-  await page.setViewportSize({ width: 1400, height: 900 });
-  await openSource(page, title);
+  // Seed an anchor on the passage + a note hung off it → the reader paints .sv-annotated.
+  const anchor = await seedAnchor(request, source.id, passage);
+  const noteText = `Note on highlighted passage ${stamp}`;
+  await seedNote(request, source.id, noteText, [anchor.id]);
+
+  await openSource(page, source);
 
   // note.delete asks window.confirm — auto-accept it.
   page.on("dialog", (dialog) => void dialog.accept());
 
-  // Select the passage → save a note on it. This materializes an exclusive anchor and
-  // paints its highlight (.sv-annotated) in the reader iframe.
   const reader = page.frameLocator(READER);
-  await selectPassage(page, passage);
-  const noteText = `Note on highlighted passage ${stamp}`;
-  await addMarkdownNote(page, noteText);
-
-  const card = page.locator(".note-list .record-card", { hasText: noteText });
-  await expect(card).toBeVisible();
-  // The highlight is painted on the passage.
+  // The highlight is painted on the passage (text-quote fallback).
   await expect(reader.locator(".sv-annotated", { hasText: passage })).toHaveCount(1);
+
+  await expandNotes(page);
+  await expect(noteRow(page, noteText)).toBeVisible();
 
   // Delete the note → server cascade-deletes the now-orphaned anchor → refreshAnnotations
   // re-fetches an anchors list without it → the reader repaints WITHOUT the highlight.
-  await card.locator(".note-delete").click();
-  await expect(page.locator(".note-list .record-card", { hasText: noteText })).toHaveCount(0);
+  await noteRow(page, noteText).locator(".note-delete").click();
+  await expect(noteRow(page, noteText)).toHaveCount(0);
 
   // The highlight (.sv-annotated for that passage) is GONE from the reader — not just the
   // list row. This is the regression the orphan-anchor cascade fixes.
   await expect(reader.locator(".sv-annotated", { hasText: passage })).toHaveCount(0);
 
   // And it stays gone after a reload (deleted server-side).
-  await openSource(page, title);
+  await openSource(page, source);
   await expect(page.frameLocator(READER).locator(".sv-annotated", { hasText: passage })).toHaveCount(0);
 });
