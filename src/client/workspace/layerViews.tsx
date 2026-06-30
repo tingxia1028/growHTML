@@ -21,7 +21,7 @@ import { entityClient, type ImportPreview, type StudyLayerRecord, type StudyPack
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 
 // Trigger a browser/Electron-renderer download of a `.studypack`.
-function downloadPack(pack: StudyPack, fileName: string) {
+export function downloadPack(pack: StudyPack, fileName: string) {
   const blob = new Blob([JSON.stringify(pack, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -35,12 +35,12 @@ function downloadPack(pack: StudyPack, fileName: string) {
 
 // A layer's group label, derived from role/importMode (the owned layer leaves role
 // unset). Used to bucket the list so presets / custom / imported read as distinct.
-function groupOf(layer: StudyLayerRecord): "owned" | "preset" | "custom" | "shared" {
+export function groupOf(layer: StudyLayerRecord): "owned" | "preset" | "custom" | "shared" {
   if (layer.role) return layer.role;
   return layer.importMode === "imported" || layer.importMode === "subscribed" ? "shared" : "owned";
 }
 
-const GROUP_ORDER: ReadonlyArray<{ key: "owned" | "preset" | "custom" | "shared"; label: string }> = [
+export const GROUP_ORDER: ReadonlyArray<{ key: "owned" | "preset" | "custom" | "shared"; label: string }> = [
   { key: "owned", label: "Mine" },
   { key: "preset", label: "Stages" },
   { key: "custom", label: "Custom" },

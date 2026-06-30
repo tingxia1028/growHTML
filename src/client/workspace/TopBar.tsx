@@ -38,6 +38,8 @@ import {
   parentToggleState,
   type LayerNode
 } from "./layerTree";
+import { LayerLensManage } from "./LayerLensManage";
+import { Settings2 } from "lucide-react";
 
 export type TopBarProps = {
   ctx: WorkspaceContext;
@@ -53,6 +55,9 @@ const LAYER_PALETTE = ["#3b82f6", "#3fb96b", "#8b5cf6", "#ff6b73", "#ff9d55", "#
 
 function LayerLensPopover({ ctx }: { ctx: WorkspaceContext }) {
   const { sourceLayers, notes, visibleNotes, toggleLayerFilter, setLayersEnabled } = ctx;
+  // In-place management (R7.3): the footer "Manage" toggle swaps the filter tree for the
+  // create/rename/recolor/reorder/delete + import/export surface (spec §8.1).
+  const [manage, setManage] = useState(false);
 
   const enabledIds = useMemo(
     () => new Set(sourceLayers.filter((layer) => layer.enabled).map((layer) => layer.id)),
@@ -115,24 +120,42 @@ function LayerLensPopover({ ctx }: { ctx: WorkspaceContext }) {
         <h2>Layer Lens</h2>
         <p>Choose which layers are visible</p>
       </div>
-      <div className="layer-lens-list">
-        {roots.length ? (
-          roots.map((node, index) => renderRow(node, 0, index))
-        ) : (
-          <p className="layer-lens-empty">Open a source to see its layers.</p>
-        )}
-      </div>
-      <div className="layer-lens-visible">Visible note count: {visibleCount}</div>
+      {manage ? (
+        <LayerLensManage ctx={ctx} />
+      ) : (
+        <>
+          <div className="layer-lens-list">
+            {roots.length ? (
+              roots.map((node, index) => renderRow(node, 0, index))
+            ) : (
+              <p className="layer-lens-empty">Open a source to see its layers.</p>
+            )}
+          </div>
+          <div className="layer-lens-visible">Visible note count: {visibleCount}</div>
+        </>
+      )}
       <div className="layer-lens-foot">
         <button
           type="button"
-          className="layer-lens-reset"
-          title="Show all layers"
-          onClick={() => void setLayersEnabled(sourceLayers.map((layer) => layer.id), true)}
+          className={`layer-lens-manage-toggle${manage ? " active" : ""}`}
+          aria-pressed={manage}
+          title={manage ? "Back to the visibility filter" : "Manage layers (create / rename / import…)"}
+          onClick={() => setManage((value) => !value)}
         >
-          <RotateCcw size={14} />
-          Reset
+          <Settings2 size={14} />
+          {manage ? "Done" : "Manage"}
         </button>
+        {!manage ? (
+          <button
+            type="button"
+            className="layer-lens-reset"
+            title="Show all layers"
+            onClick={() => void setLayersEnabled(sourceLayers.map((layer) => layer.id), true)}
+          >
+            <RotateCcw size={14} />
+            Reset
+          </button>
+        ) : null}
       </div>
     </div>
   );

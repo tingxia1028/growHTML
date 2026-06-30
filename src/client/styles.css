@@ -6156,3 +6156,95 @@ select {
   color: var(--sv-text-faint);
   font-size: 13px;
 }
+
+/* Layer Lens — in-place management (R7.3): the Manage toggle + the folded manager. */
+.layer-lens-manage-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface);
+  color: var(--sv-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.layer-lens-manage-toggle:hover,
+.layer-lens-manage-toggle.active {
+  background: var(--sv-accent-weak);
+  border-color: var(--sv-accent-border);
+  color: var(--sv-accent-text);
+}
+
+.layer-lens-manage {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 46vh;
+  overflow: auto;
+  padding: 4px 2px 2px;
+}
+
+.layer-lens-manage .layer-import,
+.layer-lens-manage .layer-create {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.layer-lens-manage .layer-create-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface);
+  font-size: 12px;
+}
+
+.layer-lens-manage .layer-group-title {
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--sv-text-faint);
+}
+
+.layer-lens-manage .layer-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.layer-lens-manage .layer-item-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.layer-lens-manage .layer-item-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.layer-lens-manage .layer-color-input {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--sv-border);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
