@@ -41,6 +41,13 @@ export const studyLayerSchema = recordEnvelopeSchema("layer", layerIdSchema).ext
   role: z.enum(["preset", "custom", "shared"]).optional(),
   color: z.string().optional(),
   order: z.number().optional(),
+  // Hierarchy (R7, additive, no migration): the parent layer this one nests under in
+  // the Layer Lens tree. Empty/undefined = a top-level layer. Hierarchy is IMPORT/role
+  // driven, not manual drag-nesting (spec §8.2): importing a `.studypack` hangs the
+  // imported layer under a per-source "Imported" parent (ensureImportedParent). The
+  // FILTER semantics are unchanged — membership + the enabled-OR is still per LEAF
+  // layer; a parent's enabled flag only drives cascade + count roll-up in the Lens.
+  parentId: layerIdSchema.optional(),
   origin: z
     .object({
       packId: z.string().optional(),

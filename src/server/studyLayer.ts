@@ -19,7 +19,7 @@ import { createPdfSelectionAnchor } from "../adapters/pdf/anchor";
 import { createImageRegionAnchor } from "../adapters/image/anchor";
 import { parseHtmlDocument } from "../adapters/html/core";
 import { readSourceContent } from "../core/store/sources";
-import { ensureOwnedLayer } from "../core/study-layer/layers";
+import { ensureImportedParent, ensureOwnedLayer } from "../core/study-layer/layers";
 import { fingerprintForSource, matchSourceByFingerprint } from "../core/study-layer/fingerprint";
 import { rematchAnchor, type MatchStatus, type PortableAnchor, type RematchResult } from "../core/study-layer/rematch";
 import { studyPackSchema, type PortablePackAnchor, type StudyPack } from "../core/study-layer/pack";
@@ -260,6 +260,11 @@ export async function commitImport(
     ? sources.find((s) => s.id === opts.targetSourceId) ?? null
     : matchSourceByFingerprint(sources, pack.sourceFingerprint)?.source ?? null;
 
+  // Nest the imported layer under the source's "Imported" parent (spec §8.2: hierarchy
+  // is import-driven). Only when we resolved a local source — an unmatched pack has no
+  // source to hang a per-source parent off, so it stays top-level until rematched.
+  const importedParent = source ? await ensureImportedParent(vault, source) : null;
+
   const now = new Date().toISOString();
   const layer = studyLayerSchema.parse({
     id: createEntityId("layer"),
@@ -277,6 +282,7 @@ export async function commitImport(
     importMode: "imported",
     enabled: true,
     role: "shared",
+    parentId: importedParent?.id,
     origin: { packId: pack.packId, importedAt: now }
   });
   await vault.stores.layers.upsert(layer);

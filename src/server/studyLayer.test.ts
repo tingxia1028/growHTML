@@ -110,6 +110,31 @@ describe("study layer API", () => {
     if (imported?.anchorKind === "html_selection") expect(imported.studyId).toBe(studyId);
   });
 
+  it("nests an imported layer under the per-source 'Imported' parent (R7 hierarchy)", async () => {
+    const { source, anchor } = await seedSourceWithAnchorAndNote();
+    const pack = (await request(app).post(`/api/layers/${anchor.layerId}/export`).expect(200)).body.pack;
+
+    const result = (await request(app).post("/api/layers/import/commit").send({ pack }).expect(201)).body.result;
+
+    const layers = (await request(app).get(`/api/sources/${source.id}/layers`).expect(200)).body
+      .layers as Array<{ id: string; title: string; role?: string; importMode: string; parentId?: string }>;
+
+    // A single per-source "Imported" parent (role:shared, no parentId) was created…
+    const parents = layers.filter((l) => l.title === "导入图层" && l.role === "shared" && !l.parentId);
+    expect(parents).toHaveLength(1);
+    // …and the imported layer hangs under it.
+    const imported = layers.find((l) => l.id === result.layerId)!;
+    expect(imported.parentId).toBe(parents[0].id);
+
+    // Idempotent: a SECOND import reuses the same parent (not a duplicate).
+    const result2 = (await request(app).post("/api/layers/import/commit").send({ pack }).expect(201)).body.result;
+    const layers2 = (await request(app).get(`/api/sources/${source.id}/layers`).expect(200)).body
+      .layers as Array<{ id: string; title: string; role?: string; parentId?: string }>;
+    expect(layers2.filter((l) => l.title === "导入图层" && !l.parentId)).toHaveLength(1);
+    const imported2 = layers2.find((l) => l.id === result2.layerId)!;
+    expect(imported2.parentId).toBe(parents[0].id);
+  });
+
   it("hides anchors on a disabled layer (and keeps anchors on enabled layers)", async () => {
     const { source, anchor } = await seedSourceWithAnchorAndNote();
 

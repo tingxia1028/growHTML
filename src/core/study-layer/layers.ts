@@ -81,6 +81,45 @@ export async function ensurePresetLayers(vault: StudyVault, source: SourceRecord
   return stages;
 }
 
+// The per-source "Imported" PARENT layer — a container that imported `.studypack`
+// layers nest under in the Layer Lens tree (spec §8.2: hierarchy is import-driven). It
+// is a presentation-only grouping: it owns NO anchors/notes itself, so it never affects
+// the enabled-OR filter (membership stays per LEAF layer); its `enabled` only drives the
+// Lens cascade + count roll-up. Created lazily on the first import, idempotent (matched
+// by role:"shared" + importMode:"imported" + the sentinel title + no parentId).
+export const IMPORTED_PARENT_TITLE = "导入图层";
+
+export async function ensureImportedParent(vault: StudyVault, source: SourceRecord): Promise<StudyLayerRecord> {
+  const existing = (await vault.stores.layers.list()).find(
+    (layer) =>
+      layer.localSourceId === source.id &&
+      layer.role === "shared" &&
+      !layer.parentId &&
+      layer.title === IMPORTED_PARENT_TITLE
+  );
+  if (existing) return existing;
+
+  const now = new Date().toISOString();
+  const layer = studyLayerSchema.parse({
+    id: createEntityId("layer"),
+    type: "layer",
+    schemaVersion: 1,
+    createdAt: now,
+    updatedAt: now,
+    createdBy: "user",
+    sourceFingerprint: fingerprintForSource(source),
+    localSourceId: source.id,
+    title: IMPORTED_PARENT_TITLE,
+    visibility: "private",
+    importMode: "imported",
+    enabled: true,
+    role: "shared",
+    order: 100
+  });
+  await vault.stores.layers.upsert(layer);
+  return layer;
+}
+
 // Create a user-defined ("custom") layer over a source. Used by the layer-manager
 // create action. Mirrors ensureOwnedLayer but stamps role:"custom" and the optional
 // presentation fields (color/order) the manager supplies.
