@@ -71,9 +71,11 @@ export function NoteListPanel({
           <span className="note-list-count">{listed.length}</span>
         </button>
       ) : (
-        <div className="note-list-head note-list-head-static">
-          <StickyNote size={15} />
-          <span className="note-list-head-label">Notes</span>
+        // Full-panel form: the SAME shared panel header the Anchor/Layers panes use
+        // (.panel-title with an icon + title), so the Notes sub-page reads consistently.
+        <div className="panel-title note-list-panel-title">
+          <StickyNote size={16} />
+          Notes
           <span className="note-list-count">{listed.length}</span>
         </div>
       )}

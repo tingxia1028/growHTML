@@ -16,10 +16,14 @@ export const RIGHT_SPLIT_MIN_RATIO = 0.2;
 export const RIGHT_SPLIT_MAX_RATIO = 0.8;
 export const RIGHT_SPLIT_DEFAULT_RATIO = 0.5;
 
+// Default (no stored state): the sidebar opens ALREADY SPLIT with AI Chat ("study")
+// popped into the BOTTOM pane and the Anchor/Notes/Layers tab group on top. `ratio` is the
+// TOP pane fraction, so 0.45 gives the bottom (AI Chat) a bit more room. "study" is a valid
+// tab kind, so normalizeSplit/loadRightSplit keep it through validation.
 export const DEFAULT_RIGHT_SPLIT: RightSplitState = {
-  poppedKind: null,
-  side: "top",
-  ratio: RIGHT_SPLIT_DEFAULT_RATIO
+  poppedKind: "study",
+  side: "bottom",
+  ratio: 0.45
 };
 
 // Clamp the divider ratio to the [0.2, 0.8] band (same spirit as clampDockPx).

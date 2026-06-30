@@ -4261,7 +4261,14 @@ textarea {
   padding: 0 2px;
 }
 
+/* The study/AI-chat pane is a column flex container that fills its host (tab body OR the
+   popped pane), so its single .chat-box section can grow to 100% and the chat-log inside
+   flexes while the composer stays pinned to the bottom. */
 .study-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -4270,11 +4277,16 @@ textarea {
 }
 
 .study-panel .chat-box {
-  height: 100%;
+  flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* Header auto-sizes; the log fills the gap; the composer pins to the bottom. */
+.study-panel .chat-panel-title {
+  flex: 0 0 auto;
 }
 
 .chat-log {
@@ -6308,24 +6320,64 @@ select {
   overflow: auto;
 }
 
-/* The sub-views already carry their own panel chrome; inside a tab they fill + their
-   outer card border is redundant, so neutralize it. */
+/* The sub-views already carry their own panel chrome; inside a tab body OR a popped pane
+   they fill + their outer card border is redundant, so neutralize it. Both containers must
+   give the child full height so column-flex panes (e.g. the study/AI-chat pane) can stretch
+   their history region and pin their composer to the bottom. */
 .right-tabs-body > .anchor-panel,
 .right-tabs-body > .study-panel,
 .right-tabs-body > .layer-panel,
 .right-tabs-body > .note-list-panel,
-.right-tabs-body > .concept-panel {
+.right-tabs-body > .concept-panel,
+.right-tabs-popped-body > .anchor-panel,
+.right-tabs-popped-body > .study-panel,
+.right-tabs-popped-body > .layer-panel,
+.right-tabs-popped-body > .note-list-panel,
+.right-tabs-popped-body > .concept-panel {
   height: 100%;
   border: 0;
   border-radius: 0;
   box-shadow: none;
 }
 
-/* The notes list as a full tab page (always open, static header). */
+/* The notes list as a FULL tab page (always open) — matches the shared panel chrome the
+   Anchor/Layers panes use: a flex column with the .panel-title header, 16px padding, and a
+   scrollable body that grows to fill. (The collapsible fold variant keeps its own look.) */
 .note-list-panel-tab {
+  height: 100%;
   margin-top: 0;
-  padding-top: 0;
+  padding: 16px;
   border-top: 0;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.note-list-panel-title {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  margin: 0;
+  padding: 2px 2px 10px;
+  border-bottom: 1px solid var(--sv-border-soft);
+}
+
+.note-list-panel-title svg {
+  color: var(--sv-icon-muted, #333a45);
+  stroke-width: 1.9;
+}
+
+/* The count chip trails the title (push it to the right, like a panel action). */
+.note-list-panel-title .note-list-count {
+  margin-left: auto;
+}
+
+/* In the full-panel form the rows scroll inside the panel (header stays pinned). */
+.note-list-panel-tab .note-list-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 
 .note-list-head-static {

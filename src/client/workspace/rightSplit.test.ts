@@ -6,6 +6,7 @@ import {
   normalizeSplit,
   remainingTabs,
   rightSplitKey,
+  RIGHT_SPLIT_DEFAULT_RATIO,
   RIGHT_SPLIT_MAX_RATIO,
   RIGHT_SPLIT_MIN_RATIO,
   saveRightSplit,
@@ -15,15 +16,24 @@ import {
 const KINDS = ["anchor.excerpt", "note.list", "layer.switcher", "study"];
 const TABS = KINDS.map((kind) => ({ kind }));
 
+describe("rightSplit — default", () => {
+  it("opens split with AI Chat (study) popped into the bottom pane", () => {
+    expect(DEFAULT_RIGHT_SPLIT).toEqual({ poppedKind: "study", side: "bottom", ratio: 0.45 });
+  });
+  it("survives normalization against the tab kinds (study is a valid kind)", () => {
+    expect(normalizeSplit(DEFAULT_RIGHT_SPLIT, KINDS)).toEqual(DEFAULT_RIGHT_SPLIT);
+  });
+});
+
 describe("rightSplit — clampRatio", () => {
   it("clamps to the 0.2–0.8 band", () => {
     expect(clampRatio(0.05)).toBe(RIGHT_SPLIT_MIN_RATIO);
     expect(clampRatio(0.95)).toBe(RIGHT_SPLIT_MAX_RATIO);
     expect(clampRatio(0.5)).toBe(0.5);
   });
-  it("falls back to default for non-finite input", () => {
-    expect(clampRatio(Number.NaN)).toBe(DEFAULT_RIGHT_SPLIT.ratio);
-    expect(clampRatio(Number.POSITIVE_INFINITY)).toBe(DEFAULT_RIGHT_SPLIT.ratio);
+  it("falls back to the ratio default for non-finite input", () => {
+    expect(clampRatio(Number.NaN)).toBe(RIGHT_SPLIT_DEFAULT_RATIO);
+    expect(clampRatio(Number.POSITIVE_INFINITY)).toBe(RIGHT_SPLIT_DEFAULT_RATIO);
   });
 });
 
