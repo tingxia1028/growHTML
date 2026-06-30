@@ -14,7 +14,6 @@ import { PanelMenu } from "./PanelMenu";
 import { noteTypeIcon } from "../notes/noteTypeIcon";
 import { getNoteType } from "../notes/noteTypeRegistry";
 import { ArtifactCard } from "./ArtifactCard";
-import { NoteListPanel } from "./NoteListPanel";
 
 function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
   // §10.4: clicking a note-type icon REVEALS that note's shared PreviewCard beside the
@@ -146,11 +145,6 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
       ) : (
         <p className="anchor-excerpt-empty">Select a passage to focus an anchor.</p>
       )}
-
-      {/* The source's notes, restored as a collapsed sub-tab in the right sidebar
-          (§10 PreviewCards). Always present regardless of focus — it lists every
-          visible note for the source, not just the focused anchor's. */}
-      <NoteListPanel />
     </aside>
   );
 }

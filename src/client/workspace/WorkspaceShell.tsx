@@ -45,6 +45,8 @@ import "./practiceViews";
 import "./operationViews";
 //   ./anchorViews    → anchor.excerpt (the right column's Anchor section, R1)
 import "./anchorViews";
+//   ./RightSidebarTabs → right.tabs (the tabbed right sidebar) + note.list (Page Anchors)
+import "./RightSidebarTabs";
 import { TopBar } from "./TopBar";
 import { IconRail } from "./IconRail";
 

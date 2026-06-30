@@ -6248,3 +6248,85 @@ select {
   background: none;
   cursor: pointer;
 }
+
+/* Right sidebar as a tabbed panel (Anchor / Page Anchors / Layers / AI Chat). */
+.right-tabs {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--sv-surface);
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius);
+  overflow: hidden;
+}
+
+.right-tabs-bar {
+  display: flex;
+  gap: 2px;
+  flex: 0 0 auto;
+  padding: 6px 8px 0;
+  border-bottom: 1px solid var(--sv-border);
+  overflow-x: auto;
+}
+
+.right-tabs-tab {
+  position: relative;
+  padding: 8px 10px 9px;
+  border: 0;
+  background: transparent;
+  color: var(--sv-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.right-tabs-tab:hover {
+  color: var(--sv-text);
+}
+
+.right-tabs-tab.active {
+  color: var(--sv-accent-text);
+}
+
+.right-tabs-tab.active::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--sv-accent);
+}
+
+.right-tabs-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* The sub-views already carry their own panel chrome; inside a tab they fill + their
+   outer card border is redundant, so neutralize it. */
+.right-tabs-body > .anchor-panel,
+.right-tabs-body > .study-panel,
+.right-tabs-body > .layer-panel,
+.right-tabs-body > .note-list-panel,
+.right-tabs-body > .concept-panel {
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* The notes list as a full tab page (always open, static header). */
+.note-list-panel-tab {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.note-list-head-static {
+  cursor: default;
+}

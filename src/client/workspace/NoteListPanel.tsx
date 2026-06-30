@@ -19,9 +19,18 @@ import { ArtifactCard } from "./ArtifactCard";
 import { getNoteType } from "../notes/noteTypeRegistry";
 import { BOOKMARK_CONTENT_TYPE } from "../../core/notes/contentTypes";
 
-export function NoteListPanel({ defaultOpen = false }: { defaultOpen?: boolean }) {
+export function NoteListPanel({
+  defaultOpen = false,
+  collapsible = true
+}: {
+  defaultOpen?: boolean;
+  /** When false, the list is a FULL panel (always open, static header) — used as the
+      right-sidebar "Page Anchors" tab. When true (default), it's a collapsible fold. */
+  collapsible?: boolean;
+}) {
   const { visibleNotes, anchors, focus, dispatch } = useWorkspace();
-  const [open, setOpen] = useState(defaultOpen);
+  const [open, setOpen] = useState(collapsible ? defaultOpen : true);
+  const expanded = collapsible ? open : true;
   // Edit-in-place: the id of the note being edited + a working copy of its content
   // (seeded from the note, discarded on Cancel). null = not editing any row.
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -48,20 +57,28 @@ export function NoteListPanel({ defaultOpen = false }: { defaultOpen?: boolean }
   };
 
   return (
-    <section className="note-list-panel">
-      <button
-        type="button"
-        className="note-list-head"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-      >
-        {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-        <StickyNote size={15} />
-        <span className="note-list-head-label">Notes</span>
-        <span className="note-list-count">{listed.length}</span>
-      </button>
+    <section className={`note-list-panel${collapsible ? "" : " note-list-panel-tab"}`}>
+      {collapsible ? (
+        <button
+          type="button"
+          className="note-list-head"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+        >
+          {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+          <StickyNote size={15} />
+          <span className="note-list-head-label">Notes</span>
+          <span className="note-list-count">{listed.length}</span>
+        </button>
+      ) : (
+        <div className="note-list-head note-list-head-static">
+          <StickyNote size={15} />
+          <span className="note-list-head-label">Notes</span>
+          <span className="note-list-count">{listed.length}</span>
+        </div>
+      )}
 
-      {open ? (
+      {expanded ? (
         listed.length ? (
           <div className="note-list-body">
             {listed.map((note) => {

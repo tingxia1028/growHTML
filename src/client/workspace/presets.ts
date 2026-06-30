@@ -35,16 +35,14 @@ export const threePane: WorkspaceLayout = {
 // The previously always-on bookmarks/concepts/layers/operations COLUMNS are gone — they
 // are now reached via the IconRail (which swaps the left "library" slot's kind). Their
 // nodes stay LISTED so the rail's kind-swap resolves them and they remain reachable.
+// The RIGHT column is now a single TABBED panel (right.tabs) — sub-pages Anchor / Page
+// Anchors (notes) / Layers / AI Chat — instead of a stacked Anchor-over-Chat column with
+// the note list folded under Anchor. The anchor/study/etc. nodes stay LISTED so the tab
+// container resolves their kinds through the registry.
 const studyVaultDock: DockNode = split("row", [
   { size: 250, node: leaf("library") },
   { size: "flex", node: leaf("source-viewer") },
-  {
-    size: 340,
-    node: split("column", [
-      { size: 372, node: leaf("anchor") },
-      { size: "flex", node: leaf("study") }
-    ])
-  }
+  { size: 360, node: leaf("right-tabs") }
 ]);
 
 export const studyVaultLayout: WorkspaceLayout = {
@@ -53,7 +51,10 @@ export const studyVaultLayout: WorkspaceLayout = {
   mode: "dock",
   nodes: [
     ...threePane.nodes,
-    // The Anchor excerpt section (top of the right column).
+    // The tabbed right sidebar (Anchor / Page Anchors / Layers / AI Chat).
+    { id: "right-tabs", kind: "right.tabs" },
+    // The Anchor excerpt section — now a tab inside right.tabs (still listed so the tab
+    // container resolves its kind).
     { id: "anchor", kind: "anchor.excerpt" },
     // Bookmark V1 jump strip — now reached via the IconRail, not an always-on column.
     { id: "bookmarks", kind: "bookmark.list" },
