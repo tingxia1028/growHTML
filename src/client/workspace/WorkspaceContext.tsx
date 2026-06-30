@@ -67,6 +67,8 @@ export type ToolbarAction = {
   title: string;
   icon?: string;
   group?: string;
+  /** A concise one-line hint shown in the action tooltip (after the title). */
+  description?: string;
   kind: "builtin" | "operation";
   /** Whether the action runs over the focused passage ("anchor") or the source. */
   scope: "anchor" | "source";
@@ -105,7 +107,8 @@ const BOOKMARK_ACTION: ToolbarAction = {
   id: "bookmark.add",
   title: "Bookmark",
   icon: "bookmark",
-  group: "Core",
+  group: "Create Note",
+  description: "Bookmark the focused passage",
   kind: "builtin",
   scope: "anchor"
 };
@@ -1172,6 +1175,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       title: item.title,
       icon: item.icon,
       group: item.group,
+      description: item.description,
       kind: "builtin",
       scope: "anchor"
     }));
@@ -1180,7 +1184,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       .map((op) => ({
         id: op.id,
         title: op.name,
-        group: "My Actions",
+        group: "Custom Actions",
+        description: op.description,
         kind: "operation",
         scope: "anchor",
         outputType: op.outputContentType,
@@ -1196,6 +1201,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       title: item.title,
       icon: item.icon,
       group: item.group,
+      description: item.description,
       kind: "builtin",
       scope: "source"
     }));
@@ -1204,7 +1210,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       .map((op) => ({
         id: op.id,
         title: op.name,
-        group: "My Actions",
+        group: "Custom Actions",
+        description: op.description,
         kind: "operation",
         scope: "source",
         outputType: op.outputContentType,

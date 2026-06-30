@@ -455,6 +455,59 @@ button {
   color: var(--sv-text-faint);
 }
 
+/* —— Anchor Action Bar (R6.1) —— the anchor-scope action grid mounted between the
+   excerpt card and the linked-notes block. A thin container; the grid itself does the
+   layout. Dark-theme safe (only --sv-* tokens). */
+.anchor-action-bar {
+  display: flex;
+}
+
+/* The reusable icon-grid renderer (ActionGrid). Default = auto-filling square grid;
+   the "row" density variant keeps the buttons inline for tight surfaces. */
+.action-grid {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(32px, 1fr));
+  gap: 6px;
+}
+
+.action-grid-row {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.action-grid-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface-card);
+  color: var(--sv-text-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.action-grid-btn:hover:not(:disabled) {
+  background: var(--sv-surface-muted);
+  border-color: var(--sv-accent-border);
+  color: var(--sv-accent);
+}
+
+.action-grid-btn:active:not(:disabled) {
+  background: var(--sv-accent-weak);
+  border-color: var(--sv-accent-border);
+  color: var(--sv-accent);
+}
+
+.action-grid-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* The workspace shell is a recursive flex DOCK tree (see workspace/dock.ts). The root
    split is the .app-shell itself; nested splits add .dock-split containers. */
 .app-shell {

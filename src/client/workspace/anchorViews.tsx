@@ -14,6 +14,7 @@ import { PanelMenu } from "./PanelMenu";
 import { noteTypeIcon } from "../notes/noteTypeIcon";
 import { getNoteType } from "../notes/noteTypeRegistry";
 import { ArtifactCard } from "./ArtifactCard";
+import { ActionGrid } from "./ActionGrid";
 
 function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
   // §10.4: clicking a note-type icon REVEALS that note's shared PreviewCard beside the
@@ -21,7 +22,7 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
   // its PreviewCard. Double-clicking the card opens the shared CenterView (handled by the
   // PreviewCard itself).
   const [openNoteId, setOpenNoteId] = useState<string | null>(null);
-  const { focus, activeSource, visibleNotes } = ctx;
+  const { focus, activeSource, visibleNotes, selectionActions, runAction, generating } = ctx;
   const anchor = focus.anchor;
   const quote = anchor?.quote ?? draftQuoteText(focus.draft);
   const page =
@@ -89,6 +90,19 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
             {formula ? <p className="anchor-excerpt-formula">{formula}</p> : null}
           </div>
 
+          {/* —— Action Bar (R6.1) —— the anchor-scope action grid. Icon-only triggers
+              (built-in kit actions + custom ops); each only FIRES runAction — results
+              flow through the existing GenerationPreview / note render, not here. */}
+          <div className="anchor-action-bar">
+            <ActionGrid
+              items={selectionActions}
+              onRun={runAction}
+              disabled={!anchor && !focus.draft}
+              busy={generating}
+              density="grid"
+            />
+          </div>
+
           {/* —— Linked notes (visible layers) —— §10.4: a row of note-type icons; clicking
               one reveals that note's shared PreviewCard (double-click the card → CenterView). */}
           <div className="anchor-linked">
@@ -143,7 +157,14 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
           </div>
         </>
       ) : (
-        <p className="anchor-excerpt-empty">Select a passage to focus an anchor.</p>
+        <>
+          <p className="anchor-excerpt-empty">Select a passage to focus an anchor.</p>
+          {/* The Action Bar still shows in the empty state, but disabled — so the user
+              sees what's available before focusing a passage. */}
+          <div className="anchor-action-bar">
+            <ActionGrid items={selectionActions} onRun={runAction} disabled busy={generating} density="grid" />
+          </div>
+        </>
       )}
     </aside>
   );

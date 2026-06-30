@@ -49,6 +49,8 @@ export type KitSurfaceItem = {
   icon?: string;
   group?: string;
   priority?: number;
+  /** A concise one-line hint shown in the action tooltip (after the title). */
+  description?: string;
 };
 
 // A prompt-pack entry: builds the LLM prompt for a structured generation and
