@@ -175,6 +175,9 @@ export type StudyLayerRecord = {
   role?: "preset" | "custom" | "shared";
   color?: string;
   order?: number;
+  // Layer Lens hierarchy (R7): the parent layer this nests under (undefined = top-level).
+  // Import-driven (a `.studypack` hangs under the per-source "Imported" parent).
+  parentId?: string;
 };
 
 // A `.studypack` — only portable fields travel; the importer rebuilds local

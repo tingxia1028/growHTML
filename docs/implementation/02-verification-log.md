@@ -426,3 +426,9 @@ web-spec + a tiny shared WorkspaceContext tweak covered by web e2e + unit).
 Follow-ups for the parent / a later pass: decide the note-creation UX (manual composer vs
 AI-only) to un-skip the ~24 creation specs; fix the concept-pane inspector/list overlap
 (concepts.spec); the multi-anchor card affordance if multi-anchor UX is kept.
+
+## 2026-06-30 — R7 Layer Lens + hierarchy (R7.1 core + R7.2 Lens UI)
+- **R7.1 (core, committed a2e1f25)**: `studyLayerSchema += parentId` (additive); `ensureImportedParent` per-source "导入图层" container (owns no notes → never affects the enabled-OR filter); `commitImport` nests each imported `.studypack` layer under it (idempotent). Test: import creates one parent + hangs the layer; second import reuses it.
+- **R7.2 (Lens UI)**: replaced the TopBar Layer Lens FALLBACK fiction with REAL data + a parentId **hierarchy tree**. New pure `layerTree.ts` (`buildLayerTree` w/ cycle+orphan guards, `descendantLeafIds`, `parentToggleState` on/off/mixed, `countNotesInLayers` distinct roll-up) + 6 unit tests. `LayerLensPopover` renders nested rows (indent by depth), leaf click → `toggleLayerFilter`, parent click → new `WorkspaceContext.setLayersEnabled(leafIds, target)` **cascade** (batch PATCH + single refresh), indeterminate (`Minus`) parent mark, roll-up counts, real "Visible note count". Filter semantics unchanged (per-leaf enabled-OR; a parent checkbox is only a cascade master + roll-up). `entityClient.StudyLayerRecord += parentId`.
+- Verified: screenshot shows the math source's real layers (owned 数学 + 预习/学习/复习/拓展) with real counts, no fallback. tsc clean; `npm run test` **668** green (+6 layerTree).
+- Deferred (full §8.2): multi-layer `.studypack` packs (a teacher pack carrying 预习/复习/拓展 as siblings under one parent); **R7.3** = fold layer management (rename/recolor/reorder/create/delete/import-export) from the `layer.switcher` pane into the Lens.

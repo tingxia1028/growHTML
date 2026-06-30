@@ -15,7 +15,7 @@
 // The icon buttons + gear DO NOT own new state: they call back into WorkspaceShell to set
 // the left-pane kind (rail selection) and read/write the context's theme/layout setters.
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   Anchor,
   Check,
@@ -30,6 +30,14 @@ import {
   X
 } from "lucide-react";
 import type { WorkspaceContext } from "./viewRegistry";
+import { BOOKMARK_CONTENT_TYPE } from "../../core/notes/contentTypes";
+import {
+  buildLayerTree,
+  countNotesInLayers,
+  descendantLeafIds,
+  parentToggleState,
+  type LayerNode
+} from "./layerTree";
 
 export type TopBarProps = {
   ctx: WorkspaceContext;
@@ -39,31 +47,67 @@ export type TopBarProps = {
   onSelectPane(kind: string): void;
 };
 
-const FALLBACK_LAYER_ROWS = [
-  { id: "my-notes", title: "My Notes", count: 12, color: "#3b82f6", enabled: true },
-  { id: "teacher", title: "Teacher Layer", count: 24, color: "#3fb96b", enabled: true },
-  { id: "practice", title: "Practice Layer", count: 18, color: "#8b5cf6", enabled: true },
-  { id: "mistake", title: "Mistake Layer", count: 7, color: "#ff6b73", enabled: false },
-  { id: "review", title: "Review Layer", count: 10, color: "#ff9d55", enabled: false },
-  { id: "imported", title: "Imported Layer", count: 5, color: "#46c2c9", enabled: false }
-] as const;
+// Stable fallback palette for layers without an explicit color (assigned by position so
+// sibling rows read as distinct chips). The owned/preset layers usually carry no color.
+const LAYER_PALETTE = ["#3b82f6", "#3fb96b", "#8b5cf6", "#ff6b73", "#ff9d55", "#46c2c9", "#d97cf0"];
 
 function LayerLensPopover({ ctx }: { ctx: WorkspaceContext }) {
-  const rows = useMemo(() => {
-    if (ctx.sourceLayers.length === 0) return FALLBACK_LAYER_ROWS;
-    return ctx.sourceLayers.map((layer, index) => ({
-      id: layer.id,
-      title: layer.title,
-      count: ctx.notes.filter((note) => note.layerIds.includes(layer.id)).length,
-      color: layer.color ?? FALLBACK_LAYER_ROWS[index % FALLBACK_LAYER_ROWS.length].color,
-      enabled: layer.enabled,
-      layer
-    }));
-  }, [ctx.notes, ctx.sourceLayers]);
-  const visibleCount =
-    ctx.sourceLayers.length === 0
-      ? 54
-      : ctx.visibleNotes.filter((note) => (note.contentType ?? "markdown") !== "bookmark").length;
+  const { sourceLayers, notes, visibleNotes, toggleLayerFilter, setLayersEnabled } = ctx;
+
+  const enabledIds = useMemo(
+    () => new Set(sourceLayers.filter((layer) => layer.enabled).map((layer) => layer.id)),
+    [sourceLayers]
+  );
+  // Sort siblings by order then title before building the tree (buildLayerTree preserves
+  // input order within a parent).
+  const roots = useMemo(
+    () => buildLayerTree([...sourceLayers].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title))),
+    [sourceLayers]
+  );
+  // The footer total = distinct visible (enabled-OR) non-bookmark notes.
+  const visibleCount = useMemo(
+    () => visibleNotes.filter((note) => (note.contentType ?? "markdown") !== BOOKMARK_CONTENT_TYPE).length,
+    [visibleNotes]
+  );
+
+  const colorFor = (layer: { color?: string }, index: number) => layer.color ?? LAYER_PALETTE[index % LAYER_PALETTE.length];
+
+  const renderRow = (node: LayerNode, depth: number, index: number): ReactNode => {
+    const isParent = node.children.length > 0;
+    const leafIds = descendantLeafIds(node);
+    const count = countNotesInLayers(notes, leafIds, BOOKMARK_CONTENT_TYPE);
+    const state = isParent
+      ? parentToggleState(node, enabledIds)
+      : enabledIds.has(node.layer.id)
+        ? "on"
+        : "off";
+    return (
+      <Fragment key={node.layer.id}>
+        <button
+          type="button"
+          className={`layer-lens-row${isParent ? " layer-lens-row-parent" : ""}`}
+          style={{ paddingLeft: 12 + depth * 18 } as CSSProperties}
+          aria-pressed={state === "on"}
+          onClick={() => {
+            if (isParent) setLayersEnabled(leafIds, state !== "on");
+            else toggleLayerFilter(node.layer);
+          }}
+        >
+          <span
+            className="layer-lens-mark"
+            data-state={state}
+            data-enabled={state === "on" ? "true" : undefined}
+            style={{ "--layer-color": colorFor(node.layer, index) } as CSSProperties}
+          >
+            {state === "on" ? <Check size={12} strokeWidth={3} /> : state === "mixed" ? <Minus size={12} strokeWidth={3} /> : null}
+          </span>
+          <span className="layer-lens-name">{node.layer.title}</span>
+          <span className="layer-lens-count">{count}</span>
+        </button>
+        {node.children.map((child, childIndex) => renderRow(child, depth + 1, childIndex))}
+      </Fragment>
+    );
+  };
 
   return (
     <div className="layer-lens-popover" role="dialog" aria-label="Layer Lens">
@@ -72,36 +116,23 @@ function LayerLensPopover({ ctx }: { ctx: WorkspaceContext }) {
         <p>Choose which layers are visible</p>
       </div>
       <div className="layer-lens-list">
-        {rows.map((row) => (
-          <button
-            key={row.id}
-            type="button"
-            className="layer-lens-row"
-            onClick={() => "layer" in row && ctx.toggleLayerFilter(row.layer)}
-          >
-            <span
-              className="layer-lens-mark"
-              data-enabled={row.enabled ? "true" : undefined}
-              style={{ "--layer-color": row.color } as CSSProperties}
-            >
-              {row.enabled ? <Check size={12} strokeWidth={3} /> : null}
-            </span>
-            <span className="layer-lens-name">{row.title}</span>
-            <span className="layer-lens-count">{row.count}</span>
-          </button>
-        ))}
+        {roots.length ? (
+          roots.map((node, index) => renderRow(node, 0, index))
+        ) : (
+          <p className="layer-lens-empty">Open a source to see its layers.</p>
+        )}
       </div>
       <div className="layer-lens-visible">Visible note count: {visibleCount}</div>
       <div className="layer-lens-foot">
-        <button type="button" className="layer-lens-reset">
+        <button
+          type="button"
+          className="layer-lens-reset"
+          title="Show all layers"
+          onClick={() => void setLayersEnabled(sourceLayers.map((layer) => layer.id), true)}
+        >
           <RotateCcw size={14} />
           Reset
         </button>
-        <div className="layer-lens-swatches" aria-hidden="true">
-          {FALLBACK_LAYER_ROWS.map((row) => (
-            <span key={row.id} style={{ background: row.color }} />
-          ))}
-        </div>
       </div>
     </div>
   );

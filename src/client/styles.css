@@ -6134,3 +6134,25 @@ select {
 .note-edit-cancel:hover {
   background: var(--sv-accent-weak);
 }
+
+/* Layer Lens hierarchy (R7): mixed (indeterminate) parent + nested rows + empty state. */
+.layer-lens-mark[data-state="mixed"] {
+  width: 18px;
+  height: 18px;
+  margin-left: 1px;
+  border-radius: 5px;
+  background: var(--layer-color);
+  opacity: 0.5;
+  color: #ffffff;
+}
+
+.layer-lens-row-parent .layer-lens-name {
+  font-weight: 700;
+}
+
+.layer-lens-empty {
+  margin: 0;
+  padding: 10px 4px;
+  color: var(--sv-text-faint);
+  font-size: 13px;
+}

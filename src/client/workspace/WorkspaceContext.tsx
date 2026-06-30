@@ -332,6 +332,9 @@ export type WorkspaceContextValue = {
   /** Toggle one layer's membership in the filter (flips its stored `enabled`). The
       server is the source of truth, so this dispatches layer.toggle then re-fetches. */
   toggleLayerFilter(layer: StudyLayerRecord): void;
+  /** Cascade-set several leaf layers to the same enabled state (Layer Lens parent
+      toggle), then refresh once. No-ops layers already in the target state. */
+  setLayersEnabled(layerIds: string[], enabled: boolean): Promise<void>;
 
   // —— product kits (per-source activation) ——
   // Effective kit ids for the active source (source.metadata.activeKitIds, else the
@@ -1056,6 +1059,28 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [dispatch]
   );
 
+  // CASCADE set (Layer Lens parent toggle): flip several leaf layers to the SAME enabled
+  // state at once, then refresh layers + annotations ONCE (instead of per-layer, which
+  // would re-fetch N times and race). Only patches layers whose state actually changes.
+  const setLayersEnabled = useCallback(
+    async (layerIds: string[], enabled: boolean) => {
+      const targets = sourceLayers.filter((layer) => layerIds.includes(layer.id) && layer.enabled !== enabled);
+      if (targets.length === 0) return;
+      setStatus("saving");
+      setError("");
+      try {
+        await Promise.all(targets.map((layer) => entityClient.patchLayer(layer.id, { enabled })));
+        setLayersVersion((value) => value + 1);
+        await refreshAnnotations();
+        setStatus("idle");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to update layers");
+        setStatus("error");
+      }
+    },
+    [sourceLayers, refreshAnnotations]
+  );
+
   // The right-panel composer is pure AI Chat now: no Note mode or note-type routing.
   const composerCommandId = "anchor.ask-ai";
   const composerCtx = commandContext({ text: chatInput });
@@ -1302,6 +1327,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       enabledLayerIds,
       visibleNotes,
       toggleLayerFilter,
+      setLayersEnabled,
       activeKitIds,
       installedKits,
       setActiveKit,
@@ -1383,6 +1409,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       enabledLayerIds,
       visibleNotes,
       toggleLayerFilter,
+      setLayersEnabled,
       activeKitIds,
       setActiveKit,
       operations,
