@@ -45,6 +45,8 @@ import "./practiceViews";
 import "./operationViews";
 //   ./anchorViews    → anchor.excerpt (the right column's Anchor section, R1)
 import "./anchorViews";
+//   ./BottomBar      → action.bar (the R6.2 third action surface; registered, not docked)
+import "./BottomBar";
 //   ./RightSidebarTabs → right.tabs (the tabbed right sidebar) + note.list (Page Anchors)
 import "./RightSidebarTabs";
 import { TopBar } from "./TopBar";

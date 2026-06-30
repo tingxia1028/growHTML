@@ -8,6 +8,7 @@
 import { Bookmark, ListChecks, Sparkles, TriangleAlert, Wand2 } from "lucide-react";
 import type { ComponentType } from "react";
 import type { ToolbarAction } from "./WorkspaceContext";
+import { ActionMoreMenu } from "./ActionMoreMenu";
 
 // Map the kit's icon names (presentation hints) to concrete lucide icons. Custom ops
 // carry no icon and fall back to the generic wand.
@@ -52,6 +53,10 @@ export function SelectionToolbar({ visible, items, onRun, busy }: SelectionToolb
           </button>
         );
       })}
+      {/* The grouped overflow twin (R6.2): the primary `.selection-toolbar-btn` row stays
+          as-is; this trailing menu mirrors the full list bucketed by group + a Customize
+          footer. Same items, same onRun — actions trigger, results render elsewhere. */}
+      <ActionMoreMenu items={items} onRun={onRun} busy={busy} surface="inline" />
     </div>
   );
 }

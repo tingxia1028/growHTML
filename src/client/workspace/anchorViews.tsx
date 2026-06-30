@@ -15,6 +15,7 @@ import { noteTypeIcon } from "../notes/noteTypeIcon";
 import { getNoteType } from "../notes/noteTypeRegistry";
 import { ArtifactCard } from "./ArtifactCard";
 import { ActionGrid } from "./ActionGrid";
+import { ActionMoreMenu } from "./ActionMoreMenu";
 
 function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
   // §10.4: clicking a note-type icon REVEALS that note's shared PreviewCard beside the
@@ -101,6 +102,10 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
               busy={generating}
               density="grid"
             />
+            {/* The grouped overflow (R6.2): mirrors the full anchor-scope action list in
+                fixed group sections + a Customize footer. The grid shows the actions; this
+                menu is the searchable/grouped twin (same runAction; no render path). */}
+            <ActionMoreMenu items={selectionActions} onRun={runAction} busy={generating} surface="anchor" />
           </div>
 
           {/* —— Linked notes (visible layers) —— §10.4: a row of note-type icons; clicking
