@@ -63,6 +63,19 @@ export async function openChatMenu(page: Page) {
   await expect(fold).toBeVisible();
 }
 
+// —— Right sidebar TAB group (整体 IA 重建) ————————————————————————————————————————
+// The right column is now a single TABBED panel (right.tabs): sub-pages Anchor / Notes /
+// Layers, with AI Chat popped into the bottom split pane by default. The note list is the
+// always-open FULL-PANEL variant behind the "Notes" tab (the old collapsible
+// `.note-list-head` fold is no longer mounted). This helper activates the Notes tab and
+// waits for the always-open panel, replacing the obsolete expand-the-fold step.
+export async function openNotesTab(page: Page) {
+  const panel = page.locator(".note-list-panel-tab");
+  if (await panel.isVisible().catch(() => false)) return;
+  await page.locator(".right-tabs-tab", { hasText: "Notes" }).click();
+  await expect(panel).toBeVisible();
+}
+
 // Open the TopBar Settings gear menu (hosts the relocated theme + layout selects).
 // Idempotent: the gear toggles, so only click when the menu isn't already showing.
 export async function openGearMenu(page: Page) {

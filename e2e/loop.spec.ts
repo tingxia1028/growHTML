@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
-import { openChatMenu } from "./helpers";
+import { openChatMenu, openNotesTab } from "./helpers";
 
 // Click-driven self-test of the no-AI study loop against the REAL running app,
 // matching the current UI (library + reader iframe + study panel). The current UI
@@ -178,8 +178,8 @@ test("AI chat: ask about a passage → reply → save reply as a note", async ({
   await expect(addBtn).toBeEnabled({ timeout: 15_000 });
   await addBtn.click();
 
-  const head = page.locator(".note-list-head");
-  await expect(head).toBeVisible();
-  if ((await head.getAttribute("aria-expanded")) !== "true") await head.click();
+  // Activate the right-sidebar Notes tab (the always-open full panel) — the chat composer
+  // lives in the bottom split pane, the note list behind the top group's "Notes" tab.
+  await openNotesTab(page);
   await expect(page.locator(".note-list-row", { hasText: "render threads" }).first()).toBeVisible({ timeout: 15_000 });
 });

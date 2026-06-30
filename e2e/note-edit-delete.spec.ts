@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { openNotesTab } from "./helpers";
 
 // Note EDIT + DELETE end-to-end (web mode). Both flow through the command layer:
 //   • Edit  — the note row's pencil (.note-edit-start) opens the SAME registry editor the
@@ -50,11 +51,10 @@ async function openSource(page: Page, source: { id: string; title: string }) {
   await expect(page.locator(".reader-tab-title")).toHaveText(source.title);
 }
 
-// Expand the right-sidebar Notes fold (collapsed by default) and return the row locator.
+// Activate the right-sidebar Notes tab (the always-open full panel) and return the row
+// locator. (The old collapsible `.note-list-head` fold is no longer mounted.)
 async function expandNotes(page: Page) {
-  const head = page.locator(".note-list-head");
-  await expect(head).toBeVisible();
-  if ((await head.getAttribute("aria-expanded")) !== "true") await head.click();
+  await openNotesTab(page);
 }
 const noteRow = (page: Page, text: string) => page.locator(".note-list-row", { hasText: text });
 

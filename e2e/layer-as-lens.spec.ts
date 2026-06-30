@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import { openLayers } from "./helpers";
+import { openLayers, openNotesTab } from "./helpers";
 
 // Layer-as-lens V1 end-to-end (web mode). A study layer is a LENS, not a container: a
 // note can belong to SEVERAL layers, the multi-select filter is OR across the enabled
@@ -76,9 +76,7 @@ async function openSource(page: Page, source: { id: string; title: string }) {
 }
 
 async function expandNotes(page: Page) {
-  const head = page.locator(".note-list-head");
-  await expect(head).toBeVisible();
-  if ((await head.getAttribute("aria-expanded")) !== "true") await head.click();
+  await openNotesTab(page);
 }
 
 const noteRow = (page: Page, text: string) => page.locator(".note-list-row", { hasText: text });

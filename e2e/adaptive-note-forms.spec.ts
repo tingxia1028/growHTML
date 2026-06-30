@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { makeXmindBytes } from "./fixtures/xmind";
+import { openNotesTab } from "./helpers";
 
 // Adaptive note forms — Phase 1b (card + centered overlay UX) against the REAL app
 // (web mode). Covers the two browser-dependent capabilities this phase ships:
@@ -71,12 +72,11 @@ test("note viewer → centered overlay: a markmap note renders in its form and o
 
   await openSource(page, title);
 
-  // Old→new: notes now live in the right-sidebar NoteListPanel (a collapsed fold) as §10
-  // PreviewCards. The card is a LIGHT preview (no live diagram); the live interactive
-  // markmap mounts only in the shared CenterView (FocusOverlay), opened by clicking it.
-  const head = page.locator(".note-list-head");
-  await expect(head).toBeVisible();
-  if ((await head.getAttribute("aria-expanded")) !== "true") await head.click();
+  // Old→new: notes now live in the right-sidebar NoteListPanel — the always-open full
+  // panel behind the "Notes" tab — as §10 PreviewCards. The card is a LIGHT preview (no
+  // live diagram); the live interactive markmap mounts only in the shared CenterView
+  // (FocusOverlay), opened by clicking it.
+  await openNotesTab(page);
   const row = page
     .locator(".note-list-row", { has: page.locator(".sv-artifact-badge", { hasText: "markmap" }) })
     .first();
@@ -195,12 +195,11 @@ test("interactive html ESCAPE guard: game runs but cannot reach parent/top, fetc
 
   await openSource(page, title);
 
-  // Old→new: open the html note from the right-sidebar NoteListPanel fold. The card is a
-  // light preview (an "Interactive" badge, no iframe); the live (allow-scripts) frame
-  // mounts ONLY in the shared CenterView, opened by clicking the card.
-  const head = page.locator(".note-list-head");
-  await expect(head).toBeVisible();
-  if ((await head.getAttribute("aria-expanded")) !== "true") await head.click();
+  // Old→new: open the html note from the right-sidebar NoteListPanel (the always-open full
+  // panel behind the "Notes" tab). The card is a light preview (an "Interactive" badge, no
+  // iframe); the live (allow-scripts) frame mounts ONLY in the shared CenterView, opened by
+  // clicking the card.
+  await openNotesTab(page);
   const card = page
     .locator(".note-list-row", { has: page.locator(".sv-artifact-badge", { hasText: "html-sandbox" }) })
     .first();

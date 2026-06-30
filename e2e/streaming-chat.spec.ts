@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { openNotesTab } from "./helpers";
 
 // AI chat streaming (orchestration base · v1). Drives the real app in web mode
 // (deterministic mock provider): open a source, select a passage so the assistant
@@ -146,11 +147,9 @@ test("save a chat reply: a mermaid block is detected and saved as a `mermaid` no
     addBtn.click();
   }, diagram);
 
-  // Expand the Notes fold and assert a mermaid card (its type badge reads "mermaid",
-  // not "markdown").
-  const head = page.locator(".note-list-head");
-  await expect(head).toBeVisible();
-  if ((await head.getAttribute("aria-expanded")) !== "true") await head.click();
+  // Activate the Notes tab (selecting the passage focused the anchor, switching the top
+  // group to the Anchor tab) and assert a mermaid card (its badge reads "mermaid").
+  await openNotesTab(page);
   const mermaidRow = page.locator(".note-list-row", { has: page.locator(".sv-artifact-badge", { hasText: "mermaid" }) });
   await expect(mermaidRow.first()).toBeVisible({ timeout: 15_000 });
 });
