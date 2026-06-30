@@ -115,7 +115,7 @@ function decode(buffer: Buffer): PngImage {
 const VAULT = path.resolve(".e2e-electron-vault-highlight");
 
 // A page whose passage text is on its own line in a large, predictable spot near
-// the top, with plain white background so the yellow highlight stands out. The
+// the top, with plain white background so the blue highlight stands out. The
 // quote is unique so highlightQuote can't match filler.
 const QUOTE = "HIGHLIGHT ME the render thread submits draw commands";
 const PAGE_HTML =
@@ -220,26 +220,25 @@ function diffPixelsInRect(a: PngImage, b: PngImage, rect: Rect): number {
   return changed;
 }
 
-// Count pixels in `rect` that look "highlight yellow-ish": noticeably more red+green
-// than blue (the highlight is rgba(255,213,79,.4) over white ≈ a warm yellow). A
+// Count pixels in `rect` that look like the product-blue highlight. This is a
 // second, color-based signal independent of the control diff.
-function yellowPixelsInRect(png: PngImage, rect: Rect): number {
+function blueHighlightPixelsInRect(png: PngImage, rect: Rect): number {
   const x0 = Math.max(0, Math.floor(rect.x));
   const y0 = Math.max(0, Math.floor(rect.y));
   const x1 = Math.min(png.width, Math.ceil(rect.x + rect.width));
   const y1 = Math.min(png.height, Math.ceil(rect.y + rect.height));
-  let yellow = 0;
+  let blue = 0;
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
       const i = (png.width * y + x) << 2;
       const r = png.data[i];
       const g = png.data[i + 1];
       const b = png.data[i + 2];
-      // Warm (r,g high), clearly less blue, and not pure white.
-      if (r > 200 && g > 170 && b < 200 && r - b > 45 && g - b > 25) yellow++;
+      // Blue-tinted over white, or the stronger accent underline.
+      if (b > 180 && b - r > 18 && b - g > 8) blue++;
     }
   }
-  return yellow;
+  return blue;
 }
 
 test.beforeAll(async () => {
@@ -308,18 +307,18 @@ test("local HTML: a saved note paints a VISIBLE highlight inside the webview (pi
     .poll(
       async () => {
         afterShot = decode(await page.screenshot());
-        return yellowPixelsInRect(afterShot, passageRect);
+        return blueHighlightPixelsInRect(afterShot, passageRect);
       },
       { timeout: 10_000, message: "expected the highlight color to appear in the passage region" }
     )
     .toBeGreaterThan(60);
 
-  // Signal A (color): the passage band contains clearly more highlight-yellow pixels
+  // Signal A (color): the passage band contains clearly more product-blue highlight pixels
   // than the un-highlighted control did.
-  const yellowAfter = yellowPixelsInRect(afterShot, passageRect);
-  const yellowBefore = yellowPixelsInRect(beforeShot, passageRect);
-  expect(yellowAfter).toBeGreaterThan(60);
-  expect(yellowAfter).toBeGreaterThan(yellowBefore + 40);
+  const blueAfter = blueHighlightPixelsInRect(afterShot, passageRect);
+  const blueBefore = blueHighlightPixelsInRect(beforeShot, passageRect);
+  expect(blueAfter).toBeGreaterThan(60);
+  expect(blueAfter).toBeGreaterThan(blueBefore + 40);
 
   // Signal B (diff): the passage region changed meaningfully vs. the identical
   // control page — the only difference between them is the highlight.
@@ -328,7 +327,7 @@ test("local HTML: a saved note paints a VISIBLE highlight inside the webview (pi
 
   // eslint-disable-next-line no-console
   console.log(
-    `[local-html highlight] yellow before=${yellowBefore} after=${yellowAfter}; changed px in passage=${changed}`
+    `[local-html highlight] blue before=${blueBefore} after=${blueAfter}; changed px in passage=${changed}`
   );
 
   // The hover note-card is verified deterministically (mouseover dispatched inside

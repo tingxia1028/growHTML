@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { decorateAnnotations, type HtmlAnnotationMode } from "../annotations";
-import { revealAnchorInDoc } from "../annotationLayer";
+import { revealAnchorInDoc, setSelectedAnchorInDoc } from "../annotationLayer";
 import type { AnchorDraft } from "../focus/FocusContext";
 import { anchorsOfKind, type PaintAnchor, type SurfaceReaderProps } from "./types";
 
@@ -138,6 +138,9 @@ export function DomReader({
     // A reveal may have been requested before this fresh document painted (effect
     // ran first) — now that the data-sv-key elements exist, honor the pending one.
     if (activeAnchorIdRef.current) revealAnchorInDoc(doc, activeAnchorIdRef.current);
+    // Re-apply the persistent blue "selected" highlight after a repaint (paint clears
+    // it). Keeps the focused anchor visibly selected across re-paints / mode switches.
+    setSelectedAnchorInDoc(doc, activeAnchorIdRef.current);
     if (boundSelectionDocuments.has(doc)) return;
 
     const onSelection = (event?: Event) => {
@@ -188,6 +191,10 @@ export function DomReader({
   // helper. Keyed on revealSeq too so re-selecting the SAME anchor re-fires. Prop-
   // driven (no useFocus) so this stays unit-testable in jsdom.
   useEffect(() => {
+    // Paint the persistent blue "selected" highlight on the focused anchor (and clear
+    // it from the previously-selected one) on every change — including a change to
+    // "none", which clears the selection. Runs regardless of revealSeq.
+    setSelectedAnchorInDoc(frameRef.current?.contentDocument, activeAnchorId);
     if (!activeAnchorId) return;
     revealAnchorInDoc(frameRef.current?.contentDocument, activeAnchorId);
   }, [activeAnchorId, revealSeq]);

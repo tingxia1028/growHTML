@@ -5,6 +5,7 @@ import {
   bindWebviewSelection,
   normalizeWebSelection,
   revealWebviewAnchor,
+  selectWebviewAnchor,
   toWebAnchorMsgs,
   webSelectionToDraft,
   webviewPreloadUrl,
@@ -108,6 +109,33 @@ describe("revealWebviewAnchor", () => {
       throw new Error("guest not attached");
     });
     expect(() => revealWebviewAnchor(webview, "anchor-7")).not.toThrow();
+  });
+});
+
+describe("selectWebviewAnchor", () => {
+  it("sends sv:select with the anchor id to the guest", () => {
+    const webview = fakeWebview();
+    selectWebviewAnchor(webview, "anchor-7");
+    expect(webview.send).toHaveBeenCalledWith("sv:select", "anchor-7");
+  });
+
+  it("sends an empty id to CLEAR the selection (undefined → '')", () => {
+    const webview = fakeWebview();
+    selectWebviewAnchor(webview, undefined);
+    expect(webview.send).toHaveBeenCalledWith("sv:select", "");
+  });
+
+  it("no-ops without a webview", () => {
+    expect(() => selectWebviewAnchor(null, "anchor-7")).not.toThrow();
+    expect(() => selectWebviewAnchor(undefined, "anchor-7")).not.toThrow();
+  });
+
+  it("swallows a throwing send (guest not ready yet)", () => {
+    const webview = fakeWebview();
+    (webview.send as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      throw new Error("guest not attached");
+    });
+    expect(() => selectWebviewAnchor(webview, "anchor-7")).not.toThrow();
   });
 });
 

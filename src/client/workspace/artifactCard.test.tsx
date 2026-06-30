@@ -161,3 +161,51 @@ describe("chat thread wiring — rich reply → card, plain → markdown", () =>
     cleanup();
   });
 });
+
+describe("chat reply actions — §10 Add as note / Regenerate", () => {
+  it("renders the action row with handlers and fires Add as note with the reply content", () => {
+    let added: string | null = null;
+    const { container, cleanup } = mount(
+      <ChatMessageBody
+        role="assistant"
+        content={"<!doctype html><html><body><canvas></canvas><script>requestAnimationFrame(()=>{})</script></body></html>"}
+        onAddNote={(content) => {
+          added = content;
+        }}
+      />
+    );
+    // The HTML reply still cards…
+    expect(container.querySelector(".sv-artifact-card")).toBeTruthy();
+    // …and the actions row is present.
+    const addBtn = container.querySelector(".chat-artifact-add") as HTMLButtonElement;
+    expect(addBtn).toBeTruthy();
+    act(() => addBtn.click());
+    expect(added).toContain("<canvas>");
+    cleanup();
+  });
+
+  it("Regenerate fires its handler; no action row when no handlers are passed", () => {
+    let regen = 0;
+    const withHandler = mount(
+      <ChatMessageBody role="assistant" content={"plain reply"} onRegenerate={() => (regen += 1)} />
+    );
+    const regenBtn = withHandler.container.querySelector(".chat-artifact-regen") as HTMLButtonElement;
+    act(() => regenBtn.click());
+    expect(regen).toBe(1);
+    withHandler.cleanup();
+
+    // No handlers → no actions row at all (the bare body renders).
+    const bare = mount(<ChatMessageBody role="assistant" content={"plain reply"} />);
+    expect(bare.container.querySelector(".chat-artifact-actions")).toBeNull();
+    bare.cleanup();
+  });
+
+  it("disables the actions while busy", () => {
+    const { container, cleanup } = mount(
+      <ChatMessageBody role="assistant" content={"plain reply"} onAddNote={() => {}} busy />
+    );
+    const addBtn = container.querySelector(".chat-artifact-add") as HTMLButtonElement;
+    expect(addBtn.disabled).toBe(true);
+    cleanup();
+  });
+});

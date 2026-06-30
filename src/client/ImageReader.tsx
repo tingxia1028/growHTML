@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { applyHighlight, revealAnchorInDoc } from "./annotationLayer";
+import { applyHighlight, revealAnchorInDoc, setSelectedAnchorInDoc } from "./annotationLayer";
 import type { AnchorDraft } from "./focus/FocusContext";
 import { anchorsOfKind, type PaintAnchor, type SurfaceReaderProps } from "./surfaces/types";
 import { isRealRegion, normalizeDragRect, type NormalizedRect } from "./surfaces/overlay";
@@ -34,6 +34,7 @@ export function ImageReader({ src, sourceId, anchors, onSelect, activeAnchorId, 
   // helper — each ImageRegionBox carries data-sv-key (applyHighlight). Keyed on
   // revealSeq so re-selecting the same region re-fires. Prop-driven (no useFocus).
   useEffect(() => {
+    setSelectedAnchorInDoc(frameRef.current, activeAnchorId);
     if (activeAnchorId) revealAnchorInDoc(frameRef.current, activeAnchorId);
   }, [activeAnchorId, revealSeq]);
 

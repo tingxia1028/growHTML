@@ -3,6 +3,7 @@ import {
   bindWebviewAnchors,
   bindWebviewSelection,
   revealWebviewAnchor,
+  selectWebviewAnchor,
   toWebAnchorMsgs,
   webSelectionToDraft,
   webviewPreloadUrl,
@@ -256,6 +257,9 @@ export function WebviewReader({
   // to a tab honors the current focus. The snapshot tab reveals through its nested
   // DomReader (below) instead, so target only live guests here.
   useEffect(() => {
+    // Persistent blue "selected" highlight on the active tab's focused anchor (cleared
+    // when focus drops); the guest re-applies it after each repaint.
+    selectWebviewAnchor(webviews.current.get(activeIdRef.current), activeAnchorId);
     if (!activeAnchorId) return;
     revealWebviewAnchor(webviews.current.get(activeIdRef.current), activeAnchorId);
   }, [activeAnchorId, revealSeq, activeId]);

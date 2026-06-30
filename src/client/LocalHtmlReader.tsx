@@ -3,6 +3,7 @@ import {
   bindWebviewAnchors,
   bindWebviewSelection,
   revealWebviewAnchor,
+  selectWebviewAnchor,
   toWebAnchorMsgs,
   webSelectionToDraft,
   type SelectionWebview,
@@ -134,6 +135,9 @@ export function LocalHtmlReader({ src, sourceId, anchors, onSelect, activeAnchor
   // revealAnchorInDoc on its document). Keyed on revealSeq so re-selecting the same
   // anchor re-fires. Prop-driven (no useFocus).
   useEffect(() => {
+    // Paint the persistent blue "selected" highlight on the focused anchor (the guest
+    // re-applies it after each repaint); clears it when focus drops to none.
+    if (readyRef.current) selectWebviewAnchor(viewRef.current, activeAnchorId);
     if (readyRef.current && activeAnchorId) revealWebviewAnchor(viewRef.current, activeAnchorId);
   }, [activeAnchorId, revealSeq]);
 

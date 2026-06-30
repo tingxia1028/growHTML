@@ -47,12 +47,12 @@
   --sv-danger-bg: #fdf2f1;
   --sv-danger-bg-strong: #f6dad7;
   --sv-danger-bg-tint: #f6dad7;
-  --sv-warn-accent: #e0a800;      /* amber hover/border accent */
-  --sv-warn-region: #f0a500;      /* region marquee/box amber */
-  --sv-warn-text: #5b4a1e;
-  --sv-warn-bg: #fdeec3;
-  --sv-fuzzy-bg: #fdeec3;         /* fuzzy/partial layer-match background */
-  --sv-fuzzy-text: #8a6d1f;       /* fuzzy/partial layer-match text */
+  --sv-warn-accent: #3474e6;      /* unified Growte blue accent */
+  --sv-warn-region: #3474e6;      /* region marquee/box accent */
+  --sv-warn-text: #2f67d7;
+  --sv-warn-bg: #eef5ff;
+  --sv-fuzzy-bg: #eef5ff;         /* fuzzy/partial layer-match background */
+  --sv-fuzzy-text: #2f67d7;       /* fuzzy/partial layer-match text */
   --sv-success: #1f8a5b;
   --sv-success-strong: #1a7a4f;   /* stronger success variant (quiz answer) */
   --sv-success-bg: #d9f1e4;
@@ -69,8 +69,8 @@
   --sv-chat-user-bg: #eef5ff;      /* chat user bubble */
   --sv-chat-assistant-bg: #ffffff; /* chat assistant bubble */
   --sv-bookmark-dot: #3474e6;      /* bookmark indicator dot */
-  --sv-highlight-bg: #fdeec3;      /* annotation highlight (amber) */
-  --sv-highlight-text: #5b4a1e;    /* text on amber highlight */
+  --sv-highlight-bg: #eef5ff;      /* annotation/excerpt highlight (Growte blue) */
+  --sv-highlight-text: #2f67d7;    /* text on blue highlight */
   --sv-connector: #cdd3dc;         /* margin-note → anchor dashed connector */
   --sv-anchor-marker: #9aa1ab;     /* paragraph anchor marker */
 
@@ -436,10 +436,11 @@ button {
 .anchor-excerpt-quote {
   margin: 0 0 6px;
   /* R1.5: this is quoted reading body (the focused passage) → serif. */
-  font-family: var(--sv-font-serif);
-  font-size: 14px;
-  line-height: 1.55;
-  color: var(--sv-text);
+  font-family: var(--sv-font-sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--sv-accent-text);
 }
 
 .anchor-excerpt-meta {
@@ -1547,7 +1548,7 @@ button {
 }
 
 .pdf-anchor-hit {
-  background: rgba(255, 213, 79, 0.45) !important;
+  background: rgba(52, 116, 230, 0.18) !important;
   border-radius: 2px;
 }
 
@@ -1556,7 +1557,7 @@ button {
 .image-region-marquee {
   position: absolute;
   border: 1.5px dashed var(--sv-warn-region);
-  background: rgba(255, 213, 79, 0.18);
+  background: rgba(52, 116, 230, 0.12);
   pointer-events: none;
   z-index: 5;
 }
@@ -1565,7 +1566,7 @@ button {
 .image-region-box {
   position: absolute;
   border: 2px solid var(--sv-warn-region);
-  background: rgba(255, 213, 79, 0.2);
+  background: rgba(52, 116, 230, 0.14);
   border-radius: 2px;
   cursor: pointer;
   z-index: 4;
@@ -2702,8 +2703,8 @@ textarea {
 }
 
 .annot-mode-toggle:hover {
-  border-color: var(--sv-warn-accent);
-  background: #fdf4d6;
+  border-color: var(--sv-accent-border);
+  background: var(--sv-accent-weak-hover);
 }
 
 /* Per-source Product Kit selector (reader header). Single-select today; "Core" = none. */
@@ -3707,7 +3708,7 @@ textarea {
   cursor: default;
 }
 
-/* Excerpt = amber highlight box (spec). */
+/* Excerpt = product-blue highlight box. */
 .anchor-excerpt-card {
   padding: 12px;
   border: 0;
@@ -3722,7 +3723,7 @@ textarea {
 .anchor-excerpt-formula {
   margin: 8px 0 0;
   font-family: var(--sv-font-mono);
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--sv-highlight-text);
 }
 
@@ -4252,8 +4253,8 @@ textarea {
 }
 
 .anchor-excerpt-card {
-  border: 1px solid #f5e5b8;
-  background: #fff6dd;
+  border: 1px solid var(--sv-accent-border);
+  background: var(--sv-highlight-bg);
 }
 
 .anchor-linked {
@@ -4316,7 +4317,7 @@ textarea {
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: 46px;
+  min-height: 42px;
   padding: 0 8px 0 14px;
   border: 1px solid #dfe4ec;
   border-radius: 10px;
@@ -4326,18 +4327,18 @@ textarea {
 
 .chat-composer-input {
   flex: 1 1 auto;
-  height: 42px;
-  min-height: 42px;
+  height: 38px;
+  min-height: 38px;
   max-height: 96px;
-  padding: 11px 0;
+  padding: 9px 0;
   border: 0;
   background: transparent;
   box-shadow: none;
   outline: none;
   resize: none;
   color: #3f4652;
-  font-size: 14px;
-  line-height: 20px;
+  font-size: 12.5px;
+  line-height: 18px;
 }
 
 .chat-composer-input::placeholder {
@@ -4690,7 +4691,7 @@ select {
 
 .chat-composer-input {
   color: #424956;
-  font-size: 14px;
+  font-size: 12.5px;
   font-weight: 400;
 }
 
@@ -5629,9 +5630,9 @@ select {
 }
 
 .anchor-excerpt-card {
-  border: 1px solid #f4e5bc;
+  border: 1px solid var(--sv-accent-border);
   border-radius: 8px;
-  background: #fff6dd;
+  background: var(--sv-highlight-bg);
 }
 
 .study-panel .chat-box {
@@ -5659,7 +5660,7 @@ select {
 }
 
 .chat-composer-bar {
-  min-height: 48px;
+  min-height: 42px;
   padding: 0 8px 0 14px;
   border-color: #e1e6ee;
   border-radius: 10px;
@@ -5668,11 +5669,11 @@ select {
 }
 
 .chat-composer-input {
-  height: 42px;
-  min-height: 42px;
-  padding: 11px 0;
+  height: 38px;
+  min-height: 38px;
+  padding: 9px 0;
   color: #424b58;
-  font-size: 14px;
+  font-size: 12.5px;
   font-weight: 400;
 }
 
@@ -5771,7 +5772,7 @@ select {
 }
 
 .anchor-excerpt-card {
-  min-height: 48px;
+  min-height: 44px;
   display: flex;
   align-items: center;
 }
@@ -5779,10 +5780,13 @@ select {
 .anchor-excerpt-card .anchor-excerpt-quote {
   margin: 0;
   max-width: 100%;
+  font-family: var(--sv-font-sans);
+  font-size: 12.5px;
+  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  line-height: 20px;
+  line-height: 18px;
 }
 
 .anchor-excerpt-formula {
@@ -5942,4 +5946,149 @@ select {
 
 .recent-source-list .source-item-delete {
   width: 30px;
+}
+
+/* —— Right panel · Notes sub-tab (collapsed-by-default fold) ————————————————— */
+.note-list-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--sv-border);
+}
+
+.note-list-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 4px 2px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--sv-text);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.note-list-head:hover {
+  color: var(--sv-accent-text);
+}
+
+.note-list-head-label {
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+.note-list-count {
+  min-width: 20px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--sv-accent-weak);
+  color: var(--sv-accent-text);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.note-list-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.note-list-row {
+  position: relative;
+}
+
+.note-list-row .sv-preview-card {
+  max-width: 100%;
+}
+
+.note-list-row-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 3px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.note-list-row:hover .note-list-row-actions,
+.note-list-row:focus-within .note-list-row-actions {
+  opacity: 1;
+}
+
+.note-list-row-jump,
+.note-list-row-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface);
+  color: var(--sv-text-muted);
+  cursor: pointer;
+}
+
+.note-list-row-jump:hover {
+  background: var(--sv-accent-weak);
+  border-color: var(--sv-accent-border);
+  color: var(--sv-accent-text);
+}
+
+.note-list-row-delete:hover {
+  background: var(--sv-danger-weak, #fdecec);
+  border-color: var(--sv-danger, #d9534f);
+  color: var(--sv-danger, #d9534f);
+}
+
+.note-list-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--sv-text-faint);
+}
+
+/* —— Chat reply artifact actions (section 10 "Add as note" / "Regenerate") —— */
+.chat-artifact {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-artifact-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chat-artifact-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface);
+  color: var(--sv-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chat-artifact-action:hover:not(:disabled) {
+  background: var(--sv-accent-weak);
+  border-color: var(--sv-accent-border);
+  color: var(--sv-accent-text);
+}
+
+.chat-artifact-action:disabled {
+  opacity: 0.55;
+  cursor: default;
 }

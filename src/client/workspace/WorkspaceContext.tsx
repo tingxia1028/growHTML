@@ -34,6 +34,7 @@ import {
 import { useFocus, draftQuoteText, type FocusContextValue } from "../focus/FocusContext";
 import { BOOKMARK_CONTENT_TYPE } from "../../core/notes/contentTypes";
 import { resolveFormAsync, type AiClassify } from "../../core/notes/resolveForm";
+import { classifyContent } from "../../core/notes/classifyContent";
 import { createDefaultContent, isTextContentType } from "../notes/noteTypeRegistry";
 import { getSourceViewer, type SourceViewer } from "../viewers";
 import { getCommand, runCommand, type CommandContext, type GeneratedDraft } from "../commands/registry";
@@ -284,6 +285,18 @@ export type WorkspaceContextValue = {
    * preview (so the user previews the recognized form before it lands as a note).
    */
   previewClassifiedReply(text: string): Promise<void>;
+  /**
+   * Add a chat reply DIRECTLY as a note (the §10 card's "Add as note" action): classify
+   * the reply text into its registered form (HTML / markmap / code / markdown) and create
+   * the note in one step — attached to the focused passage if there is one, else an
+   * unanchored note on the active source. It then surfaces in the right-column note list.
+   */
+  addReplyAsNote(text: string): Promise<void>;
+  /**
+   * Re-run the most recent chat question (the §10 card's "Regenerate" action): re-dispatch
+   * the last user prompt through `anchor.ask-ai`, appending a fresh assistant reply.
+   */
+  regenerateChatReply(): void;
   /**
    * Import a local .xmind file → a `markmap` note (Phase 4 item 3). Opens the native
    * file dialog, has the server unzip+parse the .xmind into a markmap outline, and
@@ -944,6 +957,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [focus, activeSourceId, aiClassify]
   );
 
+  // §10 chat card "Add as note": classify the reply into its registered form (the SAME
+  // pure heuristic the preview path uses) and create the note in ONE step via the normal
+  // add-note command — no preview gate. anchorIds omitted, so the command materializes
+  // the focused passage if there is one (attaching the note to it), else saves it
+  // unanchored on the active source. onNoteCreated repaints + the note-list refreshes.
+  const addReplyAsNote = useCallback(
+    async (rawContent: string) => {
+      const trimmed = (rawContent ?? "").trim();
+      if (!trimmed) return;
+      const form = classifyContent(trimmed);
+      await dispatch("anchor.add-note", { content: form.content, contentType: form.contentType });
+    },
+    [dispatch]
+  );
+
+  // §10 chat card "Regenerate": re-ask the most recent user question, appending a fresh
+  // assistant reply to the thread (the streaming ask path handles the rest). A no-op if
+  // there is no prior user prompt.
+  const regenerateChatReply = useCallback(() => {
+    const lastUser = [...chatMessages].reverse().find((message) => message.role === "user");
+    if (!lastUser) return;
+    void dispatch("anchor.ask-ai", { text: lastUser.content });
+  }, [chatMessages, dispatch]);
+
   // .xmind import (adaptive-note-forms Phase 4 item 3). Open a native file dialog,
   // ask the server to unzip+parse the .xmind into a markmap OUTLINE, and park the
   // result in the SAME preview/save loop every other generated note uses — so the
@@ -1251,6 +1288,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       discardPendingDraft,
       selectedTextOr,
       previewClassifiedReply,
+      addReplyAsNote,
+      regenerateChatReply,
       importXmindFile,
       changePatchStatus,
       conceptsVersion,
@@ -1330,6 +1369,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       discardPendingDraft,
       selectedTextOr,
       previewClassifiedReply,
+      addReplyAsNote,
+      regenerateChatReply,
       importXmindFile,
       changePatchStatus,
       conceptsVersion,

@@ -16,17 +16,29 @@ export const ANNOTATION_STYLE_ID = "sv-annot-style";
 
 export const ANNOTATION_CSS = `
 .sv-annotated {
-  background: rgba(255, 213, 79, 0.4);
-  box-shadow: inset 0 -2px 0 #f0a500;
+  background: rgba(52, 116, 230, 0.18);
+  box-shadow: inset 0 -2px 0 #3474e6;
   cursor: pointer;
+}
+/* The currently SELECTED / focused anchor — persistent UI-blue highlight (the
+   product accent #3474e6) so clicking/focusing an anchor gives immediate "this is
+   selected" feedback on the same blue ramp. Wins over
+   .sv-annotated (declared after it) and also paints a bare, note-less anchor.
+   Literal color: this stylesheet is injected into the reader realm, which has no
+   --sv-* tokens. setSelectedAnchorInDoc adds/clears this class. */
+.sv-selected,
+.sv-annotated.sv-selected {
+  background: rgba(52, 116, 230, 0.22);
+  box-shadow: inset 0 -2px 0 #3474e6;
+  border-radius: 2px;
 }
 /* Transient "we just jumped here" pulse, applied by revealAnchorInDoc on a
    jump-to-anchor (bookmark row / multi-anchor jump) then removed after ~1s. A
-   ring + glow distinct from the persistent .sv-annotated highlight. */
+   ring + glow in the UI accent blue, distinct from the persistent highlight. */
 .sv-active {
-  outline: 2px solid #f0a500 !important;
+  outline: 2px solid #3474e6 !important;
   outline-offset: 1px;
-  box-shadow: 0 0 0 3px rgba(240, 165, 0, 0.45), inset 0 -2px 0 #f0a500 !important;
+  box-shadow: 0 0 0 3px rgba(52, 116, 230, 0.45), inset 0 -2px 0 #3474e6 !important;
   transition: outline-color 0.25s ease, box-shadow 0.25s ease;
 }
 #sv-note-card {
@@ -42,9 +54,9 @@ export const ANNOTATION_CSS = `
   resize: both;
   overflow: hidden;
   border-radius: 8px;
-  background: #fffdf5;
+  background: #ffffff;
   color: #202124;
-  border: 1px solid #e6c463;
+  border: 1px solid #c9dcff;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
   font: 13px/1.5 Inter, "Segoe UI", Arial, sans-serif;
 }
@@ -59,15 +71,15 @@ export const ANNOTATION_CSS = `
   padding: 5px 4px 5px 9px;
   cursor: move;
   user-select: none;
-  background: #f3e7bf;
-  border-bottom: 1px solid #e6c463;
+  background: #eef5ff;
+  border-bottom: 1px solid #c9dcff;
   border-radius: 8px 8px 0 0;
 }
 .sv-note-card-grip {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  color: #6b5a1e;
+  color: #2f67d7;
 }
 .sv-note-card-close {
   border: none;
@@ -75,7 +87,7 @@ export const ANNOTATION_CSS = `
   cursor: pointer;
   font-size: 16px;
   line-height: 1;
-  color: #6b5a1e;
+  color: #2f67d7;
   padding: 0 6px;
 }
 .sv-note-card-body {
@@ -96,11 +108,11 @@ export const ANNOTATION_CSS = `
 .sv-note-card-body ul,
 .sv-note-card-body ol { margin: 4px 0; padding-left: 18px; }
 .sv-note-card-body code {
-  background: #efe9dc;
+  background: #eef5ff;
   padding: 0 3px;
   border-radius: 3px;
 }
-.sv-note-card-body hr { border: 0; border-top: 1px solid #e6dcc0; margin: 8px 0; }
+.sv-note-card-body hr { border: 0; border-top: 1px solid #c9dcff; margin: 8px 0; }
 
 /* --- Marginalia mode: persistent cards in a right-hand gutter --- */
 .sv-annot-margin { padding-right: 312px; box-sizing: border-box; }
@@ -122,7 +134,7 @@ export const ANNOTATION_CSS = `
 }
 .sv-margin-connectors-path {
   fill: none;
-  stroke: #e0a800;
+  stroke: #3474e6;
   stroke-width: 1.5;
   stroke-dasharray: 3 3;
 }
@@ -133,9 +145,9 @@ export const ANNOTATION_CSS = `
   box-sizing: border-box;
   pointer-events: auto;
   border-radius: 8px;
-  background: #fffdf5;
+  background: #ffffff;
   color: #202124;
-  border: 1px solid #e6c463;
+  border: 1px solid #c9dcff;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
   font: 13px/1.5 Inter, "Segoe UI", Arial, sans-serif;
   transition: top 0.12s ease;
@@ -151,7 +163,7 @@ export const ANNOTATION_CSS = `
 .sv-margin-note-body p { margin: 4px 0; }
 .sv-margin-note-body ul,
 .sv-margin-note-body ol { margin: 4px 0; padding-left: 18px; }
-.sv-margin-note-body code { background: #efe9dc; padding: 0 3px; border-radius: 3px; }`;
+.sv-margin-note-body code { background: #eef5ff; padding: 0 3px; border-radius: 3px; }`;
 
 // Cross-realm-safe "is this node (or an ancestor) a match" — the reader doc /
 // guest page is a different realm, so `instanceof Element` is unreliable;
@@ -411,6 +423,23 @@ export function revealAnchorInDoc(root: ParentNode | null | undefined, anchorId:
     return true;
   } catch {
     return false;
+  }
+}
+
+// Persistent SELECT mirror of revealAnchorInDoc: paint the UI-blue `.sv-selected`
+// highlight on the element for `anchorId` (the host's currently focused anchor) and
+// clear it from any previously-selected element, so exactly one anchor reads as
+// selected at a time. Passing an empty/undefined id just clears the selection.
+// Framework-free + try/catch for the same cross-realm reasons as revealAnchorInDoc.
+export function setSelectedAnchorInDoc(root: ParentNode | null | undefined, anchorId: string | undefined): void {
+  if (!root) return;
+  try {
+    root.querySelectorAll(".sv-selected").forEach((el) => el.classList.remove("sv-selected"));
+    if (!anchorId) return;
+    const el = root.querySelector(`[data-sv-key="${anchorId.replace(/"/g, '\\"')}"]`);
+    if (el) el.classList.add("sv-selected");
+  } catch {
+    // realm torn down / unavailable — selection paint is best-effort.
   }
 }
 

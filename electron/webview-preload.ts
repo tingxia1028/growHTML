@@ -3,7 +3,13 @@
 // highlights stored anchors the host sends back. Reuses the unit-tested
 // textQuote helpers so the selector logic is trustworthy.
 import { ipcRenderer } from "electron";
-import { clearAnnotations, ensureAnnotationLayer, highlightQuote, revealAnchorInDoc } from "../src/client/annotationLayer";
+import {
+  clearAnnotations,
+  ensureAnnotationLayer,
+  highlightQuote,
+  revealAnchorInDoc,
+  setSelectedAnchorInDoc
+} from "../src/client/annotationLayer";
 
 type WebAnchorMsg = { id?: string; quote: string; contextBefore: string; contextAfter: string; note?: string };
 
@@ -76,6 +82,10 @@ document.addEventListener(
   true
 );
 
+// The host's currently focused anchor id, so a repaint (sv:anchors) can re-apply the
+// persistent blue "selected" highlight that clearAnnotations would otherwise wipe.
+let selectedAnchorId: string | undefined;
+
 ipcRenderer.on("sv:anchors", (_event, anchors: WebAnchorMsg[]) => {
   ensureAnnotationLayer(document);
   clearAnnotations(document.body);
@@ -87,6 +97,8 @@ ipcRenderer.on("sv:anchors", (_event, anchors: WebAnchorMsg[]) => {
       anchor.id
     );
   }
+  // Re-apply the selection after the repaint (the marks were just re-created).
+  setSelectedAnchorInDoc(document, selectedAnchorId);
 });
 
 // The host asks us to scroll a painted anchor into view (a bookmark row / a
@@ -94,6 +106,15 @@ ipcRenderer.on("sv:anchors", (_event, anchors: WebAnchorMsg[]) => {
 // marks via highlightQuote above, so this delegates to the SAME shared helper —
 // no scroll logic duplicated in the guest.
 ipcRenderer.on("sv:reveal", (_event, anchorId: string) => revealAnchorInDoc(document, anchorId));
+
+// The host's focused anchor changed: paint the persistent blue "selected" highlight
+// on it (clearing the previous one) — the SAME shared helper the iframe/PDF/image
+// readers use, so the selection feedback is uniform across every surface. Remember the
+// id so the next sv:anchors repaint re-applies it.
+ipcRenderer.on("sv:select", (_event, anchorId: string | undefined) => {
+  selectedAnchorId = anchorId || undefined;
+  setSelectedAnchorInDoc(document, selectedAnchorId);
+});
 
 // Tell the host we're ready so it can push existing anchors.
 window.addEventListener("DOMContentLoaded", () => ipcRenderer.sendToHost("sv:ready", {}));

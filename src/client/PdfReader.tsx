@@ -4,7 +4,13 @@ import * as pdfjsLib from "pdfjs-dist";
 import { EventBus, PDFLinkService, PDFViewer } from "pdfjs-dist/web/pdf_viewer.mjs";
 import workerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 import "pdfjs-dist/web/pdf_viewer.css";
-import { applyHighlight, clearAnnotations, ensureAnnotationLayer, revealAnchorInDoc } from "./annotationLayer";
+import {
+  applyHighlight,
+  clearAnnotations,
+  ensureAnnotationLayer,
+  revealAnchorInDoc,
+  setSelectedAnchorInDoc
+} from "./annotationLayer";
 import type { AnchorDraft } from "./focus/FocusContext";
 import { anchorsOfKind, type SurfaceReaderProps } from "./surfaces/types";
 import { isRealRegion, normalizeDragRect, placeRegionBox } from "./surfaces/overlay";
@@ -278,6 +284,8 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect, activeAnchorId
   // Repaint when the anchors prop changes.
   useEffect(() => {
     highlightAnchors();
+    // Re-apply the persistent blue "selected" highlight after a repaint clears it.
+    setSelectedAnchorInDoc(viewerRef.current, activeAnchorId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anchors]);
 
@@ -287,6 +295,8 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect, activeAnchorId
   // first, then reveal again on the next textlayerrendered. Keyed on revealSeq so
   // re-selecting the same anchor re-fires. Prop-driven (no useFocus).
   useEffect(() => {
+    // Paint/clear the persistent blue "selected" highlight on the focused anchor.
+    setSelectedAnchorInDoc(viewerRef.current, activeAnchorId);
     if (!activeAnchorId) return;
     if (revealAnchorInDoc(viewerRef.current, activeAnchorId)) return;
     const target = anchorsRef.current.find((a) => a.id === activeAnchorId);
@@ -301,6 +311,7 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect, activeAnchorId
     const eventBus = eventBusRef.current;
     if (!eventBus) return;
     const onRendered = () => {
+      setSelectedAnchorInDoc(viewerRef.current, activeAnchorId);
       if (revealAnchorInDoc(viewerRef.current, activeAnchorId)) {
         eventBus.off("textlayerrendered", onRendered);
       }

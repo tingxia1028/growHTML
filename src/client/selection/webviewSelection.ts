@@ -153,6 +153,21 @@ export function revealWebviewAnchor(webview: SelectionWebview | null | undefined
   }
 }
 
+// SELECT side: tell a webview GUEST which anchor is now focused so it paints the
+// persistent blue `.sv-selected` highlight (the guest calls the SAME shared
+// setSelectedAnchorInDoc against its own document, and re-applies it after a repaint).
+// Mirror of revealWebviewAnchor; passing an empty/undefined id clears the selection.
+// `send` throws before the guest attaches, so it's guarded — an early select is
+// dropped and re-sent when the focused anchor next changes / the guest re-paints.
+export function selectWebviewAnchor(webview: SelectionWebview | null | undefined, anchorId: string | undefined): void {
+  if (!webview) return;
+  try {
+    webview.send("sv:select", anchorId ?? "");
+  } catch {
+    // Guest not ready yet; the next select / sv:anchors push re-applies it.
+  }
+}
+
 // —— Bridge: uniform surface contract ⇄ guest IPC shapes ——
 // The webview surface speaks WebSelection/WebAnchorMsg over IPC, but the host
 // drives every reader through the uniform PaintAnchor/AnchorDraft contract. These

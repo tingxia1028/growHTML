@@ -1,25 +1,88 @@
 // ChatMessageBody — a chat message body (requirement 1 — rich artifacts show as
 // cards). The reply is classified through the SAME identification seam saving uses
-// (classifyContent): a HIGH-confidence rich form (markmap / mermaid / code-snippet —
-// anything but markdown) becomes a clickable ArtifactCard that opens the interactive
-// view CENTERED in a FocusOverlay. Everything else (low confidence, or plain markdown)
-// renders inline as markdown — through the one sanctioned getNoteType().render path,
-// never a bespoke bypass (display-side HARD contract §0.5-B / §6.6).
+// (classifyContent): a HIGH-confidence rich form (markmap / mermaid / code-snippet /
+// html — anything but markdown) becomes a clickable ArtifactCard that opens the
+// interactive view CENTERED in a FocusOverlay. Everything else (low confidence, or
+// plain markdown) renders inline as markdown — through the one sanctioned
+// getNoteType().render path, never a bespoke bypass (display-side HARD contract
+// §0.5-B / §6.6).
+//
+// §10 actions: an assistant reply is also actionable — when the host passes
+// `onAddNote` / `onRegenerate`, a small actions row sits beneath the body so the user
+// can keep the generated artifact ("Add as note") or re-run the question
+// ("Regenerate"). The actions are siblings of the card, so they don't interfere with
+// the card's click-to-open gesture.
 //
 // A small standalone host component so it is unit-testable without pulling the whole
-// workspace view tree (PdfReader/pdfjs etc.).
+// workspace view tree (PdfReader/pdfjs etc.) — the actions arrive as plain callbacks.
 
+import { FilePlus2, RefreshCw } from "lucide-react";
 import { classifyContent } from "../../core/notes/classifyContent";
 import { getNoteType } from "../notes/noteTypeRegistry";
 import { ArtifactCard } from "./ArtifactCard";
 
-export function ChatMessageBody({ role, content }: { role: string; content: string }) {
-  // Only assistant replies are classified into cards; the user's own prompt is text.
-  if (role === "assistant") {
-    const detected = classifyContent(content);
-    if (detected.confidence === "high" && detected.contentType !== "markdown") {
-      return <ArtifactCard block={{ contentType: detected.contentType, content: detected.content }} />;
-    }
+export function ChatMessageBody({
+  role,
+  content,
+  onAddNote,
+  onRegenerate,
+  busy = false
+}: {
+  role: string;
+  content: string;
+  /** §10 "Add as note" — keep this reply as a note (host classifies + persists). */
+  onAddNote?: (content: string) => void;
+  /** §10 "Regenerate" — re-run the question that produced this reply. */
+  onRegenerate?: () => void;
+  /** Disable the actions while a save/regenerate is already in flight. */
+  busy?: boolean;
+}) {
+  // The user's own prompt is plain text with no actions; only assistant replies are
+  // classified into cards and carry the keep/re-run actions.
+  if (role !== "assistant") {
+    return <>{getNoteType("markdown")?.render({ content }) ?? null}</>;
   }
-  return <>{getNoteType("markdown")?.render({ content }) ?? null}</>;
+
+  const detected = classifyContent(content);
+  const body =
+    detected.confidence === "high" && detected.contentType !== "markdown" ? (
+      <ArtifactCard block={{ contentType: detected.contentType, content: detected.content }} />
+    ) : (
+      getNoteType("markdown")?.render({ content }) ?? null
+    );
+
+  const showActions = !!onAddNote || !!onRegenerate;
+  if (!showActions) return <>{body}</>;
+
+  return (
+    <div className="chat-artifact">
+      {body}
+      <div className="chat-artifact-actions">
+        {onAddNote ? (
+          <button
+            type="button"
+            className="chat-artifact-action chat-artifact-add"
+            title="Save this reply as a note"
+            disabled={busy}
+            onClick={() => onAddNote(content)}
+          >
+            <FilePlus2 size={13} />
+            Add as note
+          </button>
+        ) : null}
+        {onRegenerate ? (
+          <button
+            type="button"
+            className="chat-artifact-action chat-artifact-regen"
+            title="Re-run the question that produced this reply"
+            disabled={busy}
+            onClick={() => onRegenerate()}
+          >
+            <RefreshCw size={13} />
+            Regenerate
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
 }

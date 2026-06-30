@@ -112,31 +112,30 @@ function decode(buffer: Buffer): PngImage {
 
 type Rect = { x: number; y: number; width: number; height: number };
 
-// Count "highlight yellow-ish" pixels (the highlight is rgba(255,213,79,.4) over
-// white ≈ a warm yellow). Same predicate as local-html-highlight.spec.ts.
-function yellowPixelsInRect(png: PngImage, rect: Rect): number {
+// Count product-blue highlight pixels. Same predicate as local-html-highlight.spec.ts.
+function blueHighlightPixelsInRect(png: PngImage, rect: Rect): number {
   const x0 = Math.max(0, Math.floor(rect.x));
   const y0 = Math.max(0, Math.floor(rect.y));
   const x1 = Math.min(png.width, Math.ceil(rect.x + rect.width));
   const y1 = Math.min(png.height, Math.ceil(rect.y + rect.height));
-  let yellow = 0;
+  let blue = 0;
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
       const i = (png.width * y + x) << 2;
       const r = png.data[i];
       const g = png.data[i + 1];
       const b = png.data[i + 2];
-      if (r > 200 && g > 170 && b < 200 && r - b > 45 && g - b > 25) yellow++;
+      if (b > 180 && b - r > 18 && b - g > 8) blue++;
     }
   }
-  return yellow;
+  return blue;
 }
 
 // ——————————————————————————————————————————————————————————————————————
 const VAULT = path.resolve(".e2e-electron-vault-flows");
 
 // A page with a unique passage on its own line near the top, white background so
-// the yellow highlight stands out, and tall filler so it scrolls like a real page.
+// the blue highlight stands out, and tall filler so it scrolls like a real page.
 const QUOTE = "PASSAGE the render thread submits draw commands every frame";
 const PAGE_HTML =
   "<!doctype html><html><head><meta charset='utf-8'><title>Flow</title>" +
@@ -227,8 +226,8 @@ async function fetchAnchors(sourceId: string) {
 }
 
 // Poll a screenshot of the given webview's bounding box until the passage band shows
-// the highlight color; returns the max yellow count seen (asserted by the caller).
-async function highlightYellowInPassage(webview: ReturnType<Page["locator"]>): Promise<number> {
+// the highlight color; returns the max blue count seen (asserted by the caller).
+async function highlightBlueInPassage(webview: ReturnType<Page["locator"]>): Promise<number> {
   const dpr = await page.evaluate(() => window.devicePixelRatio || 1);
   await expect.poll(async () => (await webview.boundingBox())?.width ?? 0, { timeout: 10_000 }).toBeGreaterThan(0);
   const box = (await webview.boundingBox())!;
@@ -243,7 +242,7 @@ async function highlightYellowInPassage(webview: ReturnType<Page["locator"]>): P
     .poll(
       async () => {
         const shot = decode(await page.screenshot());
-        best = Math.max(best, yellowPixelsInRect(shot, passageRect));
+        best = Math.max(best, blueHighlightPixelsInRect(shot, passageRect));
         return best;
       },
       { timeout: 10_000, message: "expected the highlight color to appear in the passage region" }
@@ -398,9 +397,9 @@ test("local HTML viewer: select in guest → chip → save note → anchor creat
   expect(webAnchor!.quote).toContain("render thread");
 
   // STEP 4 — the saved note paints as a highlight inside the guest (pixels).
-  const yellow = await highlightYellowInPassage(webview);
+  const blue = await highlightBlueInPassage(webview);
   // eslint-disable-next-line no-console
-  console.log(`[viewer-flows local] anchor=${webAnchor!.anchorKind} highlight yellow px=${yellow}`);
+  console.log(`[viewer-flows local] anchor=${webAnchor!.anchorKind} highlight blue px=${blue}`);
 
   // STEP 5 — hovering the highlight surfaces the shared note card. DETERMINISTIC:
   // dispatch a bubbling mouseover ON the highlight INSIDE the guest and read back
@@ -456,10 +455,10 @@ test("live HTML viewer: select in guest → chip → save note → anchor create
   expect(webAnchor!.normalizedUrl).toContain("127.0.0.1");
 
   // STEP 4 — the saved note paints as a highlight inside the live guest (pixels).
-  const yellow = await highlightYellowInPassage(webview);
+  const blue = await highlightBlueInPassage(webview);
   // eslint-disable-next-line no-console
   console.log(
-    `[viewer-flows live] anchor=${webAnchor!.anchorKind} normalizedUrl=${webAnchor!.normalizedUrl} highlight yellow px=${yellow}`
+    `[viewer-flows live] anchor=${webAnchor!.anchorKind} normalizedUrl=${webAnchor!.normalizedUrl} highlight blue px=${blue}`
   );
 
   // STEP 5 — hovering the highlight surfaces the shared note card. DETERMINISTIC:

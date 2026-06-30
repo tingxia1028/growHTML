@@ -11,6 +11,7 @@ import {
   paintMarginNotes,
   readCardGeom,
   revealAnchorInDoc,
+  setSelectedAnchorInDoc,
   writeCardGeom
 } from "./annotationLayer";
 import { decorateAnnotations } from "./annotations";
@@ -111,6 +112,50 @@ describe("revealAnchorInDoc", () => {
     delete (el as { scrollIntoView?: unknown }).scrollIntoView;
     expect(() => revealAnchorInDoc(document, "a1")).not.toThrow();
     expect(el.classList.contains("sv-active")).toBe(true);
+  });
+});
+
+describe("setSelectedAnchorInDoc", () => {
+  it("paints the blue sv-selected class on the matching anchor element", () => {
+    document.body.innerHTML = '<p data-study-id="s1">a</p><p data-study-id="s2">b</p>';
+    const a = document.querySelector('[data-study-id="s1"]') as HTMLElement;
+    const b = document.querySelector('[data-study-id="s2"]') as HTMLElement;
+    applyHighlight(a, "", "a1");
+    applyHighlight(b, "", "a2");
+    setSelectedAnchorInDoc(document, "a1");
+    expect(a.classList.contains("sv-selected")).toBe(true);
+    expect(b.classList.contains("sv-selected")).toBe(false);
+  });
+
+  it("moves the selection to exactly one anchor (clears the previous one)", () => {
+    document.body.innerHTML = '<p data-study-id="s1">a</p><p data-study-id="s2">b</p>';
+    const a = document.querySelector('[data-study-id="s1"]') as HTMLElement;
+    const b = document.querySelector('[data-study-id="s2"]') as HTMLElement;
+    applyHighlight(a, "", "a1");
+    applyHighlight(b, "", "a2");
+    setSelectedAnchorInDoc(document, "a1");
+    setSelectedAnchorInDoc(document, "a2");
+    expect(a.classList.contains("sv-selected")).toBe(false);
+    expect(b.classList.contains("sv-selected")).toBe(true);
+    expect(document.querySelectorAll(".sv-selected")).toHaveLength(1);
+  });
+
+  it("clears the selection for an empty/undefined id and is a safe no-op on a null root", () => {
+    document.body.innerHTML = '<p data-study-id="s1">a</p>';
+    const a = document.querySelector('[data-study-id="s1"]') as HTMLElement;
+    applyHighlight(a, "", "a1");
+    setSelectedAnchorInDoc(document, "a1");
+    setSelectedAnchorInDoc(document, undefined);
+    expect(a.classList.contains("sv-selected")).toBe(false);
+    expect(() => setSelectedAnchorInDoc(null, "a1")).not.toThrow();
+  });
+
+  it("escapes a quote in the id (no throw, no selector injection)", () => {
+    document.body.innerHTML = "<p>x</p>";
+    const el = document.querySelector("p") as HTMLElement;
+    applyHighlight(el, "", 'a"b');
+    expect(() => setSelectedAnchorInDoc(document, 'a"b')).not.toThrow();
+    expect(el.classList.contains("sv-selected")).toBe(true);
   });
 });
 

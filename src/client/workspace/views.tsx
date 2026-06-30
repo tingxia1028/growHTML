@@ -38,6 +38,7 @@ import { getNoteType } from "../notes/noteTypeRegistry";
 import { InertNote } from "../notes/builtinNoteTypes";
 import { FocusOverlay } from "./FocusOverlay";
 import { ChatMessageBody } from "./ChatMessageBody";
+import { GenerationPreview } from "./GenerationPreview";
 import { isDiagramType } from "../../adapters/notes/diagrams";
 // Side-effect import: installs the Product Kits (Textbook Learning Kit, …), which
 // register their note types + domain language into the same registries.
@@ -447,6 +448,8 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
     setChatInput,
     submitComposer,
     composerDisabled,
+    addReplyAsNote,
+    regenerateChatReply,
     patchHtml,
     setPatchHtml,
     activePatches,
@@ -545,15 +548,27 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
         ) : null}
 
         <div className="chat-log">
-          {chatMessages.map((message, index) => (
-            <div key={index} className={`chat-msg chat-${message.role}`}>
-              {/* Display-side HARD contract (§0.5-B / §6.6): a chat reply is shown
-                  through the SAME single render path as a note — getNoteType().render.
-                  Rich (high-confidence) replies surface as a clickable ArtifactCard
-                  that opens centered; plain replies render inline as markdown. */}
-              <ChatMessageBody role={message.role} content={message.content} />
-            </div>
-          ))}
+          {chatMessages.map((message, index) => {
+            // §10 actions: every assistant reply can be kept as a note; only the LAST
+            // assistant reply offers Regenerate (re-runs the most recent question).
+            const isAssistant = message.role === "assistant";
+            const isLastAssistant = isAssistant && index === chatMessages.length - 1;
+            return (
+              <div key={index} className={`chat-msg chat-${message.role}`}>
+                {/* Display-side HARD contract (§0.5-B / §6.6): a chat reply is shown
+                    through the SAME single render path as a note — getNoteType().render.
+                    Rich (high-confidence) replies surface as a clickable ArtifactCard
+                    that opens centered; plain replies render inline as markdown. */}
+                <ChatMessageBody
+                  role={message.role}
+                  content={message.content}
+                  onAddNote={isAssistant ? (content) => void addReplyAsNote(content) : undefined}
+                  onRegenerate={isLastAssistant ? () => regenerateChatReply() : undefined}
+                  busy={status === "saving"}
+                />
+              </div>
+            );
+          })}
           {/* Streaming ask-ai: until the FIRST token arrives, the last message is still
               the user's prompt while a request is in flight (status "saving"). Show a
               working row so the chat doesn't look frozen before progressive text begins.
@@ -568,6 +583,11 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
             </div>
           ) : null}
         </div>
+
+        {/* Command-driven generation (kit Explain/Practice, operation.run, classify-
+            reply) parks its draft here — preview → edit → Save/Regenerate/Discard.
+            Renders nothing until a draft is pending. */}
+        <GenerationPreview />
 
         <form
           className="chat-composer-bar"
