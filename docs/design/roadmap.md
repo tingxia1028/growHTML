@@ -23,6 +23,7 @@ The extension seams (registries / content-as-data / entity stores / render contr
 | **F4** | Replace the single-active-kit gate (`activation.ts` `FALLBACK_DEFAULT_KIT`) with marketplace **effective-installed** | market, subject kits "foreground not filter" | **Market M1** |
 | **F5** | Split `plugin==kit` 1:1 + fix `seedCorePlugin` over-claim (real `pluginId` per type) | marketplace `members[]` resolution | **Market M1** |
 | **F6** | Additive rect on `html_selection`/`web_text_quote` anchors | unified region selection over HTML (D4) | **D4b** |
+| **F7** | Preset stage layers (预习/学习/复习/拓展) are hardcoded in core + imposed on every vault → make them **kit-contributed + user-editable** | forces one kit's taxonomy on all users; not customizable | **F4/F5 / Market M1**; F7a (core+kit) parallelizable now, F7b (Lens UI) after |
 
 ## Two keystones everything leans on
 Most work funnels through two load-bearing pieces. Build order is mostly "who unblocks whom":
