@@ -397,4 +397,41 @@ describe("study layer API", () => {
     const moved = (await request(app).patch(`/api/notes/${noteB.id}`).send({ layerIds: [owned.id] }).expect(200)).body.note;
     expect(moved.layerIds).toEqual([owned.id]);
   });
+
+  // F7a: the preset stage axis is SEEDED FROM THE ACTIVE KIT, not hardcoded in core.
+  it("seeds the stage axis from the active kit: textbook default → 4 stages, Core → none", async () => {
+    // A) Default source: no activeKitIds metadata → server falls back to the textbook kit
+    //    → the 4 preset stages appear (back-compat, but now KIT-sourced).
+    const a = await request(app).post("/api/sources/html").send({ title: "Default Kit Doc", content: SOURCE_HTML }).expect(201);
+    const layersA = (await request(app).get(`/api/sources/${a.body.source.id}/layers`).expect(200)).body
+      .layers as Array<{ title: string; role?: string; importMode: string }>;
+    expect(layersA.filter((l) => l.role === "preset").map((l) => l.title).sort()).toEqual(["复习", "学习", "拓展", "预习"]);
+    expect(layersA.some((l) => l.importMode === "owned" && !l.role)).toBe(true);
+
+    // B) Force Core (activeKitIds: []) → no kit imposes an axis → NO preset stages, owned still present.
+    const b = await request(app).post("/api/sources/html").send({ title: "Core Doc", content: SOURCE_HTML }).expect(201);
+    await request(app).patch(`/api/sources/${b.body.source.id}`).send({ metadata: { activeKitIds: [] } }).expect(200);
+    const layersB = (await request(app).get(`/api/sources/${b.body.source.id}/layers`).expect(200)).body
+      .layers as Array<{ title: string; role?: string; importMode: string }>;
+    expect(layersB.filter((l) => l.role === "preset")).toHaveLength(0);
+    expect(layersB.some((l) => l.importMode === "owned" && !l.role)).toBe(true);
+  });
+
+  it("F7a migration: preset layers already created survive after the source drops the kit axis", async () => {
+    const created = await request(app).post("/api/sources/html").send({ title: "Migrate Doc", content: SOURCE_HTML }).expect(201);
+    const source = created.body.source;
+
+    // First list (textbook default) lazily creates the 4 preset stages.
+    const first = (await request(app).get(`/api/sources/${source.id}/layers`).expect(200)).body
+      .layers as Array<{ id: string; role?: string }>;
+    const presetIds = first.filter((l) => l.role === "preset").map((l) => l.id).sort();
+    expect(presetIds).toHaveLength(4);
+
+    // Switch the source to Core (no axis) and re-list: the already-created preset layers
+    // must be PRESERVED (they may hold notes) — the seeder only stops creating new ones.
+    await request(app).patch(`/api/sources/${source.id}`).send({ metadata: { activeKitIds: [] } }).expect(200);
+    const second = (await request(app).get(`/api/sources/${source.id}/layers`).expect(200)).body
+      .layers as Array<{ id: string; role?: string }>;
+    expect(second.filter((l) => l.role === "preset").map((l) => l.id).sort()).toEqual(presetIds);
+  });
 });

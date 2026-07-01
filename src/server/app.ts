@@ -32,7 +32,9 @@ import { assetBytesPath, importLocalAsset } from "../core/store/assets";
 import { parseRange } from "./httpRange";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import { createCustomLayer, ensureOwnedLayer, ensurePresetLayers } from "../core/study-layer/layers";
+import { createCustomLayer, ensureOwnedLayer, ensurePresetStages } from "../core/study-layer/layers";
+import { activeKitIdsForSource } from "../kits/activation";
+import { stagePresetForKits } from "../kits/policy";
 import { studyLayerSchema } from "../core/schema";
 import { buildStudyPack, commitImport, parseStudyPack, previewImport } from "./studyLayer";
 import { defaultIdentityDir } from "../core/identity/paths";
@@ -906,14 +908,21 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
 
   // —— Study Layers (a per-source lens axis: owned + preset stages + custom + imported) ——
   // List the layers over a source, for the multi-select filter switcher. The owned layer
-  // and the four preset stages (预习/学习/复习/拓展) are created on demand here (lazily, the
-  // same way ensureOwnedLayer works) so the switcher always sees them.
+  // and the preset stage axis are created on demand here (lazily, the same way
+  // ensureOwnedLayer works) so the switcher always sees them. F7a: the stage axis is no
+  // longer a core-hardcoded taxonomy — it is SEEDED FROM THE SOURCE'S ACTIVE KIT. We
+  // resolve the active kit ids (metadata.activeKitIds, else the workspace default — which
+  // is FALLBACK_DEFAULT_KIT="textbook-learning" server-side, so a default vault still gets
+  // 预习/学习/复习/拓展, now KIT-sourced) and ask the kit policies for their combined
+  // stagePreset. No active kit / no kit stagePreset ⇒ empty list ⇒ NO preset stages
+  // created (owned + custom + imported still work). ensurePresetStages never deletes, so
+  // pre-existing preset layers in migrated vaults are preserved.
   app.get("/api/sources/:sourceId/layers", async (req, res, next) => {
     try {
       const source = await vault.stores.sources.get(req.params.sourceId);
       if (source) {
         await ensureOwnedLayer(vault, source);
-        await ensurePresetLayers(vault, source);
+        await ensurePresetStages(vault, source, stagePresetForKits(activeKitIdsForSource(source)));
       }
       const layers = (await vault.stores.layers.list()).filter(
         (layer) => layer.localSourceId === req.params.sourceId

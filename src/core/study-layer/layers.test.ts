@@ -6,7 +6,7 @@ import { openVault, type StudyVault } from "../vault";
 import { anchorSchema, noteSchema } from "../schema";
 import { createEntityId } from "../ids";
 import { ingestHtmlSource } from "../store/sources";
-import { ensureOwnedLayer, migrateStudyLayers } from "./layers";
+import { ensureOwnedLayer, ensurePresetStages, migrateStudyLayers } from "./layers";
 
 let tempDir = "";
 let vault: StudyVault;
@@ -73,6 +73,61 @@ describe("ensureOwnedLayer", () => {
     expect(a.localSourceId).toBe(source.id);
     expect(a.sourceFingerprint.contentHash).toBe(source.contentHash);
     expect(await vault.stores.layers.list()).toHaveLength(1);
+  });
+});
+
+describe("ensurePresetStages (F7a: core takes an explicit stage list, no hardcoded taxonomy)", () => {
+  const STAGES = [
+    { title: "预习", order: 0 },
+    { title: "学习", order: 1 },
+    { title: "复习", order: 2 }
+  ];
+
+  it("creates the given stages as role:'preset' layers, once, and is idempotent on a second call", async () => {
+    const source = await ingestHtmlSource(vault, { title: "Doc", content: "<p>hi</p>" });
+    const first = await ensurePresetStages(vault, source, STAGES);
+    expect(first.map((l) => l.title)).toEqual(["预习", "学习", "复习"]);
+    expect(first.map((l) => l.order)).toEqual([0, 1, 2]);
+    expect(first.every((l) => l.role === "preset" && l.localSourceId === source.id)).toBe(true);
+
+    const second = await ensurePresetStages(vault, source, STAGES);
+    // Same records reused (same ids) — no duplicates written to the store.
+    expect(second.map((l) => l.id)).toEqual(first.map((l) => l.id));
+    expect((await vault.stores.layers.list()).filter((l) => l.role === "preset")).toHaveLength(3);
+  });
+
+  it("creates NOTHING for an empty stage list (a kit that imposes no stage axis)", async () => {
+    const source = await ingestHtmlSource(vault, { title: "Doc", content: "<p>hi</p>" });
+    expect(await ensurePresetStages(vault, source, [])).toEqual([]);
+    expect((await vault.stores.layers.list()).filter((l) => l.role === "preset")).toHaveLength(0);
+  });
+
+  it("preserves a pre-existing preset layer of the same title (migration-safe: reuse, no duplicate)", async () => {
+    const source = await ingestHtmlSource(vault, { title: "Doc", content: "<p>hi</p>" });
+    // Simulate a migrated vault where a preset "复习" layer already exists (may hold notes).
+    const pre = await ensurePresetStages(vault, source, [{ title: "复习", order: 2 }]);
+    const preId = pre[0].id;
+
+    // A later call with the fuller axis reuses the existing 复习 and only adds the missing ones.
+    const full = await ensurePresetStages(vault, source, STAGES);
+    expect(full.find((l) => l.title === "复习")!.id).toBe(preId);
+    const presets = (await vault.stores.layers.list()).filter((l) => l.role === "preset");
+    expect(presets).toHaveLength(3);
+    expect(presets.filter((l) => l.title === "复习")).toHaveLength(1); // reused, not re-created
+  });
+
+  it("never deletes a stage the caller no longer lists (dropped stage keeps its layer)", async () => {
+    const source = await ingestHtmlSource(vault, { title: "Doc", content: "<p>hi</p>" });
+    await ensurePresetStages(vault, source, STAGES); // 预习 / 学习 / 复习
+    // The active kit later drops 复习 → the caller passes a shorter list…
+    const kept = await ensurePresetStages(vault, source, [
+      { title: "预习", order: 0 },
+      { title: "学习", order: 1 }
+    ]);
+    expect(kept.map((l) => l.title)).toEqual(["预习", "学习"]);
+    // …but the previously-created 复习 layer is NOT removed (no auto-delete of note-holders).
+    const presets = (await vault.stores.layers.list()).filter((l) => l.role === "preset");
+    expect(presets.map((l) => l.title).sort()).toEqual(["复习", "学习", "预习"]);
   });
 });
 

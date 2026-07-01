@@ -14,6 +14,13 @@ export type KitLayerPolicy = {
   privateByDefaultContentTypes: string[];
   /** Content types a recipient may copy into their own layer. */
   copyableContentTypes: string[];
+  /**
+   * Suggested STAGE AXIS this kit seeds onto a source (F7a): the preset lens layers a
+   * source gets when this kit is active (e.g. textbook → 预习/学习/复习/拓展; 英语Kit →
+   * 词汇/语法/听力). Core no longer hardcodes any stage taxonomy — a kit MAY omit this,
+   * in which case it imposes NO stage axis. `order` sorts the axis in the switcher.
+   */
+  stagePreset?: { title: string; order: number }[];
 };
 
 const policies: KitLayerPolicy[] = [];
@@ -38,4 +45,23 @@ export function isExportableContentType(contentType: string): boolean {
 
 export function listKitLayerPolicies(): readonly KitLayerPolicy[] {
   return policies;
+}
+
+/**
+ * The stage axis to seed for a source, given its active kit ids (F7a). Reads the
+ * registered kit policies: each active kit MAY contribute a `stagePreset`; we
+ * concatenate them IN KIT ORDER and dedupe by title (the FIRST active kit to name a
+ * stage wins its order). Kits with no `stagePreset` — and the all-Core case (`kitIds`
+ * empty) — contribute nothing, so the result is empty and NO preset stages are created.
+ */
+export function stagePresetForKits(kitIds: readonly string[]): { title: string; order: number }[] {
+  const byTitle = new Map<string, { title: string; order: number }>();
+  for (const kitId of kitIds) {
+    const policy = policies.find((p) => p.kitId === kitId);
+    if (!policy?.stagePreset) continue;
+    for (const stage of policy.stagePreset) {
+      if (!byTitle.has(stage.title)) byTitle.set(stage.title, { title: stage.title, order: stage.order });
+    }
+  }
+  return [...byTitle.values()];
 }

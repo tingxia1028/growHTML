@@ -30,32 +30,35 @@ export async function ensureOwnedLayer(vault: StudyVault, source: SourceRecord):
   return layer;
 }
 
-// The built-in stage layers (预习 / 学习 / 复习 / 拓展) — a fixed lens axis offered on
-// every source. Like the owned layer, they are pre-named layer records created lazily
-// the first time the switcher lists a source's layers. Order is stable (0..3) so the
-// switcher always shows them in the same sequence. "复习" here is purely an organizing
-// filter (no scheduling/SRS — that is out of scope).
-const PRESET_STAGES: ReadonlyArray<{ title: string; order: number }> = [
-  { title: "预习", order: 0 },
-  { title: "学习", order: 1 },
-  { title: "复习", order: 2 },
-  { title: "拓展", order: 3 }
-];
-
-// Create the four preset stage layers for a source on demand. Idempotent: a stage that
-// already exists (same role:"preset" + localSourceId + title) is reused, so this is safe
-// to call on every layer-list. Mirrors ensureOwnedLayer's construction.
-export async function ensurePresetLayers(vault: StudyVault, source: SourceRecord): Promise<StudyLayerRecord[]> {
+// The preset "stage" layers — a lens axis over a source (e.g. the textbook kit's
+// 预习 / 学习 / 复习 / 拓展). Core owns only the PRIMITIVE here, not the taxonomy: the
+// concrete stage list (titles + order) is supplied by the caller, seeded from the
+// source's active kit (see KitLayerPolicy.stagePreset + the server call site). A stage
+// is a pre-named layer record created lazily the first time the switcher lists a
+// source's layers; role:"preset" keeps the client switcher grouping them as an axis.
+//
+// Idempotent: a stage that already exists (same role:"preset" + localSourceId + title)
+// is reused, so this is safe to call on every layer-list. MIGRATION / NO-DELETE: this
+// only ever CREATES missing stages — it never removes an existing preset layer. So a
+// vault whose active kit dropped (or changed) a stage KEEPS the already-created layer
+// (it may hold notes); we simply stop creating new ones for the omitted title. Passing
+// an empty `stages` list therefore creates nothing (a kit that imposes no stage axis).
+// Mirrors ensureOwnedLayer's construction.
+export async function ensurePresetStages(
+  vault: StudyVault,
+  source: SourceRecord,
+  stages: ReadonlyArray<{ title: string; order: number }>
+): Promise<StudyLayerRecord[]> {
   const existing = (await vault.stores.layers.list()).filter(
     (layer) => layer.role === "preset" && layer.localSourceId === source.id
   );
   const byTitle = new Map(existing.map((layer) => [layer.title, layer]));
 
-  const stages: StudyLayerRecord[] = [];
-  for (const stage of PRESET_STAGES) {
+  const result: StudyLayerRecord[] = [];
+  for (const stage of stages) {
     const found = byTitle.get(stage.title);
     if (found) {
-      stages.push(found);
+      result.push(found);
       continue;
     }
     const now = new Date().toISOString();
@@ -76,9 +79,9 @@ export async function ensurePresetLayers(vault: StudyVault, source: SourceRecord
       order: stage.order
     });
     await vault.stores.layers.upsert(layer);
-    stages.push(layer);
+    result.push(layer);
   }
-  return stages;
+  return result;
 }
 
 // The per-source "Imported" PARENT layer — a container that imported `.studypack`
