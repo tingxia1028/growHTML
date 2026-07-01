@@ -9,7 +9,6 @@
 // Client-backed) — never with each other. Importing the plugins module runs the
 // `registerView` calls below.
 
-import { useState } from "react";
 import {
   CornerDownLeft,
   File,
@@ -18,7 +17,6 @@ import {
   FolderOpen,
   ListRestart,
   Loader2,
-  Pencil,
   RefreshCcw,
   RotateCcw,
   Sparkles,
@@ -26,21 +24,21 @@ import {
   Trash2,
   X
 } from "lucide-react";
-import type { NoteRecord } from "../data/entityClient";
 import { TerminalPanel } from "../TerminalPanel";
 import { FileTree } from "../FileTree";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 import { PanelMenu } from "./PanelMenu";
 import { readerForSource } from "./readerForSource";
-import { getNoteType } from "../notes/noteTypeRegistry";
 import { BookmarkIndex } from "./BookmarkIndex";
 // Side-effect import: registers the 12 built-in client NoteType plugins so the note
 // list + composer can render/edit every content type through the registry.
-import { InertNote } from "../notes/builtinNoteTypes";
-import { FocusOverlay } from "./FocusOverlay";
+import "../notes/builtinNoteTypes";
+// Side-effect import: registers the built-in Table viewer (an exclusive cross-type viewer)
+// into the viewer registry + the plugin read model. (The shared ArtifactCard also imports
+// it so the viewer is registered wherever a card renders; both are idempotent.)
+import "../notes/tableViewer";
 import { ChatMessageBody } from "./ChatMessageBody";
 import { GenerationPreview } from "./GenerationPreview";
-import { isDiagramType } from "../../adapters/notes/diagrams";
 // Side-effect import: installs the Product Kits (Textbook Learning Kit, …), which
 // register their note types + domain language into the same registries.
 import "../../kits/clientKits";
@@ -319,121 +317,12 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
   );
 }
 
-// A note's layer membership: the current-layer chips + a "move / add to layer" picker.
-// The picker is a fold (kept compact in the note card) listing the source's layers as
-// checkboxes; toggling one sends the note's FULL next membership via `onSetLayers`
-// (note.set-layers). A note can belong to several layers, so this is multi-select, not
-// a single move. Chips use each layer's `color` so the lens is visible at a glance.
-// A saved note's content, rendered IN ITS FORM (requirement 2 — the note viewer is
-// the corresponding rendering, not flattened to text). The in-list render is the
-// plugin's full view (today's behavior). For interactive/rich forms it ALSO offers an
-// "Open" affordance that focuses the note into the SHARED FocusOverlay — the exact
-// same capability the chat ArtifactCard uses (one impl, not re-done per surface), so a
-// 思维导图/diagram note can be viewed CENTERED and interactive. Bookmarks (chips) and
-// unknown types don't get the overlay — there's nothing richer to focus into.
-// `onEdit` persists an in-place content edit (dispatch note.edit with {noteId, content});
-// `onDelete` removes the note (dispatch note.delete with {noteId}). Both flow through the
-// command layer so the host stays free of contentType branching.
-function NoteContentView({
-  note,
-  onEdit,
-  onDelete
-}: {
-  note: NoteRecord;
-  onEdit: (content: unknown) => void;
-  onDelete: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  // Edit-in-place: when set, the note shows the SAME registry editor the composer uses
-  // (getNoteType(contentType).edit), seeded with this working copy of the content. Save
-  // persists it; Cancel discards (drops the working copy). null = not editing.
-  const [draft, setDraft] = useState<unknown>(undefined);
-  const editing = draft !== undefined;
-  const contentType = note.contentType ?? "markdown";
-  const plugin = getNoteType(contentType);
-  // Diagrams (and any future rich, interactive form) gain the centered overlay; plain
-  // text / chips render in place only. Derived from the diagram renderer REGISTRY (not
-  // a contentType branch) so any registered diagram form is focusable for free.
-  // Focusable into the centered overlay = a diagram (via the diagram registry) OR a
-  // plugin that opts in with its `focusable` capability flag (e.g. interactive html).
-  // Derived from registry capabilities, NOT a contentType branch — so any focusable form
-  // gets the overlay for free.
-  const focusable = !!plugin && (isDiagramType(contentType) || plugin.focusable === true);
-  // Editing reuses the registry editor — the SAME getNoteType().edit the composer uses,
-  // not a bespoke per-type editor (contract law §0.5 / contract guard). Seed it with the
-  // current content; the editor calls back with the next value on every keystroke.
-  if (editing && plugin) {
-    return (
-      <div className="note-edit-inline">
-        {plugin.edit({ content: draft, onChange: setDraft })}
-        <div className="row-actions">
-          <button
-            type="button"
-            className="link-button note-edit-save"
-            title="Save changes to this note"
-            onClick={() => {
-              onEdit(draft);
-              setDraft(undefined);
-            }}
-          >
-            Save
-          </button>
-          <button
-            type="button"
-            className="link-button note-edit-cancel"
-            title="Discard changes"
-            onClick={() => setDraft(undefined)}
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <>
-      {plugin ? plugin.render({ content: note.content, note }) : <InertNote content={note.content} />}
-      <div className="row-actions note-actions">
-        {focusable ? (
-          <button
-            type="button"
-            className="link-button note-open-overlay"
-            aria-haspopup="dialog"
-            title="Open this note centered and interactive"
-            onClick={() => setOpen(true)}
-          >
-            Open interactively
-          </button>
-        ) : null}
-        {/* Edit in place via the registry editor — only when the type has an editor
-            registered (every built-in does). */}
-        {plugin ? (
-          <button
-            type="button"
-            className="link-button note-edit-start"
-            title="Edit this note"
-            onClick={() => setDraft(note.content)}
-          >
-            <Pencil size={14} />
-            Edit
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className="link-button note-delete"
-          title="Delete this note"
-          onClick={onDelete}
-        >
-          <Trash2 size={14} />
-          Delete
-        </button>
-      </div>
-      {open ? (
-        <FocusOverlay block={{ contentType, content: note.content, note }} onClose={() => setOpen(false)} />
-      ) : null}
-    </>
-  );
-}
+// NOTE: the former in-list `NoteContentView` was DEAD CODE (defined, never rendered). Its
+// two responsibilities now live on the REAL render path: the shared PreviewCard
+// (ArtifactCard) resolves the exclusive viewer for the card body (resolveViewer →
+// getNoteType().render fallback), and the "Open with…" escape hatch lives in the shared
+// CenterView (FocusOverlay). It was removed here to retire the dead path without changing
+// any surface.
 
 // —— study → the `.study-panel` aside (chat-box + terminal-box). Kept as ONE view:
 // the e2e depend on the exact `.study-panel > .chat-box`/`.terminal-box` structure,

@@ -16,7 +16,7 @@
 // Tab focus trap, focus moves in on open and restores to the opener on close. The live
 // (heavy) full render mounts ONLY while the overlay is open.
 
-import { useCallback, useEffect, useId, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Bookmark, ExternalLink, MoreHorizontal, X } from "lucide-react";
 import type { NoteRecord } from "../data/entityClient";
@@ -24,6 +24,8 @@ import { getNoteType } from "../notes/noteTypeRegistry";
 import { noteTypeIcon } from "../notes/noteTypeIcon";
 import { InertNote } from "../notes/builtinNoteTypes";
 import { noteCardMeta } from "../notes/noteCardMeta";
+import { useWorkspaceOptional } from "./WorkspaceContext";
+import { resolveViewer, NOTETYPE_SENTINEL } from "../notes/viewerRegistry";
 
 export type FocusOverlayBlock = {
   /** The registered contentType deciding which plugin renders (the discriminator). */
@@ -56,6 +58,12 @@ export function FocusOverlay({ block, onClose }: { block: FocusOverlayBlock; onC
   // The element focused before the overlay opened — focus returns here on close.
   const openerRef = useRef<Element | null>(typeof document !== "undefined" ? document.activeElement : null);
   const titleId = useId();
+  // The "Open with…" escape hatch (plugin-viewer-model §4 — Reopen With…). The CenterView
+  // is the natural place to switch the exclusive viewer for a note. It exists ONLY inside a
+  // provider (it writes a user viewer association through ctx.pinViewer); standalone/tests
+  // (ws === null) never render it. Menu open/close is local UI state.
+  const ws = useWorkspaceOptional();
+  const [openWith, setOpenWith] = useState(false);
 
   // Esc to close + a Tab focus trap that keeps focus within the dialog.
   const onKeyDown = useCallback(
@@ -115,6 +123,20 @@ export function FocusOverlay({ block, onClose }: { block: FocusOverlayBlock; onC
   const title = block.title ?? meta.title;
   const layer = block.layer ?? (block.note ? "My Notes" : undefined);
 
+  // "Open with…" options: every matching viewer candidate + the "Default (note type)"
+  // sentinel, marking the current winner. Only meaningful inside a provider (ws) and when
+  // there is a real choice (>1 option). Selecting one PINS it for this note via ctx.pinViewer
+  // (the user-association tier). Resolved here (not memoized) — the overlay is short-lived.
+  const resolved = resolveViewer(
+    { content: block.content, note: block.note, contentType: block.contentType },
+    ws?.pluginPrefs
+  );
+  const openWithOptions = [
+    ...resolved.candidates.map((c) => ({ id: c.id, label: c.label })),
+    { id: NOTETYPE_SENTINEL, label: "Default (note type)" }
+  ];
+  const showOpenWith = !!ws && openWithOptions.length > 1;
+
   // The anchor chip "Anchor P## (Section x.x)" — only when we know a page/section.
   const anchorChip =
     block.page != null
@@ -170,6 +192,40 @@ export function FocusOverlay({ block, onClose }: { block: FocusOverlayBlock; onC
               >
                 <ExternalLink size={16} />
               </button>
+            ) : null}
+            {showOpenWith ? (
+              <div className="sv-center-open-with note-open-with">
+                <button
+                  type="button"
+                  className="sv-center-action note-open-with-toggle"
+                  aria-haspopup="menu"
+                  aria-expanded={openWith}
+                  aria-label="Open with"
+                  title="Choose which viewer opens this note"
+                  onClick={() => setOpenWith((v) => !v)}
+                >
+                  Open with…
+                </button>
+                {openWith ? (
+                  <div className="note-open-with-menu" role="menu">
+                    {openWithOptions.map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={opt.id === resolved.viewerId}
+                        className={`note-open-with-item${opt.id === resolved.viewerId ? " active" : ""}`}
+                        onClick={() => {
+                          ws?.pinViewer({ noteId: block.note?.id }, opt.id);
+                          setOpenWith(false);
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             ) : null}
             <button
               type="button"

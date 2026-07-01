@@ -23,6 +23,14 @@ import { getNoteType } from "../notes/noteTypeRegistry";
 import { noteTypeIcon } from "../notes/noteTypeIcon";
 import { FocusOverlay, type FocusOverlayBlock } from "./FocusOverlay";
 import { noteCardMeta } from "../notes/noteCardMeta";
+import { useWorkspaceOptional } from "./WorkspaceContext";
+import type { PluginPrefs } from "../data/entityClient";
+import { resolveViewer, getViewer, NOTETYPE_SENTINEL } from "../notes/viewerRegistry";
+// Side-effect import: ensures the built-in Table viewer is registered at APP runtime.
+// The shared PreviewCard is the one path every surface funnels through, so importing it
+// here guarantees the exclusive viewer registry is populated wherever a card renders
+// (not dependent on the retired dead NoteContentView / views.tsx side-effect).
+import "../notes/tableViewer";
 
 // A plain-text snippet from any content shape (string passes through; an object is
 // JSON-stringified) — the generic card's title fallback, never raw HTML.
@@ -31,10 +39,30 @@ function snippetOf(content: unknown): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-// The plugin's "card" body (light preview). A plugin that ignores `mode` still returns a
-// usable node; the heavy diagram/html plugins explicitly return a LIGHT preview for
-// "card" so the thread never mounts a live diagram/iframe. Null → the wrapper alone.
-function cardBody(block: FocusOverlayBlock): ReactNode {
+// The card body (light preview). The EXCLUSIVE viewer resolver decides the display layer
+// first (plugin-viewer-model §4): resolveViewer picks a winner by match()/priority/user
+// association — data-driven, NEVER a `contentType ===` branch. When a real viewer wins we
+// render its light "card" node; otherwise the resolver returns the "notetype" sentinel and
+// we FALL THROUGH to getNoteType().render UNCHANGED (the adaptive-note contract, and the
+// byte-for-byte-identical path when no viewer matches). `prefs` (from the workspace
+// context, absent in standalone/tests) supplies any user viewer pin; without it the
+// resolver still auto-picks by match(), so a card renders WITHOUT a provider.
+//
+// A plugin that ignores `mode` still returns a usable node; the heavy diagram/html
+// plugins explicitly return a LIGHT preview for "card" so the thread never mounts a live
+// diagram/iframe. Null → the wrapper alone.
+function cardBody(block: FocusOverlayBlock, prefs?: PluginPrefs): ReactNode {
+  const resolved = resolveViewer(
+    { content: block.content, note: block.note, contentType: block.contentType },
+    prefs
+  );
+  if (resolved.viewerId !== NOTETYPE_SENTINEL) {
+    const viewer = getViewer(resolved.viewerId);
+    if (viewer) {
+      const node = viewer.render({ content: block.content, note: block.note, mode: "card" });
+      if (node) return node;
+    }
+  }
   const plugin = getNoteType(block.contentType);
   if (plugin) {
     const node = plugin.render({ content: block.content, note: block.note, mode: "card" });
@@ -72,10 +100,13 @@ function CardFooterMeta({ block }: { block: FocusOverlayBlock }) {
 
 export function ArtifactCard({ block }: { block: FocusOverlayBlock }) {
   const [open, setOpen] = useState(false);
+  // Null-safe context read: outside a provider (standalone/tests) `ws` is null and the
+  // resolver gets undefined prefs (still auto-picks by match()/priority — no crash).
+  const ws = useWorkspaceOptional();
   const meta = noteCardMeta(block.contentType, block.content);
   const title = block.title ?? meta.title ?? (snippetOf(block.content).slice(0, 80) || block.contentType);
   const displayBlock = { ...block, title, extra: block.extra ?? meta.extra };
-  const body = cardBody(block);
+  const body = cardBody(block, ws?.pluginPrefs);
   const Icon = noteTypeIcon(block.contentType);
 
   return (

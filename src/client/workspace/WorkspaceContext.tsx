@@ -468,6 +468,11 @@ export type WorkspaceContextValue = {
   installedPlugins: readonly PluginRecord[];
   pluginPrefs: PluginPrefs;
   setContributionEnabled(contributionId: string, enabled: boolean): void;
+  // Pin the EXCLUSIVE viewer for a note (by id) or a whole contentType — the user
+  // explicit association tier of the viewer resolver (plugin-viewer-model §4). Merges
+  // into viewerAssociations.byNoteId/byContentType and PUTs (mirrors setContributionEnabled).
+  // `viewerId` is a real viewer id or the "notetype" sentinel (force the NoteType renderer).
+  pinViewer(target: { contentType?: string; noteId?: string }, viewerId: string): void;
 };
 
 const EMPTY_PLUGIN_PREFS: PluginPrefs = {
@@ -1384,6 +1389,31 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  // Viewer pin — the user-explicit-association tier of the exclusive viewer resolver
+  // (plugin-viewer-model §4). Merge the (target → viewerId) association into
+  // viewerAssociations.byNoteId or byContentType, update local state (so the resolver +
+  // panel re-render), and PUT the next prefs. Mirrors setContributionEnabled: the note
+  // "Open with…" control and the manager panel's conflict picker call this; neither
+  // touches entityClient directly. A note pin (noteId) and a type pin (contentType) can
+  // both be set in one call; each honored where present.
+  const pinViewer = useCallback(
+    (target: { contentType?: string; noteId?: string }, viewerId: string) => {
+      setPluginPrefs((prev) => {
+        const associations = prev.viewerAssociations ?? { byContentType: {}, byNoteId: {} };
+        const byContentType = { ...associations.byContentType };
+        const byNoteId = { ...associations.byNoteId };
+        if (target.noteId) byNoteId[target.noteId] = viewerId;
+        if (target.contentType) byContentType[target.contentType] = viewerId;
+        const next: PluginPrefs = { ...prev, viewerAssociations: { byContentType, byNoteId } };
+        void entityClient.putPluginPrefs(next).catch((err) => {
+          setError(err instanceof Error ? err.message : "Failed to save viewer association");
+        });
+        return next;
+      });
+    },
+    []
+  );
+
   // Merge a slot's built-in kit actions with the custom ops of the matching scope, then
   // order/filter by prefs. Anchor scope ↔ the selection toolbar; source scope ↔ the
   // source-actions toolbar. Built-in kit items are gated by the active source's kits;
@@ -1590,7 +1620,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setActiveTheme,
       installedPlugins,
       pluginPrefs,
-      setContributionEnabled
+      setContributionEnabled,
+      pinViewer
     }),
     [
       focus,
@@ -1680,7 +1711,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setActiveTheme,
       installedPlugins,
       pluginPrefs,
-      setContributionEnabled
+      setContributionEnabled,
+      pinViewer
     ]
   );
 
@@ -1691,4 +1723,13 @@ export function useWorkspace(): WorkspaceContextValue {
   const value = useContext(WorkspaceContext);
   if (!value) throw new Error("useWorkspace must be used within a WorkspaceProvider");
   return value;
+}
+
+// Null-safe variant: returns the context value, or `null` when rendered OUTSIDE a
+// WorkspaceProvider (standalone components / tests) instead of throwing. Surfaces that can
+// run both inside and outside the provider (the shared ArtifactCard / FocusOverlay) read
+// through this so they degrade gracefully — a null result simply means "no prefs / no
+// provider-backed actions available".
+export function useWorkspaceOptional(): WorkspaceContextValue | null {
+  return useContext(WorkspaceContext);
 }

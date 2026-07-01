@@ -17,6 +17,7 @@
 import { Blocks } from "lucide-react";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 import type { PluginRecord } from "../../kits/plugin";
+import { listViewers, resolveViewer, NOTETYPE_SENTINEL } from "../notes/viewerRegistry";
 
 // A short human label for a contribution kind (the row's kind badge).
 const KIND_LABEL: Record<string, string> = {
@@ -99,12 +100,86 @@ function PluginManagerView({ ctx }: { ctx: WorkspaceContext }) {
         {groups.length === 0 ? <div className="empty-state">No kits or plugins installed.</div> : null}
       </div>
 
-      {/* Viewer conflicts — filled in P3 (the exclusive-viewer resolver + user pin UI). */}
-      <div className="plugin-viewer-conflicts">
-        <div className="plugin-section-title">Viewer conflicts</div>
-        <div className="empty-state">Viewer resolution arrives in a later phase.</div>
-      </div>
+      <ViewerConflicts ctx={ctx} plugins={installedPlugins} />
     </aside>
+  );
+}
+
+// —— Viewer conflicts (plugin-viewer-model §4/§7) — for each contentType that ≥2 viewers
+// are willing to handle, show the current WINNER (from resolveViewer) and a picker that
+// pins a per-contentType association via ctx.pinViewer. The candidate set is derived by
+// probing each registered viewer's match({ contentType }): a viewer that matches by
+// contentType alone competes for that type. Content-dependent viewers (that only match on
+// note body) still appear as pickable options via the note's own "Open with…" control, so
+// this panel deliberately focuses on the per-type conflict the user resolves globally.
+function ViewerConflicts({ ctx, plugins }: { ctx: WorkspaceContext; plugins: readonly PluginRecord[] }) {
+  // Every contentType a note-type contribution declares (the universe of types that could
+  // be viewed), de-duped.
+  const contentTypes = Array.from(
+    new Set(
+      plugins.flatMap((p) => p.contributions.filter((c) => c.kind === "noteType" && c.key).map((c) => c.key as string))
+    )
+  ).sort();
+
+  const viewers = listViewers();
+  // Per-type candidate viewers = those whose match({contentType}) > 0. Only types with ≥2
+  // candidates are a CONFLICT the user resolves here.
+  const conflicts = contentTypes
+    .map((contentType) => {
+      const candidates = viewers.filter((v) => {
+        try {
+          return v.match({ contentType }) > 0;
+        } catch {
+          return false;
+        }
+      });
+      return { contentType, candidates };
+    })
+    .filter((entry) => entry.candidates.length > 1);
+
+  const pinnedFor = (contentType: string): string =>
+    ctx.pluginPrefs.viewerAssociations?.byContentType?.[contentType] ?? "";
+
+  return (
+    <div className="plugin-viewer-conflicts">
+      <div className="plugin-section-title">Viewer conflicts</div>
+      {conflicts.length === 0 ? (
+        <div className="empty-state">No viewer conflicts.</div>
+      ) : (
+        <ul className="viewer-conflict-list">
+          {conflicts.map(({ contentType, candidates }) => {
+            const winner = resolveViewer({ contentType }, ctx.pluginPrefs);
+            const winnerLabel =
+              winner.viewerId === NOTETYPE_SENTINEL
+                ? "Default (note type)"
+                : candidates.find((c) => c.id === winner.viewerId)?.label ?? winner.viewerId;
+            return (
+              <li key={contentType} className="viewer-conflict-row" data-content-type={contentType}>
+                <span className="viewer-conflict-type">{contentType}</span>
+                <span className="viewer-conflict-winner" title={`Resolved by: ${winner.source}`}>
+                  {winnerLabel}
+                </span>
+                <select
+                  className="viewer-conflict-picker"
+                  aria-label={`Viewer for ${contentType}`}
+                  value={pinnedFor(contentType)}
+                  onChange={(event) => ctx.pinViewer({ contentType }, event.target.value)}
+                >
+                  {/* Empty = no explicit pin (resolver's automatic choice). */}
+                  <option value="">Auto ({winnerLabel})</option>
+                  {candidates.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                    </option>
+                  ))}
+                  <option value={NOTETYPE_SENTINEL}>Default (note type)</option>
+                </select>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
 

@@ -9,7 +9,9 @@ import type { WorkspaceContextValue } from "./WorkspaceContext";
 let mockWorkspace: WorkspaceContextValue;
 
 vi.mock("./WorkspaceContext", () => ({
-  useWorkspace: () => mockWorkspace
+  useWorkspace: () => mockWorkspace,
+  // The shared ArtifactCard (rendered inside NoteListPanel) reads the null-safe hook.
+  useWorkspaceOptional: () => mockWorkspace
 }));
 
 import { NoteListPanel } from "./NoteListPanel";

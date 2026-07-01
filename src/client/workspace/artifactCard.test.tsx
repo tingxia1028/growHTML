@@ -20,10 +20,14 @@ vi.mock("../DiagramNote", () => ({
 }));
 
 import "../notes/builtinNoteTypes";
+// Importing the card also registers the built-in Table viewer (side-effect import in
+// ArtifactCard.tsx) — the exclusive-viewer path the card resolves through at runtime.
 import { ArtifactCard } from "./ArtifactCard";
 import { FocusOverlay } from "./FocusOverlay";
 import { ChatMessageBody } from "./ChatMessageBody";
 import { getNoteType } from "../notes/noteTypeRegistry";
+import { getViewer } from "../notes/viewerRegistry";
+import { TABLE_VIEWER_ID } from "../notes/tableViewer";
 
 function mount(node: React.ReactNode) {
   const container = document.createElement("div");
@@ -92,6 +96,45 @@ describe("ArtifactCard — click opens the centered overlay", () => {
     expect(overlay!.querySelector(".mock-diagram")).toBeTruthy();
     expect(overlay!.querySelector('[role="dialog"][aria-modal="true"]')).toBeTruthy();
     cleanup();
+  });
+});
+
+describe("ArtifactCard — exclusive viewer resolution on the card body", () => {
+  it("registers the built-in Table viewer at runtime (side-effect import)", () => {
+    expect(getViewer(TABLE_VIEWER_ID)).toBeTruthy();
+  });
+
+  it("a markdown note whose content IS a GFM pipe table renders via the Table viewer", () => {
+    const { container, cleanup } = mount(
+      <ArtifactCard
+        block={{ contentType: "markdown", content: "| Name | Age |\n| --- | --- |\n| Ada | 36 |" }}
+      />
+    );
+    // The Table viewer won resolution → an HTML <table> in the card body.
+    const body = container.querySelector(".sv-card-body");
+    expect(body?.querySelector("table.note-table-viewer")).toBeTruthy();
+    // The header + a body cell made it through.
+    expect(container.querySelector("table.note-table-viewer th")?.textContent).toBe("Name");
+    expect(container.textContent).toContain("Ada");
+    cleanup();
+  });
+
+  it("a NON-table markdown note still renders via the markdown NoteType (no table)", () => {
+    const { container, cleanup } = mount(
+      <ArtifactCard block={{ contentType: "markdown", content: "# Just a heading\n\nsome prose" }} />
+    );
+    // No viewer matched → fell back to getNoteType("markdown").render (the .note-rendered body).
+    expect(container.querySelector("table.note-table-viewer")).toBeNull();
+    expect(container.querySelector(".sv-card-body .note-rendered")).toBeTruthy();
+    cleanup();
+  });
+
+  it("renders standalone (no WorkspaceProvider) without throwing", () => {
+    expect(() =>
+      mount(
+        <ArtifactCard block={{ contentType: "markdown", content: "| a | b |\n| --- | --- |\n| 1 | 2 |" }} />
+      ).cleanup()
+    ).not.toThrow();
   });
 });
 

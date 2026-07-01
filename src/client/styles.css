@@ -7713,3 +7713,80 @@ select {
   color: var(--sv-text-muted);
   margin-bottom: 6px;
 }
+
+/* Viewer conflicts: one row per contested contentType (type · winner · picker). */
+.viewer-conflict-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.viewer-conflict-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 6px 8px;
+}
+.viewer-conflict-type {
+  font-weight: 600;
+}
+.viewer-conflict-winner {
+  font-size: 12px;
+  color: var(--sv-text-muted);
+}
+.viewer-conflict-picker {
+  grid-column: 1 / -1;
+}
+
+/* Note "Open with…" escape hatch — a small menu of candidate viewers + the default. */
+.note-open-with {
+  position: relative;
+  display: inline-block;
+}
+.note-open-with-menu {
+  position: absolute;
+  z-index: 20;
+  top: 100%;
+  left: 0;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--sv-surface, #fff);
+  border: 1px solid var(--sv-border-muted, #ddd);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.note-open-with-item {
+  text-align: left;
+  padding: 4px 8px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.note-open-with-item:hover {
+  background: var(--sv-surface-hover, rgba(0, 0, 0, 0.06));
+}
+.note-open-with-item.active {
+  font-weight: 700;
+}
+
+/* Table viewer — a rendered GFM pipe table. */
+.note-table-viewer {
+  border-collapse: collapse;
+  width: 100%;
+}
+.note-table-viewer th,
+.note-table-viewer td {
+  border: 1px solid var(--sv-border-muted, #ddd);
+  padding: 4px 8px;
+  text-align: left;
+}
+.note-table-viewer thead th {
+  background: var(--sv-surface-hover, rgba(0, 0, 0, 0.04));
+  font-weight: 600;
+}
