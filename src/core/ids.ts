@@ -1,6 +1,6 @@
 import { monotonicFactory } from "ulid";
 
-export const entityKinds = ["source", "anchor", "note", "patch", "concept", "relation", "asset", "layer", "operation"] as const;
+export const entityKinds = ["source", "anchor", "note", "patch", "concept", "relation", "asset", "layer", "operation", "pack"] as const;
 
 export type EntityKind = (typeof entityKinds)[number];
 
@@ -13,7 +13,8 @@ export const idPrefixByKind = {
   relation: "rel",
   asset: "asset",
   layer: "layer",
-  operation: "op"
+  operation: "op",
+  pack: "pack"
 } as const satisfies Record<EntityKind, string>;
 
 export type EntityIdPrefix = (typeof idPrefixByKind)[EntityKind];
