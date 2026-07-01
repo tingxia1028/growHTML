@@ -4,6 +4,7 @@
 // textQuote helpers so the selector logic is trustworthy.
 import { ipcRenderer } from "electron";
 import {
+  buildMarkerHtml,
   clearAnnotations,
   ensureAnnotationLayer,
   highlightQuote,
@@ -99,13 +100,33 @@ ipcRenderer.on("sv:anchors", (_event, anchors: WebAnchorMsg[]) => {
   ensureAnnotationLayer(document);
   clearAnnotations(document.body);
   for (const anchor of anchors) {
-    highlightQuote(
+    const painted = highlightQuote(
       document,
       { exact: anchor.quote, prefix: anchor.contextBefore, suffix: anchor.contextAfter },
       anchor.note ?? "",
       anchor.id,
       { noteHtml: anchor.noteHtml, noteCount: anchor.noteCount, noteTypes: anchor.noteTypes }
     );
+    // Markers no longer paint into the content via applyHighlight. The guest is
+    // flowing web text (no PDF text-layer transform), so we append the marker glyph
+    // INLINE as a trailing child of the freshly-created <mark>. A dedicated guest
+    // overlay (mirroring the PDF/image/HTML readers) is deferred.
+    if (painted && anchor.id) {
+      const mark = document.querySelector(`mark[data-sv="1"][data-sv-key="${anchor.id.replace(/"/g, '\\"')}"]`);
+      if (mark) {
+        const chip = document.createElement("span");
+        chip.className = "sv-anchor-markers";
+        chip.setAttribute("data-sv", "1");
+        chip.style.position = "static"; // inline flow, not overlay-positioned
+        chip.style.marginLeft = "4px";
+        chip.innerHTML = buildMarkerHtml({
+          noteHtml: anchor.noteHtml,
+          noteCount: anchor.noteCount,
+          noteTypes: anchor.noteTypes
+        });
+        mark.appendChild(chip);
+      }
+    }
   }
   // Re-apply the selection after the repaint (the marks were just re-created).
   setSelectedAnchorInDoc(document, selectedAnchorId);

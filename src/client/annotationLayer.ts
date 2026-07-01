@@ -40,62 +40,42 @@ export const ANNOTATION_CSS = `
   box-shadow: 0 0 0 3px rgba(52, 116, 230, 0.45), inset 0 -2px 0 #3474e6 !important;
   transition: outline-color 0.25s ease, box-shadow 0.25s ease;
 }
-/* Inline-adjacent markers: an anchor glyph + one glyph per distinct note type,
-   appended as a trailing child of the annotated element (V1 simple — not a true
-   margin gutter). paintAnchorMarkers builds these.
-   EXPLICIT color (never inherit currentColor): PDF.js text-layer spans are
-   transparent (text is on canvas), so an inherited color:transparent would make
-   the stroke=currentColor glyphs invisible. Realms have no --sv-* tokens, so
-   use the literal product blue this stylesheet uses elsewhere. */
+/* Anchor markers now live in a VIEW-LAYER overlay (MarkerOverlay), a sibling of the
+   reader content rather than a child of the annotated element. This escapes the
+   PDF.js text-layer span transform (scaleX) + color:transparent that used to
+   shrink/hide an in-content chip, and gives every reader (HTML/PDF/image) a uniform,
+   fixed-size chip positioned in overlay/page coordinate space. */
+.sv-marker-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+  overflow: hidden;
+}
+/* One chip per anchor, positioned absolutely inside the overlay at the anchor's
+   top-right (MarkerOverlay.reposition sets left/top). EXPLICIT color (never inherit
+   currentColor): realms have no --sv-* tokens, so use the literal product blue. */
 .sv-anchor-markers {
+  position: absolute;
+  pointer-events: auto;
   display: inline-flex;
   gap: 2px;
-  margin-left: 6px;
-  vertical-align: text-top;
-  /* !important + a descendant rule so we beat PDF.js's .textLayer span rule that
-     forces color:transparent (specificity 0-1-1 > our 0-1-0) when markers sit inside
-     the PDF text layer; also reset the layer's inherited huge font-size that would
-     collapse the glyphs. */
-  color: #3474e6 !important;
-  font-size: 14px !important;
-  line-height: 1 !important;
+  color: #3474e6;
+  line-height: 1;
   user-select: none;
-}
-.sv-anchor-markers * {
-  color: #3474e6 !important;
-}
-/* Region/overlay realms (PDF text-layer hit spans, image region boxes): the host
-   element is absolutely positioned and gives an inline trailing child ZERO size, so
-   the markers are placed ABSOLUTELY at the box's top-right as a legible chip that
-   reads over PDF/image art. paintAnchorMarkers adds this class + a positioning
-   context on the host. */
-.sv-anchor-markers.sv-anchor-markers-region {
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  z-index: 3;
-  margin-left: 0;
-  padding: 1px 3px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
 }
 .sv-anchor-marker {
   position: relative;
-  /* Force real size + no wrap so the flex row doesn't collapse to ~0 inside the PDF
-     text layer (its inherited font-size/letter-spacing would otherwise shrink the
-     glyph boxes and overlap them). */
-  flex: 0 0 auto !important;
-  display: inline-flex !important;
+  flex: 0 0 auto;
+  display: inline-flex;
   align-items: center;
-  width: 14px !important;
-  height: 14px !important;
-  letter-spacing: normal !important;
+  width: 14px;
+  height: 14px;
 }
 .sv-anchor-marker svg {
-  width: 14px !important;
-  height: 14px !important;
-  stroke: currentColor !important;
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
 }
 .sv-anchor-marker-count {
   font: 700 9px/1 Inter, "Segoe UI", Arial, sans-serif;
@@ -555,69 +535,19 @@ function wireNoteCard(doc: Document): void {
   });
 }
 
-const MARKER_WRAP_CLASS = "sv-anchor-markers";
-const MARKER_REGION_CLASS = "sv-anchor-markers-region";
-
 function markerHtml(inner: string, count?: number): string {
   const badge = count && count > 1 ? `<sup class="sv-anchor-marker-count">${count}</sup>` : "";
   return `<span class="sv-anchor-marker">${inner}${badge}</span>`;
 }
 
-// Decide whether the host element is a REGION/OVERLAY (PDF text-layer hit span,
-// image region box, or any absolutely-positioned / zero-size inline overlay) vs a
-// flowing inline <mark>. Feature-detected (never hard-coded to a reader): an inline
-// trailing child gets zero size inside an absolutely-positioned overlay and so is
-// invisible; those cases need the marker placed absolutely with real size instead.
-function isRegionOverlay(element: Element): boolean {
-  // Known region hosts by class (PDF text-layer hit spans + image region boxes).
-  if (
-    typeof (element as { closest?: unknown }).closest === "function" &&
-    element.closest(".pdf-anchor-hit, .sv-region-box, [data-sv-region]")
-  ) {
-    return true;
-  }
-  const view = element.ownerDocument?.defaultView;
-  if (view && typeof view.getComputedStyle === "function") {
-    let position = "";
-    try {
-      position = view.getComputedStyle(element).position;
-    } catch {
-      position = "";
-    }
-    if (position === "absolute" || position === "fixed") return true;
-  }
-  // Zero-size inline host (e.g. an empty overlay hit span): a trailing inline child
-  // would also be zero-size, so treat it as a region and place the chip absolutely.
-  // Guard against no-layout realms (jsdom) where EVERYTHING reports a zero rect: if
-  // the document body is itself zero-size there is no layout engine, so the signal
-  // is meaningless — skip it rather than mis-classify every inline mark as a region.
-  const rect = typeof element.getBoundingClientRect === "function" ? element.getBoundingClientRect() : null;
-  if (rect && rect.width === 0 && rect.height === 0) {
-    const bodyRect = element.ownerDocument?.body?.getBoundingClientRect?.();
-    const hasLayout = !!bodyRect && (bodyRect.width > 0 || bodyRect.height > 0);
-    if (hasLayout) return true;
-  }
-  return false;
-}
-
-// Paint the inline-adjacent markers as a TRAILING child of the annotated element
-// (V1 simple — not a true margin gutter). Left = one anchor glyph; right = one
-// glyph per DISTINCT note type, with a count superscript when a type repeats or the
-// anchor carries multiple notes. Appended as a `.sv-anchor-markers` span so the
-// existing `.sv-annotated` hover/click delegation still resolves via closest().
-// `contenteditable=false` + `data-sv=1` so it is treated as chrome, not content.
-export function paintAnchorMarkers(element: Element, payload?: HighlightPayload): void {
-  const doc = element.ownerDocument;
-  if (!doc) return;
-  // Remove any prior marker span so repaints don't stack. Region chips are attached
-  // to the host's PARENT (see below) and keyed by data-sv-marker-for, so clear both
-  // the inline child and any prior parent-attached chip for this element.
-  element.querySelectorAll(`:scope > .${MARKER_WRAP_CLASS}`).forEach((n) => n.remove());
-  const markerKey = element.getAttribute("data-sv-key") ?? "";
-  if (markerKey) {
-    doc.querySelectorAll(`.${MARKER_WRAP_CLASS}[data-sv-marker-for="${markerKey.replace(/"/g, '\\"')}"]`).forEach((n) => n.remove());
-  }
-
+// PURE glyph builder for an anchor's overlay chip: a leading anchor glyph plus one
+// glyph per DISTINCT note type (deduped in first-seen order), each carrying a count
+// superscript when that type repeats. When the anchor has no type info, fall back to
+// the markdown glyph carrying the total note count. Framework-free string output so
+// it's identical in the reader iframe, the PDF/image host document, and the guest.
+// The overlay controller (markerOverlay.ts) wraps this in a positioned chip; the
+// guest appends it inline as a trailing <mark> child (no transform problem there).
+export function buildMarkerHtml(payload?: HighlightPayload): string {
   const types = payload?.noteTypes ?? [];
   const noteCount = payload?.noteCount ?? types.length;
 
@@ -633,52 +563,35 @@ export function paintAnchorMarkers(element: Element, payload?: HighlightPayload)
     // No type info: fall back to the markdown glyph, carrying the note count.
     glyphs += markerHtml(markerGlyph("markdown"), noteCount > 1 ? noteCount : undefined);
   }
+  return markerHtml(ANCHOR_GLYPH) + glyphs;
+}
 
-  const wrap = doc.createElement("span");
-  wrap.className = MARKER_WRAP_CLASS;
-  wrap.setAttribute("contenteditable", "false");
-  wrap.setAttribute("data-sv", "1");
-  wrap.innerHTML = markerHtml(ANCHOR_GLYPH) + glyphs;
+// A resolved anchor's overlay-local rect: the chip's target box (x,y,w,h) already
+// translated into the overlay's coordinate space. Plain-literal I/O so it's
+// jsdom-testable without live layout.
+export type OverlayRect = { anchorId: string; x: number; y: number; w: number; h: number };
 
-  if (isRegionOverlay(element)) {
-    // Region/overlay realm (e.g. a PDF.js text-layer span): appending INSIDE the host
-    // fails twice — `.textLayer span { color:transparent }` hides the glyphs, and the
-    // span's inline `transform: scaleX(...)` (PDF.js fits text width that way) scales
-    // the child chip down so the glyphs collapse/overlap. A descendant can't escape an
-    // ancestor transform, so attach the chip to the host's PARENT (the text-layer
-    // container, not a span) and place it at the host's VISUAL top-right via rect
-    // deltas. Keyed by data-sv-marker-for so repaint/clear can find it.
-    wrap.classList.add(MARKER_REGION_CLASS);
-    if (markerKey) wrap.setAttribute("data-sv-marker-for", markerKey);
-    const host = element as HTMLElement;
-    const parent = host.parentElement as HTMLElement | null;
-    if (parent && typeof host.getBoundingClientRect === "function") {
-      // Ensure the parent is a positioning context. Use getComputedStyle when a live
-      // view is available (it isn't in a detached test document), else treat as static.
-      const view = doc.defaultView;
-      let pcs = "";
-      if (view && typeof view.getComputedStyle === "function") {
-        try { pcs = view.getComputedStyle(parent).position; } catch { pcs = ""; }
-      }
-      if (pcs !== "absolute" && pcs !== "relative" && pcs !== "fixed" && parent.style) {
-        parent.dataset.svMarkerPos = "1";
-        parent.style.position = "relative";
-      }
-      const hr = host.getBoundingClientRect();
-      const pr = parent.getBoundingClientRect();
-      wrap.style.left = `${Math.round(hr.right - pr.left)}px`;
-      wrap.style.top = `${Math.round(hr.top - pr.top)}px`;
-      wrap.style.right = "auto";
-      parent.appendChild(wrap);
-      return;
-    }
-  }
+type RectLike = { left: number; top: number; right: number; width: number; height: number };
 
-  element.appendChild(wrap);
+// Translate an anchor's viewport rect into the overlay's local coordinate space,
+// returning the anchor's TOP-RIGHT corner (x = right edge) so the chip hangs off the
+// end of the passage. Pure — accepts plain rect literals.
+export function rectToOverlayLocal(
+  anchorRect: RectLike,
+  overlayRect: { left: number; top: number }
+): { x: number; y: number; w: number; h: number } {
+  return {
+    x: anchorRect.right - overlayRect.left,
+    y: anchorRect.top - overlayRect.top,
+    w: anchorRect.width,
+    h: anchorRect.height
+  };
 }
 
 // Mark an already-resolved element as annotated and stash the note text for the
-// card. `noteText` may be empty (highlight only).
+// card. `noteText` may be empty (highlight only). Markers are NO LONGER painted into
+// the content here — each reader mounts a MarkerOverlay (view-layer sibling) and
+// drives it from buildMarkerHtml, so the annotated element stays clean.
 export function applyHighlight(element: Element, noteText: string, key?: string, payload?: HighlightPayload): void {
   element.classList.add("sv-annotated");
   if (noteText) element.setAttribute("data-sv-note", noteText);
@@ -689,8 +602,6 @@ export function applyHighlight(element: Element, noteText: string, key?: string,
   else element.removeAttribute("data-sv-note-count");
   if (payload) highlightPayloads.set(element, payload);
   else highlightPayloads.delete(element);
-  // Every reader gets inline-adjacent markers for free (uniform paint path).
-  paintAnchorMarkers(element, payload);
 }
 
 // The ONE shared "scroll the focused passage into view" helper for every surface
@@ -752,15 +663,9 @@ export function setSelectedAnchorInDoc(root: ParentNode | null | undefined, anch
 // Unwraps the <mark>s created by highlightQuote and clears class/attr from any
 // element-level highlights (e.g. study-id elements).
 export function clearAnnotations(root: ParentNode): void {
-  // Remove marker spans first so their glyph SVGs aren't left behind as text.
-  // (Absolutely-positioned region chips are `.sv-anchor-markers` too, so this
-  // covers both realms.)
-  root.querySelectorAll(`.${MARKER_WRAP_CLASS}`).forEach((n) => n.remove());
-  // Revert any positioning context paintAnchorMarkers added on a region host.
-  root.querySelectorAll<HTMLElement>("[data-sv-marker-pos]").forEach((el) => {
-    if (el.style) el.style.position = "";
-    delete el.dataset.svMarkerPos;
-  });
+  // Markers are no longer content children (they live in the view-layer overlay),
+  // so there's nothing marker-related to strip here — just unwrap the highlight
+  // <mark>s and clear element-level highlight class/attrs.
   root.querySelectorAll('mark[data-sv="1"]').forEach((mark) => {
     mark.replaceWith(mark.textContent ?? "");
   });

@@ -6,12 +6,14 @@ import workerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 import "pdfjs-dist/web/pdf_viewer.css";
 import {
   applyHighlight,
+  buildMarkerHtml,
   clearAnnotations,
   ensureAnnotationLayer,
   type HighlightPayload,
   revealAnchorInDoc,
   setSelectedAnchorInDoc
 } from "./annotationLayer";
+import { MarkerOverlay } from "./markerOverlay";
 import type { AnchorDraft } from "./focus/FocusContext";
 import { anchorsOfKind, type PaintAnchor, type SurfaceReaderProps } from "./surfaces/types";
 import { isRealRegion, normalizeDragRect, placeRegionBox } from "./surfaces/overlay";
@@ -65,6 +67,9 @@ export function PdfReader({
   // pages and re-reveal once that page's text layer renders.
   const pdfViewerRef = useRef<PDFViewer | null>(null);
   const eventBusRef = useRef<EventBus | null>(null);
+  // The view-layer marker overlay, mounted on the (absolutely-positioned) canvas so
+  // its chips escape the PDF.js text-layer transform. One per reader instance.
+  const markerOverlayRef = useRef<MarkerOverlay | null>(null);
 
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
@@ -103,6 +108,8 @@ export function PdfReader({
     viewer.querySelectorAll(".pdf-anchor-hit").forEach((el) => el.classList.remove("pdf-anchor-hit"));
     viewer.querySelectorAll(".pdf-region-box").forEach((el) => el.remove());
     clearAnnotations(viewer);
+    // One overlay chip per anchor (keyed by data-sv-key on its painted element).
+    const markers: { anchorId: string; glyphHtml: string }[] = [];
     for (const anchor of anchorsRef.current) {
       const pageEl = viewer.querySelector(`.page[data-page-number="${anchor.page}"]`) as HTMLElement | null;
       if (!pageEl) continue;
@@ -114,6 +121,7 @@ export function PdfReader({
         box.className = "pdf-region-box";
         placeRegionBox(box, anchor.rect, anchor.note, anchor.id, annotationPayload(anchor));
         pageEl.appendChild(box);
+        markers.push({ anchorId: anchor.id, glyphHtml: buildMarkerHtml(annotationPayload(anchor)) });
         continue;
       }
 
@@ -130,7 +138,9 @@ export function PdfReader({
         span.classList.add("pdf-anchor-hit");
         applyHighlight(span, anchor.note, anchor.id, annotationPayload(anchor, index === 0));
       });
+      if (matches.length) markers.push({ anchorId: anchor.id, glyphHtml: buildMarkerHtml(annotationPayload(anchor)) });
     }
+    markerOverlayRef.current?.setMarkers(markers);
   }
 
   function flashElement(el: Element & { scrollIntoView?: Element["scrollIntoView"] }) {
@@ -188,6 +198,12 @@ export function PdfReader({
     pdfViewerRef.current = pdfViewer;
     linkService.setViewer(pdfViewer);
 
+    // Mount the view-layer marker overlay on the (absolutely-positioned) canvas so
+    // its chips sit in page/overlay coordinate space, not inside a transformed
+    // text-layer span. highlightAnchors drives its chips via setMarkers.
+    const markerOverlay = new MarkerOverlay(container);
+    markerOverlayRef.current = markerOverlay;
+
     // Fit each page to the container width; 'page-width' is a dynamic value, so
     // pdf.js keeps it fit as the pane is resized.
     eventBus.on("pagesinit", () => {
@@ -204,7 +220,12 @@ export function PdfReader({
     // Keep the % indicator in sync with whatever scale pdf.js settles on — explicit
     // zoom, the initial page-width fit, AND automatic re-fits when the pane resizes
     // (page-width is dynamic, so resizing re-dispatches scalechanging).
-    eventBus.on("scalechanging", (evt: { scale: number }) => setScale(evt.scale));
+    eventBus.on("scalechanging", (evt: { scale: number }) => {
+      setScale(evt.scale);
+      // Zoom re-lays out the pages; nudge the marker chips to the new geometry (the
+      // subsequent page re-render also repaints, but this keeps them tight meanwhile).
+      markerOverlay.reposition();
+    });
 
     // Keep the PDF fitted when the Source Viewer pane or desktop window is resized.
     // Window dragging can report one stale intermediate width, so fit once on the
@@ -222,6 +243,7 @@ export function PdfReader({
         pdfViewer.currentScaleValue = "page-width";
         queueFrame(() => {
           pdfViewer.currentScaleValue = "page-width";
+          markerOverlay.reposition();
         });
       });
     };
@@ -361,6 +383,8 @@ export function PdfReader({
       window.removeEventListener("resize", fitToContainer);
       resizeFrames.forEach((id) => cancelAnimationFrame(id));
       resizeFrames.clear();
+      markerOverlay.destroy();
+      if (markerOverlayRef.current === markerOverlay) markerOverlayRef.current = null;
       loadingTask.destroy().catch(() => {});
       try {
         pdfViewer.setDocument(null as never);

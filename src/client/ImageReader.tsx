@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { applyHighlight, type HighlightPayload, revealAnchorInDoc, setSelectedAnchorInDoc } from "./annotationLayer";
+import {
+  applyHighlight,
+  buildMarkerHtml,
+  type HighlightPayload,
+  revealAnchorInDoc,
+  setSelectedAnchorInDoc
+} from "./annotationLayer";
+import { MarkerOverlay } from "./markerOverlay";
 import type { AnchorDraft } from "./focus/FocusContext";
 import { anchorsOfKind, type PaintAnchor, type SurfaceReaderProps } from "./surfaces/types";
 import { isRealRegion, normalizeDragRect, type NormalizedRect } from "./surfaces/overlay";
@@ -27,6 +34,9 @@ function annotationPayload(anchor: PaintAnchor): HighlightPayload {
 // (WRITE). It uses the shared overlay rubber-band helpers.
 export function ImageReader({ src, sourceId, anchors, onSelect, activeAnchorId, revealSeq }: ImageReaderProps) {
   const frameRef = useRef<HTMLDivElement | null>(null);
+  // The view-layer marker overlay, mounted on the (position:relative) stage so each
+  // region's chip sits in stage coordinate space, uniform with the PDF reader.
+  const markerOverlayRef = useRef<MarkerOverlay | null>(null);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
   const sourceIdRef = useRef(sourceId);
@@ -37,6 +47,27 @@ export function ImageReader({ src, sourceId, anchors, onSelect, activeAnchorId, 
   function metrics() {
     return frameRef.current?.getBoundingClientRect() ?? null;
   }
+
+  // Mount one MarkerOverlay on the stage for this reader's lifetime. Its own
+  // ResizeObserver handles image reflow; we just push the current chips into it.
+  useEffect(() => {
+    const stage = frameRef.current;
+    if (!stage) return;
+    const overlay = new MarkerOverlay(stage);
+    markerOverlayRef.current = overlay;
+    return () => {
+      overlay.destroy();
+      if (markerOverlayRef.current === overlay) markerOverlayRef.current = null;
+    };
+  }, []);
+
+  // Drive the overlay chips from the current regions. ImageRegionBox paints the
+  // highlight (data-sv-key) on mount; the chip then finds it by that key.
+  useEffect(() => {
+    markerOverlayRef.current?.setMarkers(
+      regions.map((anchor) => ({ anchorId: anchor.id, glyphHtml: buildMarkerHtml(annotationPayload(anchor)) }))
+    );
+  }, [regions]);
 
   // REVEAL: scroll the focused region box into view (+ flash) via the one shared
   // helper — each ImageRegionBox carries data-sv-key (applyHighlight). Keyed on

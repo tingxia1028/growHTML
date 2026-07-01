@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { decorateAnnotations, type HtmlAnnotationMode } from "../annotations";
-import { revealAnchorInDoc, setSelectedAnchorInDoc } from "../annotationLayer";
+import { buildMarkerHtml, revealAnchorInDoc, setSelectedAnchorInDoc, type HighlightPayload } from "../annotationLayer";
+import { MarkerOverlay } from "../markerOverlay";
 import type { AnchorDraft } from "../focus/FocusContext";
 import { publishSelectionRect, rectFromDomRect } from "../selection/selectionRect";
 import { anchorsOfKind, type PaintAnchor, type SurfaceReaderProps } from "./types";
@@ -44,7 +45,12 @@ const boundSelectionDocuments = new WeakSet<Document>();
 // paint the html_selection ones onto the reader document (highlight + note card,
 // or — in "margin" mode — gutter cards). Exported pure-ish so the paint contract
 // can be unit-tested with a jsdom Document.
-export function paintDomAnchors(doc: Document, anchors: PaintAnchor[], mode: HtmlAnnotationMode = "floating"): void {
+export function paintDomAnchors(
+  doc: Document,
+  anchors: PaintAnchor[],
+  mode: HtmlAnnotationMode = "floating",
+  overlay?: MarkerOverlay | null
+): void {
   const htmlAnchors = anchorsOfKind(anchors, "html_selection");
   decorateAnnotations(doc, {
     // The registry re-keys notes under their anchor id; each preview becomes one
@@ -70,6 +76,20 @@ export function paintDomAnchors(doc: Document, anchors: PaintAnchor[], mode: Htm
     ),
     mode
   });
+  // Drive the view-layer marker overlay from the same painted anchors, so HTML gets
+  // the uniform overlay chip (a sibling of the iframe body content) rather than an
+  // in-content child. One chip per html anchor that carries a note glyph.
+  if (overlay) {
+    overlay.setMarkers(
+      htmlAnchors.map((anchor) => {
+        const payload: HighlightPayload = {
+          noteCount: anchor.notePreviews ? anchor.notePreviews.length : anchor.note ? 1 : 0,
+          noteTypes: anchor.notePreviews?.map((preview) => preview.contentType) ?? []
+        };
+        return { anchorId: anchor.id, glyphHtml: buildMarkerHtml(payload) };
+      })
+    );
+  }
 }
 
 // Read the user's selection in the reader document and emit a normalized html quote
@@ -126,6 +146,11 @@ export function DomReader({
   onOpenUrl
 }: DomReaderProps) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
+  // The view-layer marker overlay, mounted on the iframe body. Re-created per
+  // document (a srcDoc reload replaces contentDocument), so it's keyed on the doc it
+  // was built for.
+  const markerOverlayRef = useRef<MarkerOverlay | null>(null);
+  const markerOverlayDocRef = useRef<Document | null>(null);
   // Latest reveal target in a ref so bindFrame (run on iframe load, possibly AFTER
   // the first reveal effect) can reveal once the anchors are actually painted.
   const activeAnchorIdRef = useRef(activeAnchorId);
@@ -168,12 +193,37 @@ export function DomReader({
     return true;
   }
 
+  // Get (or lazily build) the marker overlay for the CURRENT iframe document. A
+  // srcDoc reload swaps contentDocument, so a stale overlay is torn down and a new
+  // one mounted on the fresh body. The body must be a positioning context.
+  function overlayForDoc(doc: Document): MarkerOverlay {
+    if (markerOverlayDocRef.current === doc && markerOverlayRef.current) return markerOverlayRef.current;
+    markerOverlayRef.current?.destroy();
+    const body = doc.body as HTMLElement | null;
+    if (body) {
+      const view = doc.defaultView;
+      let pos = "";
+      if (view && typeof view.getComputedStyle === "function") {
+        try {
+          pos = view.getComputedStyle(body).position;
+        } catch {
+          pos = "";
+        }
+      }
+      if (pos === "static" || pos === "") body.style.position = "relative";
+    }
+    const overlay = new MarkerOverlay(body ?? doc.documentElement);
+    markerOverlayRef.current = overlay;
+    markerOverlayDocRef.current = doc;
+    return overlay;
+  }
+
   // Bind selection capture + paint when the iframe document is ready. Called from
   // onLoad (fresh document) and re-runnable for the initial paint.
   function bindFrame() {
     const doc = frameRef.current?.contentDocument;
     if (!doc) return;
-    paintDomAnchors(doc, anchors, modeRef.current);
+    paintDomAnchors(doc, anchors, modeRef.current, overlayForDoc(doc));
     // A reveal may have been requested before this fresh document painted (effect
     // ran first) — now that the data-sv-key elements exist, honor the pending one.
     if (activeAnchorIdRef.current) revealDomAnchor(doc, activeAnchorIdRef.current);
@@ -233,9 +283,18 @@ export function DomReader({
   // changes — so toggling Floating ↔ Margin re-decorates this surface immediately.
   useEffect(() => {
     const doc = frameRef.current?.contentDocument;
-    if (doc) paintDomAnchors(doc, anchors, mode);
+    if (doc) paintDomAnchors(doc, anchors, mode, overlayForDoc(doc));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anchors, srcDoc, mode]);
+
+  // Tear the overlay down when the reader unmounts.
+  useEffect(() => {
+    return () => {
+      markerOverlayRef.current?.destroy();
+      markerOverlayRef.current = null;
+      markerOverlayDocRef.current = null;
+    };
+  }, []);
 
   // REVEAL: scroll the focused anchor into view (+ brief flash) via the one shared
   // helper. Keyed on revealSeq too so re-selecting the SAME anchor re-fires. Prop-
