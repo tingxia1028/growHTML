@@ -35,6 +35,8 @@ import { stat } from "node:fs/promises";
 import { createCustomLayer, ensureOwnedLayer, ensurePresetLayers } from "../core/study-layer/layers";
 import { studyLayerSchema } from "../core/schema";
 import { buildStudyPack, commitImport, parseStudyPack, previewImport } from "./studyLayer";
+import { defaultIdentityDir } from "../core/identity/paths";
+import { createSealedRuntime, registerSvpackRoutes, type SealedRuntime } from "./svpack";
 import type { StudyVault } from "../core/vault";
 import {
   deleteSource,
@@ -91,6 +93,14 @@ export type CreateAppOptions = {
   modelProvider?: ModelProvider;
   /** When set, serve the built client (with SPA fallback) from this directory. */
   clientDir?: string;
+  /**
+   * Directory holding the device/publisher keys, pinned publishers, and the clock
+   * high-water-mark (svpack §5.1/§7.1/§8.1). Defaults to ~/.growte/identity; tests
+   * MUST inject a temp dir. Only ever created/written when svpack features are used.
+   */
+  identityDir?: string;
+  /** Injectable wall clock for the svpack validity gates (tests fake expiry/rollback). */
+  now?: () => number;
 };
 
 const ingestHtmlRequestSchema = z.object({
@@ -335,9 +345,16 @@ const patchTransitions: Record<PatchStatus, readonly PatchStatus[]> = {
   conflict: ["applied"]
 };
 
-export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions) {
+export function createApp({ vault, modelProvider, clientDir, identityDir, now }: CreateAppOptions) {
   const app = express();
   const provider = modelProvider ?? createModelProvider();
+
+  // Protected-pack (.svpack) plumbing: unseal any committed packs ONCE at app start
+  // (the §8.1 per-session validity gate) into an in-memory cache that the read
+  // endpoints below merge, flagged `sealed: true`. Refreshed after commit/delete/renew.
+  const svpackIdentityDir = identityDir ?? defaultIdentityDir();
+  const clock = now ?? (() => Date.now());
+  const sealed: SealedRuntime = createSealedRuntime({ vault, identityDir: svpackIdentityDir, now: clock });
 
   app.use(express.json({ limit: "50mb" }));
 
@@ -700,7 +717,12 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
 
       // Current rule: only note-backed anchors paint; note-less anchors never do.
       const anchors = sourceAnchors.filter((anchor) => paintedByNote.has(anchor.id));
-      res.json({ anchors });
+      // Read-model merge (svpack §7.1): anchors of ACTIVE sealed packs paint alongside
+      // store anchors, flagged `sealed: true`. They are note-backed by construction
+      // (realizeImportRecords only realizes anchors its notes reference), and never
+      // pass through the orphan prune above (which walks store anchors only).
+      const sealedAnchors = sealed.snapshot().anchors.filter((anchor) => anchor.sourceId === sourceId);
+      res.json({ anchors: [...anchors, ...sealedAnchors] });
     } catch (error) {
       next(error);
     }
@@ -766,11 +788,14 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
 
   app.get("/api/sources/:sourceId/notes", async (req, res, next) => {
     try {
-      const visible = await layerVisibilityFilter(vault, req.query.enabledLayerIds);
-      const notes = (await vault.stores.notes.list()).filter(
-        (note) => note.sourceId === req.params.sourceId && visible(note)
-      );
-      res.json({ notes });
+      const snapshot = sealed.snapshot();
+      const visible = await layerVisibilityFilter(vault, req.query.enabledLayerIds, snapshot.enabledLayerIds);
+      const matches = (note: { sourceId?: string; layerIds: string[] }) =>
+        note.sourceId === req.params.sourceId && visible(note);
+      const notes = (await vault.stores.notes.list()).filter(matches);
+      // Read-model merge (svpack §7.1): sealed notes ride along, flagged sealed: true.
+      const sealedNotes = snapshot.notes.filter(matches);
+      res.json({ notes: [...notes, ...sealedNotes] });
     } catch (error) {
       next(error);
     }
@@ -783,15 +808,17 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
       const conceptId = typeof req.query.conceptId === "string" ? req.query.conceptId : undefined;
       const anchorId = typeof req.query.anchorId === "string" ? req.query.anchorId : undefined;
       const sourceId = typeof req.query.sourceId === "string" ? req.query.sourceId : undefined;
-      const visible = await layerVisibilityFilter(vault, req.query.enabledLayerIds);
-      const notes = (await vault.stores.notes.list()).filter(
-        (note) =>
-          (!conceptId || note.conceptIds.includes(conceptId)) &&
-          (!anchorId || note.anchorIds.includes(anchorId)) &&
-          (!sourceId || note.sourceId === sourceId) &&
-          visible(note)
-      );
-      res.json({ notes });
+      const snapshot = sealed.snapshot();
+      const visible = await layerVisibilityFilter(vault, req.query.enabledLayerIds, snapshot.enabledLayerIds);
+      const matches = (note: { sourceId?: string; anchorIds: string[]; conceptIds: string[]; layerIds: string[] }) =>
+        (!conceptId || note.conceptIds.includes(conceptId)) &&
+        (!anchorId || note.anchorIds.includes(anchorId)) &&
+        (!sourceId || note.sourceId === sourceId) &&
+        visible(note);
+      const notes = (await vault.stores.notes.list()).filter(matches);
+      // Read-model merge (svpack §7.1): sealed notes ride along, flagged sealed: true.
+      const sealedNotes = snapshot.notes.filter(matches);
+      res.json({ notes: [...notes, ...sealedNotes] });
     } catch (error) {
       next(error);
     }
@@ -806,6 +833,12 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
   // note id → 404.
   app.patch("/api/notes/:noteId", async (req, res, next) => {
     try {
+      // Sealed (protected-import) notes are read-only in V1 (svpack §7.1): annotate
+      // on top by creating your OWN note on the same anchor instead.
+      if (sealed.snapshot().noteIds.has(req.params.noteId)) {
+        res.status(403).json({ error: "sealed content is read-only" });
+        return;
+      }
       const input = updateNoteRequestSchema.parse(req.body);
       const existing = await vault.stores.notes.get(req.params.noteId);
       if (!existing) {
@@ -851,6 +884,11 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
   // anchor / shared) or referenced by a patch are KEPT. See docs/design/note-edit-delete.md.
   app.delete("/api/notes/:noteId", async (req, res, next) => {
     try {
+      // Sealed notes can only leave via DELETE /api/svpack/:packId (whole-pack delete).
+      if (sealed.snapshot().noteIds.has(req.params.noteId)) {
+        res.status(403).json({ error: "sealed content is read-only" });
+        return;
+      }
       // Capture the note's anchorIds BEFORE deleting it, so we know which anchors to
       // re-check for orphan-hood.
       const note = await vault.stores.notes.get(req.params.noteId);
@@ -880,7 +918,12 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
       const layers = (await vault.stores.layers.list()).filter(
         (layer) => layer.localSourceId === req.params.sourceId
       );
-      res.json({ layers });
+      // Read-model merge (svpack §7.1): sealed imported layers show in the Lens like
+      // any other (their plaintext "导入图层" umbrella parent is already in the store
+      // list above), flagged sealed: true. Unbound sealed layers (no matched source)
+      // have no localSourceId and only surface via GET /api/svpack until re-anchored.
+      const sealedLayers = sealed.snapshot().layers.filter((layer) => layer.localSourceId === req.params.sourceId);
+      res.json({ layers: [...layers, ...sealedLayers] });
     } catch (error) {
       next(error);
     }
@@ -926,6 +969,11 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
     );
   app.patch("/api/layers/:layerId", async (req, res, next) => {
     try {
+      // Sealed imported layers are read-only records inside their pack blob (svpack §7.1).
+      if (sealed.snapshot().layerIds.has(req.params.layerId)) {
+        res.status(403).json({ error: "sealed content is read-only" });
+        return;
+      }
       const input = updateLayerRequestSchema.parse(req.body);
       const existing = await vault.stores.layers.get(req.params.layerId);
       if (!existing) {
@@ -954,6 +1002,11 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
   // also belong to other layers keep those memberships.
   app.delete("/api/layers/:layerId", async (req, res, next) => {
     try {
+      // A sealed imported layer is deleted by deleting its pack (DELETE /api/svpack/:packId).
+      if (sealed.snapshot().layerIds.has(req.params.layerId)) {
+        res.status(403).json({ error: "sealed content is read-only" });
+        return;
+      }
       const existing = await vault.stores.layers.get(req.params.layerId);
       if (!existing) {
         res.status(404).json({ error: "Layer not found" });
@@ -984,16 +1037,27 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
   // Export a layer as a portable `.studypack` (local realizations stripped).
   app.post("/api/layers/:layerId/export", async (req, res, next) => {
     try {
+      // Sealed imported layers are structurally absent from the entity stores that
+      // buildStudyPack reads (svpack §7.2) — answer with the read-only refusal rather
+      // than a misleading 404.
+      if (sealed.snapshot().layerIds.has(req.params.layerId)) {
+        res.status(403).json({ error: "sealed content is read-only" });
+        return;
+      }
       const pack = await buildStudyPack(vault, req.params.layerId);
       if (!pack) {
         res.status(404).json({ error: "Layer not found" });
         return;
       }
-      res.json({ pack });
+      res.json({ pack, refusedCount: pack.refusedCount });
     } catch (error) {
       next(error);
     }
   });
+
+  // Protected `.svpack` endpoints (export-svpack / renew / inspect / open / commit /
+  // list / delete) — see src/server/svpack.ts and docs/design/studypack-sharing.md.
+  registerSvpackRoutes(app, { vault, identityDir: svpackIdentityDir, now: clock, runtime: sealed });
 
   // Preview an import: match the pack to a local source + rematch every anchor.
   // Does NOT persist anything.
@@ -1607,13 +1671,19 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
 // toggle — reused as the filter source of truth).
 async function layerVisibilityFilter(
   vault: StudyVault,
-  enabledLayerIdsParam: unknown
+  enabledLayerIdsParam: unknown,
+  // Sealed layers live outside the entity stores (svpack §7.1), so the default
+  // enabled set must union them in — otherwise sealed notes could never be visible.
+  // An EXPLICIT enabledLayerIds param stays authoritative (the client's filter can
+  // include or exclude a sealed layer id like any other).
+  sealedEnabledLayerIds: ReadonlySet<string> = new Set()
 ): Promise<(note: { layerIds: string[] }) => boolean> {
   let enabled: Set<string>;
   if (typeof enabledLayerIdsParam === "string") {
     enabled = new Set(enabledLayerIdsParam.split(",").map((id) => id.trim()).filter(Boolean));
   } else {
     enabled = new Set((await vault.stores.layers.list()).filter((layer) => layer.enabled).map((layer) => layer.id));
+    for (const id of sealedEnabledLayerIds) enabled.add(id);
   }
   return (note) => note.layerIds.length === 0 || note.layerIds.some((id) => enabled.has(id));
 }

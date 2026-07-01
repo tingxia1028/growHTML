@@ -39,7 +39,18 @@ export const studyPackSchema = z.object({
     visibility: visibilitySchema.default("public")
   }),
   anchors: z.array(portableAnchorSchema).default([]),
-  notes: z.array(portableNoteSchema).default([])
+  notes: z.array(portableNoteSchema).default([]),
+  // Provenance stamp on PROTECTED (.svpack) payloads — which publisher issued the pack
+  // and that its content must not be re-exported. EXPLICIT on purpose (design
+  // studypack-sharing §3.3): z.object STRIPS unknown keys, so without this field the
+  // stamp would silently vanish on parse. Absent on legacy plaintext `.studypack`.
+  provenance: z
+    .object({
+      publisherId: z.string().min(1),
+      packId: z.string().min(1),
+      exportable: z.boolean()
+    })
+    .optional()
 });
 
 export type PortablePackAnchor = z.infer<typeof portableAnchorSchema>;

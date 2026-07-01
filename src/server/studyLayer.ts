@@ -89,7 +89,13 @@ function toPortable(anchor: AnchorRecord): PortablePackAnchor {
 
 // —— Export ————————————————————————————————————————————————————————————————
 
-export async function buildStudyPack(vault: StudyVault, layerId: string): Promise<StudyPack | null> {
+// StudyPack plus the choke-point tally. `refusedCount` rides OUTSIDE the parsed pack
+// value (Object.assign after parse) so it never serializes into a shared pack payload
+// (studyPackSchema.parse strips it) — existing callers keep treating this as a plain
+// StudyPack and ignore it.
+export type BuiltStudyPack = StudyPack & { refusedCount: number };
+
+export async function buildStudyPack(vault: StudyVault, layerId: string): Promise<BuiltStudyPack | null> {
   const layer = await vault.stores.layers.get(layerId);
   if (!layer) return null;
 
@@ -102,15 +108,22 @@ export async function buildStudyPack(vault: StudyVault, layerId: string): Promis
   const allAnchors = await vault.stores.anchors.list();
   const layerAnchors = allAnchors.filter((a) => notedAnchorIds.has(a.id) || a.layerId === layerId);
 
+  // Refusal choke point (studypack-sharing §7.1): a note that arrived inside a
+  // protected .svpack is stamped origin.exportable === false and must never leave this
+  // vault again — buildStudyPack is the single export path, so refusing here covers
+  // every export surface. Counted so the export UI can say "N notes were held back".
+  const isRefused = (n: NoteRecord) => n.origin?.exportable === false;
+  const refusedCount = layerNotes.filter(isRefused).length;
+
   // Propagation policy (user spec §11): a kit can mark a contentType private-by-default
-  // (e.g. textbook.mistake) so it never leaves the vault on export. Drop those notes,
-  // then drop any anchor referenced ONLY by dropped notes (standalone + shared anchors
-  // stay). Notes without a policy (markdown, …) are always exportable.
-  const notes = layerNotes.filter((n) => !isPrivateByDefault(n.contentType));
+  // (e.g. textbook.mistake) so it never leaves the vault on export. Drop those notes
+  // (composed with the §7.1 refusal above), then drop any anchor referenced ONLY by
+  // dropped notes (standalone + shared anchors stay). Notes without a policy
+  // (markdown, …) are always exportable.
+  const isDropped = (n: NoteRecord) => isPrivateByDefault(n.contentType) || isRefused(n);
+  const notes = layerNotes.filter((n) => !isDropped(n));
   const keptAnchorIds = new Set(notes.flatMap((n) => n.anchorIds));
-  const droppedAnchorIds = new Set(
-    layerNotes.filter((n) => isPrivateByDefault(n.contentType)).flatMap((n) => n.anchorIds)
-  );
+  const droppedAnchorIds = new Set(layerNotes.filter(isDropped).flatMap((n) => n.anchorIds));
   const anchors = layerAnchors.filter((a) => !(droppedAnchorIds.has(a.id) && !keptAnchorIds.has(a.id)));
   const anchorIds = new Set(anchors.map((a) => a.id));
 
@@ -120,7 +133,7 @@ export async function buildStudyPack(vault: StudyVault, layerId: string): Promis
     if (source) fingerprint = fingerprintForSource(source);
   }
 
-  return studyPackSchema.parse({
+  const pack = studyPackSchema.parse({
     packId: createEntityId("layer"),
     createdAt: new Date().toISOString(),
     app: "ai-study-vault",
@@ -140,6 +153,7 @@ export async function buildStudyPack(vault: StudyVault, layerId: string): Promis
       conceptRefs: []
     }))
   });
+  return Object.assign(pack, { refusedCount });
 }
 
 // —— Preview ———————————————————————————————————————————————————————————————
@@ -250,11 +264,30 @@ function realizeAnchor(
   return anchorSchema.parse({ ...record, layerId, matchStatus: status });
 }
 
-export async function commitImport(
+// Everything one import produces, built in memory. The write target is the caller's
+// choice: commitImport upserts into the plaintext entity stores; the protected .svpack
+// commit seals the same records into vault/imports (studypack-sharing §7) instead.
+export type RealizedImport = {
+  layer: StudyLayerRecord;
+  anchors: AnchorRecord[];
+  notes: NoteRecord[];
+  sourceId: string | null;
+  createdAnchors: number;
+  importedNotes: number;
+  stats: { matched: number; fuzzy: number; unmatched: number };
+};
+
+/**
+ * Run the full import pipeline (source match → re-anchor → note wiring) WITHOUT
+ * persisting the produced layer/anchors/notes. The one store write that does happen
+ * here is ensureImportedParent: the per-source "导入图层" umbrella is an organizational,
+ * content-free layer and stays a plaintext record even for sealed imports (§6.1).
+ */
+export async function realizeImportRecords(
   vault: StudyVault,
   pack: StudyPack,
   opts: { targetSourceId?: string } = {}
-): Promise<ImportCommitResult> {
+): Promise<RealizedImport> {
   const sources = await vault.stores.sources.list();
   const source = opts.targetSourceId
     ? sources.find((s) => s.id === opts.targetSourceId) ?? null
@@ -285,7 +318,6 @@ export async function commitImport(
     parentId: importedParent?.id,
     origin: { packId: pack.packId, importedAt: now }
   });
-  await vault.stores.layers.upsert(layer);
 
   const content = source ? await readSourceContent(vault, source).catch(() => "") : "";
   const text = source ? plainTextForSource(content, source.sourceType) : "";
@@ -295,7 +327,7 @@ export async function commitImport(
   // refId → { anchorId? , portable } so notes can resolve their anchors (and keep
   // un-located ones for manual rematch).
   const byRef = new Map<string, { anchorId: string | null; portable: PortablePackAnchor; status: MatchStatus }>();
-  let createdAnchors = 0;
+  const anchors: AnchorRecord[] = [];
 
   for (const portable of pack.anchors) {
     const result: RematchResult = source ? rematchAnchor(portable, { text, sameBinary }) : { status: "unmatched" };
@@ -305,15 +337,14 @@ export async function commitImport(
     if (source && result.status !== "unmatched") {
       const record = realizeAnchor(source, content, portable, result, layer.id);
       if (record) {
-        await vault.stores.anchors.upsert(record);
+        anchors.push(record);
         anchorId = record.id;
-        createdAnchors += 1;
       }
     }
     byRef.set(portable.refId, { anchorId, portable, status: result.status });
   }
 
-  let importedNotes = 0;
+  const notes: NoteRecord[] = [];
   for (const portableNote of pack.notes) {
     const resolved = portableNote.anchorRefs.map((ref) => byRef.get(ref)).filter(Boolean) as Array<{
       anchorId: string | null;
@@ -324,29 +355,55 @@ export async function commitImport(
     // Never lose: portable info for anchors we couldn't re-locate, for manual rematch later.
     const unmatchedAnchors = resolved.filter((r) => !r.anchorId).map((r) => ({ ...r.portable, status: r.status }));
 
-    const note = noteSchema.parse({
-      id: createEntityId("note"),
-      type: "note",
-      schemaVersion: 1,
-      createdAt: now,
-      updatedAt: now,
-      createdBy: "user",
-      sourceId: source?.id,
-      anchorIds,
-      conceptIds: [],
-      contentType: portableNote.contentType,
-      content: portableNote.content,
-      visibility: "private",
-      // Membership merges into the target imported layer (spec §7).
-      layerIds: [layer.id],
-      origin: { copiedFrom: pack.packId },
-      metadata: unmatchedAnchors.length ? { unmatchedAnchors } : {}
-    });
-    await vault.stores.notes.upsert(note);
-    importedNotes += 1;
+    notes.push(
+      noteSchema.parse({
+        id: createEntityId("note"),
+        type: "note",
+        schemaVersion: 1,
+        createdAt: now,
+        updatedAt: now,
+        createdBy: "user",
+        sourceId: source?.id,
+        anchorIds,
+        conceptIds: [],
+        contentType: portableNote.contentType,
+        content: portableNote.content,
+        visibility: "private",
+        // Membership merges into the target imported layer (spec §7).
+        layerIds: [layer.id],
+        origin: { copiedFrom: pack.packId },
+        metadata: unmatchedAnchors.length ? { unmatchedAnchors } : {}
+      })
+    );
   }
 
-  return { layerId: layer.id, sourceId: source?.id ?? null, createdAnchors, importedNotes, stats };
+  return {
+    layer,
+    anchors,
+    notes,
+    sourceId: source?.id ?? null,
+    createdAnchors: anchors.length,
+    importedNotes: notes.length,
+    stats
+  };
+}
+
+export async function commitImport(
+  vault: StudyVault,
+  pack: StudyPack,
+  opts: { targetSourceId?: string } = {}
+): Promise<ImportCommitResult> {
+  const realized = await realizeImportRecords(vault, pack, opts);
+  await vault.stores.layers.upsert(realized.layer);
+  for (const anchor of realized.anchors) await vault.stores.anchors.upsert(anchor);
+  for (const note of realized.notes) await vault.stores.notes.upsert(note);
+  return {
+    layerId: realized.layer.id,
+    sourceId: realized.sourceId,
+    createdAnchors: realized.createdAnchors,
+    importedNotes: realized.importedNotes,
+    stats: realized.stats
+  };
 }
 
 export function parseStudyPack(input: unknown): StudyPack {

@@ -103,6 +103,10 @@ export const svpackHeaderSchema = z.looseObject({
   title: z.string(),
   sourceHash: z.string(),
   sourceType: z.string(),
+  // Cleartext dependency summary (plugin-viewer-model §8.7): the distinct note
+  // contentTypes inside the payload, so the import prompt can list required plugins
+  // BEFORE any code is entered. Optional: absent on packs built before this field.
+  contentTypes: z.array(z.string()).optional(),
   validity: z.looseObject({
     notBefore: z.string().nullable(),
     validUntil: z.string().nullable()
@@ -124,6 +128,8 @@ export type SvpackHeaderInput = {
   title: string;
   sourceHash: string;
   sourceType: string;
+  /** Distinct note contentTypes in the payload — the cleartext plugin-dependency summary. */
+  contentTypes?: string[];
   validity: { notBefore: string | null; validUntil: string | null };
   watermark?: { scheme: string; payload: string };
 };
@@ -280,6 +286,7 @@ export function buildPack(params: BuildPackParams): BuiltPack {
     title: header.title,
     sourceHash: header.sourceHash,
     sourceType: header.sourceType,
+    contentTypes: header.contentTypes ?? [],
     validity: header.validity,
     aead: { alg: "A256GCM", nonce: toBase64Url(payloadNonce) },
     keywrap: { alg: "HKDF-SHA256+A256GCM", info: "svpack/v2/cek-wrap" },

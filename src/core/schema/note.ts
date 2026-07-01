@@ -47,7 +47,14 @@ export const noteSchema = recordEnvelopeSchema("note", noteIdSchema).extend({
     .object({
       layerId: layerIdSchema.optional(),
       noteId: noteIdSchema.optional(),
-      copiedFrom: z.string().optional()
+      copiedFrom: z.string().optional(),
+      // Protected-pack (.svpack) provenance (design studypack-sharing §7.1): the
+      // publisher and pack this note arrived from, plus the export choke-point flag.
+      // `exportable: false` ⇒ buildStudyPack refuses to ship the note; ABSENT means
+      // exportable, so every pre-existing note parses (and exports) unchanged.
+      publisherId: z.string().optional(),
+      packId: z.string().optional(),
+      exportable: z.boolean().optional()
     })
     .optional()
 });
