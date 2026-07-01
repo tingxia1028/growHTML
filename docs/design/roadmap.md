@@ -5,12 +5,24 @@ One dependency-ordered plan over the six design docs written this cycle. Purpose
 ## The design docs (all committed)
 | Doc | Scope | Impl phases |
 |---|---|---|
-| `studypack-sharing.md` | Offline `.svpack` protected sharing v2 | A✅ · B🔧 · C · D |
+| `studypack-sharing.md` | Offline `.svpack` protected sharing v2 | A✅ · B✅ · C · D |
 | `plugin-viewer-model.md` §8 | Plugin/Kit **marketplace** | M1 · M2 · M3 |
 | `note-presentation-unified.md` | In-reader note surface D1–D9 | N1 · N2 · N3 · N4 |
 | `subject-kits.md` | 11 subject types × 5 kits + auto-switch | M-A · M-B · M-C |
 | `multidoc-and-concepts.md` | Multi-pane docs + cross-doc notes + concept graph | P-A1 · P-A2 · P-B · P-C1 · P-C2 |
+| `architecture-review.md` | Foundation assessment | F1–F6 (refactors, below) |
 | (this) `roadmap.md` | Sequencing | — |
+
+## Foundation refactors (from `architecture-review.md`) — do these *with* the feature that needs them, not after
+The extension seams (registries / content-as-data / entity stores / render contract) are clean; the coupled spots below block deep features and cause cross-session merge contention. Each is pulled to sit **immediately before or fused with** its first dependent feature:
+| # | Foundation refactor | Blocks until fixed | Fuse with |
+|---|---|---|---|
+| **F1** | Decompose the `WorkspaceContext` god object (1753 lines / ~79 fields / single `activeSourceId`) into per-domain stores + selectors | multi-doc, cross-doc paint, re-render/contention on every feature | **P-A1** (it *is* the multi-doc enabler) |
+| **F2** | Extract `app.ts` (1737 lines / 59 inline routes) into `registerXRoutes` modules (svpack already shows the pattern) | nothing hard-blocked; friction + contention grow | incremental, any server work |
+| **F3** | Land the D1 `ReaderAnnotationAdapter` — kill per-reader paint duplication + the divergent webview guest | reader-consistency, mobile, N1/P-A2 | **before N1** (it's the N1/P-A2 keystone) |
+| **F4** | Replace the single-active-kit gate (`activation.ts` `FALLBACK_DEFAULT_KIT`) with marketplace **effective-installed** | market, subject kits "foreground not filter" | **Market M1** |
+| **F5** | Split `plugin==kit` 1:1 + fix `seedCorePlugin` over-claim (real `pluginId` per type) | marketplace `members[]` resolution | **Market M1** |
+| **F6** | Additive rect on `html_selection`/`web_text_quote` anchors | unified region selection over HTML (D4) | **D4b** |
 
 ## Two keystones everything leans on
 Most work funnels through two load-bearing pieces. Build order is mostly "who unblocks whom":
@@ -56,19 +68,19 @@ Concept P-C1 (aggregation page, additive to existing API) ──> P-C2 (graph vi
 ## Concurrency coordination (a live session owns reader/marker)
 `annotationLayer.ts`, `markerOverlay.ts`, `*Reader.tsx`, `webview-preload.ts`, `DomReader.tsx` have in-flight edits from another session. **N1 (D2), P-A2, and all of P-A/B touch this area.** Rule: land the sharing + market + engine tracks (which avoid it) first; sequence the reader-surface work (N1, multidoc paint) after that session's changes settle, or explicitly co-design D1 with it. Everything committed so far by this line of work has stayed out of those files.
 
-## Recommended sequence
-**Now (3 parallel, no reader-file collision):**
-1. **Finish svpack B → C → D** — the sharing feature end-to-end (server done; C = export/import dialogs + roster + zwsp watermark; D = the two-vault e2e). Ships a whole user-facing capability on its own.
-2. **Market M1** — two-tab market + install state + effective-installed selector, clearing the plugin==kit / seedCorePlugin / bookmark debts. Unblocks subjects.
+## Recommended sequence (foundation refactors F1–F6 fused in, **bold**)
+**Now (parallel, no reader-file collision):**
+1. **svpack B✅ → C → D** — server done; C = export/import dialogs + roster + zwsp watermark; D = the two-vault e2e. A whole user-facing capability on its own; touches no contended files. *(Carries **F2** opportunistically — new sharing routes already live in their own `svpack.ts` module.)*
+2. **Market M1 + F4 + F5** — two-tab market + install state, **F4** (effective-installed replaces the single-active-kit gate) and **F5** (split plugin==kit, fix `seedCorePlugin`) are *part of* M1, not follow-ups. Unblocks all subject/kit work.
 3. **Subject M-A** — auto-switch engine + chip (pure, standalone).
 
 **Next (after M1):**
-4. **Subject M-B** — vocab + formula + timeline exemplars (KaTeX decision) as catalog entries; **Market M2** (previews + user kits).
+4. **Subject M-B** — vocab + formula + timeline exemplars (KaTeX decision); **Market M2** (previews + user kits).
 5. **N3 (D6)** — AI anchor-context results auto-materialize as draft notes (undo toast).
 
-**The presentation + multi-doc lift (coordinate with the reader session):**
-6. **D1 adapter → N1 (D2 markers + D5 floating editor) → N2 (D4 selection + D3 styles)** — the biggest UX wins, but in the contended files.
-7. **P-A1 (multi activeSource + tabs DockNode) → P-A2 (per-pane paint) → P-B (cross-doc authoring)** — the deep refactor; smallest demo = open two docs split, a shared note paints in both.
-8. **Concept P-C1 → P-C2**, then **M-C / N4** (remaining subject types + import prompts M3), which also consume the `.svpack` `contentTypes` summary already emitted by the sharing server.
+**The presentation + multi-doc lift — foundation-first, coordinate with the reader session:**
+6. **F3 (D1 ReaderAnnotationAdapter) → N1 (D2 markers + D5 editor) → N2 (D4 selection + D3 styles).** F3 is not optional prep — it's the keystone N1/P-A2 both stand on; build the adapter before the marker/editor UX. (**F6** — anchor rect — rides D4b inside N2.)
+7. **F1 (decompose WorkspaceContext) ≡ P-A1 → P-A2 (per-pane paint) → P-B (cross-doc authoring).** F1 and P-A1 are the SAME work: the single→multi `activeSourceId` split *is* the god-object decomposition. Do them as one. Smallest demo = open two docs split, a shared note paints in both.
+8. **Concept P-C1 → P-C2**, then **M-C / N4** (remaining subject types + import prompts M3), consuming the `.svpack` `contentTypes` summary the sharing server already emits.
 
-**Rationale for the ordering:** sharing + market + auto-switch engine are the value that is *safely* buildable now (no reader-file contention, few cross-deps); the presentation and multi-doc refactors are higher value per feature but concentrate in the contended files and the deepest state (single→multi activeSource), so they come once the independent tracks have de-risked the surrounding contracts.
+**Rationale:** the foundation refactors are not a detour — F1 *is* multi-doc's enabler, F3 *is* the presentation keystone, F4/F5 *are* what makes the marketplace real. Each is fused with its first dependent feature so you pay the refactor exactly when the feature needs it, never speculatively. The independent tracks (sharing, market, auto-switch engine) go first because they're safely buildable now and de-risk the contracts the deeper work leans on; F2 is incremental and rides along.
