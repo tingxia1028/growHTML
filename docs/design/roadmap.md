@@ -10,6 +10,7 @@ One dependency-ordered plan over the six design docs written this cycle. Purpose
 | `note-presentation-unified.md` | In-reader note surface D1–D12 | N1 · N2 · N3 · N4 · N5 · N6 |
 | `subject-kits.md` | 11 subject types × 5 kits + auto-switch | M-A · M-B · M-C |
 | `multidoc-and-concepts.md` | Multi-pane docs + cross-doc notes + concept graph | P-A1 · P-A2 · P-B · P-C1 · P-C2 |
+| `ai-workspace.md` | AI chat sessions + file/note attachments + doc synthesis | W1 · W2 · W3 |
 | `architecture-review.md` | Foundation assessment | F1–F7 (refactors, below) |
 | (this) `roadmap.md` | Sequencing | — |
 
@@ -74,6 +75,11 @@ Concept P-C1 (aggregation page, additive to existing API) ──> P-C2 (graph vi
 1. **svpack B✅ → C → D** — server done; C = export/import dialogs + roster + zwsp watermark; D = the two-vault e2e. A whole user-facing capability on its own; touches no contended files. *(Carries **F2** opportunistically — new sharing routes already live in their own `svpack.ts` module.)*
 2. **Market M1 + F4 + F5** — two-tab market + install state, **F4** (effective-installed replaces the single-active-kit gate) and **F5** (split plugin==kit, fix `seedCorePlugin`) are *part of* M1, not follow-ups. Unblocks all subject/kit work.
 3. **Subject M-A** — auto-switch engine + chip (pure, standalone).
+
+**AI Workspace track (parallel — an F1/F2 down-payment, outside the contended reader-paint files):**
+- **W1** — `chatSession` vault entity + `registerChatRoutes` CRUD + extract `<ChatPanel>` / `useChatSession` (**the first F1 slice** — chat leaves the god object) + session-list UI. Delivers "one chat template + session maintenance" for BOTH the main chat and the new sidebar page; **no AI change**. Can start anytime.
+- **W2** — `/api/sources/:id/bundle` + drag/Ctrl+V file→attachment (notes ride along) + library multi-select/Ctrl+C + widen `ChatContext` to `sources[]` (token budget).
+- **W3** — synthesis command → new **markdown** source via `ingestSource` (headings = TOC) + the left-sidebar workspace page + default-directory landing. (See `ai-workspace.md`; locked: session=vault entity, TOC=markdown headings.)
 
 **Next (after M1):**
 4. **Subject M-B** — vocab + formula + timeline exemplars (KaTeX decision); **Market M2** (previews + user kits).
