@@ -20,6 +20,7 @@ import {
   type ParsedCode
 } from "../core/crypto/codes";
 import { aeadDecrypt, aeadEncrypt, fromBase64Url, toBase64Url } from "../core/crypto/primitives";
+import { embedWatermark } from "../core/crypto/watermark";
 import {
   MalformedPackError,
   NotEntitledError,
@@ -122,7 +123,12 @@ export function createSealedRuntime(deps: SvpackDeps): SealedRuntime {
           next.anchorIds.add(anchor.id);
         }
         for (const note of pack.notes) {
-          next.notes.push({ ...note, sealed: true });
+          // Forensic watermark (§9) is applied at PROJECTION time — the sealed blob on
+          // disk stays clean; every served copy carries THIS recipient's codeId. Only
+          // plain-string content carries it in V1 (structured quiz/flashcard objects are
+          // left as-is — low-bit-rate, out of scope). Visible text is unchanged.
+          const content = typeof note.content === "string" ? embedWatermark(note.content, pack.echo.codeId) : note.content;
+          next.notes.push({ ...note, content, sealed: true });
           next.noteIds.add(note.id);
         }
       }

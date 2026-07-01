@@ -4,6 +4,7 @@ import path from "node:path";
 import request from "supertest";
 import { afterAll, describe, expect, it } from "vitest";
 import { openVault, type StudyVault } from "../core/vault";
+import { extractWatermark, stripWatermark } from "../core/crypto/watermark";
 import { createApp } from "./app";
 
 // Batch B: the offline .svpack server — export/ledger, sealed import store, and the
@@ -126,6 +127,22 @@ describe("svpack offline sharing — full roundtrip", () => {
     await request(rcp.app).delete(`/api/svpack/${packId}`).expect(200);
     const after = (await request(rcp.app).get(`/api/sources/${rcpSourceId}/notes`).expect(200)).body.notes;
     expect(after.find((n: { sealed?: boolean }) => n.sealed)).toBeFalsy();
+  });
+
+  it("watermarks served sealed-note text with the recipient's codeId (§9)", async () => {
+    const pub = await makeApp("pubwm");
+    const seed = await seedLayerWithNote(pub);
+    const exp = await exportPack(pub, seed.layerId, ["Zhang"]);
+
+    const rcp = await makeApp("rcpwm");
+    const rcpSourceId = await seedSource(rcp);
+    await request(rcp.app).post("/api/svpack/commit").send({ fileB64: exp.fileB64, code: exp.roster[0].code }).expect(201);
+
+    const notes = (await request(rcp.app).get(`/api/sources/${rcpSourceId}/notes`).expect(200)).body.notes;
+    const sealed = notes.find((n: { sealed?: boolean }) => n.sealed);
+    expect(typeof sealed.content).toBe("string");
+    expect(stripWatermark(sealed.content)).toBe("Mnemonic: powerhouse."); // visible text intact
+    expect(extractWatermark(sealed.content)).toBe(exp.roster[0].codeId); // a leaked paste is attributable
   });
 
   it("commits UNBOUND when the recipient lacks the source (no bytes ever shipped)", async () => {
