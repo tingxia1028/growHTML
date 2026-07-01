@@ -107,6 +107,10 @@ signature : bytes (64)          — Ed25519 over  canonical(header) || payload
     "alg": "X25519-HKDF-SHA256-AES256-KW",   // §4.3
     "hkdfInfo": "svpack/cek-wrap/v2"
   },
+  "validity": {                          // signed ⇒ tamper‑proof expiry (§8.0)
+    "notBefore": "2026-06-24T00:00:00Z", // optional; pack unopenable before this
+    "validUntil": "2026-09-01T00:00:00Z" // client refuses to open after this
+  },
   "watermarkPolicy": { "scheme": "svwm/v1", "carriers": ["note-order","zwsp","synonym"] }
 }
 ```
@@ -238,6 +242,15 @@ This is a **deterrent + attribution** tool, explicitly **not** a prevention mech
 
 ## 8. Revocation + lease
 
+### 8.0 Code / pack validity window (both tiers)
+Every pack carries a **signed** `validity: { notBefore?, validUntil }` in the header (§3.3). Because it is inside the Ed25519 signature, a recipient **cannot extend it** without invalidating the pack. Two distinct timers, do not conflate:
+- **Code validity** — until when the code may be *used* (Tier A: opened; Tier B: redeemed). This is `header.validity.validUntil`.
+- **Content lease** — after opening, how long content stays openable offline before an online re‑check (Tier B, §8.1).
+
+**Tier A (offline, no server) — client‑enforced:** the app honors `validUntil` and refuses to unwrap/open past it. Since there is no server, expiry rests on the **device clock**, so it is defeatable by clock‑rollback or a patched client (the §1.2 ceiling). Hardening for normal users: keep an **encrypted monotonic high‑water‑mark** of the latest observed time in the at‑rest vault; if `now < highWater` we detect rollback and refuse. Stops casual rollback, not a patched client. State this limit plainly to publishers — an offline code expiry is a *soft* lock.
+
+**Tier B (server) — hard‑enforced:** the server checks `validUntil` at redeem/recheck and simply stops issuing/re‑leasing the CEK past it, clock‑independent. This is the only tier where expiry has real teeth.
+
 ### 8.1 Lease (offline openability)
 On redemption the server returns `lease = { packId, accountId, expiresAt, wrappedCek, ephemeralPub, publisherKeyId }`, cached locally (encrypted to the device key). While `now < expiresAt` (N days, e.g. 14), the client opens the pack **fully offline** — no network. On `expiresAt`, the client must re‑check online before decrypting again.
 
@@ -286,7 +299,8 @@ Notes: codes are opaque, single‑use‑to‑bind, one account each. The server 
 - `note.origin.exportable:false` + provenance stamps (extend `src/core/schema/note.ts`).
 - Export choke point refusal in `buildStudyPack` (§7.1).
 - Imported content **encrypted at rest** to the local device key (§7.2).
-- Ships real value: tamper‑proof, non‑plaintext, non‑re‑exportable, per‑recipient packs — offline, zero infrastructure. Clawback = lease expiry only.
+- **Signed code validity window** (`header.validity.validUntil`, §8.0): client‑enforced offline expiry + an encrypted rollback high‑water‑mark. A *soft* lock (patched client / clock‑rollback out of scope) that becomes *hard* server‑enforced in P2.
+- Ships real value: tamper‑proof, non‑plaintext, non‑re‑exportable, per‑recipient, **time‑boxed** packs — offline, zero infrastructure. Clawback = validity/lease expiry only.
 
 **P2 — Tier B: accounts + server entitlement + revocation + the sync foundation.**
 - `src/core/identity/` account+device model (§4), new id kinds (§4.4). **This account layer is also the identity that later powers multi‑device sync** — build once, feed both.
