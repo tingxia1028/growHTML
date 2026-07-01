@@ -21,7 +21,7 @@
     "electron:build:webview-preload": "esbuild electron/webview-preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-electron/webview-preload.cjs",
     "electron:build": "vite build && npm run electron:build:main && npm run electron:build:preload && npm run electron:build:webview-preload",
     "electron": "npm run electron:build && node scripts/launch-electron.cjs",
-    "electron:dev": "npm run electron:build:main && npm run electron:build:preload && node scripts/launch-electron.cjs --dev",
+    "electron:dev": "npm run electron:build:main && npm run electron:build:preload && npm run electron:build:webview-preload && node scripts/launch-electron.cjs --dev",
     "electron:rebuild": "electron-rebuild -f -w node-pty"
   },
   "dependencies": {
