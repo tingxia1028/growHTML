@@ -49,6 +49,8 @@ import "./anchorViews";
 import "./BottomBar";
 //   ./RightSidebarTabs → right.tabs (the tabbed right sidebar) + note.list (Page Anchors)
 import "./RightSidebarTabs";
+//   ./pluginManagerViews → plugin.manager (the Kit & Plugin manager panel)
+import "./pluginManagerViews";
 import { TopBar } from "./TopBar";
 import { IconRail } from "./IconRail";
 import { SelectionFloatingToolbar } from "./SelectionFloatingToolbar";

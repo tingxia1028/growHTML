@@ -22,6 +22,10 @@ export type KitNoteTypePlugin = {
   edit(input: NoteEditInput): ReactNode;
   /** Friendly label for the composer type picker (defaults to the domain name). */
   label?: string;
+  /** Dup-registration precedence for the exclusive `contentType` slot (plugin-viewer-model
+      §4/§6.1): higher wins, default 0. A kit sets this to OVERRIDE a built-in renderer for
+      the same contentType. Optional — omitting it keeps last-wins-at-equal-priority. */
+  priority?: number;
 };
 
 // Domain language: how the kit RENAMES the generic core vocabulary for its product.

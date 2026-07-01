@@ -62,7 +62,9 @@ export const studyVaultLayout: WorkspaceLayout = {
     // V2 Study Layer switcher — reached via the IconRail.
     { id: "layers", kind: "layer.switcher" },
     // operation-as-data builder + manager — reached via the IconRail.
-    { id: "operations", kind: "operation.manager" }
+    { id: "operations", kind: "operation.manager" },
+    // Kit & Plugin manager — reached via the IconRail (left-slot swap resolves the kind).
+    { id: "plugin-manager", kind: "plugin.manager" }
   ],
   layout: studyVaultDock
 };

@@ -950,6 +950,30 @@ describe("vault server API", () => {
     await request(app).put("/api/operation-prefs").send({ order: "nope" }).expect(400);
   });
 
+  it("returns default plugin prefs and round-trips a saved set", async () => {
+    const empty = await request(app).get("/api/plugin-prefs").expect(200);
+    expect(empty.body.prefs).toEqual({
+      disabledContributions: [],
+      viewerAssociations: { byContentType: {}, byNoteId: {} },
+      userKits: []
+    });
+
+    const prefs = {
+      disabledContributions: ["textbook-learning:surface:textbook.explain-concept"],
+      viewerAssociations: { byContentType: { markdown: "some-viewer" }, byNoteId: {} },
+      userKits: []
+    };
+    await request(app).put("/api/plugin-prefs").send(prefs).expect(200);
+
+    const reloaded = await request(app).get("/api/plugin-prefs").expect(200);
+    expect(reloaded.body.prefs.disabledContributions).toEqual(prefs.disabledContributions);
+    expect(reloaded.body.prefs.viewerAssociations.byContentType.markdown).toBe("some-viewer");
+    expect(reloaded.body.prefs.userKits).toEqual([]);
+
+    // Structurally invalid prefs are rejected.
+    await request(app).put("/api/plugin-prefs").send({ disabledContributions: "nope" }).expect(400);
+  });
+
   it("generates structured content for a stored op_ promptId and for a built-in", async () => {
     const op = (
       await request(app)

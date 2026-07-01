@@ -123,6 +123,38 @@ describe("NoteTypeRegistry", () => {
   });
 });
 
+// Dup-registration precedence for the EXCLUSIVE contentType slot (plugin-viewer-model
+// §4/§6.1). Uses a throwaway contentType so it doesn't disturb the built-ins.
+describe("NoteTypeRegistry — duplicate-registration precedence", () => {
+  it("higher priority wins regardless of registration order (and a later lower one loses)", () => {
+    const TYPE = "test.dup-priority";
+    const low = { contentType: TYPE, pluginId: "low", priority: 0, render: () => null, edit: () => null };
+    const high = { contentType: TYPE, pluginId: "high", priority: 5, render: () => null, edit: () => null };
+    registerNoteType(low);
+    registerNoteType(high); // higher priority takes the slot
+    expect(getNoteType(TYPE)).toBe(high);
+
+    // A LATER lower-priority registration must NOT displace the higher-priority winner.
+    registerNoteType({ contentType: TYPE, pluginId: "low2", priority: 1, render: () => null, edit: () => null });
+    expect(getNoteType(TYPE)).toBe(high);
+  });
+
+  it("equal priority = last-wins + a console.warn naming both plugin ids", () => {
+    const TYPE = "test.dup-equal";
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const a = { contentType: TYPE, pluginId: "kit-a", render: () => null, edit: () => null };
+    const b = { contentType: TYPE, pluginId: "kit-b", render: () => null, edit: () => null };
+    registerNoteType(a); // free key → bare set (no warn)
+    registerNoteType(b); // equal (default 0) priority → last-wins + warn
+    expect(getNoteType(TYPE)).toBe(b);
+    expect(warn).toHaveBeenCalledTimes(1);
+    const message = String(warn.mock.calls[0]?.[0] ?? "");
+    expect(message).toContain("kit-a");
+    expect(message).toContain("kit-b");
+    warn.mockRestore();
+  });
+});
+
 describe("NoteType render — sample content per type", () => {
   it("markdown renders sanitized HTML (and escapes injected markup)", () => {
     const html = renderToHtml(getNoteType("markdown")!.render({ content: "# Hi\n\n**bold**" }));

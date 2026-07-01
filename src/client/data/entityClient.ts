@@ -149,6 +149,16 @@ export type OperationPrefs = {
   icons?: Record<string, string>;
 };
 
+// PluginPrefs — the per-vault "Kit & Plugin" prefs (mirrors the server's
+// pluginPrefsSchema). `disabledContributions` is the set of namespaced contribution ids
+// the manager panel has switched off; `viewerAssociations` / `userKits` are declared now
+// but unused until P3/P4. Absent file → all-empty default.
+export type PluginPrefs = {
+  disabledContributions: string[];
+  viewerAssociations: { byContentType: Record<string, string>; byNoteId: Record<string, string> };
+  userKits: unknown[];
+};
+
 export type NodeRef =
   | { type: "source"; id: string }
   | { type: "anchor"; id: string }
@@ -437,6 +447,15 @@ export const entityClient = {
   },
   saveOperationPrefs(prefs: OperationPrefs) {
     return sendJson<{ prefs: OperationPrefs }>("PUT", "/api/operation-prefs", prefs);
+  },
+
+  // —— Plugin prefs (Kit & Plugin: disabled contributions + declared viewer/userKit slots) ——
+  /** The per-vault Kit & Plugin prefs (disabled contribution ids + declared P3/P4 slots). */
+  pluginPrefs() {
+    return getJson<{ prefs: PluginPrefs }>("/api/plugin-prefs");
+  },
+  putPluginPrefs(prefs: PluginPrefs) {
+    return sendJson<{ prefs: PluginPrefs }>("PUT", "/api/plugin-prefs", prefs);
   },
 
   // —— Study Layers ——

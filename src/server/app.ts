@@ -265,6 +265,28 @@ const emptyOperationPrefs: z.infer<typeof operationPrefsSchema> = {
   icons: {}
 };
 
+// plugin-prefs.json — the per-vault "Kit & Plugin" prefs, the write side of the plugin
+// read model (docs/design/plugin-viewer-model.md §7). Same vault.storage/JSON pattern as
+// operation-prefs above. `disabledContributions` is the enabled/disabled set (namespaced
+// contribution ids) the manager panel toggles; `viewerAssociations` (per-contentType /
+// per-note viewer pins) and `userKits` are DECLARED now but UNUSED until P3/P4 — carried
+// so the schema is stable and no migration is needed later. Absent file → empty default.
+const pluginPrefsSchema = z.object({
+  disabledContributions: z.array(z.string()).default([]),
+  viewerAssociations: z
+    .object({
+      byContentType: z.record(z.string(), z.string()).default({}),
+      byNoteId: z.record(z.string(), z.string()).default({})
+    })
+    .default({ byContentType: {}, byNoteId: {} }),
+  userKits: z.array(z.unknown()).default([])
+});
+const emptyPluginPrefs: z.infer<typeof pluginPrefsSchema> = {
+  disabledContributions: [],
+  viewerAssociations: { byContentType: {}, byNoteId: {} },
+  userKits: []
+};
+
 // Workspace layout is UI state, not a core entity: stored as a single JSON file
 // in the vault and validated only structurally.
 const workspaceNodeSchema = z.object({
@@ -1258,6 +1280,29 @@ export function createApp({ vault, modelProvider, clientDir }: CreateAppOptions)
     try {
       const prefs = operationPrefsSchema.parse(req.body);
       await vault.storage.writeTextAtomic(operationPrefsPath, `${JSON.stringify(prefs, null, 2)}\n`);
+      res.json({ prefs });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // —— Plugin prefs (Kit & Plugin: disabled contributions + declared viewer/userKit slots) ——
+  const pluginPrefsPath = path.join(vault.paths.studyDir, "plugin-prefs.json");
+
+  app.get("/api/plugin-prefs", async (_req, res, next) => {
+    try {
+      const text = await vault.storage.readText(pluginPrefsPath);
+      const prefs = text ? pluginPrefsSchema.parse(JSON.parse(text)) : emptyPluginPrefs;
+      res.json({ prefs });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/plugin-prefs", async (req, res, next) => {
+    try {
+      const prefs = pluginPrefsSchema.parse(req.body);
+      await vault.storage.writeTextAtomic(pluginPrefsPath, `${JSON.stringify(prefs, null, 2)}\n`);
       res.json({ prefs });
     } catch (error) {
       next(error);

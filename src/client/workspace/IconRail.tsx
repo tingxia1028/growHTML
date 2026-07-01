@@ -15,6 +15,7 @@
 
 import {
   Anchor,
+  Blocks,
   Code2,
   Folder,
   Layers,
@@ -40,7 +41,8 @@ export const RAIL_ENTRIES: RailEntry[] = [
   { kind: "study", label: "Notes", Icon: NotebookPen },
   { kind: "concept.list", label: "Concepts", Icon: Network },
   { kind: "operation.manager", label: "Operations", Icon: Code2 },
-  { kind: "layer.switcher", label: "Layers", Icon: Layers }
+  { kind: "layer.switcher", label: "Layers", Icon: Layers },
+  { kind: "plugin.manager", label: "Kit & Plugin", Icon: Blocks }
 ];
 
 // Neutral app-derived identity for the bottom avatar. This app has no user/account model

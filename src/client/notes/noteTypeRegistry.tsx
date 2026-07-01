@@ -74,12 +74,56 @@ export type NoteTypePlugin = {
       contentType to decide focusability (design law §0.5-B / contract guard). Diagram
       types are focusable via the diagram registry; this flag covers the rest. */
   focusable?: boolean;
+  /** Dup-registration precedence for the exclusive `contentType` slot (design
+      plugin-viewer-model §4/§6.1). Higher wins; default 0. A kit that wants to OVERRIDE
+      a built-in renderer (e.g. swap the default markdown view) declares a higher priority.
+      Equal priority = last-wins + a warning. */
+  priority?: number;
+  /** The owning plugin/kit id, threaded through for the equal-priority warning (so it
+      names WHICH plugins collided) and for the manager panel. Absent for built-ins. */
+  pluginId?: string;
 };
 
+// Each slot remembers the WINNING plugin's priority so a later, lower-priority
+// registration can be rejected without keeping a full history.
 const registry = new Map<string, NoteTypePlugin>();
 
+/**
+ * Register (or contest) the renderer for a `contentType` — the EXCLUSIVE note-type slot.
+ * Free key (nothing registered yet) → bare set as before. Contested key → compare
+ * `priority` (default 0): higher wins, lower is ignored, and on an EQUAL priority the
+ * later registration wins (last-wins) with a console.warn naming both plugin ids (design
+ * §4 precedence chain; §6.1 "last-wins + 警告"). This keeps the slot deterministic while
+ * letting a kit deliberately override a built-in with a higher priority.
+ */
 export function registerNoteType(plugin: NoteTypePlugin): void {
+  const existing = registry.get(plugin.contentType);
+  if (!existing) {
+    registry.set(plugin.contentType, plugin);
+    return;
+  }
+  const incomingPriority = plugin.priority ?? 0;
+  const existingPriority = existing.priority ?? 0;
+  if (incomingPriority > existingPriority) {
+    registry.set(plugin.contentType, plugin);
+    return;
+  }
+  if (incomingPriority < existingPriority) {
+    // A lower-priority registration loses to the higher-priority winner already in place.
+    return;
+  }
+  // Equal priority → last-wins, but warn so the collision is visible in dev/CI.
+  const who = (p: NoteTypePlugin) => p.pluginId ?? "(unknown)";
+  console.warn(
+    `[noteTypeRegistry] duplicate registration for contentType "${plugin.contentType}" ` +
+      `at equal priority (${incomingPriority}): "${who(plugin)}" overrides "${who(existing)}" (last-wins).`
+  );
   registry.set(plugin.contentType, plugin);
+}
+
+/** Test hook — clear the note-type registry so a spec starts from empty. */
+export function resetNoteTypes(): void {
+  registry.clear();
 }
 
 export function getNoteType(contentType: string): NoteTypePlugin | undefined {

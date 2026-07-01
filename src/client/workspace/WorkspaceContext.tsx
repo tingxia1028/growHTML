@@ -28,6 +28,7 @@ import {
   type OperationRecord,
   type OperationVariable,
   type PatchRecord,
+  type PluginPrefs,
   type SourceRecord,
   type StudyLayerRecord
 } from "../data/entityClient";
@@ -45,7 +46,8 @@ import {
   type HtmlAnnotationMode
 } from "../annotations";
 import { activeKitIdsForSource, CORE_KIT_ID } from "../../kits/activation";
-import { installedKits, kitSurfaceItems } from "../../kits/clientContext";
+import { installedKits, kitSurfaceItems, setDisabledContributions } from "../../kits/clientContext";
+import { listInstalledPlugins, type PluginRecord } from "../../kits/plugin";
 import { LAYOUT_PRESETS, DEFAULT_LAYOUT_ID } from "./presets";
 // Theme V1 — a workspace-wide visual choice, a strict SIBLING of the layout switcher
 // (it never reads activeLayoutId). The side-effect import populates the theme registry
@@ -454,6 +456,24 @@ export type WorkspaceContextValue = {
   activeThemeId: string;
   availableThemes: { id: string; name: string }[];
   setActiveTheme(id: string): void;
+
+  // —— Kit & Plugin (the plugin read model + its per-vault prefs; IRON LAW: the Kit &
+  // Plugin manager view reads ONLY these fields) ————————————————————————
+  // The installed plugins (Kit → Plugin → Contribution), read from the plugin registry
+  // that clientContext populated at install; `pluginPrefs` is the per-vault prefs
+  // (disabled contribution ids + declared P3/P4 slots). `setContributionEnabled` is the
+  // single WRITE seam: it merges one id into/out of `disabledContributions`, PUTs the
+  // next prefs, and pushes the disabled set into the clientContext module setter so
+  // surface/command filtering reflects it immediately.
+  installedPlugins: readonly PluginRecord[];
+  pluginPrefs: PluginPrefs;
+  setContributionEnabled(contributionId: string, enabled: boolean): void;
+};
+
+const EMPTY_PLUGIN_PREFS: PluginPrefs = {
+  disabledContributions: [],
+  viewerAssociations: { byContentType: {}, byNoteId: {} },
+  userKits: []
 };
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -504,6 +524,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [operations, setOperations] = useState<OperationRecord[]>([]);
   const [operationPrefs, setOperationPrefs] = useState<OperationPrefs>(EMPTY_OPERATION_PREFS);
   const [operationsVersion, setOperationsVersion] = useState(0);
+  // Kit & Plugin: the per-vault prefs (disabled contribution ids + declared P3/P4 slots).
+  // Loaded once on mount; the disabled set is pushed into the clientContext module setter
+  // so surface/command filtering reflects it. The installed plugins are read from the
+  // registry (populated at install), snapshotted so a toggle re-renders consumers.
+  const [pluginPrefs, setPluginPrefs] = useState<PluginPrefs>(EMPTY_PLUGIN_PREFS);
+  const [installedPlugins] = useState<readonly PluginRecord[]>(() => listInstalledPlugins());
   // The shell owns which view-kind fills the switchable left slot (it's local shell
   // state, not in the dock tree), so it REGISTERS a "show the operation manager" handler
   // here. The Customize-Toolbar footer in any ActionMoreMenu calls openOperationManager()
@@ -1313,6 +1339,51 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     };
   }, [operationsVersion]);
 
+  // Load the Kit & Plugin prefs on mount and push the disabled set into the clientContext
+  // module setter, so surface/command filtering reflects the user's toggles from the first
+  // render. Additive + best-effort: a failure leaves nothing disabled (the panel + toolbars
+  // still work). No version token — the panel mutates prefs through setContributionEnabled,
+  // which updates state directly.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { prefs } = await entityClient.pluginPrefs();
+        if (cancelled) return;
+        setPluginPrefs(prefs);
+        setDisabledContributions(prefs.disabledContributions);
+      } catch {
+        // plugin prefs are additive — keep the panel + toolbars working with nothing disabled
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // The single WRITE seam for the Kit & Plugin manager (IRON LAW): merge one contribution
+  // id into/out of `disabledContributions`, push the next disabled set into the
+  // clientContext module setter (so surface/command filtering updates immediately), update
+  // local state (so the panel re-renders its toggle), and PUT the next prefs. Mirrors
+  // saveActionPrefs — the panel never calls entityClient directly.
+  const setContributionEnabled = useCallback(
+    (contributionId: string, enabled: boolean) => {
+      setPluginPrefs((prev) => {
+        const set = new Set(prev.disabledContributions);
+        if (enabled) set.delete(contributionId);
+        else set.add(contributionId);
+        const nextDisabled = Array.from(set);
+        const next: PluginPrefs = { ...prev, disabledContributions: nextDisabled };
+        setDisabledContributions(nextDisabled);
+        void entityClient.putPluginPrefs(next).catch((err) => {
+          setError(err instanceof Error ? err.message : "Failed to save plugin prefs");
+        });
+        return next;
+      });
+    },
+    []
+  );
+
   // Merge a slot's built-in kit actions with the custom ops of the matching scope, then
   // order/filter by prefs. Anchor scope ↔ the selection toolbar; source scope ↔ the
   // source-actions toolbar. Built-in kit items are gated by the active source's kits;
@@ -1516,7 +1587,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setActiveLayout,
       activeThemeId,
       availableThemes,
-      setActiveTheme
+      setActiveTheme,
+      installedPlugins,
+      pluginPrefs,
+      setContributionEnabled
     }),
     [
       focus,
@@ -1603,7 +1677,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setActiveLayout,
       activeThemeId,
       availableThemes,
-      setActiveTheme
+      setActiveTheme,
+      installedPlugins,
+      pluginPrefs,
+      setContributionEnabled
     ]
   );
 
