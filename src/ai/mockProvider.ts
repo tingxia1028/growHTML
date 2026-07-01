@@ -12,7 +12,15 @@ export const FORM_ROUTER_CONTENT_TYPE = "form-router";
 // loop is fully self-testable.
 export class MockModelProvider implements ModelProvider {
   readonly id = "mock";
-  readonly capabilities = { chat: true, agentic: false, streaming: true } as const;
+  readonly capabilities = {
+    chat: true,
+    agentic: false,
+    streaming: true,
+    // Native structured path: completeStructured echoes the host-supplied sample.
+    structured: true,
+    tools: false,
+    kind: "mock"
+  } as const;
 
   // The deterministic answer text — shared by `complete` and `stream` so the
   // streamed concatenation is byte-identical to the one-shot reply.

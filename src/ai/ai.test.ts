@@ -25,6 +25,17 @@ describe("MockModelProvider", () => {
     expect(new MockModelProvider().capabilities.streaming).toBe(true);
   });
 
+  it("declares honest Phase 0 capabilities (structured echo, no app tools, kind mock)", () => {
+    expect(new MockModelProvider().capabilities).toEqual({
+      chat: true,
+      agentic: false,
+      streaming: true,
+      structured: true,
+      tools: false,
+      kind: "mock"
+    });
+  });
+
   it("streams the answer in multiple chunks that rejoin to the one-shot reply", async () => {
     const provider = new MockModelProvider();
     const request = {
@@ -66,11 +77,18 @@ describe("createModelProvider", () => {
     const provider = createModelProvider({ STUDY_VAULT_AI_PROVIDER: "claude-cli" });
     expect(provider).toBeInstanceOf(ClaudeCliProvider);
     expect(provider.capabilities.agentic).toBe(true);
+    // cli-agent honesty: the binary runs ITS OWN tools; no app tools, no native JSON mode.
+    expect(provider.capabilities).toMatchObject({ kind: "cli-agent", tools: false, structured: false });
   });
 
   it("selects the PTY provider when configured (without loading node-pty)", () => {
     const provider = createModelProvider({ STUDY_VAULT_AI_PROVIDER: "claude-pty" });
     expect(provider.id).toBe("claude-pty");
     expect(provider.capabilities.agentic).toBe(true);
+    expect(provider.capabilities).toMatchObject({ kind: "cli-agent", tools: false, structured: false });
+  });
+
+  it("falls back to the mock for an unknown provider value (unchanged behavior)", () => {
+    expect(createModelProvider({ STUDY_VAULT_AI_PROVIDER: "does-not-exist" }).id).toBe("mock");
   });
 });

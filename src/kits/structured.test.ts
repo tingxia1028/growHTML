@@ -125,7 +125,7 @@ describe("generateStructuredContent", () => {
     let calls = 0;
     const flaky: ModelProvider = {
       id: "flaky",
-      capabilities: { chat: true, agentic: false, streaming: false },
+      capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, kind: "mock" },
       async complete(_req: ChatRequest): Promise<ChatResponse> {
         calls += 1;
         const content = calls === 1 ? "oops not json" : '{"title":"ok","n":5}';
@@ -143,7 +143,7 @@ describe("generateStructuredContent", () => {
   it("throws after exhausting attempts on persistently invalid output", async () => {
     const bad: ModelProvider = {
       id: "bad",
-      capabilities: { chat: true, agentic: false, streaming: false },
+      capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, kind: "mock" },
       async complete(): Promise<ChatResponse> {
         return { message: { role: "assistant", content: "{\"title\":123}" } };
       }

@@ -54,10 +54,34 @@ export type StructuredRequest = {
 
 export type ProviderCapabilities = {
   chat: boolean;
-  /** True when the provider can run agentic tools (file edits, web, etc.). */
+  /**
+   * True when the provider can run agentic tools (file edits, web, etc.). For
+   * cli-agent providers this means the BINARY runs its own internal tools — it
+   * does NOT imply app-defined tool calling (that is `tools`).
+   */
   agentic: boolean;
   /** True when the provider implements `stream()` for incremental output. */
   streaming: boolean;
+  /**
+   * True when the provider has a NATIVE structured-output path (a
+   * `completeStructured` that genuinely yields JSON, e.g. the mock's sample
+   * echo or a vendor JSON mode). False → callers fall back to `complete()` +
+   * JSON extraction (`extractJson` retry loop in structured.ts).
+   */
+  structured: boolean;
+  /**
+   * True when the provider supports APP-DEFINED tool/function calling (the
+   * future `runAgent` loop). Distinct from `agentic`: a subscription agent CLI
+   * runs its own tools (agentic: true) yet accepts none of ours (tools: false).
+   */
+  tools: boolean;
+  /**
+   * Integration model — drives config UI + key handling.
+   * "mock" (offline determinism) | "cli-agent" (locally installed,
+   * already-subscribed agent CLI: claude / codex / …) | "http" (BYOK API-key
+   * vendor) | "managed" (hosted credits gateway).
+   */
+  kind: "mock" | "cli-agent" | "http" | "managed";
 };
 
 export interface ModelProvider {

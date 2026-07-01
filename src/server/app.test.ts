@@ -1076,7 +1076,14 @@ describe("form router — html path result degrades, never saved as html", () =>
   const PATH_RESULT = JSON.stringify({ form: "html-interactive", html: "generated/x.html" });
   const pathProvider = {
     id: "path-writer",
-    capabilities: { chat: true, agentic: true, streaming: false },
+    capabilities: {
+      chat: true,
+      agentic: true,
+      streaming: false,
+      structured: true,
+      tools: false,
+      kind: "cli-agent" as const
+    },
     async complete() {
       return { message: { role: "assistant" as const, content: PATH_RESULT } };
     },
@@ -1103,7 +1110,14 @@ describe("form router — html path result degrades, never saved as html", () =>
     const goodHtml = JSON.stringify({ form: "html-interactive", html: "<canvas></canvas>" });
     const okProvider = {
       id: "inline-html",
-      capabilities: { chat: true, agentic: false, streaming: false },
+      capabilities: {
+        chat: true,
+        agentic: false,
+        streaming: false,
+        structured: true,
+        tools: false,
+        kind: "mock" as const
+      },
       async complete() {
         return { message: { role: "assistant" as const, content: goodHtml } };
       },
