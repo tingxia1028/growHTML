@@ -1,8 +1,11 @@
 # Protected Layer Sharing — `.svpack` design
 
-Status: design only (no implementation). Evolves the current plaintext `docs/samples/teacher-layer.studypack` transport into an encrypted, signed, per‑recipient, revocable container while reusing the existing layer / rematch / provenance machinery.
+Status: design only (no implementation). Evolves the current plaintext `docs/samples/teacher-layer.studypack` transport into an encrypted, signed, per‑recipient container while reusing the existing layer / rematch / provenance machinery.
 
 Author-facing name: **Study Vault Pack** (`.svpack`). Legacy plaintext export stays `.studypack`.
+
+> ## ⛳ Build scope (decided 2026‑07‑01): **fully offline — Tier A only.**
+> V1 is the **accountless, offline** path: encrypted+signed container, per‑recipient code‑derived keys, client‑enforced validity, non‑re‑exportable imports. **No server, no accounts.** The server‑backed tiers below (**Tier B** = accounts + server key‑release + real revocation; **Tier C** = server‑side decryption/streaming) are kept as **FUTURE / out of scope** — documented so the offline format stays forward‑compatible, but **not to be built now**. Accepted tradeoff: offline expiry/anti‑copy is a **soft** lock (a patched client or clock‑rollback can bypass; screenshots always can) — see §1.2.
 
 ---
 
@@ -293,7 +296,7 @@ Notes: codes are opaque, single‑use‑to‑bind, one account each. The server 
 
 ## 11. Phasing / milestones (each independently shippable)
 
-**P1 — Tier A: accountless, per‑recipient codes, fully offline.**
+**P1 — Tier A: accountless, per‑recipient codes, fully offline.  ← V1, THE build scope.**
 - `.svpack` format v2 (§3): AES‑256‑GCM payload + Ed25519 signature; a **device keypair** auto‑generated on first run (no registration).
 - **Per‑recipient unique codes** whose Argon2id‑derived key wraps the CEK (`wraps: [{codeId, wrappedCek}]`, §3.3) — targeting + leak attribution with NO server and NO key exchange.
 - `note.origin.exportable:false` + provenance stamps (extend `src/core/schema/note.ts`).
@@ -302,12 +305,12 @@ Notes: codes are opaque, single‑use‑to‑bind, one account each. The server 
 - **Signed code validity window** (`header.validity.validUntil`, §8.0): client‑enforced offline expiry + an encrypted rollback high‑water‑mark. A *soft* lock (patched client / clock‑rollback out of scope) that becomes *hard* server‑enforced in P2.
 - Ships real value: tamper‑proof, non‑plaintext, non‑re‑exportable, per‑recipient, **time‑boxed** packs — offline, zero infrastructure. Clawback = validity/lease expiry only.
 
-**P2 — Tier B: accounts + server entitlement + revocation + the sync foundation.**
+**P2 — Tier B: accounts + server entitlement + revocation + the sync foundation.  ← FUTURE, deferred (not now).**
 - `src/core/identity/` account+device model (§4), new id kinds (§4.4). **This account layer is also the identity that later powers multi‑device sync** — build once, feed both.
 - Server surface (§10); code becomes a redemption token; X25519→HKDF→AES‑KW per‑device CEK wrapping (§4.3).
 - Real per‑code **revocation** + lease/online re‑check (§8); targeting binds to the **person**, follows devices.
 
-**P3 — Watermark / forensics + polish.**
+**P3 — Watermark / forensics + polish.  ← FUTURE, deferred.**
 - `svwm/v1` per‑recipient invisible watermark (§7.3) + an extraction/attribution tool.
 - Multi‑device re‑wrap, key rotation UX, missing‑source Re‑anchor polish.
 
