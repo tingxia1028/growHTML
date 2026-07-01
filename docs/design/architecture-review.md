@@ -56,6 +56,8 @@ The model is right (plugin = smallest unit) but `clientContext.tsx` registers on
 - `noteCardMeta` lacks title fallbacks for vocab/grammar/excerpt/argument. → subject M-B.
 - KaTeX not a dependency yet (the one new UI dep for formula types). → subject M-B decision.
 - Dock has no `tabs` node type (`DockNode = split | leaf`); reader tab is hardcoded chrome (split already works). → multidoc P-A1.
+- Note presentation has no persisted/exported open-state — card geometry is localStorage-only (`CardGeom`), open-state is component-local (note-presentation §L328). The user wants pinned-open cards whose position persists AND travels in `.svpack` → additive `note.display` (anchor-relative offset), which rides the export for free. → note-presentation D10 / **N5**.
+- Anchor Focus board (D12) columns MUST be data-driven from the F7 stage axis, never hardcoded — the board is a *consumer* of F7, not a second taxonomy owner. → note-presentation **N6**.
 
 ---
 

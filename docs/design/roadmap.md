@@ -5,12 +5,12 @@ One dependency-ordered plan over the six design docs written this cycle. Purpose
 ## The design docs (all committed)
 | Doc | Scope | Impl phases |
 |---|---|---|
-| `studypack-sharing.md` | Offline `.svpack` protected sharing v2 | A✅ · B✅ · C · D |
+| `studypack-sharing.md` | Offline `.svpack` protected sharing v2 | A✅ · B✅ · C🔧 (watermark✅, dialogs left) · D |
 | `plugin-viewer-model.md` §8 | Plugin/Kit **marketplace** | M1 · M2 · M3 |
-| `note-presentation-unified.md` | In-reader note surface D1–D9 | N1 · N2 · N3 · N4 |
+| `note-presentation-unified.md` | In-reader note surface D1–D12 | N1 · N2 · N3 · N4 · N5 · N6 |
 | `subject-kits.md` | 11 subject types × 5 kits + auto-switch | M-A · M-B · M-C |
 | `multidoc-and-concepts.md` | Multi-pane docs + cross-doc notes + concept graph | P-A1 · P-A2 · P-B · P-C1 · P-C2 |
-| `architecture-review.md` | Foundation assessment | F1–F6 (refactors, below) |
+| `architecture-review.md` | Foundation assessment | F1–F7 (refactors, below) |
 | (this) `roadmap.md` | Sequencing | — |
 
 ## Foundation refactors (from `architecture-review.md`) — do these *with* the feature that needs them, not after
@@ -23,7 +23,7 @@ The extension seams (registries / content-as-data / entity stores / render contr
 | **F4** | Replace the single-active-kit gate (`activation.ts` `FALLBACK_DEFAULT_KIT`) with marketplace **effective-installed** | market, subject kits "foreground not filter" | **Market M1** |
 | **F5** | Split `plugin==kit` 1:1 + fix `seedCorePlugin` over-claim (real `pluginId` per type) | marketplace `members[]` resolution | **Market M1** |
 | **F6** | Additive rect on `html_selection`/`web_text_quote` anchors | unified region selection over HTML (D4) | **D4b** |
-| **F7** | Preset stage layers (预习/学习/复习/拓展) are hardcoded in core + imposed on every vault → make them **kit-contributed + user-editable** | forces one kit's taxonomy on all users; not customizable | **F4/F5 / Market M1**; F7a (core+kit) parallelizable now, F7b (Lens UI) after |
+| **F7** | Preset stage layers (预习/学习/复习/拓展) are hardcoded in core + imposed on every vault → make them **kit-contributed + user-editable** | forces one kit's taxonomy on all users; not customizable | **F7a ✅ shipped** (core+kit decouple, `a462207`); **F7b** (Lens edit UI) rides Market M1 / N6 |
 
 ## Two keystones everything leans on
 Most work funnels through two load-bearing pieces. Build order is mostly "who unblocks whom":
@@ -69,7 +69,7 @@ Concept P-C1 (aggregation page, additive to existing API) ──> P-C2 (graph vi
 ## Concurrency coordination (a live session owns reader/marker)
 `annotationLayer.ts`, `markerOverlay.ts`, `*Reader.tsx`, `webview-preload.ts`, `DomReader.tsx` have in-flight edits from another session. **N1 (D2), P-A2, and all of P-A/B touch this area.** Rule: land the sharing + market + engine tracks (which avoid it) first; sequence the reader-surface work (N1, multidoc paint) after that session's changes settle, or explicitly co-design D1 with it. Everything committed so far by this line of work has stayed out of those files.
 
-## Recommended sequence (foundation refactors F1–F6 fused in, **bold**)
+## Recommended sequence (foundation refactors F1–F7 fused in, **bold**)
 **Now (parallel, no reader-file collision):**
 1. **svpack B✅ → C → D** — server done; C = export/import dialogs + roster + zwsp watermark; D = the two-vault e2e. A whole user-facing capability on its own; touches no contended files. *(Carries **F2** opportunistically — new sharing routes already live in their own `svpack.ts` module.)*
 2. **Market M1 + F4 + F5** — two-tab market + install state, **F4** (effective-installed replaces the single-active-kit gate) and **F5** (split plugin==kit, fix `seedCorePlugin`) are *part of* M1, not follow-ups. Unblocks all subject/kit work.
@@ -78,10 +78,11 @@ Concept P-C1 (aggregation page, additive to existing API) ──> P-C2 (graph vi
 **Next (after M1):**
 4. **Subject M-B** — vocab + formula + timeline exemplars (KaTeX decision); **Market M2** (previews + user kits).
 5. **N3 (D6)** — AI anchor-context results auto-materialize as draft notes (undo toast).
+6. **N6 (D12) — Anchor Focus board** — the two-mode anchor/note board (by document order · by stage layer). **Consumes F7 (shipped `a462207`)** for its by-stage columns — data-driven from the source's *live* stage layers, never hardcoded — and reuses the §10 PreviewCard. A mostly-independent NEW surface *outside* the contended reader-paint files, so it builds in parallel once the §10 PreviewCard substrate (R3) lands. Ship **F7b** (the Lens edit-axis UI) alongside — the board is where editing stage layers becomes visible.
 
 **The presentation + multi-doc lift — foundation-first, coordinate with the reader session:**
-6. **F3 (D1 ReaderAnnotationAdapter) → N1 (D2 markers + D5 editor) → N2 (D4 selection + D3 styles).** F3 is not optional prep — it's the keystone N1/P-A2 both stand on; build the adapter before the marker/editor UX. (**F6** — anchor rect — rides D4b inside N2.)
-7. **F1 (decompose WorkspaceContext) ≡ P-A1 → P-A2 (per-pane paint) → P-B (cross-doc authoring).** F1 and P-A1 are the SAME work: the single→multi `activeSourceId` split *is* the god-object decomposition. Do them as one. Smallest demo = open two docs split, a shared note paints in both.
-8. **Concept P-C1 → P-C2**, then **M-C / N4** (remaining subject types + import prompts M3), consuming the `.svpack` `contentTypes` summary the sharing server already emits.
+7. **F3 (D1 ReaderAnnotationAdapter) → N1 (D2 markers + D5 editor) → N5 (D10+D11) → N2 (D4 selection + D3 styles).** F3 is the keystone N1/P-A2 both stand on. **N5 rides N1**: it promotes D5's localStorage card geometry to a vault-persisted, `.svpack`-exported `note.display`, adds the per-document hide-all toggle, and collapses the TopBar 3-way to two (Document + Anchor Focus). This is the user's "AI note 别丢右栏 + note 钉住并导出" fix — the *trigger* toolbar is already in-document; the fix is the *result* surface (D5) + persistence (D10). (**F6** — anchor rect — rides D4b inside N2.)
+8. **F1 (decompose WorkspaceContext) ≡ P-A1 → P-A2 (per-pane paint) → P-B (cross-doc authoring).** F1 and P-A1 are the SAME work: the single→multi `activeSourceId` split *is* the god-object decomposition. Do them as one. Smallest demo = open two docs split, a shared note paints in both.
+9. **Concept P-C1 → P-C2**, then **M-C / N4** (remaining subject types + import prompts M3), consuming the `.svpack` `contentTypes` summary the sharing server already emits.
 
 **Rationale:** the foundation refactors are not a detour — F1 *is* multi-doc's enabler, F3 *is* the presentation keystone, F4/F5 *are* what makes the marketplace real. Each is fused with its first dependent feature so you pay the refactor exactly when the feature needs it, never speculatively. The independent tracks (sharing, market, auto-switch engine) go first because they're safely buildable now and de-risk the contracts the deeper work leans on; F2 is incremental and rides along.

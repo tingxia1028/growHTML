@@ -451,3 +451,87 @@ webview IPC (`sv:anchors`/`sv:marker-action`).
    review-pack `exercises[]` (schemaed but never rendered).
 4. D6's 存为笔记 already exists as "Add as note" and already targets the focused anchor — D6 is
    an automation + draft/undo delta, not a new pipeline.
+
+---
+
+## 10. Round 2 (2026-07) — persistent overlay (D10) · hide-all (D11) · Anchor Focus board (D12)
+
+Origin: a user review of the selection toolbar + the 3-way TopBar + the Anchor Focus concept.
+**Finding first — the toolbar is already right:** `SelectionFloatingToolbar` floats the
+anchor-scope actions IN the document (not the sidebar), reusing one `selectionActions` list +
+`runAction`, grouped by `actionGroups.ts` (Create Note / AI Actions / Study Actions / Custom),
+with a Customize hook (`openOperationManager`). "在文档里、一排快捷按钮、点了调 AI、可编辑可重生成"
+— the capability is all present. The genuine deltas are the three below; D5 already fixes the
+biggest one.
+
+### D10 — note open-state + position persist AND export (extends D5's geometry)
+**Gap (grounded):** D5/§10 card geometry uses `CardGeom` in **localStorage** (`readCardGeom`) and
+open-state is component-local (§ "state is component-local", L328). So a pinned card's position is
+per-device and **never travels in `.svpack`**. The user wants a note *fixed open, at a remembered
+position, carried on export.*
+**Decision — an additive, optional presentation field on the note schema:**
+```
+note.display?: {
+  open?: boolean;                       // pinned open (vs collapsed to a D2 chip)
+  offset?: { dx: number; dy: number };  // ANCHOR-RELATIVE, never absolute px
+  size?:   { w: number; h: number };
+}
+```
+- **Anchor-relative** offset (from D2's right-slot origin — the same rect logic as the pinned card
+  / D5 editor) is the crux: absolute pixels break on reflow / zoom / font-size / screen and are
+  meaningless on a recipient's device; a relative offset survives all of them AND export.
+- **Stored on the note** ⇒ it lives in the vault jsonl and is **automatically included in the
+  `.svpack` export** — `buildStudyPack` already ships `note` records, so the field rides along with
+  no export change. The recipient sees the author's pinned layout.
+- localStorage `CardGeom` stays the **ephemeral fallback** for un-pinned cards (drag-before-pin);
+  a **Pin** affordance promotes the current geometry into `note.display`; un-pin clears it. The D2
+  marker chip reflects pinned state (active glyph when `display.open`).
+- **Sealed (imported) notes:** `display` is read-only like the rest of the sealed record; a reader
+  can still locally hide-all (D11 — a view flag) without mutating the sealed note.
+
+### D11 — per-document "hide all notes" toggle (collapses the 3-way TopBar)
+**Decision:** an icon next to the reader's TOC/目录 control flips a per-source `notesHidden` **view
+flag** → every pinned card collapses to its D2 icon chip; click again restores. Because each note's
+own open state lives in `display.open` (D10), "打开的打开、关闭还是关闭" is preserved for free — the
+toggle only masks, it never loses per-note state.
+- This **subsumes the global "Notes Overlay" annotationMode.** The TopBar 3-way
+  (`Document / Notes Overlay / Anchor Focus`) collapses to **two**: `Document` (always renders
+  pinned cards as the overlay; icons⇄cards IS the hide-all toggle, not a mode) and `Anchor Focus`
+  (the board, D12). One less global mode; the icons/cards choice moves to where it belongs
+  (per-document, in-reader).
+- `notesHidden` is **device-local view state** (localStorage / workspace.json), **not** exported —
+  the exported truth is each note's `display.open` (D10). A reader who hid everything still ships
+  the author's pins.
+
+### D12 — Anchor Focus: from weak re-reveal → a real board (two modes)
+**Today** "Anchor Focus" (TopBar) only re-reveals the one focused anchor (badge = 1). **Upgrade** to
+a board centered on anchors+notes, two layouts (the user's mockup):
+- **Mode A — by document order (default):** anchors in reading order; each row = the anchor passage
+  + its notes as PreviewCards. Scenario: 顺着读 / 整理补充.
+- **Mode B — by stage layer:** columns = the source's **stage layers**, notes bucketed by `layerId`.
+  Scenario: 查漏 / 考前复习.
+- **CRITICAL — columns are data-driven from F7:** columns are whatever stage layers the source
+  actually has (`stagePresetForKits` seed + the user's renamed/added/removed ones), **never a
+  hardcoded `预习/学习/练习/错题/复习`**. The mockup shows 5; textbook's F7 axis is 4
+  (预习/学习/复习/拓展). The board is a **consumer of the F7 axis** and always reflects the live
+  layers — the direct payoff of F7 being kit-contributed + user-editable.
+- **Reuse, don't rebuild:** cards are the §10 PreviewCard (same render contract, hover/center-view);
+  filters = 只看当前 Layer (narrows columns/rows) + search + fullscreen. No new card system, no new
+  render path.
+- **V1 scope = single document** (the mockup is one textbook). A cross-document board is a multi-doc
+  concern → defers to P-A/B (`multidoc-and-concepts.md`); a cross-doc note would appear under each
+  of its documents' boards.
+
+### Two things confirmed, not re-solved here
+- **The "AI note lands in the right sidebar" bug is D5/N1**, already documented (§5:
+  `GenerationPreview` @ `views.tsx:492`, inside the chat pane → floating editor next to the
+  passage). No new decision; D10 then upgrades D5's localStorage geometry to the vault+export
+  `note.display`.
+- **The webview toolbar hole is F3.** `SelectionFloatingToolbar` does not float for cross-realm
+  `<webview>` guests (live web / local HTML) — they can't cheaply report a selection rect. Until the
+  F3 reader adapter, HTML/web sources get the Anchor Action Bar but no float-on-selection.
+
+**N-mapping (new):** **N5 = D10 + D11** (rides N1 — extends D5's card to a vault-persisted +
+exported `display`, adds the hide-all toggle, collapses the TopBar to two). **N6 = D12** (the Anchor
+Focus board — consumes F7 (shipped) + §10 PreviewCard; a mostly-independent new surface, outside the
+contended reader-paint files).
