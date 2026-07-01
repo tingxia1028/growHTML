@@ -644,3 +644,95 @@ loop approval for destructive tools.
 - DeepSeek OpenAI-compatible API: https://api-docs.deepseek.com/
 - OpenRouter (OpenAI-compatible gateway): https://openrouter.ai/docs/quickstart
 - Electron `safeStorage`: https://www.electronjs.org/docs/latest/api/safe-storage
+
+---
+
+## 9. Addendum (2026-07, user-corrected) — `cli-agent` is a KIND, not a Claude special case; ownership = core
+
+**Supersedes the §1/§4.1 framing** of claude-cli/claude-pty as two special "first-class" providers.
+The correction: *"本地已订阅的 agent CLI"* is a **type** with instances — claude is one entry,
+**codex** (the ChatGPT-subscription `codex` CLI) is the second, future subscription CLIs
+(gemini-cli, …) are more entries. The category's value proposition is generic: the user already
+pays a flat subscription; the app rides it with **zero key management**.
+
+### 9.1 The kind axis (final)
+```
+kind: "mock" | "cli-agent" | "http" | "managed"
+        │         │             │         └ your credits gateway (managed-ai-credits.md)
+        │         │             └ BYOK API-key vendors (AI SDK engine, §3/§4)
+        │         └ locally installed, already-subscribed agent CLI (claude / codex / …)
+        └ offline determinism (tests, default)
+```
+(§4.1's `kind:"cli"` is renamed `"cli-agent"` — same axis, generalized meaning.)
+
+### 9.2 Per-CLI adapters over the OFFICIAL SDKs (researched 2026-07 — do NOT hand-roll spawn/parse)
+Both vendors ship first-party TypeScript SDKs that already own the spawn/parse/session mechanics:
+- **claude → `@anthropic-ai/claude-agent-sdk`** — **already in `package.json` (0.3.185) but
+  currently unwired in `src/`** (only the README mentions it; the live providers still hand-spawn).
+  `query({ prompt, options })` returns an async generator of typed messages (native streaming);
+  sessions resume via options; safe mode via `permissionMode` / allowed-tools options.
+- **codex → `@openai/codex-sdk`** — official SDK wrapping the codex CLI (JSONL-over-stdio handled
+  inside): `codex.startThread()` → `thread.run(prompt)` / `runStreamed()` (typed event stream);
+  threads persist in `~/.codex/sessions`, `resumeThread(id)` continues. Node 18+, server-side.
+- **zod compatibility verified:** these SDKs require zod 4; the repo is on `zod ^4.4.3` ✓.
+
+So the "generic provider" shrinks to a thin per-CLI adapter over each SDK, and the spec keeps only
+what the SDKs don't unify:
+
+```ts
+// src/ai/cliAgent/spec.ts — per-CLI: what the SDKs DON'T unify
+export type CliAgentSpec = {
+  id: "claude" | "codex";
+  detect(): Promise<{ ok: boolean; version?: string }>; // binary/SDK probe → settings UI "已检测✓"
+  stripEnvKeys: string[];   // invariant 1 — claude: ANTHROPIC_API_KEY/AUTH_TOKEN · codex: OPENAI_API_KEY
+  safeOptions: unknown;     // invariant 2 — claude: permissionMode + no tools · codex: sandbox read-only
+  makeProvider(deps: ProviderDeps): ModelProvider;      // thin adapter: vendor SDK → our seam
+};
+```
+
+| | **claude** (`@anthropic-ai/claude-agent-sdk`) | **codex** (`@openai/codex-sdk`) |
+|---|---|---|
+| call | `query({ prompt, options })` | `startThread()` → `run(prompt)` |
+| streaming | async generator of messages (native — upgrades today's `streaming:false`) | `runStreamed()` typed events |
+| session | resume via options (id-based) | `resumeThread(id)`; threads on disk |
+| structured | prompt-level JSON + our `generateStructured` extract/retry | SDK output-schema options, same fallback |
+| subscription auth | the CLI's login | `codex login` (ChatGPT subscription) |
+
+The hand-spawned `claude-cli` / `claude-pty` providers stay registered as **legacy fallback
+entries** until the SDK adapter proves out in daily use — then deprecate.
+
+### 9.3 Two safety invariants — spec-enforced, tested (they survive the SDK move)
+1. **Per-CLI metered-key strip.** The SDKs honor env API keys — with `ANTHROPIC_API_KEY` /
+   `OPENAI_API_KEY` present they can silently switch to metered API billing. Each spec DECLARES
+   the keys to strip in subscription mode (generalizes `buildSubprocessEnv` + its unit test).
+   The invariant is the category's, not Claude's.
+2. **Pinned non-destructive mode.** These are agent binaries (file edits / command execution). As
+   chat backends they MUST be pinned via SDK options: claude `permissionMode` with no tools
+   granted; codex sandbox `read-only` (+ scratch cwd). `safeOptions` is part of the spec, **not
+   optional**, and unit-tested (assert the options object passed to the SDK).
+
+### 9.4 Ownership — core (registry-shaped); plugins consume, never define transports
+| Layer | Owner | Why |
+|---|---|---|
+| `ModelProvider` seam + provider registry + the four kind engines (CliAgent/AiSdk/Managed/mock) | **core** (`src/ai` + server) | providers run server-side: spawn subprocesses, hold secrets (safeStorage), make vendor calls — a **trust boundary**, never third-party marketplace JS; AI chat is a core capability; managed is money+compliance |
+| Concrete vendor entries (DeepSeek preset, claude/codex specs) | **data/adapters registered in core** | plugin-*shaped*, core-*shipped* — the same registry philosophy as NoteType/theme |
+| "Add a vendor" | **configuration, not code** | the generic `openai-compatible` entry = baseURL+key+model |
+| kits/plugins | **consume only** | via operations/prompts/commands; the iron rule stays one-way and its converse holds: kits never define transports |
+
+If a real third-party-provider need ever emerges, the registry can open as a *server-side*
+extension point with explicit trust — a trust decision for later, not something to build now.
+
+### 9.5 Phasing update
+Phase 0 unchanged. **New Phase 0.5 — cli-agent kind:** wire the two OFFICIAL SDKs behind thin
+`CliAgentSpec` adapters (claude SDK is already a dependency; add `@openai/codex-sdk`); detection
+probes; both invariants tested; legacy claude-cli/pty kept as fallback entries. Phases 1–4
+unchanged. Roadmap names these **A1 (Phase 0) · A2 (Phase 0.5) · A3 (Phase 1) · A4 (Phase 2)**.
+
+### 9.6 Prior art (researched 2026-07) — what we adopt vs copy vs skip
+| Project | What it is | Our use |
+|---|---|---|
+| `@anthropic-ai/claude-agent-sdk` (official) | typed `query()` over Claude Code | **adopt** — the claude spec's engine (already a dep) |
+| `@openai/codex-sdk` (official) | typed threads over the codex CLI | **adopt** — the codex spec's engine |
+| `ai-sdk-provider-claude-code` (ben-vargas, listed in AI SDK community providers) | wraps the claude SDK as a Vercel-AI-SDK provider — proof the "subscription CLI behind a provider interface" pattern works; docs its limits (temperature/topP ignored; app tools unsupported — the CLI runs its own) | **reference, not dependency** — we adapt the official SDKs directly behind our own seam (first-party, one fewer layer); its documented param limits inform our honest `capabilities` (cli-agent: `tools:false` for app-tools) |
+| Vercel AI SDK (`ai` + `@ai-sdk/*`) | unified HTTP-vendor engine | **adopt** in A3 (§3 unchanged) |
+| one-api / new-api | open-source LLM gateway with tokens/quotas/recharge | **managed-side** — see `managed-ai-credits.md` §10.4 (adopt-or-copy) |

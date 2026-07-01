@@ -11,6 +11,8 @@ One dependency-ordered plan over the six design docs written this cycle. Purpose
 | `subject-kits.md` | 11 subject types × 5 kits + auto-switch | M-A · M-B · M-C |
 | `multidoc-and-concepts.md` | Multi-pane docs + cross-doc notes + concept graph | P-A1 · P-A2 · P-B · P-C1 · P-C2 |
 | `ai-workspace.md` | AI chat sessions + file/note attachments + doc synthesis | W1 · W2 · W3 |
+| `multi-provider-ai-agent.md` (+§9) | BYOK 多厂商 + `cli-agent` kind (claude/codex 官方 SDK) + agent loop | A1 · A2 · A3 · A4 |
+| `managed-ai-credits.md` (+§10) | 托管网关 + 积分 + 月费/AI Group 档位 | G-A · G-B · G-C (external-gated) |
 | `architecture-review.md` | Foundation assessment | F1–F7 (refactors, below) |
 | (this) `roadmap.md` | Sequencing | — |
 
@@ -81,6 +83,13 @@ Concept P-C1 (aggregation page, additive to existing API) ──> P-C2 (graph vi
 - **W2** — `/api/sources/:id/bundle` + drag/Ctrl+V file→attachment (notes ride along) + library multi-select/Ctrl+C + widen `ChatContext` to `sources[]` (token budget).
 - **W3** — synthesis command → new **markdown** source via `ingestSource` (headings = TOC) + the left-sidebar workspace page + default-directory landing. (See `ai-workspace.md`; locked: session=vault entity, TOC=markdown headings.)
 
+**AI provider track (sequential, `src/ai` + server only — no reader files; runs beside the other tracks):**
+- **A1 — provider registry (Phase 0, zero behavior change).** `createModelProvider` env if-ladder → registry (`registerProvider`/`listProviders`/`createProvider`); `ProviderCapabilities` += `{structured, tools, kind: mock|cli-agent|http|managed}`; existing ids (`mock`/`claude-cli`/`claude-pty`) unchanged; suite stays green.
+- **A2 — `cli-agent` kind.** Wire the two OFFICIAL SDKs behind thin `CliAgentSpec` adapters — claude via `@anthropic-ai/claude-agent-sdk` (**already a dep, unwired**), codex via `@openai/codex-sdk` (new dep); detection probes; **key-strip + safe-mode invariants unit-tested**; legacy claude-cli/pty stay as fallback entries. (multi-provider §9, researched.)
+- **A3 — BYOK HTTP MVP.** Add `ai` + `@ai-sdk/openai-compatible` (+ DeepSeek preset); `AiSdkProvider` (complete/stream/completeStructured); `ai-providers.json` config + safeStorage keys (env fallback); AI-Providers settings view + test-connection + active picker. (multi-provider §3-§5.)
+- **A4 — tools + agent loop.** `ToolDefinition` registry → `runAgent` typed events → `POST /api/agent/stream`; read-mostly tool set + `createNote` gated by the preview loop; client tool-call cards. (multi-provider §4.3.)
+- **G (managed, external-gated).** Design locked incl. §10 (月费=每月积分 grant + AI Group=可售 SKU + one-api/new-api adopt-or-copy). **Not locally executable:** gated on 个体工商户 → 商户号/SMS 签名/算法备案 + the decision to operate a gateway. Starts when the user green-lights the backend commitment.
+
 **Next (after M1):**
 4. **Subject M-B** — vocab + formula + timeline exemplars (KaTeX decision); **Market M2** (previews + user kits).
 5. **N3 (D6)** — AI anchor-context results auto-materialize as draft notes (undo toast).
@@ -92,3 +101,22 @@ Concept P-C1 (aggregation page, additive to existing API) ──> P-C2 (graph vi
 9. **Concept P-C1 → P-C2**, then **M-C / N4** (remaining subject types + import prompts M3), consuming the `.svpack` `contentTypes` summary the sharing server already emits.
 
 **Rationale:** the foundation refactors are not a detour — F1 *is* multi-doc's enabler, F3 *is* the presentation keystone, F4/F5 *are* what makes the marketplace real. Each is fused with its first dependent feature so you pay the refactor exactly when the feature needs it, never speculatively. The independent tracks (sharing, market, auto-switch engine) go first because they're safely buildable now and de-risk the contracts the deeper work leans on; F2 is incremental and rides along.
+
+## Per-task grounding index (每个任务的方案状态)
+Rule: a task is buildable only when its spec (a) lives in a design doc, (b) is **code-grounded** (cites the real files/lines it touches), and (c) has **external research** where the approach depends on outside facts (SDKs, vendors, pricing, compliance). ⚠️ marks the known un-researched holes — resolve them *inside* that task before building.
+
+| Task | Spec | Code-grounded | External research |
+|---|---|---|---|
+| svpack **C**(dialogs)/**D**(e2e) | studypack-sharing.md §5–§7 | ✅ server+watermark shipped (`9e38428`,`81992ea`,`1a8d036`) | n/a (crypto = node built-ins, decided) |
+| Market **M1**(+F4/F5)/**M2**/**M3** | plugin-viewer-model.md §8 | ✅ (activation gate, `seedCorePlugin`, registries cited) | n/a |
+| Subject **M-A**/**M-B**/**M-C** | subject-kits.md | ✅ (composer/type-registry paths) | ⚠️ **M-B: KaTeX 选型未调研**(唯一新 UI 依赖 — bundle/SSR/CJK,做 M-B 前先查) |
+| **N1**(D2+D5)/**N2**(D4+D3)/**N3**(D6)/**N4** | note-presentation-unified.md §1–§9 | ✅ (e.g. `GenerationPreview`@views.tsx:492, CardGeom) | n/a |
+| **N5**(D10+D11)/**N6**(D12 board) | note-presentation-unified.md §10 | ✅ (localStorage geom, TopBar 3-way, F7 axis) | n/a |
+| **P-A1**(≡F1)/**P-A2**/**P-B**/**P-C1**/**P-C2** | multidoc-and-concepts.md | ✅ (DockNode shape, 46 activeSource refs) | n/a |
+| **F1–F7** | architecture-review.md | ✅ measured (line/field counts); **F7a shipped** `a462207` | n/a |
+| **W1**/**W2**/**W3** (AI workspace) | ai-workspace.md | ✅ (chat state :516/:772, `ingestSource`:64-91, folders/recent) | n/a |
+| **A1** registry | multi-provider §5 Phase 0 | ✅ (`index.ts:25-34` if-ladder) | n/a — pure refactor |
+| **A2** cli-agent | multi-provider §9 | ✅ (claude providers; **agent-sdk already a dep, unwired**; zod ^4.4.3 ✓) | ✅ 2026-07: official **Claude Agent SDK** + **Codex SDK** verified; ai-sdk-provider-claude-code as reference |
+| **A3** BYOK HTTP | multi-provider §3–§5 | ✅ (config/secrets patterns, in-process server → safeStorage) | ✅ in-doc: AI SDK 6 / openai-compatible / safeStorage caveats |
+| **A4** agent loop | multi-provider §4.3 | ✅ (SSE precedent `/api/chat/stream`) | ✅ in-doc: ToolLoopAgent / fullStream events |
+| **G-A/B/C** managed | managed-ai-credits.md (+§10) | ✅ (client seams: resolveForm, assets gap) | ✅ in-doc(dated, re-verify flags): DeepSeek/千帆定价·微信Native/支付宝·合规;✅ 2026-07: one-api/new-api (§10.4);⚠️ **周期扣款(自动续费)个体工商户资质未验** — V2 前必须验 |

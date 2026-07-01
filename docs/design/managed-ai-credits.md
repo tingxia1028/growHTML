@@ -590,3 +590,50 @@ work for them in Phase A (text) and Phase B (image), not "later."
   https://www.cac.gov.cn/2022-12/11/c_1672221949354811.htm (Deep Synthesis) ·
   https://www.cac.gov.cn/2025-03/14/c_1743654684782215.htm (labeling) ·
   https://www.allbrightlaw.com/CN/10475/9d795e4543aa51ea.aspx (reseller filing analysis)
+
+---
+
+## 10. Addendum (2026-07) — 月费订阅 + AI Group 档位 + 网关先例
+
+### 10.1 AI Group = a sellable plan (SKU); routing moves per-group
+```ts
+aiGroup = {
+  id, name,                                   // "基础" / "专业" …
+  orchestrator: { vendor, model },            // e.g. deepseek-v4-flash
+  routing: { text, image, video? },           // §4.2's ROUTING table becomes ONE group's routing
+  pricing: { monthlyFeeYuan, monthlyGrantCredits, creditRateDiscount }
+}
+```
+Multiple groups sell side by side; a user subscribes to one. Each `settle` ledger row records
+`groupId` + `priceVersion` (auditable rate history). "封一个固定的 AI group" = author one row here.
+
+### 10.2 Subscription = a monthly credit GRANT — never "unlimited"
+Usage is metered vendor cost; "不限量" is uncapped liability — don't sell it. A subscription buys:
+1. a monthly **`subscription_grant`** credits deposit (new ledger kind; idempotency = userId+period), and
+2. the group's **discounted credit rates** while active.
+User gains `groupId` + `subscriptionValidUntil`. MVP: granted credits **roll over** (simplest
+ledger semantics); expiring grants are a V2 policy switch. Lapse semantics: benefits stop (rate
+reverts to standard, no further grants); the remaining balance stays usable. Pay-as-you-go top-ups
+(§4) coexist unchanged — 积分包 and 月费 are the same ledger.
+
+### 10.3 Renewal
+- **MVP = manual renewal:** a subscription SKU through the exact §4.5 QR top-up flow — the webhook
+  sets `subscriptionValidUntil += 1 month` + writes the grant. **Zero new payment integration.**
+- **V2 = auto-renew** (微信/支付宝 周期扣款/委托代扣 — signed agreement + scheduled deduction).
+  **UNVERIFIED for 个体工商户 eligibility** — both platforms gate entrusted-deduction products;
+  verify with the registered entity before promising auto-renew in the UI.
+
+### 10.4 Prior art (researched 2026-07) — one-api / new-api: adopt-or-copy
+`songquanpeng/one-api` (Go, single binary/Docker) and its db-compatible fork `new-api` are mature
+open-source LLM gateways: unified multi-vendor channels, weighted load-balancing + failover,
+**tokens + quotas + recharge codes** (new-api adds online recharge, per-call billing, rate
+configs, user groups). Two adoption modes for our gateway:
+- **(a) Fastest:** deploy **new-api as the internal vendor-pool + quota-accounting layer**; our
+  thin gateway (auth · agent loop · compliance · payment) calls it as its **single
+  OpenAI-compatible upstream**. We still own everything it lacks: phone login, official WeChat
+  Native pay (its 易支付-style recharge is TOS-risky — §4.5 stance unchanged), moderation +
+  AI-content labeling, the **agent tool loop**, artifact normalization into notes.
+- **(b) Cleanest:** copy its token/quota schema into our own Postgres ledger — ours already
+  specifies **hold/settle/refund** (§4.3), which one-api lacks; keep ours.
+Recommendation: start (b) for the ledger (it's the money core — own it), consider (a) later purely
+as the multi-vendor channel pool if channel ops become a burden.
