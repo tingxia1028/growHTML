@@ -344,6 +344,31 @@ describe("toWebAnchorMsgs", () => {
       { id: "w1", quote: "", contextBefore: "", contextAfter: "", note: "n" }
     ]);
   });
+
+  it("passes preview-card html and note count to the guest paint message", () => {
+    expect(
+      toWebAnchorMsgs([
+        pa({
+          id: "w-rich",
+          note: "merged text",
+          notePreviews: [
+            { id: "n1", contentType: "markdown", text: "one", html: "<div>Card one</div>" },
+            { id: "n2", contentType: "quiz", text: "two", html: "<div>Card two</div>" }
+          ]
+        })
+      ])
+    ).toEqual([
+      {
+        id: "w-rich",
+        quote: "",
+        contextBefore: "",
+        contextAfter: "",
+        note: "merged text",
+        noteHtml: "<div>Card one</div><div>Card two</div>",
+        noteCount: 2
+      }
+    ]);
+  });
 });
 
 describe("webSelectionToDraft", () => {

@@ -41,6 +41,32 @@ export const ANNOTATION_CSS = `
   box-shadow: 0 0 0 3px rgba(52, 116, 230, 0.45), inset 0 -2px 0 #3474e6 !important;
   transition: outline-color 0.25s ease, box-shadow 0.25s ease;
 }
+.sv-annotated[data-sv-note-count] {
+  position: relative;
+}
+.sv-annotated[data-sv-note-count]::after {
+  content: "⚓ " attr(data-sv-note-count);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 5px;
+  padding: 0 5px;
+  border: 1px solid #c9dcff;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #2f67d7;
+  box-shadow: 0 3px 10px rgba(52, 116, 230, 0.18);
+  font: 700 11px/1 Inter, "Segoe UI", Arial, sans-serif;
+  vertical-align: text-top;
+}
+.sv-annotated[data-sv-note-count="1"]::after {
+  content: "⚓";
+  width: 18px;
+  min-width: 18px;
+  padding: 0;
+}
 #sv-note-card {
   position: fixed;
   z-index: 2147483000;
@@ -113,6 +139,109 @@ export const ANNOTATION_CSS = `
   border-radius: 3px;
 }
 .sv-note-card-body hr { border: 0; border-top: 1px solid #c9dcff; margin: 8px 0; }
+.sv-annotation-card-list {
+  display: grid;
+  gap: 10px;
+}
+.sv-annotation-preview .sv-artifact-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: min(100%, 260px);
+  height: 138px;
+  min-height: 138px;
+  max-width: 260px;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid #e3e8ef;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #202124;
+  box-shadow: 0 5px 14px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+  text-align: left;
+}
+.sv-annotation-preview .sv-card-head,
+.sv-annotation-preview .sv-artifact-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 22px;
+}
+.sv-annotation-preview .sv-artifact-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border: 1px solid #d7dee9;
+  border-radius: 5px;
+  color: #273142;
+  background: #ffffff;
+}
+.sv-annotation-preview .sv-artifact-icon svg {
+  width: 14px;
+  height: 14px;
+}
+.sv-annotation-preview .sv-card-type,
+.sv-annotation-preview .sv-artifact-badge {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #6d7685;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.sv-annotation-preview .sv-card-more {
+  display: inline-flex;
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: #1f2937;
+}
+.sv-annotation-preview .sv-card-title,
+.sv-annotation-preview .sv-artifact-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #111827;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 18px;
+}
+.sv-annotation-preview .sv-artifact-thumb,
+.sv-annotation-preview .sv-card-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 76px;
+  overflow: hidden;
+}
+.sv-annotation-preview .note-rendered {
+  font-size: 12px;
+  line-height: 1.45;
+}
+.sv-annotation-preview .sv-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: auto;
+  color: #788292;
+  font-size: 11.5px;
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.sv-annotation-preview .sv-card-footer-part {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sv-annotation-preview .sv-card-footer-part + .sv-card-footer-part::before {
+  content: "•";
+  margin-right: 7px;
+  color: #a8b0bd;
+}
 
 /* --- Marginalia mode: persistent cards in a right-hand gutter --- */
 .sv-annot-margin { padding-right: 312px; box-sizing: border-box; }
@@ -176,14 +305,24 @@ function closestMatch(node: EventTarget | null, selector: string): Element | nul
 // --- Per-anchor card geometry persistence -----------------------------------
 // The floating card is a single shared element, but each annotated target may
 // carry a stable `data-sv-key` (its anchor id). When present, the card remembers
-// where it was dragged and how it was resized for THAT key, restored on next
-// show. Stored in the reader realm's localStorage so it survives reloads.
+// how it was resized and, after an explicit drag, its offset from THAT anchor.
+// Stored in the reader realm's localStorage so it survives reloads. The card is
+// always positioned from the live anchor rect, never from stale viewport left/top.
 export interface CardGeom {
   left: number;
   top: number;
   width: number;
   height: number;
+  anchorDx?: number;
+  anchorDy?: number;
 }
+
+export type HighlightPayload = {
+  noteHtml?: string;
+  noteCount?: number;
+};
+
+const highlightPayloads = new WeakMap<Element, HighlightPayload>();
 
 const CARD_GEOM_PREFIX = "sv-card-geom:";
 
@@ -208,7 +347,14 @@ export function readCardGeom(doc: Document, key: string): CardGeom | null {
       typeof parsed?.width === "number" &&
       typeof parsed?.height === "number"
     ) {
-      return { left: parsed.left, top: parsed.top, width: parsed.width, height: parsed.height };
+      return {
+        left: parsed.left,
+        top: parsed.top,
+        width: parsed.width,
+        height: parsed.height,
+        anchorDx: typeof parsed.anchorDx === "number" ? parsed.anchorDx : undefined,
+        anchorDy: typeof parsed.anchorDy === "number" ? parsed.anchorDy : undefined
+      };
     }
   } catch {
     // corrupt entry — ignore
@@ -262,7 +408,7 @@ function wireNoteCard(doc: Document): void {
   bar.className = "sv-note-card-bar";
   const grip = doc.createElement("span");
   grip.className = "sv-note-card-grip";
-  grip.textContent = "⠿ note";
+  grip.textContent = "⚓ note";
   const closeBtn = doc.createElement("button");
   closeBtn.className = "sv-note-card-close";
   closeBtn.type = "button";
@@ -277,42 +423,90 @@ function wireNoteCard(doc: Document): void {
 
   let pinned = false;
   let currentKey = ""; // the data-sv-key of the anchor the card currently shows
+  let currentTarget: Element | null = null;
+  let anchorOffset = { x: 0, y: 6 };
+  let dragging = false;
+  let resizing = false;
 
   // Persist the card's current rect for the active key (drag / resize end).
   const persistGeom = () => {
     if (!currentKey) return;
     const rect = card.getBoundingClientRect();
     if (rect.width === 0 && rect.height === 0) return; // not laid out (e.g. jsdom)
-    writeCardGeom(doc, currentKey, { left: rect.left, top: rect.top, width: rect.width, height: rect.height });
+    const targetRect = currentTarget?.getBoundingClientRect();
+    writeCardGeom(doc, currentKey, {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+      anchorDx: targetRect ? rect.left - targetRect.left : undefined,
+      anchorDy: targetRect ? rect.top - targetRect.bottom : undefined
+    });
+  };
+
+  const placeCardAtTarget = (target: Element) => {
+    if (!target.isConnected) {
+      pinned = false;
+      currentTarget = null;
+      card.classList.remove("sv-note-card-show");
+      return;
+    }
+    const rect = target.getBoundingClientRect();
+    const view = doc.defaultView;
+    const styleWidth = Number.parseFloat(card.style.width);
+    const measuredWidth = card.getBoundingClientRect().width;
+    const cardWidth = Number.isFinite(styleWidth) && styleWidth > 0 ? styleWidth : measuredWidth > 0 ? measuredWidth : 340;
+    const maxLeft = view ? Math.max(8, view.innerWidth - cardWidth - 8) : Number.POSITIVE_INFINITY;
+    const left = Math.min(Math.max(8, rect.left + anchorOffset.x), maxLeft);
+    card.style.left = `${left}px`;
+    // Do not clamp vertically: a pinned card should travel with its source text
+    // instead of staying stuck to the viewport after the reader scrolls away.
+    card.style.top = `${rect.bottom + anchorOffset.y}px`;
+  };
+
+  const syncPinnedCard = () => {
+    if (!pinned || dragging || marginActive()) return;
+    if (currentTarget) placeCardAtTarget(currentTarget);
   };
 
   const show = (target: Element) => {
     currentKey = target.getAttribute("data-sv-key") ?? "";
-    body.innerHTML = renderNoteContent("markdown", target.getAttribute("data-sv-note") ?? "").html;
+    currentTarget = target;
+    const payload = highlightPayloads.get(target);
+    const noteCount = payload?.noteCount ?? Number(target.getAttribute("data-sv-note-count") ?? 0);
+    grip.textContent = noteCount > 1 ? `⚓ ${noteCount} notes` : "⚓ note";
+    if (payload?.noteHtml) {
+      body.innerHTML = `<div class="sv-annotation-card-list">${payload.noteHtml}</div>`;
+    } else {
+      body.innerHTML = renderNoteContent("markdown", target.getAttribute("data-sv-note") ?? "").html;
+    }
     const view = doc.defaultView;
     const saved = currentKey ? readCardGeom(doc, currentKey) : null;
     if (saved && view) {
-      // Restore the remembered placement + size for this anchor.
+      // Restore size and an optional anchor-relative offset. Older records only
+      // have viewport left/top; ignore those absolute coordinates so the card
+      // stays bound to the live source text after scrolling.
       const g = clampGeom(saved, view.innerWidth, view.innerHeight);
-      card.style.left = `${g.left}px`;
-      card.style.top = `${g.top}px`;
       card.style.width = `${g.width}px`;
       card.style.height = `${g.height}px`;
+      anchorOffset = {
+        x: typeof saved.anchorDx === "number" ? saved.anchorDx : 0,
+        y: typeof saved.anchorDy === "number" ? saved.anchorDy : 6
+      };
     } else {
-      // First time for this anchor: anchor the card under the highlight. Fixed
-      // positioning + viewport rect works whether the doc scrolls the window
-      // (iframe / webview guest) or an inner container (PDF).
-      const rect = target.getBoundingClientRect();
-      card.style.left = `${Math.max(8, rect.left)}px`;
-      card.style.top = `${rect.bottom + 6}px`;
+      card.style.width = "";
+      card.style.height = "";
+      anchorOffset = { x: 0, y: 6 };
     }
     card.classList.add("sv-note-card-show");
+    placeCardAtTarget(target);
   };
   const hide = () => {
     if (!pinned) card.classList.remove("sv-note-card-show");
   };
   const dismiss = () => {
     pinned = false;
+    currentTarget = null;
     card.classList.remove("sv-note-card-show");
   };
 
@@ -320,13 +514,17 @@ function wireNoteCard(doc: Document): void {
   const view = doc.defaultView as (Window & { ResizeObserver?: typeof ResizeObserver }) | null;
   if (view && typeof view.ResizeObserver === "function") {
     const ro = new view.ResizeObserver(() => {
-      if (card.classList.contains("sv-note-card-show")) persistGeom();
+      if (resizing && card.classList.contains("sv-note-card-show")) persistGeom();
     });
     ro.observe(card);
   }
 
   // In marginalia mode the notes live in the gutter, so the hover card is off.
   const marginActive = () => doc.body?.classList.contains("sv-annot-margin") ?? false;
+
+  doc.addEventListener("scroll", syncPinnedCard, true);
+  view?.addEventListener("scroll", syncPinnedCard, true);
+  view?.addEventListener("resize", syncPinnedCard);
 
   doc.addEventListener("mouseover", (event) => {
     if (marginActive()) return;
@@ -344,11 +542,13 @@ function wireNoteCard(doc: Document): void {
     if (marginActive()) return;
     const target = closestMatch(event.target, ".sv-annotated");
     if (target) {
-      pinned = !pinned;
-      if (pinned) {
-        show(target);
-      } else {
+      if (pinned && currentTarget === target) {
+        pinned = false;
+        currentTarget = null;
         card.classList.remove("sv-note-card-show");
+      } else {
+        pinned = true;
+        show(target);
       }
       return;
     }
@@ -360,6 +560,7 @@ function wireNoteCard(doc: Document): void {
     const start = event as MouseEvent;
     if (closestMatch(start.target, ".sv-note-card-close")) return;
     pinned = true;
+    dragging = true;
     const rect = card.getBoundingClientRect();
     const offsetX = start.clientX - rect.left;
     const offsetY = start.clientY - rect.top;
@@ -371,21 +572,43 @@ function wireNoteCard(doc: Document): void {
     const onUp = () => {
       doc.removeEventListener("mousemove", onMove);
       doc.removeEventListener("mouseup", onUp);
+      dragging = false;
+      const dropped = card.getBoundingClientRect();
+      const targetRect = currentTarget?.getBoundingClientRect();
+      if (targetRect) {
+        anchorOffset = { x: dropped.left - targetRect.left, y: dropped.top - targetRect.bottom };
+      }
       persistGeom(); // remember where it was dropped
     };
     doc.addEventListener("mousemove", onMove);
     doc.addEventListener("mouseup", onUp);
     start.preventDefault();
   });
+
+  card.addEventListener("mousedown", (event) => {
+    if (closestMatch(event.target, ".sv-note-card-bar") || closestMatch(event.target, ".sv-note-card-close")) return;
+    resizing = true;
+    const onUp = () => {
+      resizing = false;
+      persistGeom();
+      doc.removeEventListener("mouseup", onUp);
+    };
+    doc.addEventListener("mouseup", onUp);
+  });
 }
 
 // Mark an already-resolved element as annotated and stash the note text for the
 // card. `noteText` may be empty (highlight only).
-export function applyHighlight(element: Element, noteText: string, key?: string): void {
+export function applyHighlight(element: Element, noteText: string, key?: string, payload?: HighlightPayload): void {
   element.classList.add("sv-annotated");
   if (noteText) element.setAttribute("data-sv-note", noteText);
   // Stable id → the card remembers this anchor's placement/size across shows.
   if (key) element.setAttribute("data-sv-key", key);
+  const noteCount = payload?.noteCount ?? (noteText ? 1 : 0);
+  if (noteCount > 0) element.setAttribute("data-sv-note-count", String(noteCount));
+  else element.removeAttribute("data-sv-note-count");
+  if (payload) highlightPayloads.set(element, payload);
+  else highlightPayloads.delete(element);
 }
 
 // The ONE shared "scroll the focused passage into view" helper for every surface
@@ -454,6 +677,8 @@ export function clearAnnotations(root: ParentNode): void {
     el.classList.remove("sv-annotated");
     el.removeAttribute("data-sv-note");
     el.removeAttribute("data-sv-key");
+    el.removeAttribute("data-sv-note-count");
+    highlightPayloads.delete(el);
   });
 }
 
@@ -461,7 +686,13 @@ export function clearAnnotations(root: ParentNode): void {
 // in a highlighted <mark>. This is the durable, edit-resilient locator shared by
 // the live webview guest AND the HTML reader's fallback — it needs no injected
 // ids, only that the text still exists. Returns whether a match was highlighted.
-export function highlightQuote(doc: Document, selector: TextQuoteSelector, noteText: string, key?: string): boolean {
+export function highlightQuote(
+  doc: Document,
+  selector: TextQuoteSelector,
+  noteText: string,
+  key?: string,
+  payload?: HighlightPayload
+): boolean {
   if (!doc.body || !selector.exact) return false;
   const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
   let node = walker.nextNode();
@@ -476,7 +707,7 @@ export function highlightQuote(doc: Document, selector: TextQuoteSelector, noteT
       mark.setAttribute("data-sv", "1");
       try {
         range.surroundContents(mark);
-        applyHighlight(mark, noteText, key);
+        applyHighlight(mark, noteText, key, payload);
         return true;
       } catch {
         // Range spans element boundaries; skip this occurrence.
@@ -530,6 +761,8 @@ export function packColumn(items: ColumnItem[], gap: number, minTop: number, max
 export interface MarginItem {
   element: Element;
   noteText: string;
+  noteHtml?: string;
+  noteCount?: number;
   key?: string;
 }
 
@@ -580,13 +813,15 @@ export function paintMarginNotes(doc: Document, items: MarginItem[]): void {
   connectors.setAttribute("height", `${contentHeight}`);
 
   // First pass: create cards at their desired tops and measure heights.
-  const placedCards = items.map(({ element, noteText, key }) => {
+  const placedCards = items.map(({ element, noteText, noteHtml, key }) => {
     const card = doc.createElement("div");
     card.className = "sv-margin-note";
     if (key) card.setAttribute("data-sv-key", key);
     const cardBody = doc.createElement("div");
     cardBody.className = "sv-margin-note-body";
-    cardBody.innerHTML = renderNoteContent("markdown", noteText).html;
+    cardBody.innerHTML = noteHtml
+      ? `<div class="sv-annotation-card-list">${noteHtml}</div>`
+      : renderNoteContent("markdown", noteText).html;
     card.appendChild(cardBody);
     layer.appendChild(card);
     const elRect = element.getBoundingClientRect();

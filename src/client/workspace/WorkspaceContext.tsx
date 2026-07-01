@@ -54,6 +54,7 @@ import "../theme/builtins";
 import { DEFAULT_THEME_ID } from "../theme/builtins";
 import { listThemes } from "../theme/registry";
 import { setActiveTheme as applyActiveTheme, THEME_STORAGE_KEY } from "../theme/applyTheme";
+import { renderAnnotationNotePreview } from "./annotationNotePreview";
 
 export type Status = "idle" | "loading" | "saving" | "error";
 
@@ -79,12 +80,16 @@ export type ToolbarAction = {
 
 const EMPTY_OPERATION_PREFS: OperationPrefs = { order: [], disabled: [], params: {}, surfaces: {}, icons: {} };
 
-/** The surface keys an action list can be configured for (R6.3). */
-export type ActionSurface = "inline" | "anchor" | "source" | "bottom";
+/** The surface keys an action list can be configured for. The inline selection toolbar
+    and the Anchor bar SHARE one key, `"passage"` (both act on the current passage/anchor),
+    so configuring one configures the other identically. `"source"` is BottomBar's pool. */
+export type ActionSurface = "passage" | "source";
 
-/** The surface a Customize deep-link can pre-select: a configurable toolbar surface, or
-    "my" (the builder/manager). undefined behaves like "my" (default open). */
-export type CustomizeSurface = "inline" | "anchor" | "bottom" | "my" | undefined;
+/** The surface a Customize deep-link can pre-select: the configurable `"passage"` toolbar,
+    or "my" (the builder/manager). undefined behaves like "my" (default open). The legacy
+    "inline"/"anchor"/"bottom" values are accepted from older deep-link callers and all map
+    to the single Toolbar (passage) tab. */
+export type CustomizeSurface = "passage" | "inline" | "anchor" | "bottom" | "my" | undefined;
 
 // Command ids whose `run` performs an AI STRUCTURED GENERATION (a single non-streamed
 // request that emits a GeneratedDraft). Dispatching one flips the shared `generating`
@@ -195,6 +200,28 @@ function persistRecentSourceIds(ids: string[]): void {
   }
 }
 
+// Opened "Open Folder" tree roots — persisted (mirroring recentSourceIds above) so the
+// folders the user opened in the Library survive a restart instead of resetting to [].
+const FOLDER_ROOTS_KEY = "sv-folder-roots";
+
+function readStoredFolderRoots(): string[] {
+  try {
+    const raw = globalThis.localStorage?.getItem(FOLDER_ROOTS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((root): root is string => typeof root === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistFolderRoots(roots: string[]): void {
+  try {
+    globalThis.localStorage?.setItem(FOLDER_ROOTS_KEY, JSON.stringify(roots));
+  } catch {
+    // storage unavailable - keep the in-memory roots
+  }
+}
+
 function normalizeFolderRoot(root: string): string {
   return root.trim().replace(/[\\/]+$/, "");
 }
@@ -240,6 +267,8 @@ export type WorkspaceContextValue = {
   patches: PatchRecord[];
   /** ONE normalized paint list for the active source (every reader filters it). */
   paintAnchors: PaintAnchor[];
+  /** Full normalized anchor locator list for reveal/jump, including non-painted bookmark-only anchors. */
+  revealAnchors: PaintAnchor[];
   /** Patches scoped to the focused anchor (or all when nothing is focused). */
   activePatches: PatchRecord[];
   /** How the DOM-iframe HTML reader presents notes (floating card ↔ side gutter).
@@ -387,10 +416,11 @@ export type WorkspaceContextValue = {
   operationPrefs: OperationPrefs;
   operationsVersion: number;
   refreshOperations(): void;
-  /** Anchor-scope actions ordered for the INLINE selection toolbar surface. */
+  /** Anchor-scope actions ordered for the shared "passage" toolbar surface (the inline
+      selection toolbar). */
   selectionActions: ToolbarAction[];
-  /** The SAME anchor-scope pool ordered for the ANCHOR BAR surface (configured
-      independently of the inline toolbar via its own per-surface prefs). */
+  /** The Anchor bar's list — the SAME "passage"-ordered list as `selectionActions` (one
+      shared surface, identical order + show/hide). Aliases `selectionActions`. */
   anchorBarActions: ToolbarAction[];
   /** Source-scope actions (built-in source items + source ops), ordered for "source". */
   sourceActions: ToolbarAction[];
@@ -399,8 +429,9 @@ export type WorkspaceContextValue = {
   /** Persist a full next-prefs object (the Customize panel's single write seam). */
   saveActionPrefs(next: OperationPrefs): Promise<void>;
   /** Open the operation manager / Customize panel (fires the shell's registered handler).
-      An optional `surface` deep-links to that surface's Customize tab (inline/anchor/bottom);
-      "my" or omitted opens the My Actions builder/manager. */
+      An optional `surface` deep-links to a Customize tab: any passage surface request
+      (the shared inline/anchor toolbar) opens the single "Toolbar" tab; "my" or omitted
+      opens the My Actions builder/manager. */
   openOperationManager(surface?: CustomizeSurface): void;
   /** Shell-only: register the "show operation manager" handler the seam fires. */
   registerOpenOperationManager(handler: () => void): void;
@@ -452,7 +483,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [showTerminal, setShowTerminal] = useState(false);
   const [patchHtml, setPatchHtml] = useState("");
   const [importUrl, setImportUrl] = useState("");
-  const [folderRoots, setFolderRoots] = useState<string[]>([]);
+  const [folderRoots, setFolderRoots] = useState<string[]>(readStoredFolderRoots);
   const [recentSourceIds, setRecentSourceIds] = useState<string[]>(readStoredRecentSourceIds);
   const [conceptsVersion, setConceptsVersion] = useState(0);
   const [activeLayoutId, setActiveLayoutId] = useState<string>(loadActiveLayout);
@@ -524,14 +555,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // EXCLUDED: their content is a structured { label } that would otherwise paint as raw
   // JSON on the passage; they surface as chips in the Bookmarks pane instead (the anchor
   // itself still paints its inline marker — every anchor is in `anchors`/paintAnchors).
-  const noteTextByAnchorId = useMemo(() => {
-    const map = new Map<string, string>();
+  const notesByAnchorId = useMemo(() => {
+    const map = new Map<string, NoteRecord[]>();
     for (const note of visibleNotes) {
       if ((note.contentType ?? "markdown") === BOOKMARK_CONTENT_TYPE) continue;
-      const text = noteText(note.content);
       for (const anchorId of note.anchorIds) {
-        const existing = map.get(anchorId);
-        map.set(anchorId, (existing ? `${existing}\n\n` : "") + text);
+        const existing = map.get(anchorId) ?? [];
+        map.set(anchorId, [...existing, note]);
       }
     }
     return map;
@@ -564,7 +594,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     () =>
       anchors
         .filter((anchor) => !bookmarkOnlyAnchorIds.has(anchor.id))
-        .map((anchor) => ({
+        .map((anchor) => {
+          const anchorNotes = notesByAnchorId.get(anchor.id) ?? [];
+          return {
         id: anchor.id,
         anchorKind: anchor.anchorKind,
         quote: "quote" in anchor ? anchor.quote : undefined,
@@ -573,9 +605,40 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         studyId: "studyId" in anchor ? anchor.studyId : undefined,
         page: "page" in anchor ? anchor.page : undefined,
         rect: "rect" in anchor ? anchor.rect : undefined,
-        note: noteTextByAnchorId.get(anchor.id) ?? ""
-      })),
-    [anchors, noteTextByAnchorId, bookmarkOnlyAnchorIds]
+            note: anchorNotes.map((note) => noteText(note.content)).join("\n\n"),
+            notePreviews: anchorNotes.map((note) => ({
+              id: note.id,
+              contentType: note.contentType ?? "markdown",
+              text: noteText(note.content),
+              html: renderAnnotationNotePreview(note, anchor, sourceLayers)
+            }))
+          };
+        }),
+    [anchors, notesByAnchorId, sourceLayers, bookmarkOnlyAnchorIds]
+  );
+  const revealAnchors = useMemo<PaintAnchor[]>(
+    () =>
+      anchors.map((anchor) => {
+        const anchorNotes = notesByAnchorId.get(anchor.id) ?? [];
+        return {
+        id: anchor.id,
+        anchorKind: anchor.anchorKind,
+        quote: "quote" in anchor ? anchor.quote : undefined,
+        contextBefore: "contextBefore" in anchor ? anchor.contextBefore : undefined,
+        contextAfter: "contextAfter" in anchor ? anchor.contextAfter : undefined,
+        studyId: "studyId" in anchor ? anchor.studyId : undefined,
+        page: "page" in anchor ? anchor.page : undefined,
+        rect: "rect" in anchor ? anchor.rect : undefined,
+          note: anchorNotes.map((note) => noteText(note.content)).join("\n\n"),
+          notePreviews: anchorNotes.map((note) => ({
+            id: note.id,
+            contentType: note.contentType ?? "markdown",
+            text: noteText(note.content),
+            html: renderAnnotationNotePreview(note, anchor, sourceLayers)
+          }))
+        };
+      }),
+    [anchors, notesByAnchorId, sourceLayers]
   );
   const activePatches = useMemo(
     () => patches.filter((patch) => !selectedAnchorId || patch.anchorId === selectedAnchorId),
@@ -603,18 +666,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const normalized = normalizeFolderRoot(root);
     if (!normalized) return;
     const normalizedKey = normalized.toLocaleLowerCase();
-    setFolderRoots((current) =>
-      current.some((item) => normalizeFolderRoot(item).toLocaleLowerCase() === normalizedKey)
+    setFolderRoots((current) => {
+      const next = current.some((item) => normalizeFolderRoot(item).toLocaleLowerCase() === normalizedKey)
         ? current
-        : [...current, normalized]
-    );
+        : [...current, normalized];
+      persistFolderRoots(next);
+      return next;
+    });
   }, []);
 
   const closeFolderRoot = useCallback((root: string) => {
     const normalizedKey = normalizeFolderRoot(root).toLocaleLowerCase();
-    setFolderRoots((current) =>
-      current.filter((item) => normalizeFolderRoot(item).toLocaleLowerCase() !== normalizedKey)
-    );
+    setFolderRoots((current) => {
+      const next = current.filter((item) => normalizeFolderRoot(item).toLocaleLowerCase() !== normalizedKey);
+      persistFolderRoots(next);
+      return next;
+    });
   }, []);
 
   const loadSources = useCallback(async () => {
@@ -1275,40 +1342,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }));
     const bookmark: ToolbarAction = { ...BOOKMARK_ACTION, icon: operationPrefs.icons?.[BOOKMARK_ACTION.id] ?? BOOKMARK_ACTION.icon };
     // The core Bookmark action leads, then kit selection items, then custom ops. Ordered
-    // for the INLINE selection toolbar surface (its own per-surface prefs, else global).
-    return orderActionsForSurface([bookmark, ...builtin, ...custom], operationPrefs, "inline");
+    // for the shared "passage" surface — the SINGLE config the inline selection toolbar AND
+    // the Anchor bar both render, so the two surfaces always show the identical ordered list
+    // + show/hide (its own per-surface prefs, else global).
+    return orderActionsForSurface([bookmark, ...builtin, ...custom], operationPrefs, "passage");
   }, [activeKitIds, operations, operationPrefs]);
 
-  // The SAME anchor-scope action pool as `selectionActions`, but ordered for the ANCHOR
-  // BAR surface — so the Anchor Action Bar configures show/hide + order INDEPENDENTLY of
-  // the inline selection toolbar. Built from the same builtin+custom merge so the two
-  // surfaces always offer the same actions; only the per-surface arrangement differs.
-  const anchorBarActions = useMemo<ToolbarAction[]>(() => {
-    const builtin: ToolbarAction[] = kitSurfaceItems("selection-toolbar", activeKitIds).map((item) => ({
-      id: item.commandId,
-      title: item.title,
-      icon: operationPrefs.icons?.[item.commandId] ?? item.icon,
-      group: item.group,
-      description: item.description,
-      kind: "builtin",
-      scope: "anchor"
-    }));
-    const custom: ToolbarAction[] = operations
-      .filter((op) => op.scope === "anchor")
-      .map((op) => ({
-        id: op.id,
-        title: op.name,
-        icon: operationPrefs.icons?.[op.id],
-        group: "Custom Actions",
-        description: op.description,
-        kind: "operation",
-        scope: "anchor",
-        outputType: op.outputContentType,
-        variables: op.declaredVariables
-      }));
-    const bookmark: ToolbarAction = { ...BOOKMARK_ACTION, icon: operationPrefs.icons?.[BOOKMARK_ACTION.id] ?? BOOKMARK_ACTION.icon };
-    return orderActionsForSurface([bookmark, ...builtin, ...custom], operationPrefs, "anchor");
-  }, [activeKitIds, operations, operationPrefs]);
+  // The Anchor Action Bar renders the SAME ordered "passage" list as the inline selection
+  // toolbar — one shared surface, one config. Aliased to `selectionActions` so there is a
+  // single source of truth (no second ordering pass that could drift). Kept as its own name
+  // only so the two mount points read intent-revealing context keys.
+  const anchorBarActions = selectionActions;
 
   const sourceActions = useMemo<ToolbarAction[]>(() => {
     const builtin: ToolbarAction[] = kitSurfaceItems("source-actions", activeKitIds).map((item) => ({
@@ -1396,6 +1440,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       notes,
       patches,
       paintAnchors,
+      revealAnchors,
       activePatches,
       annotationMode,
       setAnnotationMode,
@@ -1489,6 +1534,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       notes,
       patches,
       paintAnchors,
+      revealAnchors,
       activePatches,
       annotationMode,
       setAnnotationMode,

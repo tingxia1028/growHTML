@@ -51,8 +51,7 @@ import "./BottomBar";
 import "./RightSidebarTabs";
 import { TopBar } from "./TopBar";
 import { IconRail } from "./IconRail";
-//   ./BookmarkIndex → the R8 hover-reveal bookmarks index pinned to the far right edge.
-import { BookmarkIndex } from "./BookmarkIndex";
+import { SelectionFloatingToolbar } from "./SelectionFloatingToolbar";
 
 // px size overrides keyed by dock child key (leaf nodeId, else its tree path).
 const SIZES_KEY = "sv-panel-widths";
@@ -284,15 +283,16 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
 
   return (
     <div className="app-frame">
-      <TopBar ctx={ctx} leftPaneKind={leftPaneKind} onSelectPane={setLeftPaneKind} />
+      <TopBar ctx={ctx} />
       <div className="app-body">
         <IconRail selected={leftPaneKind} onSelect={setLeftPaneKind} />
         {dock}
-        {/* R8: the far-right hover-reveal bookmarks index. Mirror of IconRail, but it
-            OVERLAYS the right edge (position:absolute) so a collapsed strip never
-            disturbs the dock layout / reading width. */}
-        <BookmarkIndex />
       </div>
+      {/* Global overlay (portaled to <body>): floats the anchor-scope action toolbar
+          just below a live text selection in a reader. Mounted once here like the
+          BookmarkIndex chrome — it reads only from useWorkspace and only triggers
+          runAction (no new render path). */}
+      <SelectionFloatingToolbar />
     </div>
   );
 }

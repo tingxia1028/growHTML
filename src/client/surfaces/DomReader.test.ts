@@ -92,6 +92,41 @@ describe("paintDomAnchors", () => {
     expect(document.querySelectorAll(".sv-annotated").length).toBe(1);
   });
 
+  it("paints preview-card payloads for the floating note card", () => {
+    const doc = document.implementation.createHTMLDocument("dom-reader-card");
+    doc.body.innerHTML = '<p data-study-id="s1">Hello world</p>';
+    paintDomAnchors(doc, [
+      anchor({
+        id: "a-rich",
+        studyId: "s1",
+        quote: "Hello world",
+        note: "fallback note",
+        notePreviews: [
+          {
+            id: "n1",
+            contentType: "markdown",
+            text: "first note",
+            html: '<div class="sv-annotation-preview"><div class="sv-artifact-card">First card</div></div>'
+          },
+          {
+            id: "n2",
+            contentType: "quiz",
+            text: "second note",
+            html: '<div class="sv-annotation-preview"><div class="sv-artifact-card">Second card</div></div>'
+          }
+        ]
+      })
+    ]);
+
+    const target = doc.querySelector('[data-study-id="s1"]') as HTMLElement;
+    expect(target.getAttribute("data-sv-note-count")).toBe("2");
+    target.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    const card = doc.getElementById("sv-note-card")!;
+    expect(card.textContent).toContain("First card");
+    expect(card.textContent).toContain("Second card");
+    expect(card.textContent).not.toContain("fallback note");
+  });
+
   it("defaults to floating (no gutter); margin mode lays cards into the gutter", () => {
     document.body.innerHTML = '<p data-study-id="s1">Hello world</p>';
     const anchors = [anchor({ studyId: "s1", quote: "Hello world", note: "margin note" })];

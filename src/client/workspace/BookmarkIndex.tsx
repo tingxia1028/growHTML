@@ -1,109 +1,120 @@
-// BookmarkIndex (R8, spec §9) — the hover-reveal "table of contents" pinned to the app's
-// FAR RIGHT edge. It is CHROME (rendered by WorkspaceShell outside the dock tree), the
-// symmetric mirror of the left IconRail, and is INDEPENDENT of the persistent right column
-// (§9.3) — the two can coexist.
-//
-// Interaction:
-//   • Collapsed (default): a thin vertical strip with a contents icon. Doesn't eat reading
-//     width (it overlays the right edge).
-//   • Hover the strip → the panel slides in from the right (CSS translateX transition),
-//     OVER content (high z-index). Mouse-leave collapses it.
-//   • A pin toggle keeps it open persistently; the pinned flag persists to localStorage
-//     (key `sv-bookmark-index-pinned`, the same per-pref pattern the shell uses).
-//   • Top of the panel: a « collapse button + the pin toggle.
-//
-// Content (§9.2): the SAME hook the Bookmarks pane uses (no new fetch — IRON LAW), grouped
-// by `content.category` via the pure groupBookmarksByCategory helper. Each row jumps to the
-// bookmark's anchor; disabled when the anchor isn't visible; the row whose anchor === the
-// focused anchor gets `.active`.
+// BookmarkIndex: the click-open table of contents in the Source Viewer header.
+// The header icon opens the panel; clicking outside closes it.
 
-import { useEffect, useState } from "react";
-import { ChevronLeft, FolderOpen, List, Pin, PinOff } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, FolderOpen, List, Pencil, Trash2, X } from "lucide-react";
+import type { NoteRecord } from "../data/entityClient";
 import { useWorkspace } from "./WorkspaceContext";
 import { useBookmarks } from "./useBookmarks";
 import { groupBookmarksByCategory } from "./groupBookmarks";
 
-const PINNED_KEY = "sv-bookmark-index-pinned";
+type BookmarkContent = {
+  label: string;
+  color?: string;
+  order?: number;
+  category?: string;
+};
 
-function loadPinned(): boolean {
-  try {
-    return globalThis.localStorage?.getItem(PINNED_KEY) === "true";
-  } catch {
-    return false;
-  }
+type EditingBookmark = {
+  noteId: string;
+  label: string;
+  category: string;
+};
+
+function asBookmarkContent(content: unknown): BookmarkContent {
+  const raw = content && typeof content === "object" ? (content as Record<string, unknown>) : {};
+  return {
+    label: typeof raw.label === "string" ? raw.label : "",
+    color: typeof raw.color === "string" ? raw.color : undefined,
+    order: typeof raw.order === "number" ? raw.order : undefined,
+    category: typeof raw.category === "string" ? raw.category : undefined
+  };
 }
 
 function bookmarkLabel(content: unknown): string {
-  if (content && typeof content === "object") {
-    const label = (content as Record<string, unknown>).label;
-    if (typeof label === "string" && label) return label;
-  }
-  return "Untitled bookmark";
+  const label = asBookmarkContent(content).label.trim();
+  return label || "Untitled bookmark";
 }
 
 export function BookmarkIndex() {
   const ctx = useWorkspace();
   const { bookmarks, jump, isJumpable, currentAnchorId } = useBookmarks(ctx);
   const groups = groupBookmarksByCategory(bookmarks);
-
-  // Pin = persistent open. Hover = transient open. The panel is open when either is true.
-  const [pinned, setPinned] = useState<boolean>(loadPinned);
-  const [hovered, setHovered] = useState(false);
-  const open = pinned || hovered;
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<EditingBookmark | null>(null);
 
   useEffect(() => {
-    try {
-      globalThis.localStorage?.setItem(PINNED_KEY, pinned ? "true" : "false");
-    } catch {
-      // storage unavailable — keep the in-memory flag
-    }
-  }, [pinned]);
+    if (!open) return;
+    const close = () => {
+      setOpen(false);
+      setEditing(null);
+    };
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Node && rootRef.current?.contains(target)) return;
+      close();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  function startEdit(note: NoteRecord) {
+    const content = asBookmarkContent(note.content);
+    setOpen(true);
+    setEditing({
+      noteId: note.id,
+      label: content.label,
+      category: content.category ?? ""
+    });
+  }
+
+  function saveEdit(note: NoteRecord) {
+    if (!editing || editing.noteId !== note.id) return;
+    const current = asBookmarkContent(note.content);
+    const next: BookmarkContent = {
+      ...current,
+      label: editing.label.trim() || "Untitled bookmark"
+    };
+    const category = editing.category.trim();
+    if (category) next.category = category;
+    else delete next.category;
+    setEditing(null);
+    void ctx.dispatch("note.edit", { noteId: note.id, content: next });
+  }
+
+  function deleteBookmark(note: NoteRecord) {
+    if (editing?.noteId === note.id) setEditing(null);
+    void ctx.dispatch("note.delete", { noteId: note.id });
+  }
 
   return (
     <div
-      className={`bookmark-index${open ? " open" : ""}${pinned ? " pinned" : ""}`}
+      ref={rootRef}
+      className={`bookmark-index${open ? " open" : ""}`}
       data-open={open ? "true" : undefined}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
     >
-      {/* Collapsed strip — the always-present hover target + contents icon. */}
       <button
         type="button"
-        className="bookmark-index-strip"
+        className={`bookmark-index-strip${open ? " active" : ""}`}
         aria-label="Bookmarks index"
         title="Bookmarks"
         aria-expanded={open}
-        onFocus={() => setHovered(true)}
+        onClick={() => setOpen((value) => !value)}
       >
         <List size={18} />
       </button>
 
-      {/* The slide-in panel (always rendered; CSS translateX hides it when closed). */}
       <div className="bookmark-index-panel" aria-hidden={open ? undefined : true}>
         <div className="bookmark-index-head">
-          <button
-            type="button"
-            className="bookmark-index-collapse"
-            aria-label="Collapse bookmarks index"
-            title="Collapse"
-            onClick={() => {
-              setHovered(false);
-              setPinned(false);
-            }}
-          >
-            <ChevronLeft size={16} />
-          </button>
           <span className="bookmark-index-title">Bookmarks</span>
-          <button
-            type="button"
-            className={`bookmark-index-pin${pinned ? " active" : ""}`}
-            aria-label={pinned ? "Unpin bookmarks index" : "Pin bookmarks index"}
-            aria-pressed={pinned}
-            title={pinned ? "Unpin" : "Pin open"}
-            onClick={() => setPinned((value) => !value)}
-          >
-            {pinned ? <PinOff size={15} /> : <Pin size={15} />}
-          </button>
         </div>
 
         <div className="bookmark-index-body">
@@ -120,18 +131,104 @@ export function BookmarkIndex() {
                   const anchorId = note.anchorIds[0];
                   const jumpable = isJumpable(anchorId);
                   const active = !!anchorId && anchorId === currentAnchorId;
+                  const label = bookmarkLabel(note.content);
+                  const isEditing = editing?.noteId === note.id;
+
+                  if (isEditing) {
+                    return (
+                      <form
+                        key={note.id}
+                        className="bookmark-index-edit"
+                        data-note-id={note.id}
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          saveEdit(note);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            setEditing(null);
+                          }
+                        }}
+                      >
+                        <div className="bookmark-index-edit-fields">
+                          <input
+                            className="bookmark-index-edit-input"
+                            aria-label="Bookmark title"
+                            value={editing.label}
+                            autoFocus
+                            onChange={(event) =>
+                              setEditing((value) =>
+                                value && value.noteId === note.id ? { ...value, label: event.target.value } : value
+                              )
+                            }
+                          />
+                          <input
+                            className="bookmark-index-edit-input"
+                            aria-label="Bookmark group"
+                            placeholder="Group"
+                            value={editing.category}
+                            onChange={(event) =>
+                              setEditing((value) =>
+                                value && value.noteId === note.id ? { ...value, category: event.target.value } : value
+                              )
+                            }
+                          />
+                        </div>
+                        <div className="bookmark-index-edit-actions">
+                          <button type="submit" className="bookmark-index-icon" title="Save" aria-label="Save bookmark">
+                            <Check size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            className="bookmark-index-icon"
+                            title="Cancel"
+                            aria-label="Cancel bookmark edit"
+                            onClick={() => setEditing(null)}
+                          >
+                            <X size={13} />
+                          </button>
+                        </div>
+                      </form>
+                    );
+                  }
+
                   return (
-                    <button
+                    <div
                       key={note.id}
-                      type="button"
-                      className={`bookmark-index-row${active ? " active" : ""}`}
+                      className={`bookmark-index-item${active ? " active" : ""}`}
                       data-note-id={note.id}
-                      disabled={!jumpable}
-                      title={jumpable ? "Jump to this bookmark" : "This bookmark's passage isn't visible"}
-                      onClick={() => jump(anchorId)}
                     >
-                      {bookmarkLabel(note.content)}
-                    </button>
+                      <button
+                        type="button"
+                        className="bookmark-index-row"
+                        disabled={!jumpable}
+                        title={jumpable ? `Jump to ${label}` : "This bookmark's passage isn't visible"}
+                        onClick={() => jump(anchorId)}
+                      >
+                        {label}
+                      </button>
+                      <div className="bookmark-index-actions">
+                        <button
+                          type="button"
+                          className="bookmark-index-icon"
+                          title="Edit bookmark"
+                          aria-label="Edit bookmark"
+                          onClick={() => startEdit(note)}
+                        >
+                          <Pencil size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className="bookmark-index-icon danger"
+                          title="Delete bookmark"
+                          aria-label="Delete bookmark"
+                          onClick={() => deleteBookmark(note)}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
                   );
                 })}
               </div>

@@ -8,11 +8,12 @@ import {
   applyHighlight,
   clearAnnotations,
   ensureAnnotationLayer,
+  type HighlightPayload,
   revealAnchorInDoc,
   setSelectedAnchorInDoc
 } from "./annotationLayer";
 import type { AnchorDraft } from "./focus/FocusContext";
-import { anchorsOfKind, type SurfaceReaderProps } from "./surfaces/types";
+import { anchorsOfKind, type PaintAnchor, type SurfaceReaderProps } from "./surfaces/types";
 import { isRealRegion, normalizeDragRect, placeRegionBox } from "./surfaces/overlay";
 import { formatZoomPct, nextZoom } from "./surfaces/pdfZoom";
 
@@ -26,6 +27,13 @@ type PdfReaderProps = SurfaceReaderProps & {
 
 const CONTEXT = 32;
 
+function annotationPayload(anchor: PaintAnchor, showBadge = true): HighlightPayload {
+  const noteHtml = anchor.notePreviews?.map((preview) => preview.html).join("") || undefined;
+  const fallbackCount = anchor.note ? 1 : 0;
+  const noteCount = anchor.notePreviews ? anchor.notePreviews.length : fallbackCount;
+  return { noteHtml, noteCount: showBadge ? noteCount : 0 };
+}
+
 // PDF surface adapter — one of the two OVERLAY readers. Renders a PDF with the
 // OFFICIAL pdf.js `PDFViewer` (the `.pdfViewer` container, virtualized `.page`
 // elements, each with a canvas + a selectable text layer) so PDFs can be
@@ -38,7 +46,15 @@ const CONTEXT = 32;
 //   WRITE: paint pdf_selection anchors from the `anchors` prop — a text highlight
 //          (match the quote in the text layer) or, when the anchor carries a rect,
 //          a region box. Both hook the shared note card via applyHighlight.
-export function PdfReader({ fileUrl, sourceId, anchors, onSelect, activeAnchorId, revealSeq }: PdfReaderProps) {
+export function PdfReader({
+  fileUrl,
+  sourceId,
+  anchors,
+  revealAnchors,
+  onSelect,
+  activeAnchorId,
+  revealSeq
+}: PdfReaderProps) {
   // container = the absolutely-positioned scroll root PDFViewer requires; viewer =
   // the inner `.pdfViewer` div PDFViewer fills with pages.
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -57,6 +73,8 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect, activeAnchorId
   // so the post-render repaint always sees the latest.
   const anchorsRef = useRef(anchorsOfKind(anchors, "pdf_selection"));
   anchorsRef.current = anchorsOfKind(anchors, "pdf_selection");
+  const revealAnchorsRef = useRef(anchorsOfKind(revealAnchors ?? anchors, "pdf_selection"));
+  revealAnchorsRef.current = anchorsOfKind(revealAnchors ?? anchors, "pdf_selection");
 
   // Region (rubber-band) mode: while on, the text layer is click-through and a
   // drag draws a selection rectangle that becomes a pdf_selection region anchor.
@@ -93,23 +111,66 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect, activeAnchorId
       if (anchor.rect) {
         const box = document.createElement("div");
         box.className = "pdf-region-box";
-        placeRegionBox(box, anchor.rect, anchor.note, anchor.id);
+        placeRegionBox(box, anchor.rect, anchor.note, anchor.id, annotationPayload(anchor));
         pageEl.appendChild(box);
         continue;
       }
 
       const textLayer = pageEl.querySelector(".textLayer");
-      if (!textLayer || !anchor.quote) continue;
-      for (const span of Array.from(textLayer.querySelectorAll("span"))) {
+      const quote = anchor.quote;
+      if (!textLayer || !quote) continue;
+      const matches = Array.from(textLayer.querySelectorAll("span")).filter((span) => {
         const text = span.textContent ?? "";
-        if (text && anchor.quote.includes(text.trim()) && text.trim().length > 1) {
-          // Keep .pdf-anchor-hit for the visual; add the shared highlight + note
-          // card (same layer the HTML reader and webview guest use).
-          span.classList.add("pdf-anchor-hit");
-          applyHighlight(span, anchor.note, anchor.id);
-        }
+        return text && quote.includes(text.trim()) && text.trim().length > 1;
+      });
+      matches.forEach((span, index) => {
+        // Keep .pdf-anchor-hit for the visual; add the shared highlight + note
+        // card (same layer the HTML reader and webview guest use).
+        span.classList.add("pdf-anchor-hit");
+        applyHighlight(span, anchor.note, anchor.id, annotationPayload(anchor, index === 0));
+      });
+    }
+  }
+
+  function flashElement(el: Element & { scrollIntoView?: Element["scrollIntoView"] }) {
+    try {
+      el.scrollIntoView?.({ block: "center", inline: "nearest" });
+    } catch {
+      // no scrollIntoView in some test/realm environments
+    }
+    el.classList.add("sv-active");
+    window.setTimeout(() => el.classList.remove("sv-active"), 1000);
+  }
+
+  function revealPdfAnchor(anchorId: string | undefined): boolean {
+    const viewer = viewerRef.current;
+    if (!viewer || !anchorId) return false;
+    if (revealAnchorInDoc(viewer, anchorId)) return true;
+
+    const target = revealAnchorsRef.current.find((anchor) => anchor.id === anchorId);
+    if (!target?.page) return false;
+    const pageEl = viewer.querySelector(`.page[data-page-number="${target.page}"]`) as HTMLElement | null;
+    if (!pageEl) return false;
+
+    if (target.rect) {
+      flashElement(pageEl);
+      return true;
+    }
+
+    if (target.quote) {
+      const textLayer = pageEl.querySelector(".textLayer");
+      const span = Array.from(textLayer?.querySelectorAll("span") ?? []).find((item) => {
+        const text = item.textContent?.trim() ?? "";
+        return text.length > 1 && target.quote?.includes(text);
+      }) as (HTMLElement & { scrollIntoView?: Element["scrollIntoView"] }) | undefined;
+      if (span) {
+        flashElement(span);
+        return true;
       }
     }
+
+    flashElement(pageEl);
+    return true;
   }
 
   // Build the official PDFViewer (once per fileUrl) + bind selection / region gestures.
@@ -143,6 +204,31 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect, activeAnchorId
     // zoom, the initial page-width fit, AND automatic re-fits when the pane resizes
     // (page-width is dynamic, so resizing re-dispatches scalechanging).
     eventBus.on("scalechanging", (evt: { scale: number }) => setScale(evt.scale));
+
+    // Keep the PDF fitted when the Source Viewer pane or desktop window is resized.
+    // Window dragging can report one stale intermediate width, so fit once on the
+    // next frame and once again after layout has settled.
+    const resizeFrames = new Set<number>();
+    const queueFrame = (callback: FrameRequestCallback) => {
+      const id = requestAnimationFrame((time) => {
+        resizeFrames.delete(id);
+        callback(time);
+      });
+      resizeFrames.add(id);
+    };
+    const fitToContainer = () => {
+      queueFrame(() => {
+        pdfViewer.currentScaleValue = "page-width";
+        queueFrame(() => {
+          pdfViewer.currentScaleValue = "page-width";
+        });
+      });
+    };
+    const resizeObserver = new ResizeObserver(fitToContainer);
+    resizeObserver.observe(container);
+    resizeObserver.observe(container.closest(".pdf-reader-viewport") ?? container);
+    resizeObserver.observe(container.closest(".reader-panel") ?? container);
+    window.addEventListener("resize", fitToContainer);
 
     // —— Ctrl/Cmd + wheel zoom —— mirror the browser/native convention: a plain
     // wheel scrolls (let it through), but with the zoom modifier held it zooms and
@@ -270,6 +356,10 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect, activeAnchorId
       container.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", finishDrag);
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", fitToContainer);
+      resizeFrames.forEach((id) => cancelAnimationFrame(id));
+      resizeFrames.clear();
       loadingTask.destroy().catch(() => {});
       try {
         pdfViewer.setDocument(null as never);
@@ -298,8 +388,8 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect, activeAnchorId
     // Paint/clear the persistent blue "selected" highlight on the focused anchor.
     setSelectedAnchorInDoc(viewerRef.current, activeAnchorId);
     if (!activeAnchorId) return;
-    if (revealAnchorInDoc(viewerRef.current, activeAnchorId)) return;
-    const target = anchorsRef.current.find((a) => a.id === activeAnchorId);
+    if (revealPdfAnchor(activeAnchorId)) return;
+    const target = revealAnchorsRef.current.find((a) => a.id === activeAnchorId);
     const pdfViewer = pdfViewerRef.current;
     if (!target?.page || !pdfViewer) return;
     try {
@@ -312,7 +402,7 @@ export function PdfReader({ fileUrl, sourceId, anchors, onSelect, activeAnchorId
     if (!eventBus) return;
     const onRendered = () => {
       setSelectedAnchorInDoc(viewerRef.current, activeAnchorId);
-      if (revealAnchorInDoc(viewerRef.current, activeAnchorId)) {
+      if (revealPdfAnchor(activeAnchorId)) {
         eventBus.off("textlayerrendered", onRendered);
       }
     };

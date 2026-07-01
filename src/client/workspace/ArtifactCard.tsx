@@ -22,6 +22,7 @@ import { MoreHorizontal } from "lucide-react";
 import { getNoteType } from "../notes/noteTypeRegistry";
 import { noteTypeIcon } from "../notes/noteTypeIcon";
 import { FocusOverlay, type FocusOverlayBlock } from "./FocusOverlay";
+import { noteCardMeta } from "./noteCardMeta";
 
 // A plain-text snippet from any content shape (string passes through; an object is
 // JSON-stringified) — the generic card's title fallback, never raw HTML.
@@ -47,14 +48,33 @@ function FooterMeta({ block }: { block: FocusOverlayBlock }) {
   const parts: string[] = [];
   if (block.page != null) parts.push(`P${block.page}`);
   if (block.extra) parts.push(block.extra);
-  if (block.layer) parts.push(block.layer);
+  if (block.layer || block.note) parts.push(block.layer ?? "My Notes");
   if (parts.length === 0) return null;
   return <span className="sv-card-footer">{parts.join(" · ")}</span>;
 }
 
+function CardFooterMeta({ block }: { block: FocusOverlayBlock }) {
+  const parts: string[] = [];
+  if (block.page != null) parts.push(`P${block.page}`);
+  if (block.extra) parts.push(block.extra);
+  if (block.layer || block.note) parts.push(block.layer ?? "My Notes");
+  if (parts.length === 0) return null;
+  return (
+    <span className="sv-card-footer">
+      {parts.map((part) => (
+        <span className="sv-card-footer-part" key={part}>
+          {part}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 export function ArtifactCard({ block }: { block: FocusOverlayBlock }) {
   const [open, setOpen] = useState(false);
-  const title = block.title ?? (snippetOf(block.content).slice(0, 80) || block.contentType);
+  const meta = noteCardMeta(block.contentType, block.content);
+  const title = block.title ?? meta.title ?? (snippetOf(block.content).slice(0, 80) || block.contentType);
+  const displayBlock = { ...block, title, extra: block.extra ?? meta.extra };
   const body = cardBody(block);
   const Icon = noteTypeIcon(block.contentType);
 
@@ -65,7 +85,8 @@ export function ArtifactCard({ block }: { block: FocusOverlayBlock }) {
         role="button"
         tabIndex={0}
         aria-haspopup="dialog"
-        title={`Open ${block.contentType} (double-click)`}
+        data-content-type={block.contentType}
+        title={`Open ${title}`}
         // Single click and double-click both open the centered view — single keeps the
         // long-standing behavior the chat thread/tests rely on, double-click matches the
         // §10 "双击预览卡 → Center View" gesture. Keyboard: Enter/Space opens too.
@@ -84,16 +105,16 @@ export function ArtifactCard({ block }: { block: FocusOverlayBlock }) {
           </span>
           {/* The type NAME (the §10 header label). Keeps the legacy .sv-artifact-badge
               hook so the form is named exactly once. */}
-          <span className="sv-artifact-badge sv-card-type">{block.contentType}</span>
+          <span className="sv-artifact-badge sv-card-type">{meta.typeLabel}</span>
           <span className="sv-card-more" aria-hidden="true">
             <MoreHorizontal size={15} />
           </span>
         </span>
         <span className="sv-card-title sv-artifact-title">{title}</span>
         {body ? <span className="sv-artifact-thumb sv-card-body">{body}</span> : null}
-        <FooterMeta block={block} />
+        <CardFooterMeta block={displayBlock} />
       </div>
-      {open ? <FocusOverlay block={block} onClose={() => setOpen(false)} /> : null}
+      {open ? <FocusOverlay block={displayBlock} onClose={() => setOpen(false)} /> : null}
     </>
   );
 }

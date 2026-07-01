@@ -6,7 +6,7 @@
 // note card). Only the element being dragged over differs, so that gesture +
 // box-draw lives here once instead of being duplicated between the two readers.
 
-import { applyHighlight } from "../annotationLayer";
+import { applyHighlight, type HighlightPayload } from "../annotationLayer";
 import { normalizeRect } from "../../core/region/region";
 import type { Rect } from "../../core/region/region";
 
@@ -36,12 +36,18 @@ export function isRealRegion(
 
 // Position an absolutely-positioned box element at a normalized rect (percent
 // offsets so it tracks element resizes) and hook it to the shared note card.
-export function placeRegionBox(box: HTMLElement, rect: NormalizedRect, note: string, id?: string): void {
+export function placeRegionBox(
+  box: HTMLElement,
+  rect: NormalizedRect,
+  note: string,
+  id?: string,
+  payload?: HighlightPayload
+): void {
   const [x, y, w, h] = rect;
   box.style.left = `${x * 100}%`;
   box.style.top = `${y * 100}%`;
   box.style.width = `${w * 100}%`;
   box.style.height = `${h * 100}%`;
   if (id) box.setAttribute("data-anchor-id", id);
-  applyHighlight(box, note, id);
+  applyHighlight(box, note, id, payload);
 }

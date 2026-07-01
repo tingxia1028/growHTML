@@ -55,7 +55,15 @@ export type WebviewIpcMessage = Event & { channel: string; args: unknown[] };
 
 // The anchor shape the guest preload paints back as highlights + hover note-cards
 // over the `sv:anchors` channel. Permissive `id` because it's optional in the guest.
-export type WebAnchorMsg = { id?: string; quote: string; contextBefore: string; contextAfter: string; note?: string };
+export type WebAnchorMsg = {
+  id?: string;
+  quote: string;
+  contextBefore: string;
+  contextAfter: string;
+  note?: string;
+  noteHtml?: string;
+  noteCount?: number;
+};
 
 // The preload file:// url the host attaches to each guest webview so it captures
 // selections. Absent outside the desktop app (returns undefined → no capture).
@@ -180,13 +188,19 @@ export function selectWebviewAnchor(webview: SelectionWebview | null | undefined
 export function toWebAnchorMsgs(anchors: PaintAnchor[]): WebAnchorMsg[] {
   return anchors
     .filter((anchor) => anchor.anchorKind === "web_text_quote")
-    .map((anchor) => ({
-      id: anchor.id,
-      quote: anchor.quote ?? "",
-      contextBefore: anchor.contextBefore ?? "",
-      contextAfter: anchor.contextAfter ?? "",
-      note: anchor.note
-    }));
+    .map((anchor) => {
+      const msg: WebAnchorMsg = {
+        id: anchor.id,
+        quote: anchor.quote ?? "",
+        contextBefore: anchor.contextBefore ?? "",
+        contextAfter: anchor.contextAfter ?? "",
+        note: anchor.note
+      };
+      const noteHtml = anchor.notePreviews?.map((preview) => preview.html).join("") || undefined;
+      if (noteHtml) msg.noteHtml = noteHtml;
+      if (anchor.notePreviews?.length) msg.noteCount = anchor.notePreviews.length;
+      return msg;
+    });
 }
 
 // READ side: a guest WebSelection (+ the URL it should be anchored to) → a

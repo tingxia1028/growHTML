@@ -64,21 +64,23 @@ function listBuiltinActions(): BuiltinAction[] {
   });
 }
 
-// —— surface tabs (R6.3 Customize Toolbar) ——————————————————————————————————————————
-// One row of small tabs above the manager list. The three SURFACE tabs configure
-// per-surface show/hide + order; the "My Actions" tab keeps the existing builder/manager.
-type SurfaceTab = ActionSurface | "manage";
+// —— surface tabs (Customize Toolbar) ————————————————————————————————————————————————
+// One row of small tabs above the manager list. The single SURFACE tab — "Toolbar" —
+// configures the shared "passage" surface (the inline selection toolbar AND the Anchor bar
+// render the SAME list); the "My Actions" tab keeps the existing builder/manager.
+type SurfaceTab = "passage" | "manage";
 const SURFACE_TABS: { id: SurfaceTab; label: string }[] = [
-  { id: "inline", label: "Inline" },
-  { id: "anchor", label: "Anchor" },
-  { id: "bottom", label: "Bottom" },
+  { id: "passage", label: "Toolbar" },
   { id: "manage", label: "My Actions" }
 ];
 
-// Map a Customize deep-link surface (from openOperationManager) to the tab to pre-select:
-// the three configurable surfaces map to their own tab; "my"/undefined → the builder.
+// Map a Customize deep-link surface (from openOperationManager) to the tab to pre-select.
+// Any passage-toolbar request — the new "passage" key OR the legacy "inline"/"anchor"/
+// "bottom" values older deep-link callers may still pass — opens the single Toolbar tab;
+// "my"/undefined → the builder/manager. ("bottom" maps here too so BottomBar's More menu
+// never crashes the panel — BottomBar isn't docked, so it's not otherwise user-facing.)
 function mapCustomizeSurfaceToTab(surface: CustomizeSurface): SurfaceTab {
-  return surface === "inline" || surface === "anchor" || surface === "bottom" ? surface : "manage";
+  return surface === "my" || surface === undefined ? "manage" : "passage";
 }
 
 // A flattened action a surface tab can show/hide/reorder (id + label + scope/kind tags).
@@ -94,17 +96,11 @@ const BOOKMARK_SURFACE_ACTION: SurfaceAction = {
   kind: "builtin"
 };
 
-// Build the action POOL a given surface offers, mirroring how WorkspaceContext assembles
-// each surface's list (so the manager configures exactly what the surface renders):
-//   • inline / anchor → the anchor-scope pool (Bookmark + anchor built-ins + anchor ops)
-//   • bottom         → anchor-scope ∪ source-scope, deduped by id
-function surfacePool(surface: ActionSurface, builtins: SurfaceAction[], ops: SurfaceAction[]): SurfaceAction[] {
-  const anchorPool = [BOOKMARK_SURFACE_ACTION, ...builtins.filter((a) => a.scope === "anchor"), ...ops.filter((a) => a.scope === "anchor")];
-  if (surface === "inline" || surface === "anchor") return anchorPool;
-  const sourcePool = [...builtins.filter((a) => a.scope === "source"), ...ops.filter((a) => a.scope === "source")];
-  const merged = [...anchorPool, ...sourcePool];
-  const seen = new Set<string>();
-  return merged.filter((a) => (seen.has(a.id) ? false : (seen.add(a.id), true)));
+// Build the action POOL the shared "passage" toolbar offers, mirroring how WorkspaceContext
+// assembles `selectionActions` (so the manager configures exactly what the inline + Anchor
+// toolbars render): the anchor-scope pool (Bookmark + anchor built-ins + anchor ops).
+function surfacePool(builtins: SurfaceAction[], ops: SurfaceAction[]): SurfaceAction[] {
+  return [BOOKMARK_SURFACE_ACTION, ...builtins.filter((a) => a.scope === "anchor"), ...ops.filter((a) => a.scope === "anchor")];
 }
 
 // The well-known variable SOURCES the run command can supply automatically (the user
@@ -465,7 +461,7 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
   // `order` (unlisted ids keep pool order). Empty when the "manage" tab is active.
   const surfaceList = useMemo<SurfaceAction[]>(() => {
     if (surfaceTab === "manage") return [];
-    const pool = surfacePool(surfaceTab, builtinSurfaceActions, opSurfaceActions);
+    const pool = surfacePool(builtinSurfaceActions, opSurfaceActions);
     const order = operationPrefs.surfaces?.[surfaceTab]?.order ?? [];
     const indexOf = (id: string) => {
       const i = order.indexOf(id);

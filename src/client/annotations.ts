@@ -16,6 +16,7 @@ import {
   ensureAnnotationLayer,
   highlightQuote,
   paintMarginNotes,
+  type HighlightPayload,
   type MarginItem
 } from "./annotationLayer";
 
@@ -58,6 +59,8 @@ export interface AnnotationNote {
   // A note can hang off several anchors; it paints under each one it claims.
   anchorIds?: string[];
   content: string;
+  previewHtml?: string;
+  contentType?: string;
 }
 
 export interface AnchorNotes {
@@ -114,7 +117,13 @@ const htmlHighlightRenderer: AnnotationRenderer = {
     if (mode === "margin") {
       paintMarginNotes(
         doc,
-        resolved.map(({ element, noteText, key }): MarginItem => ({ element, noteText, key }))
+        resolved.map(({ element, noteText, noteHtml, noteCount, key }): MarginItem => ({
+          element,
+          noteText,
+          noteHtml,
+          noteCount,
+          key
+        }))
       );
     }
     // floating mode needs no extra work: the inline highlight + shared hover card
@@ -125,36 +134,57 @@ const htmlHighlightRenderer: AnnotationRenderer = {
 // Resolve anchors to elements (study-id fast path, else edit-resilient text
 // re-find), apply the inline highlight, and merge notes that land on the same
 // element. The returned targets drive marginalia layout.
-function resolveTargets(doc: Document, items: AnchorNotes[]): { element: Element; noteText: string; key: string }[] {
-  const byElement = new Map<Element, { lines: string[]; key: string }>();
+function notePayload(notes: AnnotationNote[]): { noteText: string; noteHtml: string; noteCount: number } {
+  return {
+    noteText: notes.map((note) => note.content).join("\n\n"),
+    noteHtml: notes
+      .map((note) => note.previewHtml)
+      .filter((html): html is string => Boolean(html))
+      .join(""),
+    noteCount: notes.length
+  };
+}
+
+function payloadFor(noteHtml: string, noteCount: number): HighlightPayload {
+  return { noteHtml: noteHtml || undefined, noteCount };
+}
+
+function resolveTargets(
+  doc: Document,
+  items: AnchorNotes[]
+): { element: Element; noteText: string; noteHtml: string; noteCount: number; key: string }[] {
+  const byElement = new Map<Element, { lines: string[]; htmls: string[]; count: number; key: string }>();
   for (const { anchor, notes } of items) {
-    // Joined as markdown (blank line between notes); the card renders it.
-    const noteText = notes.map((note) => note.content).join("\n\n");
+    const { noteText, noteHtml, noteCount } = notePayload(notes);
     const studyEl = anchor.studyId ? doc.querySelector(`[data-study-id="${cssEscape(anchor.studyId)}"]`) : null;
     if (studyEl) {
-      // Fast path: the injected study-id still exists.
-      const entry = byElement.get(studyEl) ?? { lines: [], key: anchor.id };
-      for (const note of notes) entry.lines.push(note.content);
+      const entry = byElement.get(studyEl) ?? { lines: [], htmls: [], count: 0, key: anchor.id };
+      for (const note of notes) {
+        entry.lines.push(note.content);
+        if (note.previewHtml) entry.htmls.push(note.previewHtml);
+        entry.count += 1;
+      }
       byElement.set(studyEl, entry);
     } else if (anchor.quote) {
-      // study-id gone (HTML edited / re-imported) — re-find by text so the note
-      // survives as long as the text does; the wrapped <mark> becomes the target.
       highlightQuote(
         doc,
         { exact: anchor.quote, prefix: anchor.contextBefore ?? "", suffix: anchor.contextAfter ?? "" },
         noteText,
-        anchor.id
+        anchor.id,
+        payloadFor(noteHtml, noteCount)
       );
       const mark = doc.querySelector(`mark[data-sv="1"][data-sv-key="${cssEscape(anchor.id)}"]`);
-      if (mark && !byElement.has(mark)) byElement.set(mark, { lines: [noteText], key: anchor.id });
+      if (mark && !byElement.has(mark)) {
+        byElement.set(mark, { lines: [noteText], htmls: [noteHtml], count: noteCount, key: anchor.id });
+      }
     }
   }
-  // Apply (or refresh) the inline highlight on every resolved element.
-  const out: { element: Element; noteText: string; key: string }[] = [];
-  for (const [element, { lines, key }] of byElement) {
+  const out: { element: Element; noteText: string; noteHtml: string; noteCount: number; key: string }[] = [];
+  for (const [element, { lines, htmls, count, key }] of byElement) {
     const noteText = lines.join("\n\n");
-    applyHighlight(element, noteText, key);
-    out.push({ element, noteText, key });
+    const noteHtml = htmls.join("");
+    applyHighlight(element, noteText, key, payloadFor(noteHtml, count));
+    out.push({ element, noteText, noteHtml, noteCount: count, key });
   }
   return out;
 }

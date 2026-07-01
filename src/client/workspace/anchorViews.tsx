@@ -6,23 +6,16 @@
 //   • Linked notes — a row of note-type icons for the notes attached to this anchor.
 // When nothing is focused it shows the existing "Select a passage…" empty state.
 
-import { useState } from "react";
 import { Anchor, Crosshair, FileText } from "lucide-react";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 import { draftQuoteText } from "../focus/FocusContext";
 import { PanelMenu } from "./PanelMenu";
 import { noteTypeIcon } from "../notes/noteTypeIcon";
 import { getNoteType } from "../notes/noteTypeRegistry";
-import { ArtifactCard } from "./ArtifactCard";
 import { ActionGrid } from "./ActionGrid";
 import { ActionMoreMenu } from "./ActionMoreMenu";
 
 function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
-  // §10.4: clicking a note-type icon REVEALS that note's shared PreviewCard beside the
-  // anchor (instead of bulk-expanding every card). null = no card open; a noteId = show
-  // its PreviewCard. Double-clicking the card opens the shared CenterView (handled by the
-  // PreviewCard itself).
-  const [openNoteId, setOpenNoteId] = useState<string | null>(null);
   const { focus, activeSource, visibleNotes, anchorBarActions, runAction, generating, openOperationManager } = ctx;
   const anchor = focus.anchor;
   const quote = anchor?.quote ?? draftQuoteText(focus.draft);
@@ -39,6 +32,12 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
 
   // Notes attached to the currently focused anchor → the "Linked notes" icon row.
   const linkedNotes = anchor ? visibleNotes.filter((note) => note.anchorIds.includes(anchor.id)) : [];
+
+  const focusLinkedNote = (noteId: string) => {
+    if (!anchor) return;
+    focus.setAnchor(anchor);
+    focus.setFocus({ type: "note", noteId });
+  };
 
   return (
     <aside className="anchor-panel">
@@ -115,8 +114,8 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
             />
           </div>
 
-          {/* —— Linked notes (visible layers) —— §10.4: a row of note-type icons; clicking
-              one reveals that note's shared PreviewCard (double-click the card → CenterView). */}
+          {/* —— Linked notes (visible layers) —— note-type icons focus the Notes viewer
+              and re-reveal the source anchor; no inline popover here. */}
           <div className="anchor-linked">
             <span className="anchor-linked-label">Linked notes</span>
             {linkedNotes.length ? (
@@ -125,17 +124,16 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
                   const contentType = note.contentType ?? "markdown";
                   const Icon = noteTypeIcon(contentType);
                   const label = getNoteType(contentType)?.label ?? contentType;
-                  const active = openNoteId === note.id;
+                  const active = focus.focus?.type === "note" && focus.focus.noteId === note.id;
                   return (
                     <button
                       key={note.id}
                       className={`anchor-linked-icon${active ? " active" : ""}`}
                       type="button"
-                      title={label}
-                      aria-label={label}
+                      title={`Show ${label} in Notes`}
+                      aria-label={`Show ${label} in Notes`}
                       aria-pressed={active}
-                      // Toggle this note's PreviewCard (§10.4 "点 note-type 图标 → 预览卡").
-                      onClick={() => setOpenNoteId((cur) => (cur === note.id ? null : note.id))}
+                      onClick={() => focusLinkedNote(note.id)}
                     >
                       <Icon size={15} />
                     </button>
@@ -145,27 +143,6 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
             ) : (
               <span className="anchor-linked-empty">None yet</span>
             )}
-            {/* The revealed PreviewCard for the selected linked note. ONE shared card —
-                the same component the chat thread uses (§10.2). */}
-            {openNoteId
-              ? linkedNotes
-                  .filter((note) => note.id === openNoteId)
-                  .map((note) => (
-                    <div key={note.id} className="anchor-linked-card">
-                      <ArtifactCard
-                        block={{
-                          contentType: note.contentType ?? "markdown",
-                          content: note.content,
-                          note,
-                          page: page ?? undefined,
-                          section: section || undefined,
-                          // Jump back to this anchor in the reader from the CenterView.
-                          onJumpToAnchor: anchor ? () => focus.setAnchor(anchor) : undefined
-                        }}
-                      />
-                    </div>
-                  ))
-              : null}
           </div>
         </>
       ) : (

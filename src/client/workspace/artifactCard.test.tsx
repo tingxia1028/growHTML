@@ -71,7 +71,7 @@ describe("ArtifactCard — click opens the centered overlay", () => {
     );
     const card = container.querySelector(".sv-artifact-card") as HTMLButtonElement;
     expect(card).toBeTruthy();
-    expect(container.querySelector(".sv-artifact-badge")?.textContent).toBe("mermaid");
+    expect(container.querySelector(".sv-artifact-badge")?.textContent).toBe("Mermaid / Mindmap");
     // The light card preview, not a live diagram, is in the thumbnail.
     expect(container.querySelector(".sv-diagram-card")).toBeTruthy();
     expect(container.querySelector(".mock-diagram")).toBeNull();
@@ -139,7 +139,7 @@ describe("chat thread wiring — rich reply → card, plain → markdown", () =>
       <ChatMessageBody role="assistant" content={"flowchart LR; A --> B"} />
     );
     expect(container.querySelector(".sv-artifact-card")).toBeTruthy();
-    expect(container.querySelector(".sv-artifact-badge")?.textContent).toBe("mermaid");
+    expect(container.querySelector(".sv-artifact-badge")?.textContent).toBe("Mermaid / Mindmap");
     cleanup();
   });
 

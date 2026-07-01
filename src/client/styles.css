@@ -132,8 +132,7 @@ button {
   min-height: 0;
 }
 
-/* The body row = IconRail (fixed strip) + the resizable dock (.app-shell). It is the
-   positioning context for the R8 BookmarkIndex, which overlays the far-right edge. */
+/* The body row = IconRail (fixed strip) + the resizable dock (.app-shell). */
 .app-body {
   display: flex;
   flex: 1 1 auto;
@@ -2416,63 +2415,68 @@ button {
   background: #eaf0e6;
 }
 
-/* —— BookmarkIndex (R8, §9) — far-right hover-reveal contents index ——————————
-   An overlay pinned to the right edge of .app-body. Collapsed = a thin strip; hovering
-   (or pinning) slides the panel in over the content via translateX. It never changes the
-   dock layout — the strip is a fixed-width overlay, the panel a transform. Tokens only. */
+/* —— BookmarkIndex (R8, §9) — Source Viewer header contents index ——————————
+   A reader-toolbar trigger. Clicking opens the panel over the reader from
+   the Source Viewer top-right corner. */
 .bookmark-index {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 40;
-  display: flex;
-  pointer-events: none;
+  position: relative;
+  z-index: 80;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
 }
 
-/* The always-present collapsed strip (the hover target + contents icon). */
+/* Header trigger: lives in Source Viewer's top-right toolbar. */
 .bookmark-index-strip {
-  pointer-events: auto;
-  align-self: stretch;
-  flex: 0 0 28px;
-  width: 28px;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 28px;
   display: inline-flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  padding-top: 14px;
-  border: none;
-  border-left: 1px solid var(--sv-border);
-  background: var(--sv-surface);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--sv-radius);
+  background: transparent;
   color: var(--sv-icon-muted);
   cursor: pointer;
 }
 
 .bookmark-index-strip:hover,
 .bookmark-index.open .bookmark-index-strip {
+  border-color: var(--sv-border);
   background: var(--sv-surface-muted);
   color: var(--sv-text);
 }
 
-/* The slide-in panel. Hidden by translateX off the right edge when closed. */
+/* The header popover. Hidden just below the trigger when closed. */
 .bookmark-index-panel {
   pointer-events: auto;
   position: absolute;
-  top: 0;
+  top: calc(100% + 8px);
   right: 0;
-  bottom: 0;
   width: 260px;
-  max-width: 80vw;
+  max-width: min(80vw, 320px);
+  height: min(460px, calc(100vh - 120px));
   display: flex;
   flex-direction: column;
-  background: var(--sv-surface);
-  border-left: 1px solid var(--sv-border);
-  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.08);
-  transform: translateX(100%);
-  transition: transform 180ms ease;
+  /* Semi-transparent so the reader shows through; the blur keeps text legible. */
+  background: color-mix(in srgb, var(--sv-surface) 78%, transparent);
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+  border: 1px solid var(--sv-border);
+  border-radius: 12px;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.14);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity 150ms ease, transform 150ms ease, visibility 150ms ease;
 }
 
 .bookmark-index.open .bookmark-index-panel {
-  transform: translateX(0);
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
 }
 
 /* When closed the panel must not catch clicks under it. */
@@ -2494,33 +2498,6 @@ button {
   font-size: 13px;
   font-weight: 600;
   color: var(--sv-text-heading);
-}
-
-.bookmark-index-collapse,
-.bookmark-index-pin {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--sv-radius);
-  background: transparent;
-  color: var(--sv-icon-muted);
-  cursor: pointer;
-}
-
-.bookmark-index-collapse:hover,
-.bookmark-index-pin:hover {
-  background: var(--sv-surface-muted);
-  color: var(--sv-text);
-}
-
-.bookmark-index-pin.active {
-  border-color: var(--sv-accent-border);
-  background: var(--sv-accent-weak);
-  color: var(--sv-accent);
 }
 
 .bookmark-index-body {
@@ -2550,11 +2527,36 @@ button {
   color: var(--sv-text-muted);
 }
 
-.bookmark-index-row {
-  display: block;
-  width: 100%;
-  padding: 6px 10px;
+.bookmark-index-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
   border: 1px solid transparent;
+  border-radius: var(--sv-radius);
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.bookmark-index-item:hover {
+  background: var(--sv-surface-muted);
+}
+
+.bookmark-index-item.active {
+  border-color: var(--sv-accent-border);
+  background: var(--sv-accent-weak);
+}
+
+.bookmark-index-item.active .bookmark-index-row {
+  color: var(--sv-accent);
+  font-weight: 600;
+}
+
+.bookmark-index-row {
+  flex: 1 1 auto;
+  display: block;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 0;
   border-radius: var(--sv-radius);
   background: transparent;
   color: var(--sv-accent);
@@ -2567,13 +2569,10 @@ button {
 }
 
 .bookmark-index-row:not(:disabled):hover {
-  background: var(--sv-surface-muted);
   color: var(--sv-accent-strong);
 }
 
 .bookmark-index-row.active {
-  border-color: var(--sv-accent-border);
-  background: var(--sv-accent-weak);
   color: var(--sv-accent);
   font-weight: 600;
 }
@@ -2581,6 +2580,92 @@ button {
 .bookmark-index-row:disabled {
   color: var(--sv-text-faint);
   cursor: not-allowed;
+}
+
+.bookmark-index-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding-right: 3px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.bookmark-index-item:hover .bookmark-index-actions,
+.bookmark-index-item:focus-within .bookmark-index-actions {
+  opacity: 1;
+}
+
+.bookmark-index-icon {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--sv-radius);
+  background: transparent;
+  color: var(--sv-icon-muted);
+  cursor: pointer;
+}
+
+.bookmark-index-icon:hover,
+.bookmark-index-icon:focus-visible {
+  border-color: var(--sv-border);
+  background: #ffffff;
+  color: var(--sv-text);
+}
+
+.bookmark-index-icon.danger:hover,
+.bookmark-index-icon.danger:focus-visible {
+  border-color: var(--sv-danger-bg-strong);
+  background: var(--sv-danger-bg);
+  color: var(--sv-danger-2);
+}
+
+.bookmark-index-edit {
+  display: flex;
+  gap: 5px;
+  padding: 5px;
+  border: 1px solid var(--sv-accent-border);
+  border-radius: var(--sv-radius);
+  background: var(--sv-accent-weak);
+}
+
+.bookmark-index-edit-fields {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.bookmark-index-edit-input {
+  width: 100%;
+  height: 25px;
+  min-width: 0;
+  padding: 0 8px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius);
+  background: #ffffff;
+  color: var(--sv-text);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+
+.bookmark-index-edit-input:focus {
+  border-color: var(--sv-accent-border);
+  box-shadow: 0 0 0 2px var(--sv-accent-weak-hover);
+}
+
+.bookmark-index-edit-actions {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 /* —— Textbook Learning Kit — Study Block cards (Product Kit) ————————————————— */
@@ -2881,21 +2966,43 @@ button {
   margin: 8px 0 4px;
 }
 
+/* Floating selection toolbar — the SAME .selection-toolbar row, lifted into a
+   portaled card that floats just below a live text selection. High z-index so it sits
+   above the readers + dock; a drop shadow + surface fill make it read as a popover.
+   Its inner .selection-toolbar drops the inline top/bottom margins (the card pads). */
+.selection-floating-toolbar {
+  z-index: 1200;
+  max-width: min(92vw, 560px);
+  padding: 4px 6px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface, #fff);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.selection-floating-toolbar .selection-toolbar {
+  margin: 0;
+}
+
+/* Icon-only square button (spec §7.2.1) — matches the Anchor bar's .action-grid-btn
+   so the three surfaces read as one family. Label is in the tooltip/aria-label. */
 .selection-toolbar-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 10px;
-  border: 1px solid var(--sv-accent-border);
-  border-radius: var(--sv-radius-pill);
-  background: var(--sv-accent-weak);
-  color: var(--sv-accent-text);
-  font-size: 12px;
-  font-weight: 600;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface-card);
+  color: var(--sv-text-muted);
 }
 
 .selection-toolbar-btn:hover {
-  background: var(--sv-accent-weak-hover);
+  background: var(--sv-surface-muted);
+  border-color: var(--sv-accent-border);
+  color: var(--sv-accent);
 }
 
 .selection-toolbar-btn:disabled {
@@ -3779,6 +3886,427 @@ textarea {
   color: var(--sv-text-strong);
 }
 
+/* NOTE-REF-001 — screenshot-matched note preview cards + expanded views. */
+.sv-artifact-card.sv-preview-card {
+  width: 100%;
+  height: 138px;
+  min-height: 138px;
+  max-width: 260px;
+  gap: 7px;
+  padding: 10px 12px;
+  border: 1px solid #e3e8ef;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 5px 14px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+}
+
+.note-list-row .sv-artifact-card.sv-preview-card,
+.anchor-linked-card .sv-artifact-card.sv-preview-card {
+  width: min(100%, 260px);
+  max-width: 260px;
+}
+
+.sv-artifact-card.sv-preview-card:hover {
+  border-color: #d4e2fb;
+  background: #ffffff;
+  box-shadow: 0 7px 18px rgba(15, 23, 42, 0.11);
+}
+
+.sv-card-head {
+  gap: 7px;
+  min-height: 22px;
+}
+
+.sv-artifact-icon {
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d7dee9;
+  border-radius: 5px;
+  color: #273142;
+  background: #ffffff;
+}
+
+.sv-artifact-icon svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.9;
+}
+
+.sv-card-type {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: #6d7685;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 18px;
+  text-transform: none;
+}
+
+.sv-card-more {
+  margin-left: auto;
+  color: #1f2937;
+}
+
+.sv-card-title {
+  font-size: 13.5px;
+  line-height: 18px;
+  color: #111827;
+}
+
+.sv-artifact-thumb {
+  min-height: 34px;
+  max-height: 76px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.sv-artifact-thumb.sv-card-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.sv-preview-card .note-rendered {
+  font-family: var(--sv-font-sans);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.sv-card-footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: auto;
+  color: #788292;
+  font-size: 11.5px;
+  line-height: 16px;
+}
+
+.sv-card-footer-part {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sv-card-footer-part + .sv-card-footer-part::before {
+  content: "•";
+  margin-right: 7px;
+  color: #a8b0bd;
+}
+
+.sv-focus-overlay {
+  background: rgba(248, 250, 252, 0.72);
+  backdrop-filter: blur(2px);
+}
+
+.sv-focus-dialog.sv-center-dialog {
+  width: min(980px, 92vw);
+  max-height: 82vh;
+  border-color: #dfe6ef;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.18);
+}
+
+.sv-focus-head.sv-center-head {
+  min-height: 44px;
+  padding: 8px 12px;
+  gap: 10px;
+  border-bottom-color: #e8edf4;
+}
+
+.sv-center-icon {
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d7dee9;
+  border-radius: 5px;
+  color: #273142;
+}
+
+.sv-center-title {
+  flex: 0 1 auto;
+  max-width: 360px;
+  color: #111827;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.sv-center-chip {
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: 11.5px;
+  line-height: 16px;
+}
+
+.sv-center-anchor-chip {
+  border: 0;
+  background: transparent;
+  color: #6d7685;
+}
+
+.sv-center-layer-chip {
+  background: #edf4ff;
+  color: var(--sv-accent-text);
+}
+
+.sv-focus-type {
+  display: none;
+}
+
+.sv-center-action,
+.sv-focus-close {
+  width: 28px;
+  height: 28px;
+  justify-content: center;
+  padding: 0;
+  color: #465264;
+}
+
+.sv-center-action:hover,
+.sv-focus-close:hover {
+  background: #f4f7fb;
+  color: #111827;
+}
+
+.sv-focus-body.sv-center-body {
+  padding: 12px 24px 16px;
+  background: #ffffff;
+}
+
+.sv-center-body .note-rendered {
+  font-family: var(--sv-font-sans);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.sv-center-body .note-rendered h1,
+.sv-center-body .note-rendered h2,
+.sv-center-body .note-rendered h3 {
+  font-size: 14px;
+}
+
+.sv-card-md {
+  color: #4b5565;
+}
+
+.tb-card-preview {
+  color: #4b5565;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.sv-card-flashcard-hint {
+  color: #8a94a3;
+}
+
+.sv-flashcard-expanded {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 46px minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+}
+
+.sv-flashcard-face {
+  min-height: 98px;
+  padding: 16px 20px;
+  border: 1px solid #dbe2ed;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.sv-flashcard-face-label {
+  display: inline-block;
+  margin-bottom: 6px;
+  color: #768294;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.sv-flashcard-face p {
+  margin: 0;
+  color: #111827;
+  font-size: 13px;
+}
+
+.sv-flashcard-swap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid #dbe2ed;
+  border-radius: 50%;
+  color: #5d6b7d;
+  background: #ffffff;
+}
+
+.sv-quiz {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 154px;
+  gap: 18px;
+  align-items: start;
+}
+
+.sv-quiz-question {
+  margin: 0 0 8px;
+  color: #111827;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.sv-quiz-options {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+}
+
+.sv-quiz-option {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  align-items: center;
+  column-gap: 8px;
+  min-height: 23px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: transparent;
+  font-size: 0;
+  list-style: none;
+}
+
+.sv-quiz-option::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border: 1px solid #b9c2cf;
+  border-radius: 50%;
+  background: #ffffff;
+}
+
+.sv-quiz-option::after {
+  content: attr(data-letter) ".  " attr(data-option);
+  color: #344054;
+  font-size: 12px;
+}
+
+.sv-quiz-answer {
+  background: #edf4ff;
+}
+
+.sv-quiz-answer::before {
+  border-color: var(--sv-accent);
+  box-shadow: inset 0 0 0 3px #ffffff;
+  background: var(--sv-accent);
+}
+
+.sv-quiz-overview {
+  display: grid;
+  gap: 5px;
+  min-height: 84px;
+  padding: 10px 12px;
+  border: 1px solid #e1e7ef;
+  border-radius: 8px;
+  color: #526071;
+  font-size: 11.5px;
+}
+
+.sv-quiz-overview strong {
+  color: #111827;
+  font-size: 11.5px;
+}
+
+.sv-quiz-overview .active {
+  color: var(--sv-accent);
+  font-weight: 700;
+}
+
+.sv-code-full {
+  border: 0;
+  background: transparent;
+}
+
+.sv-code-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.sv-code-lang {
+  color: #6d7685;
+  font-size: 11.5px;
+  text-transform: uppercase;
+}
+
+.sv-code-run,
+.sv-code-copy {
+  min-height: 26px;
+  padding: 3px 10px;
+  border: 1px solid #c9dcff;
+  border-radius: 6px;
+  background: #edf4ff;
+  color: var(--sv-accent-text);
+  font-size: 12px;
+}
+
+.sv-code-copy {
+  margin-left: auto;
+}
+
+.sv-code-numbered {
+  background: #fbfcff;
+  color: #166534;
+  border: 1px solid #e1e7ef;
+  border-radius: 8px;
+}
+
+.sv-code-line {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  min-height: 17px;
+}
+
+.sv-code-ln {
+  color: #9aa4b2;
+  user-select: none;
+}
+
+.sv-media-video,
+.sv-video-embed,
+.sv-html-sandbox,
+.note-diagram {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.sv-media-video .sv-media-video,
+.sv-video-embed-frame,
+.sv-sandbox-frame,
+.sv-interactive-frame {
+  width: 100%;
+  min-height: 220px;
+  border: 1px solid #e1e7ef;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.note-diagram {
+  padding: 12px;
+  border-color: #e1e7ef;
+  background: #ffffff;
+}
+
 /* Composer "detected · override" chip — the demoted type picker. */
 .composer-type-picker {
   display: inline-flex;
@@ -4161,23 +4689,23 @@ textarea {
   flex: 0 0 auto;
 }
 
-.reader-status-dot {
+.workspace-status-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--sv-text-faint);
 }
 
-.reader-status-dot.status-idle {
+.workspace-status-dot.status-idle {
   background: var(--sv-success);
 }
 
-.reader-status-dot.status-loading,
-.reader-status-dot.status-saving {
+.workspace-status-dot.status-loading,
+.workspace-status-dot.status-saving {
   background: var(--sv-warn-accent);
 }
 
-.reader-status-dot.status-error {
+.workspace-status-dot.status-error {
   background: var(--sv-danger);
 }
 
@@ -4308,7 +4836,8 @@ textarea {
   margin-top: 8px;
 }
 .anchor-linked-card .sv-preview-card {
-  max-width: 100%;
+  width: min(100%, 260px);
+  max-width: 260px;
 }
 
 .anchor-linked-empty {
@@ -4319,6 +4848,10 @@ textarea {
 /* —— Right panel · AI Chat header —————————————————————————————————————————— */
 .chat-panel-title {
   align-items: center;
+}
+
+.chat-panel-title .workspace-status-dot {
+  flex: 0 0 auto;
 }
 
 /* ============================================================================
@@ -4724,7 +5257,7 @@ textarea {
   font-weight: 500;
 }
 
-.reader-status-dot {
+.workspace-status-dot.status-idle {
   background: #16a36b;
 }
 
@@ -6540,17 +7073,27 @@ select {
 }
 
 .note-list-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 260px));
+  align-items: start;
+  gap: 10px;
+  justify-content: start;
 }
 
 .note-list-row {
   position: relative;
+  width: min(100%, 260px);
+}
+
+.note-list-row.active .sv-preview-card {
+  border-color: var(--sv-accent);
+  background: var(--sv-accent-weak);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sv-accent) 18%, transparent);
 }
 
 .note-list-row .sv-preview-card {
-  max-width: 100%;
+  width: min(100%, 260px);
+  max-width: 260px;
 }
 
 .note-list-row-actions {
@@ -6569,6 +7112,7 @@ select {
 }
 
 .note-list-row-jump,
+.note-list-row-edit,
 .note-list-row-delete {
   display: inline-flex;
   align-items: center;
@@ -6584,6 +7128,12 @@ select {
 }
 
 .note-list-row-jump:hover {
+  background: var(--sv-accent-weak);
+  border-color: var(--sv-accent-border);
+  color: var(--sv-accent-text);
+}
+
+.note-list-row-edit:hover {
   background: var(--sv-accent-weak);
   border-color: var(--sv-accent-border);
   color: var(--sv-accent-text);

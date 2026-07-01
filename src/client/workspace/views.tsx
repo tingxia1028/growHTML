@@ -33,6 +33,7 @@ import { registerView, type WorkspaceContext } from "./viewRegistry";
 import { PanelMenu } from "./PanelMenu";
 import { readerForSource } from "./readerForSource";
 import { getNoteType } from "../notes/noteTypeRegistry";
+import { BookmarkIndex } from "./BookmarkIndex";
 // Side-effect import: registers the 12 built-in client NoteType plugins so the note
 // list + composer can render/edit every content type through the registry.
 import { InertNote } from "../notes/builtinNoteTypes";
@@ -227,6 +228,7 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
     status,
     error,
     paintAnchors,
+    revealAnchors,
     focus,
     renderedHtml,
     annotationMode,
@@ -266,7 +268,7 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
             and status. Page/zoom controls live in the per-reader body toolbar (PdfReader),
             left as-is this pass. */}
         <div className="reader-toolbar">
-          <span className={`reader-status-dot status-${status}`} title={`Status: ${status}`} aria-label={`Status: ${status}`} />
+          {activeSource ? <BookmarkIndex /> : null}
           <PanelMenu label="Reader actions">
             {activeSource ? (
               <div className="panel-menu-field">
@@ -306,6 +308,7 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
       {readerForSource({
         source: activeSource,
         anchors: paintAnchors,
+        revealAnchors,
         onSelect: focus.setDraft,
         activeAnchorId: focus.anchor?.id,
         revealSeq: focus.revealSeq,
@@ -467,6 +470,11 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
         <div className="panel-title chat-panel-title">
           <Sparkles size={16} />
           AI Chat
+          <span
+            className={`workspace-status-dot status-${status}`}
+            title={`AI Chat status: ${status}`}
+            aria-label={`AI Chat status: ${status}`}
+          />
           <PanelMenu label="AI Chat actions" align="right">
             {/* Keep non-note utilities out of the main conversation surface. */}
             <details className="patch-fold">

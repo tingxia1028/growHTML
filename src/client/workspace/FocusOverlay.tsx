@@ -18,11 +18,12 @@
 
 import { useCallback, useEffect, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ExternalLink, MoreHorizontal, X } from "lucide-react";
+import { Bookmark, ExternalLink, MoreHorizontal, X } from "lucide-react";
 import type { NoteRecord } from "../data/entityClient";
 import { getNoteType } from "../notes/noteTypeRegistry";
 import { noteTypeIcon } from "../notes/noteTypeIcon";
 import { InertNote } from "../notes/builtinNoteTypes";
+import { noteCardMeta } from "./noteCardMeta";
 
 export type FocusOverlayBlock = {
   /** The registered contentType deciding which plugin renders (the discriminator). */
@@ -110,6 +111,9 @@ export function FocusOverlay({ block, onClose }: { block: FocusOverlayBlock; onC
     ? plugin.render({ content: block.content, note: block.note, mode: "full" })
     : <InertNote content={block.content} />;
   const Icon = noteTypeIcon(block.contentType);
+  const meta = noteCardMeta(block.contentType, block.content);
+  const title = block.title ?? meta.title;
+  const layer = block.layer ?? (block.note ? "My Notes" : undefined);
 
   // The anchor chip "Anchor P## (Section x.x)" — only when we know a page/section.
   const anchorChip =
@@ -141,13 +145,21 @@ export function FocusOverlay({ block, onClose }: { block: FocusOverlayBlock; onC
             <Icon size={16} />
           </span>
           <span id={titleId} className="sv-focus-title sv-center-title">
-            {block.title ?? block.contentType}
+            {title}
           </span>
           {anchorChip ? <span className="sv-center-chip sv-center-anchor-chip">{anchorChip}</span> : null}
-          {block.layer ? <span className="sv-center-chip sv-center-layer-chip">{block.layer}</span> : null}
+          {layer ? <span className="sv-center-chip sv-center-layer-chip">{layer}</span> : null}
           {/* Keep the legacy .sv-focus-type hook (names the form) for back-compat. */}
-          <span className="sv-focus-type">{block.contentType}</span>
+          <span className="sv-focus-type">{meta.typeLabel}</span>
           <span className="sv-center-actions">
+            <button
+              type="button"
+              className="sv-center-action sv-center-bookmark"
+              aria-label="Bookmark note"
+              title="Bookmark"
+            >
+              <Bookmark size={16} />
+            </button>
             {block.onJumpToAnchor ? (
               <button
                 type="button"

@@ -7,161 +7,25 @@
 //       - Notes Overlay → annotationMode "margin"   (the gutter / margin cards).
 //       - Anchor Focus  → highlights the currently-focused anchor (re-reveals it); shows
 //         a count badge of 1 when an anchor is focused (the only focus state that exists).
-//   • Right: an "Anchor layer" opacity placeholder (no such state exists yet → disabled,
-//     per spec: don't invent persistence) + icon buttons that open existing panes in the
-//     left rail slot (Layers / Concepts / Reader-focus) + a Settings gear menu that hosts
-//     the theme + layout switchers relocated from the old reader-header.
-//
-// The icon buttons + gear DO NOT own new state: they call back into WorkspaceShell to set
-// the left-pane kind (rail selection) and read/write the context's theme/layout setters.
+//   • Right: native desktop window controls only.
 
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useState } from "react";
 import {
   Anchor,
-  Check,
   Crosshair,
   FileText,
-  Layers,
   Minus,
-  Network,
   PanelRight,
-  RotateCcw,
   Square,
   X
 } from "lucide-react";
 import type { WorkspaceContext } from "./viewRegistry";
-import { BOOKMARK_CONTENT_TYPE } from "../../core/notes/contentTypes";
-import {
-  buildLayerTree,
-  countNotesInLayers,
-  descendantLeafIds,
-  parentToggleState,
-  type LayerNode
-} from "./layerTree";
-import { LayerLensManage } from "./LayerLensManage";
-import { Settings2 } from "lucide-react";
 
 export type TopBarProps = {
   ctx: WorkspaceContext;
-  /** The view-kind currently shown in the left rail slot (icon-rail selection). */
-  leftPaneKind: string;
-  /** Show a pane kind in the left rail slot (used by the right-side icon buttons). */
-  onSelectPane(kind: string): void;
 };
 
-// Stable fallback palette for layers without an explicit color (assigned by position so
-// sibling rows read as distinct chips). The owned/preset layers usually carry no color.
-const LAYER_PALETTE = ["#3b82f6", "#3fb96b", "#8b5cf6", "#ff6b73", "#ff9d55", "#46c2c9", "#d97cf0"];
-
-function LayerLensPopover({ ctx }: { ctx: WorkspaceContext }) {
-  const { sourceLayers, notes, visibleNotes, toggleLayerFilter, setLayersEnabled } = ctx;
-  // In-place management (R7.3): the footer "Manage" toggle swaps the filter tree for the
-  // create/rename/recolor/reorder/delete + import/export surface (spec §8.1).
-  const [manage, setManage] = useState(false);
-
-  const enabledIds = useMemo(
-    () => new Set(sourceLayers.filter((layer) => layer.enabled).map((layer) => layer.id)),
-    [sourceLayers]
-  );
-  // Sort siblings by order then title before building the tree (buildLayerTree preserves
-  // input order within a parent).
-  const roots = useMemo(
-    () => buildLayerTree([...sourceLayers].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title))),
-    [sourceLayers]
-  );
-  // The footer total = distinct visible (enabled-OR) non-bookmark notes.
-  const visibleCount = useMemo(
-    () => visibleNotes.filter((note) => (note.contentType ?? "markdown") !== BOOKMARK_CONTENT_TYPE).length,
-    [visibleNotes]
-  );
-
-  const colorFor = (layer: { color?: string }, index: number) => layer.color ?? LAYER_PALETTE[index % LAYER_PALETTE.length];
-
-  const renderRow = (node: LayerNode, depth: number, index: number): ReactNode => {
-    const isParent = node.children.length > 0;
-    const leafIds = descendantLeafIds(node);
-    const count = countNotesInLayers(notes, leafIds, BOOKMARK_CONTENT_TYPE);
-    const state = isParent
-      ? parentToggleState(node, enabledIds)
-      : enabledIds.has(node.layer.id)
-        ? "on"
-        : "off";
-    return (
-      <Fragment key={node.layer.id}>
-        <button
-          type="button"
-          className={`layer-lens-row${isParent ? " layer-lens-row-parent" : ""}`}
-          style={{ paddingLeft: 12 + depth * 18 } as CSSProperties}
-          aria-pressed={state === "on"}
-          onClick={() => {
-            if (isParent) setLayersEnabled(leafIds, state !== "on");
-            else toggleLayerFilter(node.layer);
-          }}
-        >
-          <span
-            className="layer-lens-mark"
-            data-state={state}
-            data-enabled={state === "on" ? "true" : undefined}
-            style={{ "--layer-color": colorFor(node.layer, index) } as CSSProperties}
-          >
-            {state === "on" ? <Check size={12} strokeWidth={3} /> : state === "mixed" ? <Minus size={12} strokeWidth={3} /> : null}
-          </span>
-          <span className="layer-lens-name">{node.layer.title}</span>
-          <span className="layer-lens-count">{count}</span>
-        </button>
-        {node.children.map((child, childIndex) => renderRow(child, depth + 1, childIndex))}
-      </Fragment>
-    );
-  };
-
-  return (
-    <div className="layer-lens-popover" role="dialog" aria-label="Layer Lens">
-      <div className="layer-lens-head">
-        <h2>Layer Lens</h2>
-        <p>Choose which layers are visible</p>
-      </div>
-      {manage ? (
-        <LayerLensManage ctx={ctx} />
-      ) : (
-        <>
-          <div className="layer-lens-list">
-            {roots.length ? (
-              roots.map((node, index) => renderRow(node, 0, index))
-            ) : (
-              <p className="layer-lens-empty">Open a source to see its layers.</p>
-            )}
-          </div>
-          <div className="layer-lens-visible">Visible note count: {visibleCount}</div>
-        </>
-      )}
-      <div className="layer-lens-foot">
-        <button
-          type="button"
-          className={`layer-lens-manage-toggle${manage ? " active" : ""}`}
-          aria-pressed={manage}
-          title={manage ? "Back to the visibility filter" : "Manage layers (create / rename / import…)"}
-          onClick={() => setManage((value) => !value)}
-        >
-          <Settings2 size={14} />
-          {manage ? "Done" : "Manage"}
-        </button>
-        {!manage ? (
-          <button
-            type="button"
-            className="layer-lens-reset"
-            title="Show all layers"
-            onClick={() => void setLayersEnabled(sourceLayers.map((layer) => layer.id), true)}
-          >
-            <RotateCcw size={14} />
-            Reset
-          </button>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-export function TopBar({ ctx, leftPaneKind, onSelectPane }: TopBarProps) {
+export function TopBar({ ctx }: TopBarProps) {
   const {
     annotationMode,
     setAnnotationMode,
@@ -177,17 +41,6 @@ export function TopBar({ ctx, leftPaneKind, onSelectPane }: TopBarProps) {
   const overlayActive = annotationMode === "margin";
   const documentActive = !overlayActive && floatingTab === "document";
   const focusActive = !overlayActive && floatingTab === "anchor";
-
-  const [layerLensOpen, setLayerLensOpen] = useState(false);
-  const layerLensRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!layerLensOpen) return;
-    const onDocClick = (e: MouseEvent) => {
-      if (layerLensRef.current && !layerLensRef.current.contains(e.target as Node)) setLayerLensOpen(false);
-    };
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [layerLensOpen]);
 
   const windowControls = typeof window !== "undefined" ? window.studyVault?.windowControls : undefined;
 
@@ -241,32 +94,6 @@ export function TopBar({ ctx, leftPaneKind, onSelectPane }: TopBarProps) {
         >
           <Crosshair size={15} aria-hidden="true" />
           Anchor Focus
-        </button>
-      </div>
-
-      <div className="topbar-right">
-        <div className="topbar-lens" ref={layerLensRef}>
-          <button
-            type="button"
-            className={`topbar-pill${layerLensOpen ? " active" : ""}`}
-            aria-pressed={layerLensOpen}
-            title="Layers"
-            onClick={() => setLayerLensOpen((value) => !value)}
-          >
-            <Layers size={16} aria-hidden="true" />
-            <span>Layers</span>
-          </button>
-          {layerLensOpen ? <LayerLensPopover ctx={ctx} /> : null}
-        </div>
-        <button
-          type="button"
-          className={`topbar-pill${leftPaneKind === "concept.list" ? " active" : ""}`}
-          aria-pressed={leftPaneKind === "concept.list"}
-          title="Concepts &amp; relations"
-          onClick={() => onSelectPane("concept.list")}
-        >
-          <Network size={16} aria-hidden="true" />
-          <span>Concepts</span>
         </button>
       </div>
 

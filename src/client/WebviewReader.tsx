@@ -96,6 +96,7 @@ export function WebviewReader({
   primaryMode,
   snapshotHtml,
   anchors,
+  revealAnchors,
   onSelect,
   activeAnchorId,
   revealSeq
@@ -439,6 +440,7 @@ export function WebviewReader({
                 srcDoc={snapshotHtml ?? ""}
                 sourceId={sourceId}
                 anchors={anchors}
+                revealAnchors={revealAnchors}
                 onSelect={onSelect}
                 activeAnchorId={activeAnchorId}
                 revealSeq={revealSeq}

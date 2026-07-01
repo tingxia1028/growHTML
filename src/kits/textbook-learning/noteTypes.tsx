@@ -31,8 +31,15 @@ function asExplanation(content: unknown): ExplanationContent {
   };
 }
 
-function ExplanationRender({ content }: NoteRenderInput) {
+function ExplanationRender({ content, mode }: NoteRenderInput) {
   const c = asExplanation(content);
+  if (mode === "card") {
+    return (
+      <div className="note-rendered tb-card-preview tb-explanation-preview">
+        {c.explanation || c.analogy || c.keyPoints[0] || "(empty explanation)"}
+      </div>
+    );
+  }
   return (
     <div className="note-rendered tb-card tb-explanation">
       <div className="tb-card-head">
@@ -127,9 +134,12 @@ function asExercise(content: unknown): ExerciseContent {
   };
 }
 
-function ExerciseRender({ content }: NoteRenderInput) {
+function ExerciseRender({ content, mode }: NoteRenderInput) {
   const c = asExercise(content);
   const answer = Array.isArray(c.answer) ? c.answer.join(", ") : c.answer;
+  if (mode === "card") {
+    return <div className="note-rendered tb-card-preview tb-exercise-preview">{c.question || "(empty practice)"}</div>;
+  }
   return (
     <div className="note-rendered tb-card tb-exercise">
       <div className="tb-card-head">
@@ -221,8 +231,11 @@ function asMistake(content: unknown): MistakeContent {
   };
 }
 
-function MistakeRender({ content }: NoteRenderInput) {
+function MistakeRender({ content, mode }: NoteRenderInput) {
   const c = asMistake(content);
+  if (mode === "card") {
+    return <div className="note-rendered tb-card-preview tb-mistake-preview">{c.question || c.correction || "(empty mistake)"}</div>;
+  }
   return (
     <div className="note-rendered tb-card tb-mistake">
       <div className="tb-card-head">
@@ -303,8 +316,11 @@ function asReviewPack(content: unknown): ReviewPackContent {
   };
 }
 
-function ReviewPackRender({ content }: NoteRenderInput) {
+function ReviewPackRender({ content, mode }: NoteRenderInput) {
   const c = asReviewPack(content);
+  if (mode === "card") {
+    return <div className="note-rendered tb-card-preview tb-review-preview">{c.summary || c.keyPoints[0] || "(empty review pack)"}</div>;
+  }
   return (
     <div className="note-rendered tb-card tb-review-pack">
       <div className="tb-card-head">

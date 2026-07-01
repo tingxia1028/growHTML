@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { decorateAnnotations, type HtmlAnnotationMode } from "../annotations";
 import { revealAnchorInDoc, setSelectedAnchorInDoc } from "../annotationLayer";
 import type { AnchorDraft } from "../focus/FocusContext";
+import { publishSelectionRect, rectFromDomRect } from "../selection/selectionRect";
 import { anchorsOfKind, type PaintAnchor, type SurfaceReaderProps } from "./types";
 
 // DOM surface adapter — the imported-HTML / markdown reader.
@@ -46,8 +47,8 @@ const boundSelectionDocuments = new WeakSet<Document>();
 export function paintDomAnchors(doc: Document, anchors: PaintAnchor[], mode: HtmlAnnotationMode = "floating"): void {
   const htmlAnchors = anchorsOfKind(anchors, "html_selection");
   decorateAnnotations(doc, {
-    // The registry re-keys notes under their anchor id; we synthesize one note per
-    // anchor carrying its merged text so the existing grouping/painting is reused.
+    // The registry re-keys notes under their anchor id; each preview becomes one
+    // card so the source-viewer overlay matches the Notes panel card style.
     anchors: htmlAnchors.map((anchor) => ({
       id: anchor.id,
       anchorKind: anchor.anchorKind,
@@ -56,7 +57,16 @@ export function paintDomAnchors(doc: Document, anchors: PaintAnchor[], mode: Htm
       contextBefore: anchor.contextBefore,
       contextAfter: anchor.contextAfter
     })),
-    notes: htmlAnchors.map((anchor) => ({ anchorIds: [anchor.id], content: anchor.note })),
+    notes: htmlAnchors.flatMap((anchor) =>
+      anchor.notePreviews?.length
+        ? anchor.notePreviews.map((preview) => ({
+            anchorIds: [anchor.id],
+            content: preview.text,
+            previewHtml: preview.html,
+            contentType: preview.contentType
+          }))
+        : [{ anchorIds: [anchor.id], content: anchor.note }]
+    ),
     mode
   });
 }
@@ -107,6 +117,7 @@ export function DomReader({
   srcDoc,
   sourceId,
   anchors,
+  revealAnchors,
   onSelect,
   activeAnchorId,
   revealSeq,
@@ -128,6 +139,33 @@ export function DomReader({
   modeRef.current = mode;
   const onOpenUrlRef = useRef(onOpenUrl);
   onOpenUrlRef.current = onOpenUrl;
+  const revealAnchorsRef = useRef(revealAnchors ?? anchors);
+  revealAnchorsRef.current = revealAnchors ?? anchors;
+
+  function revealDomAnchor(doc: Document | null | undefined, anchorId: string | undefined): boolean {
+    if (!doc || !anchorId) return false;
+    if (revealAnchorInDoc(doc, anchorId)) return true;
+    const target = anchorsOfKind(revealAnchorsRef.current, "html_selection").find((anchor) => anchor.id === anchorId);
+    if (!target) return false;
+
+    const selector =
+      target.studyId ? `[data-study-id="${target.studyId.replace(/"/g, '\\"')}"]` : undefined;
+    const el = (selector ? doc.querySelector(selector) : null) as
+      | (Element & { scrollIntoView?: Element["scrollIntoView"] })
+      | null;
+    if (!el) return false;
+    try {
+      el.scrollIntoView?.({ block: "center", inline: "nearest" });
+    } catch {
+      // jsdom / realm without scrollIntoView
+    }
+    el.classList.add("sv-active");
+    const view = doc.defaultView;
+    const clear = () => el.classList.remove("sv-active");
+    if (view && typeof view.setTimeout === "function") view.setTimeout(clear, 1000);
+    else clear();
+    return true;
+  }
 
   // Bind selection capture + paint when the iframe document is ready. Called from
   // onLoad (fresh document) and re-runnable for the initial paint.
@@ -137,7 +175,7 @@ export function DomReader({
     paintDomAnchors(doc, anchors, modeRef.current);
     // A reveal may have been requested before this fresh document painted (effect
     // ran first) — now that the data-sv-key elements exist, honor the pending one.
-    if (activeAnchorIdRef.current) revealAnchorInDoc(doc, activeAnchorIdRef.current);
+    if (activeAnchorIdRef.current) revealDomAnchor(doc, activeAnchorIdRef.current);
     // Re-apply the persistent blue "selected" highlight after a repaint (paint clears
     // it). Keeps the focused anchor visibly selected across re-paints / mode switches.
     setSelectedAnchorInDoc(doc, activeAnchorIdRef.current);
@@ -146,6 +184,17 @@ export function DomReader({
     const onSelection = (event?: Event) => {
       const draft = readDomSelection(doc, sourceIdRef.current, event);
       if (draft) onSelectRef.current(draft);
+      // Publish the selection's rect in HOST viewport coords for the floating toolbar:
+      // the range rect is in the iframe's own space, so offset by the iframe element's
+      // position. A collapsed/empty selection clears this realm's rect (toolbar hides).
+      const selection = doc.getSelection();
+      const collapsed = !selection || selection.isCollapsed || selection.rangeCount === 0 || !selection.toString().trim();
+      const frameRect = frameRef.current?.getBoundingClientRect();
+      const domRect = collapsed ? null : selection!.getRangeAt(0).getBoundingClientRect();
+      publishSelectionRect(
+        "iframe",
+        rectFromDomRect(domRect, frameRect ? { left: frameRect.left, top: frameRect.top } : undefined)
+      );
     };
     boundSelectionDocuments.add(doc);
     doc.addEventListener("selectionchange", onSelection);
@@ -196,7 +245,7 @@ export function DomReader({
     // "none", which clears the selection. Runs regardless of revealSeq.
     setSelectedAnchorInDoc(frameRef.current?.contentDocument, activeAnchorId);
     if (!activeAnchorId) return;
-    revealAnchorInDoc(frameRef.current?.contentDocument, activeAnchorId);
+    revealDomAnchor(frameRef.current?.contentDocument, activeAnchorId);
   }, [activeAnchorId, revealSeq]);
 
   return <iframe ref={frameRef} title="Source reader" srcDoc={srcDoc} onLoad={bindFrame} />;

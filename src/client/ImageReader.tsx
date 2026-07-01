@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { applyHighlight, revealAnchorInDoc, setSelectedAnchorInDoc } from "./annotationLayer";
+import { applyHighlight, type HighlightPayload, revealAnchorInDoc, setSelectedAnchorInDoc } from "./annotationLayer";
 import type { AnchorDraft } from "./focus/FocusContext";
 import { anchorsOfKind, type PaintAnchor, type SurfaceReaderProps } from "./surfaces/types";
 import { isRealRegion, normalizeDragRect, type NormalizedRect } from "./surfaces/overlay";
@@ -9,6 +9,13 @@ type ImageReaderProps = SurfaceReaderProps & {
   // The active source id — stamped onto emitted drafts.
   sourceId: string;
 };
+
+function annotationPayload(anchor: PaintAnchor): HighlightPayload {
+  const noteHtml = anchor.notePreviews?.map((preview) => preview.html).join("") || undefined;
+  const fallbackCount = anchor.note ? 1 : 0;
+  const noteCount = anchor.notePreviews ? anchor.notePreviews.length : fallbackCount;
+  return { noteHtml, noteCount };
+}
 
 // Image surface adapter — the other OVERLAY reader. An image has no text to select,
 // so its only annotation is a geometric REGION: the user rubber-bands a rectangle
@@ -104,8 +111,8 @@ export function ImageReader({ src, sourceId, anchors, onSelect, activeAnchorId, 
 function ImageRegionBox({ anchor }: { anchor: PaintAnchor }) {
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (ref.current) applyHighlight(ref.current, anchor.note, anchor.id);
-  }, [anchor.note, anchor.id]);
+    if (ref.current) applyHighlight(ref.current, anchor.note, anchor.id, annotationPayload(anchor));
+  }, [anchor]);
   const [x, y, w, h] = (anchor.rect ?? [0, 0, 0, 0]) as NormalizedRect;
   return (
     <div

@@ -151,7 +151,9 @@ describe("NoteType render — sample content per type", () => {
 
   it("flashcard renders front + back (flip card)", () => {
     const html = renderToHtml(getNoteType("flashcard")!.render({ content: { front: "Q?", back: "A!" } }));
-    expect(html).toContain("<summary>Q?</summary>");
+    expect(html).toContain("sv-flashcard-expanded");
+    expect(html).toContain("sv-flashcard-face-label");
+    expect(html).toContain("Q?");
     expect(html).toContain("A!");
   });
 

@@ -22,6 +22,16 @@ beforeEach(() => {
   window.localStorage.clear();
 });
 
+function freshReaderDocument(): Document {
+  const frame = document.createElement("iframe");
+  document.body.appendChild(frame);
+  const doc = frame.contentDocument;
+  if (!doc) throw new Error("Expected iframe contentDocument");
+  doc.body.innerHTML = "";
+  doc.defaultView?.localStorage.clear();
+  return doc;
+}
+
 describe("highlightQuote", () => {
   it("wraps the matched passage in a <mark> carrying the note text", () => {
     document.body.innerHTML = "<p>Alpha beta gamma delta.</p>";
@@ -61,13 +71,14 @@ describe("highlightQuote", () => {
 describe("clearAnnotations", () => {
   it("unwraps marks (restoring the text) and clears element highlights", () => {
     document.body.innerHTML =
-      '<p data-study-id="s1" class="sv-annotated" data-sv-note="n">x <mark data-sv="1" class="sv-annotated" data-sv-note="m">y</mark> z</p>';
+      '<p data-study-id="s1" class="sv-annotated" data-sv-note="n" data-sv-note-count="1">x <mark data-sv="1" class="sv-annotated" data-sv-note="m" data-sv-note-count="1">y</mark> z</p>';
     clearAnnotations(document.body);
     expect(document.querySelector('mark[data-sv="1"]')).toBeNull();
     expect(document.body.textContent).toBe("x y z");
     const el = document.querySelector('[data-study-id="s1"]');
     expect(el?.classList.contains("sv-annotated")).toBe(false);
     expect(el?.hasAttribute("data-sv-note")).toBe(false);
+    expect(el?.hasAttribute("data-sv-note-count")).toBe(false);
   });
 });
 
@@ -189,18 +200,66 @@ describe("card geometry persistence", () => {
     expect(el.hasAttribute("data-sv-key")).toBe(false);
   });
 
-  it("restores the saved placement when its anchor's highlight is hovered", () => {
-    document.body.innerHTML = '<p id="t">hello</p>';
-    ensureAnnotationLayer(document);
-    const el = document.getElementById("t")!;
+  it("restores saved size without reusing stale viewport placement", () => {
+    const doc = freshReaderDocument();
+    doc.body.innerHTML = '<p id="t">hello</p>';
+    ensureAnnotationLayer(doc);
+    const el = doc.getElementById("t")!;
+    Object.defineProperty(el, "getBoundingClientRect", {
+      value: () => ({ left: 40, top: 80, right: 90, bottom: 104, width: 50, height: 24 })
+    });
     applyHighlight(el, "note A", "k1");
-    writeCardGeom(document, "k1", { left: 300, top: 200, width: 250, height: 150 });
+    writeCardGeom(doc, "k1", { left: 300, top: 200, width: 250, height: 150 });
     el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
-    const card = document.getElementById("sv-note-card")!;
+    const card = doc.getElementById("sv-note-card")!;
     expect(card.classList.contains("sv-note-card-show")).toBe(true);
-    expect(card.style.left).toBe("300px");
-    expect(card.style.top).toBe("200px");
+    expect(card.style.left).toBe("40px");
+    expect(card.style.top).toBe("110px");
     expect(card.style.width).toBe("250px");
+  });
+
+  it("keeps a click-pinned card attached to its text when the document scrolls", () => {
+    const doc = freshReaderDocument();
+    doc.body.innerHTML = '<p id="t">hello</p>';
+    ensureAnnotationLayer(doc);
+    const el = doc.getElementById("t")!;
+    let rect = { left: 80, top: 120, right: 150, bottom: 140, width: 70, height: 20 };
+    Object.defineProperty(el, "getBoundingClientRect", {
+      value: () => rect
+    });
+    applyHighlight(el, "note A", "k-scroll");
+
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const card = doc.getElementById("sv-note-card")!;
+    expect(card.classList.contains("sv-note-card-show")).toBe(true);
+    expect(card.style.left).toBe("80px");
+    expect(card.style.top).toBe("146px");
+
+    rect = { left: 80, top: -260, right: 150, bottom: -240, width: 70, height: 20 };
+    doc.dispatchEvent(new Event("scroll"));
+
+    expect(card.style.left).toBe("80px");
+    expect(card.style.top).toBe("-234px");
+  });
+
+  it("renders rich preview cards from highlight payloads and exposes the note count badge", () => {
+    const doc = document.implementation.createHTMLDocument("rich-card");
+    doc.body.innerHTML = '<p id="t">hello</p>';
+    ensureAnnotationLayer(doc);
+    const el = doc.getElementById("t")!;
+    applyHighlight(el, "fallback text", "k-rich", {
+      noteCount: 2,
+      noteHtml: '<div class="sv-annotation-preview"><div class="sv-artifact-card">Preview card</div></div>'
+    });
+
+    expect(el.getAttribute("data-sv-note-count")).toBe("2");
+    el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+
+    const card = doc.getElementById("sv-note-card")!;
+    expect(card.classList.contains("sv-note-card-show")).toBe(true);
+    expect(card.querySelector(".sv-note-card-grip")?.textContent).toContain("2 notes");
+    expect(card.querySelector(".sv-artifact-card")?.textContent).toContain("Preview card");
+    expect(card.querySelector(".sv-note-card-body")?.textContent).not.toContain("fallback text");
   });
 });
 

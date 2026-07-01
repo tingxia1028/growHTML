@@ -57,4 +57,13 @@ describe("placeRegionBox", () => {
     expect(box.getAttribute("data-sv-note")).toBe("a note");
     expect(box.getAttribute("data-sv-key")).toBe("anchor-1");
   });
+
+  it("forwards rich annotation payloads to the shared note-card hooks", () => {
+    const box = document.createElement("div");
+    placeRegionBox(box, [0, 0, 1, 1], "fallback", "anchor-2", {
+      noteCount: 3,
+      noteHtml: '<div class="sv-artifact-card">Region card</div>'
+    });
+    expect(box.getAttribute("data-sv-note-count")).toBe("3");
+  });
 });

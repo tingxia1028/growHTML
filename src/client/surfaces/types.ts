@@ -18,6 +18,13 @@
 
 import type { AnchorDraft } from "../focus/FocusContext";
 
+export type PaintNotePreview = {
+  id: string;
+  contentType: string;
+  text: string;
+  html: string;
+};
+
 // Normalized "what to draw" for any surface (the WRITE direction). The host builds
 // one list of these for the active source — every anchor it has, each with the
 // merged note text for the hover card — and every reader filters by `anchorKind`
@@ -40,6 +47,9 @@ export type PaintAnchor = {
   rect?: [number, number, number, number];
   // The merged text of every note hanging off this anchor, for the hover card.
   note: string;
+  // The card previews of every visible non-bookmark note hanging off this anchor.
+  // Built in the host React realm, then consumed as inert HTML by the annotation layer.
+  notePreviews?: PaintNotePreview[];
 };
 
 // The uniform props EVERY reader component accepts. `anchors` is the host's single
@@ -60,6 +70,10 @@ export type PaintAnchor = {
 export type SurfaceReaderProps = {
   // WRITE: paint the anchors this surface understands (filter by anchorKind).
   anchors: PaintAnchor[];
+  // REVEAL: all anchors this surface can use for locating a focused passage. This
+  // can include anchors intentionally excluded from `anchors` so they do not paint
+  // as highlights (for example bookmark-only anchors used by the contents panel).
+  revealAnchors?: PaintAnchor[];
   // READ: emit a normalized AnchorDraft (the quote|region union from FocusContext).
   onSelect: (draft: AnchorDraft) => void;
   // REVEAL: the id of the anchor the host wants brought into view (the focused

@@ -5,19 +5,9 @@
 // kit contributions and the user's operation-prefs; this component is a dumb renderer,
 // so the order / enable-disable the user configured shows up here. Empty list → nothing.
 
-import { Bookmark, ListChecks, Sparkles, TriangleAlert, Wand2 } from "lucide-react";
-import type { ComponentType } from "react";
 import type { ToolbarAction } from "./WorkspaceContext";
 import { ActionMoreMenu } from "./ActionMoreMenu";
-
-// Map the kit's icon names (presentation hints) to concrete lucide icons. Custom ops
-// carry no icon and fall back to the generic wand.
-const ICONS: Record<string, ComponentType<{ size?: number }>> = {
-  sparkles: Sparkles,
-  "list-checks": ListChecks,
-  "triangle-alert": TriangleAlert,
-  bookmark: Bookmark
-};
+import { actionIcon } from "./actionIcons";
 
 export type SelectionToolbarProps = {
   /** Show only when there's a passage to act on (a saved anchor or a fresh draft). */
@@ -39,7 +29,10 @@ export function SelectionToolbar({ visible, items, onRun, busy, onCustomize }: S
   return (
     <div className="selection-toolbar" role="toolbar" aria-label="Study actions">
       {items.map((item) => {
-        const Icon = (item.icon && ICONS[item.icon]) || Wand2;
+        // Icon-only (spec §7.2.1: "一行常用图标 + …"); the label lives in the hover
+        // tooltip + aria-label. Same actionIcon resolver the Anchor bar uses (honours
+        // user icon overrides + operation→noteTypeIcon), so all three surfaces match.
+        const Icon = actionIcon(item);
         return (
           <button
             key={item.id}
@@ -47,12 +40,12 @@ export function SelectionToolbar({ visible, items, onRun, busy, onCustomize }: S
             className="selection-toolbar-btn"
             data-action-kind={item.kind}
             data-action-id={item.id}
-            title={item.group ? `${item.group}: ${item.title}` : item.title}
+            aria-label={item.title}
+            title={item.description ? `${item.title} — ${item.description}` : item.title}
             disabled={busy}
             onClick={() => onRun(item)}
           >
-            <Icon size={14} />
-            {item.title}
+            <Icon size={16} />
           </button>
         );
       })}

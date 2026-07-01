@@ -4,10 +4,41 @@ Use this file as the live status board for implementation work.
 
 ## Current Status
 
-- Date: 2026-06-29
-- Phase: UI reference recreation
-- Active task: None
-- Overall status: Frameless desktop shell now has custom `- / square / x` controls.
+- Date: 2026-07-01
+- Phase: Annotation pinned-note positioning
+- Active task: ANNOT-PIN-001
+- Overall status: Complete. Pinned annotation cards now stay bound to the highlighted source text instead of stale viewport coordinates.
+
+## 2026-07-01 - ANNOT-PIN-001 Pinned annotation card follows anchor
+
+- Goal: pinned Source Viewer note cards should track the source text/anchor as the document scrolls or resizes, instead of staying at the old window coordinate after the page has moved away.
+- Active plan: keep the current highlighted target in `annotationLayer`, place the card from the live target rect, recompute on scroll/resize, ignore legacy saved `left/top` for ordinary positioning, and persist anchor-relative offsets only after drag/resize.
+- Result: click-pinned cards now recompute from their anchor target. Old saved viewport coordinates only restore card size; dragged cards store `anchorDx/anchorDy` so custom placement also follows the text. Clicking a different highlighted anchor switches the pinned card instead of closing it.
+- Verification: `npx vitest run src/client/annotationDom.test.ts`; `npm run check`; `npm run build`; `npm run electron:build:webview-preload`.
+
+## 2026-07-01 - LINKED-NOTE-001 Linked note focus behavior
+
+- Goal: clicking a Linked Notes icon should jump the source viewer to the anchor and show the note's small card in the Notes viewer, not open an inline popover beside the Anchor panel.
+- Active plan: remove the local `openNoteId` preview state from `anchorViews`, set anchor focus + note focus on click, auto-switch the right sidebar to the Notes tab on note focus, and highlight/scroll the matching note card in `NoteListPanel`.
+- Verification target: `npm run check`, focused workspace tests for click/focus behavior, and `npm run build` if the UI bundle path changes.
+- Result: Anchor-panel linked-note icons no longer render an inline `ArtifactCard`; clicking them calls `focus.setAnchor(anchor)` and then focuses `{type:"note"}`. The right sidebar switches to Notes on note focus, and NoteListPanel opens, scrolls to, and blue-highlights the focused note card.
+- Verification: `npm run check`; `npx vitest run src/client/workspace/anchorViews.test.tsx src/client/workspace/NoteListPanel.test.tsx src/client/workspace/RightSidebarTabs.test.tsx`; `npm run build`.
+
+## 2026-07-01 - ANNOT-REF-001 Source Viewer note popover and marker pass
+
+- Goal: make Source Viewer annotation popovers use the same note preview form as the Notes/Anchor lists, and show compact anchor markers/counts beside highlighted passages.
+- Active plan: extend the host-built `PaintAnchor` payload with safe preview metadata, keep `annotationLayer` framework-free, and render markers/popovers from those attributes across DOM/PDF/webview/image surfaces.
+- Verification target: `npm run check`, focused annotation/surface tests, and a Playwright smoke screenshot against the running Source Viewer.
+- Result: `PaintAnchor` now carries per-note preview metadata; DOM/PDF/image/webview annotation painters forward rich note HTML and note counts to the shared annotation layer; the floating card renders preview-card HTML instead of raw JSON; highlighted anchors receive a compact anchor/count badge. Desktop Growte was restarted after rebuilding `dist-electron/webview-preload.cjs`.
+- Verification: `npm run check`; `npx vitest run src/client/annotationDom.test.ts src/client/surfaces/DomReader.test.ts src/client/selection/webviewSelection.test.ts src/client/surfaces/overlay.test.ts src/client/surfaces/DomReader.reveal.test.tsx`; `npm run build`; browser smoke confirmed the app and Source Viewer mount at `http://127.0.0.1:5173`.
+
+## 2026-07-01 - NOTE-REF-001 note preview/expanded reference pass
+
+- Goal: make all note type preview cards and expanded views use the supplied Note card system visual language.
+- Active plan: preserve the existing NoteType registry and shared `ArtifactCard`/`FocusOverlay` path; replace the shared shell styling and add per-type preview/full visual treatments.
+- Verification target: `npm run check`, focused component/unit tests for artifact cards, note type registry, and note list behavior; screenshot smoke if the dev server is available.
+- Result: shared note previews now use the compact reference card shell; expanded note windows use the horizontal reference shell with icon/title/anchor/layer/actions; built-in markdown, quiz, flashcard, media, interactive, diagram, and code types have matching body treatments. Textbook kit note types now return compact card previews in `mode: "card"` instead of rendering full study blocks inside preview cards.
+- Verification: `npm run check`; focused Vitest suites for artifact cards, note type registry, workspace views, bookmarks, and textbook note types; Playwright smoke screenshots saved under `C:/Users/Jump/AppData/Local/Temp/note-ref-001-smoke-kit-card.png` and `C:/Users/Jump/AppData/Local/Temp/note-ref-001-overlay-final.png`.
 
 ## 2026-06-29 - Frameless window controls
 
@@ -145,7 +176,7 @@ Use this file as the live status board for implementation work.
 
 ## Next Action
 
-Current UI task: LIB-001 is complete; desktop client restarted for review.
+Current UI task: ANNOT-PIN-001 is complete; desktop client restarted for review.
 
 ## 2026-06-30 - Library Open Folder + Recent Read
 

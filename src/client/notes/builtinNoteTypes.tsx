@@ -225,10 +225,21 @@ function FlashcardRender({ content, mode }: NoteRenderInput) {
       </div>
     );
   }
-  // Reuse the sanitized flashcard renderer (flip card via <details>). It expects a
-  // JSON string of {front, back}; stringify our structured content for it.
-  const json = JSON.stringify(card);
-  return <div className="note-rendered" dangerouslySetInnerHTML={{ __html: renderNoteContent("flashcard", json).html }} />;
+  return (
+    <div className="note-rendered sv-flashcard sv-flashcard-expanded">
+      <section className="sv-flashcard-face">
+        <span className="sv-flashcard-face-label">Front</span>
+        <p>{card.front || "(empty flashcard)"}</p>
+      </section>
+      <span className="sv-flashcard-swap" aria-hidden="true">
+        ↔
+      </span>
+      <section className="sv-flashcard-face">
+        <span className="sv-flashcard-face-label">Back</span>
+        <p>{card.back || "(empty back)"}</p>
+      </section>
+    </div>
+  );
 }
 function FlashcardEditor({ content, onChange }: NoteEditInput) {
   const card = asFlashcard(content);
@@ -285,13 +296,27 @@ function QuizRender({ content, mode }: NoteRenderInput) {
       <p className="sv-quiz-question">{quiz.question}</p>
       <ul className="sv-quiz-options">
         {quiz.options.map((option, index) => (
-          <li key={index} className={`sv-quiz-option${index === quiz.answerIndex ? " sv-quiz-answer" : ""}`}>
+          <li
+            key={index}
+            className={`sv-quiz-option${index === quiz.answerIndex ? " sv-quiz-answer" : ""}`}
+            data-option={option}
+            data-letter={String.fromCharCode(65 + index)}
+          >
             {index === quiz.answerIndex ? "✓ " : ""}
             {option}
           </li>
         ))}
       </ul>
       {quiz.explanation ? <p className="sv-quiz-explanation">{quiz.explanation}</p> : null}
+      <aside className="sv-quiz-overview">
+        <strong>Overview</strong>
+        <span>{quiz.options.length} options</span>
+        {quiz.options.map((_option, index) => (
+          <span key={index} className={index === quiz.answerIndex ? "active" : ""}>
+            {index + 1}
+          </span>
+        ))}
+      </aside>
     </div>
   );
 }
@@ -371,6 +396,9 @@ function CodeRender({ content, mode }: NoteRenderInput) {
     <div className="note-rendered sv-code sv-code-full">
       <div className="sv-code-toolbar">
         <span className="sv-code-lang">{snippet.language}</span>
+        <button type="button" className="sv-code-run link-button" title="Run code">
+          Run
+        </button>
         <button
           type="button"
           className="sv-code-copy link-button"

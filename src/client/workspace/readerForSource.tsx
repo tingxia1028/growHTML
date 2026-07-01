@@ -39,6 +39,8 @@ export type ReaderArgs = {
   source: SourceRecord | null;
   /** The host's single normalized paint list (the reader filters by anchorKind). */
   anchors: PaintAnchor[];
+  /** Full locator list for reveal/jump, including anchors that should not paint. */
+  revealAnchors?: PaintAnchor[];
   /** The host's single draft sink (`focus.setDraft`). */
   onSelect: (draft: AnchorDraft) => void;
   /** REVEAL: the focused anchor id the reader should scroll into view (`focus.anchor?.id`). */
@@ -57,6 +59,7 @@ export type ReaderArgs = {
 export function readerForSource({
   source,
   anchors,
+  revealAnchors,
   onSelect,
   activeAnchorId,
   revealSeq,
@@ -77,6 +80,7 @@ export function readerForSource({
         sourceUrl={(source.metadata?.sourceUrl as string) ?? ""}
         sourceId={source.id}
         anchors={anchors}
+        revealAnchors={revealAnchors}
         onSelect={onSelect}
         activeAnchorId={activeAnchorId}
         revealSeq={revealSeq}
@@ -97,6 +101,7 @@ export function readerForSource({
         snapshotHtml={renderedHtml}
         sourceId={source.id}
         anchors={anchors}
+        revealAnchors={revealAnchors}
         onSelect={onSelect}
         activeAnchorId={activeAnchorId}
         revealSeq={revealSeq}
@@ -109,6 +114,7 @@ export function readerForSource({
         fileUrl={`/api/sources/${source.id}/file`}
         sourceId={source.id}
         anchors={anchors}
+        revealAnchors={revealAnchors}
         onSelect={onSelect}
         activeAnchorId={activeAnchorId}
         revealSeq={revealSeq}
@@ -121,6 +127,7 @@ export function readerForSource({
         src={`/api/sources/${source.id}/file`}
         sourceId={source.id}
         anchors={anchors}
+        revealAnchors={revealAnchors}
         onSelect={onSelect}
         activeAnchorId={activeAnchorId}
         revealSeq={revealSeq}
@@ -136,6 +143,7 @@ export function readerForSource({
         src={localFileUrl(source.metadata.originalPath as string)}
         sourceId={source.id}
         anchors={anchors}
+        revealAnchors={revealAnchors}
         onSelect={onSelect}
         activeAnchorId={activeAnchorId}
         revealSeq={revealSeq}
@@ -148,6 +156,7 @@ export function readerForSource({
         srcDoc={renderedHtml}
         sourceId={source.id}
         anchors={anchors}
+        revealAnchors={revealAnchors}
         onSelect={onSelect}
         activeAnchorId={activeAnchorId}
         revealSeq={revealSeq}

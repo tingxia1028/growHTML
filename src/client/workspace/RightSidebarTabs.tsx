@@ -56,6 +56,14 @@ function RightSidebarTabs({ node, ctx }: { node: WorkspaceNode; ctx: WorkspaceCo
     setSplit(loadRightSplit(layoutId, TAB_KINDS));
   }, [layoutId]);
 
+  // A linked-note click focuses `{type:"note"}`; surface that focus in the Notes
+  // viewer instead of leaving the user on the Anchor tab.
+  useEffect(() => {
+    if (ctx.focus.focus?.type !== "note") return;
+    if (split.poppedKind === "note.list") return;
+    setActive("note.list");
+  }, [ctx.focus.focus, split.poppedKind]);
+
   // Persist on every committed change.
   function commitSplit(next: ReturnType<typeof loadRightSplit>) {
     setSplit(next);

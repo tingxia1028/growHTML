@@ -12,7 +12,7 @@
 // It collaborates only through `useWorkspace()` — like every other workspace view — so it
 // can be dropped into any pane without prop threading.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Crosshair, Pencil, StickyNote, Trash2 } from "lucide-react";
 import { useWorkspace } from "./WorkspaceContext";
 import { ArtifactCard } from "./ArtifactCard";
@@ -28,9 +28,11 @@ export function NoteListPanel({
       right-sidebar "Page Anchors" tab. When true (default), it's a collapsible fold. */
   collapsible?: boolean;
 }) {
-  const { visibleNotes, anchors, focus, dispatch } = useWorkspace();
+  const { visibleNotes, anchors, focus, dispatch, sourceLayers } = useWorkspace();
   const [open, setOpen] = useState(collapsible ? defaultOpen : true);
   const expanded = collapsible ? open : true;
+  const focusedNoteId = focus.focus?.type === "note" ? focus.focus.noteId : "";
+  const focusedRowRef = useRef<HTMLDivElement | null>(null);
   // Edit-in-place: the id of the note being edited + a working copy of its content
   // (seeded from the note, discarded on Cancel). null = not editing any row.
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -55,6 +57,15 @@ export function NoteListPanel({
     void dispatch("note.edit", { noteId, content: draft });
     cancelEdit();
   };
+
+  useEffect(() => {
+    if (focusedNoteId && collapsible) setOpen(true);
+  }, [focusedNoteId, collapsible]);
+
+  useEffect(() => {
+    if (!focusedNoteId || !expanded) return;
+    focusedRowRef.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [focusedNoteId, expanded, listed.length]);
 
   return (
     <section className={`note-list-panel${collapsible ? "" : " note-list-panel-tab"}`}>
@@ -88,6 +99,9 @@ export function NoteListPanel({
               const anchorId = note.anchorIds[0];
               const anchor = anchorId ? anchors.find((item) => item.id === anchorId) : undefined;
               const page = anchor && "page" in anchor ? (anchor as { page?: number }).page : undefined;
+              const layer = note.layerIds[0]
+                ? sourceLayers.find((item) => item.id === note.layerIds[0])?.title
+                : "My Notes";
               const plugin = getNoteType(contentType);
               const editing = editingId === note.id;
 
@@ -95,7 +109,12 @@ export function NoteListPanel({
               // law §0.5 / contract guard) — only when the type has an editor registered.
               if (editing && plugin) {
                 return (
-                  <div key={note.id} className="note-list-row note-list-row-editing">
+                  <div
+                    key={note.id}
+                    ref={note.id === focusedNoteId ? focusedRowRef : undefined}
+                    className={`note-list-row note-list-row-editing${note.id === focusedNoteId ? " active" : ""}`}
+                    data-note-id={note.id}
+                  >
                     <div className="note-edit-inline">
                       {plugin.edit({ content: draft, onChange: setDraft })}
                       <div className="note-list-row-actions note-list-edit-actions">
@@ -122,13 +141,19 @@ export function NoteListPanel({
               }
 
               return (
-                <div key={note.id} className="note-list-row">
+                <div
+                  key={note.id}
+                  ref={note.id === focusedNoteId ? focusedRowRef : undefined}
+                  className={`note-list-row${note.id === focusedNoteId ? " active" : ""}`}
+                  data-note-id={note.id}
+                >
                   <ArtifactCard
                     block={{
                       contentType,
                       content: note.content,
                       note,
                       page: page ?? undefined,
+                      layer,
                       onJumpToAnchor: anchor ? () => focus.setAnchor(anchor) : undefined
                     }}
                   />

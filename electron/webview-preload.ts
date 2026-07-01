@@ -11,7 +11,15 @@ import {
   setSelectedAnchorInDoc
 } from "../src/client/annotationLayer";
 
-type WebAnchorMsg = { id?: string; quote: string; contextBefore: string; contextAfter: string; note?: string };
+type WebAnchorMsg = {
+  id?: string;
+  quote: string;
+  contextBefore: string;
+  contextAfter: string;
+  note?: string;
+  noteHtml?: string;
+  noteCount?: number;
+};
 
 const CONTEXT = 32;
 
@@ -94,7 +102,8 @@ ipcRenderer.on("sv:anchors", (_event, anchors: WebAnchorMsg[]) => {
       document,
       { exact: anchor.quote, prefix: anchor.contextBefore, suffix: anchor.contextAfter },
       anchor.note ?? "",
-      anchor.id
+      anchor.id,
+      { noteHtml: anchor.noteHtml, noteCount: anchor.noteCount }
     );
   }
   // Re-apply the selection after the repaint (the marks were just re-created).
