@@ -9,7 +9,6 @@
 //
 // No React / no Node imports, so it runs equally in the main app document, inside
 // the reader <iframe>, and injected into the live <webview> guest page.
-import { renderNoteContent } from "../adapters/notes/render";
 import { resolveTextQuote, type TextQuoteSelector } from "../adapters/web/textQuote";
 
 export const ANNOTATION_STYLE_ID = "sv-annot-style";
@@ -41,31 +40,68 @@ export const ANNOTATION_CSS = `
   box-shadow: 0 0 0 3px rgba(52, 116, 230, 0.45), inset 0 -2px 0 #3474e6 !important;
   transition: outline-color 0.25s ease, box-shadow 0.25s ease;
 }
-.sv-annotated[data-sv-note-count] {
-  position: relative;
-}
-.sv-annotated[data-sv-note-count]::after {
-  content: "⚓ " attr(data-sv-note-count);
+/* Inline-adjacent markers: an anchor glyph + one glyph per distinct note type,
+   appended as a trailing child of the annotated element (V1 simple — not a true
+   margin gutter). paintAnchorMarkers builds these.
+   EXPLICIT color (never inherit currentColor): PDF.js text-layer spans are
+   transparent (text is on canvas), so an inherited color:transparent would make
+   the stroke=currentColor glyphs invisible. Realms have no --sv-* tokens, so
+   use the literal product blue this stylesheet uses elsewhere. */
+.sv-anchor-markers {
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  margin-left: 5px;
-  padding: 0 5px;
-  border: 1px solid #c9dcff;
-  border-radius: 999px;
-  background: #ffffff;
-  color: #2f67d7;
-  box-shadow: 0 3px 10px rgba(52, 116, 230, 0.18);
-  font: 700 11px/1 Inter, "Segoe UI", Arial, sans-serif;
+  gap: 2px;
+  margin-left: 6px;
   vertical-align: text-top;
+  /* !important + a descendant rule so we beat PDF.js's .textLayer span rule that
+     forces color:transparent (specificity 0-1-1 > our 0-1-0) when markers sit inside
+     the PDF text layer; also reset the layer's inherited huge font-size that would
+     collapse the glyphs. */
+  color: #3474e6 !important;
+  font-size: 14px !important;
+  line-height: 1 !important;
+  user-select: none;
 }
-.sv-annotated[data-sv-note-count="1"]::after {
-  content: "⚓";
-  width: 18px;
-  min-width: 18px;
-  padding: 0;
+.sv-anchor-markers * {
+  color: #3474e6 !important;
+}
+/* Region/overlay realms (PDF text-layer hit spans, image region boxes): the host
+   element is absolutely positioned and gives an inline trailing child ZERO size, so
+   the markers are placed ABSOLUTELY at the box's top-right as a legible chip that
+   reads over PDF/image art. paintAnchorMarkers adds this class + a positioning
+   context on the host. */
+.sv-anchor-markers.sv-anchor-markers-region {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  z-index: 3;
+  margin-left: 0;
+  padding: 1px 3px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+.sv-anchor-marker {
+  position: relative;
+  /* Force real size + no wrap so the flex row doesn't collapse to ~0 inside the PDF
+     text layer (its inherited font-size/letter-spacing would otherwise shrink the
+     glyph boxes and overlap them). */
+  flex: 0 0 auto !important;
+  display: inline-flex !important;
+  align-items: center;
+  width: 14px !important;
+  height: 14px !important;
+  letter-spacing: normal !important;
+}
+.sv-anchor-marker svg {
+  width: 14px !important;
+  height: 14px !important;
+  stroke: currentColor !important;
+}
+.sv-anchor-marker-count {
+  font: 700 9px/1 Inter, "Segoe UI", Arial, sans-serif;
+  vertical-align: super;
+  margin-left: 1px;
+  color: #3474e6;
 }
 #sv-note-card {
   position: fixed;
@@ -88,33 +124,6 @@ export const ANNOTATION_CSS = `
 }
 #sv-note-card.sv-note-card-show {
   display: flex;
-}
-.sv-note-card-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex: 0 0 auto;
-  padding: 5px 4px 5px 9px;
-  cursor: move;
-  user-select: none;
-  background: #eef5ff;
-  border-bottom: 1px solid #c9dcff;
-  border-radius: 8px 8px 0 0;
-}
-.sv-note-card-grip {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: #2f67d7;
-}
-.sv-note-card-close {
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font-size: 16px;
-  line-height: 1;
-  color: #2f67d7;
-  padding: 0 6px;
 }
 .sv-note-card-body {
   flex: 1 1 auto;
@@ -143,104 +152,23 @@ export const ANNOTATION_CSS = `
   display: grid;
   gap: 10px;
 }
-.sv-annotation-preview .sv-artifact-card {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  width: min(100%, 260px);
-  height: 138px;
-  min-height: 138px;
-  max-width: 260px;
-  box-sizing: border-box;
-  padding: 10px 12px;
-  border: 1px solid #e3e8ef;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #202124;
-  box-shadow: 0 5px 14px rgba(15, 23, 42, 0.08);
-  overflow: hidden;
-  text-align: left;
+/* Content-only card: the sanctioned note body renders directly (no artifact-card
+   chrome). Stacked previews when an anchor has multiple notes. */
+.sv-annotation-preview + .sv-annotation-preview {
+  border-top: 1px solid #e3e8ef;
+  padding-top: 8px;
+  margin-top: 8px;
 }
-.sv-annotation-preview .sv-card-head,
-.sv-annotation-preview .sv-artifact-head {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 22px;
+.sv-note-content {
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
-.sv-annotation-preview .sv-artifact-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
-  border: 1px solid #d7dee9;
-  border-radius: 5px;
-  color: #273142;
-  background: #ffffff;
-}
-.sv-annotation-preview .sv-artifact-icon svg {
-  width: 14px;
-  height: 14px;
-}
-.sv-annotation-preview .sv-card-type,
-.sv-annotation-preview .sv-artifact-badge {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #6d7685;
-  font-size: 11.5px;
-  font-weight: 600;
-}
-.sv-annotation-preview .sv-card-more {
-  display: inline-flex;
-  flex: 0 0 auto;
-  margin-left: auto;
-  color: #1f2937;
-}
-.sv-annotation-preview .sv-card-title,
-.sv-annotation-preview .sv-artifact-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #111827;
-  font-size: 13.5px;
-  font-weight: 600;
-  line-height: 18px;
-}
-.sv-annotation-preview .sv-artifact-thumb,
-.sv-annotation-preview .sv-card-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  max-height: 76px;
-  overflow: hidden;
-}
-.sv-annotation-preview .note-rendered {
-  font-size: 12px;
-  line-height: 1.45;
-}
-.sv-annotation-preview .sv-card-footer {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-top: auto;
-  color: #788292;
-  font-size: 11.5px;
-  line-height: 16px;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.sv-annotation-preview .sv-card-footer-part {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sv-annotation-preview .sv-card-footer-part + .sv-card-footer-part::before {
-  content: "•";
-  margin-right: 7px;
-  color: #a8b0bd;
+.sv-note-content > :first-child { margin-top: 0; }
+.sv-note-content > :last-child { margin-bottom: 0; }
+.sv-note-content .note-rendered {
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 /* --- Marginalia mode: persistent cards in a right-hand gutter --- */
@@ -320,9 +248,85 @@ export interface CardGeom {
 export type HighlightPayload = {
   noteHtml?: string;
   noteCount?: number;
+  /** One entry per note on the anchor (e.g. ["markdown","quiz","quiz"]) — drives
+   *  the note-type glyph markers. */
+  noteTypes?: string[];
 };
 
 const highlightPayloads = new WeakMap<Element, HighlightPayload>();
+
+// --- Inline-adjacent marker glyphs -------------------------------------------
+// Literal lucide 24x24 path data (stroke=currentColor, fill=none). This map is a
+// framework-free MIRROR of src/client/notes/noteTypeIcon.tsx's ICONS map — keep the
+// two in sync (a unit test asserts every noteTypeIcon key has an entry here). We
+// inline raw SVG strings because annotationLayer.ts is framework-free (no React /
+// lucide imports; it runs in the reader iframe and the injected guest realm).
+function svg(inner: string): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+}
+
+// FileText (markdown / plain-text / fallback)
+const GLYPH_FILE_TEXT = svg(
+  '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>'
+);
+// ListChecks (quiz)
+const GLYPH_LIST_CHECKS = svg(
+  '<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>'
+);
+// CreditCard (flashcard)
+const GLYPH_CREDIT_CARD = svg('<rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/>');
+// Code2 (code / code-snippet / html / html-sandbox)
+const GLYPH_CODE2 = svg('<path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/>');
+// Workflow (mermaid)
+const GLYPH_WORKFLOW = svg(
+  '<rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/>'
+);
+// Network (markmap / mindmap)
+const GLYPH_NETWORK = svg(
+  '<rect x="9" y="2" width="6" height="6" rx="1"/><rect x="3" y="16" width="6" height="6" rx="1"/><rect x="15" y="16" width="6" height="6" rx="1"/><path d="M12 8v4"/><path d="M6 16v-1a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/>'
+);
+// Image (image)
+const GLYPH_IMAGE = svg(
+  '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>'
+);
+// Play (media / video / audio)
+const GLYPH_PLAY = svg('<polygon points="6 3 20 12 6 21 6 3"/>');
+// HelpCircle (concept)
+const GLYPH_HELP_CIRCLE = svg(
+  '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>'
+);
+// Bookmark (bookmark)
+const GLYPH_BOOKMARK = svg('<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>');
+
+// contentType → glyph. Keys MUST cover every key in noteTypeIcon.tsx's ICONS map.
+export const MARKER_GLYPHS: Record<string, string> = {
+  markdown: GLYPH_FILE_TEXT,
+  "plain-text": GLYPH_FILE_TEXT,
+  flashcard: GLYPH_CREDIT_CARD,
+  quiz: GLYPH_LIST_CHECKS,
+  image: GLYPH_IMAGE,
+  media: GLYPH_PLAY,
+  video: GLYPH_PLAY,
+  audio: GLYPH_PLAY,
+  code: GLYPH_CODE2,
+  "code-snippet": GLYPH_CODE2,
+  html: GLYPH_CODE2,
+  "html-sandbox": GLYPH_CODE2,
+  mermaid: GLYPH_WORKFLOW,
+  markmap: GLYPH_NETWORK,
+  mindmap: GLYPH_NETWORK,
+  concept: GLYPH_HELP_CIRCLE,
+  bookmark: GLYPH_BOOKMARK
+};
+
+// The left "this passage is anchored" glyph — an anchor (lucide Anchor).
+export const ANCHOR_GLYPH = svg(
+  '<line x1="12" x2="12" y1="22" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/><circle cx="12" cy="5" r="3"/>'
+);
+
+export function markerGlyph(type: string): string {
+  return MARKER_GLYPHS[type] ?? MARKER_GLYPHS.markdown;
+}
 
 const CARD_GEOM_PREFIX = "sv-card-geom:";
 
@@ -399,25 +403,14 @@ function wireNoteCard(doc: Document): void {
   if (wiredDocs.has(doc) || !doc.body || typeof doc.addEventListener !== "function") return;
   wiredDocs.add(doc);
 
-  // A draggable / resizable mini-window: title bar (drag handle + close) over a
-  // scrollable body that renders the note as markdown preview (not raw text).
+  // A resizable, CONTENT-ONLY card: no title bar / grip / close / footer — just a
+  // scrollable body rendering the sanctioned note preview. Dismissal is the
+  // ambient outside-click + mouseleave + Esc (no explicit close affordance).
   const card = doc.createElement("div");
   card.id = "sv-note-card";
   card.setAttribute("data-sv", "1");
-  const bar = doc.createElement("div");
-  bar.className = "sv-note-card-bar";
-  const grip = doc.createElement("span");
-  grip.className = "sv-note-card-grip";
-  grip.textContent = "⚓ note";
-  const closeBtn = doc.createElement("button");
-  closeBtn.className = "sv-note-card-close";
-  closeBtn.type = "button";
-  closeBtn.textContent = "×";
-  bar.appendChild(grip);
-  bar.appendChild(closeBtn);
   const body = doc.createElement("div");
   body.className = "sv-note-card-body";
-  card.appendChild(bar);
   card.appendChild(body);
   doc.body.appendChild(card);
 
@@ -425,7 +418,6 @@ function wireNoteCard(doc: Document): void {
   let currentKey = ""; // the data-sv-key of the anchor the card currently shows
   let currentTarget: Element | null = null;
   let anchorOffset = { x: 0, y: 6 };
-  let dragging = false;
   let resizing = false;
 
   // Persist the card's current rect for the active key (drag / resize end).
@@ -465,7 +457,7 @@ function wireNoteCard(doc: Document): void {
   };
 
   const syncPinnedCard = () => {
-    if (!pinned || dragging || marginActive()) return;
+    if (!pinned || marginActive()) return;
     if (currentTarget) placeCardAtTarget(currentTarget);
   };
 
@@ -473,13 +465,9 @@ function wireNoteCard(doc: Document): void {
     currentKey = target.getAttribute("data-sv-key") ?? "";
     currentTarget = target;
     const payload = highlightPayloads.get(target);
-    const noteCount = payload?.noteCount ?? Number(target.getAttribute("data-sv-note-count") ?? 0);
-    grip.textContent = noteCount > 1 ? `⚓ ${noteCount} notes` : "⚓ note";
-    if (payload?.noteHtml) {
-      body.innerHTML = `<div class="sv-annotation-card-list">${payload.noteHtml}</div>`;
-    } else {
-      body.innerHTML = renderNoteContent("markdown", target.getAttribute("data-sv-note") ?? "").html;
-    }
+    // Content-only: render the sanctioned note body directly (no chrome). An anchor
+    // with no note previews paints highlight + markers but no card body.
+    body.innerHTML = payload?.noteHtml ?? "";
     const view = doc.defaultView;
     const saved = currentKey ? readCardGeom(doc, currentKey) : null;
     if (saved && view) {
@@ -537,7 +525,6 @@ function wireNoteCard(doc: Document): void {
     if (!closestMatch((event as MouseEvent).relatedTarget, "#sv-note-card")) hide();
   });
   card.addEventListener("mouseleave", hide);
-  closeBtn.addEventListener("click", dismiss);
   doc.addEventListener("click", (event) => {
     if (marginActive()) return;
     const target = closestMatch(event.target, ".sv-annotated");
@@ -555,38 +542,9 @@ function wireNoteCard(doc: Document): void {
     if (!closestMatch(event.target, "#sv-note-card")) dismiss();
   });
 
-  // Drag by the title bar (pins so it survives the pointer leaving the highlight).
-  bar.addEventListener("mousedown", (event) => {
-    const start = event as MouseEvent;
-    if (closestMatch(start.target, ".sv-note-card-close")) return;
-    pinned = true;
-    dragging = true;
-    const rect = card.getBoundingClientRect();
-    const offsetX = start.clientX - rect.left;
-    const offsetY = start.clientY - rect.top;
-    const onMove = (move: Event) => {
-      const m = move as MouseEvent;
-      card.style.left = `${m.clientX - offsetX}px`;
-      card.style.top = `${m.clientY - offsetY}px`;
-    };
-    const onUp = () => {
-      doc.removeEventListener("mousemove", onMove);
-      doc.removeEventListener("mouseup", onUp);
-      dragging = false;
-      const dropped = card.getBoundingClientRect();
-      const targetRect = currentTarget?.getBoundingClientRect();
-      if (targetRect) {
-        anchorOffset = { x: dropped.left - targetRect.left, y: dropped.top - targetRect.bottom };
-      }
-      persistGeom(); // remember where it was dropped
-    };
-    doc.addEventListener("mousemove", onMove);
-    doc.addEventListener("mouseup", onUp);
-    start.preventDefault();
-  });
-
-  card.addEventListener("mousedown", (event) => {
-    if (closestMatch(event.target, ".sv-note-card-bar") || closestMatch(event.target, ".sv-note-card-close")) return;
+  // No drag bar (content-only card). A mousedown on the card is a resize gesture
+  // (CSS `resize: both`); remember the resulting size for the active key.
+  card.addEventListener("mousedown", () => {
     resizing = true;
     const onUp = () => {
       resizing = false;
@@ -595,6 +553,128 @@ function wireNoteCard(doc: Document): void {
     };
     doc.addEventListener("mouseup", onUp);
   });
+}
+
+const MARKER_WRAP_CLASS = "sv-anchor-markers";
+const MARKER_REGION_CLASS = "sv-anchor-markers-region";
+
+function markerHtml(inner: string, count?: number): string {
+  const badge = count && count > 1 ? `<sup class="sv-anchor-marker-count">${count}</sup>` : "";
+  return `<span class="sv-anchor-marker">${inner}${badge}</span>`;
+}
+
+// Decide whether the host element is a REGION/OVERLAY (PDF text-layer hit span,
+// image region box, or any absolutely-positioned / zero-size inline overlay) vs a
+// flowing inline <mark>. Feature-detected (never hard-coded to a reader): an inline
+// trailing child gets zero size inside an absolutely-positioned overlay and so is
+// invisible; those cases need the marker placed absolutely with real size instead.
+function isRegionOverlay(element: Element): boolean {
+  // Known region hosts by class (PDF text-layer hit spans + image region boxes).
+  if (
+    typeof (element as { closest?: unknown }).closest === "function" &&
+    element.closest(".pdf-anchor-hit, .sv-region-box, [data-sv-region]")
+  ) {
+    return true;
+  }
+  const view = element.ownerDocument?.defaultView;
+  if (view && typeof view.getComputedStyle === "function") {
+    let position = "";
+    try {
+      position = view.getComputedStyle(element).position;
+    } catch {
+      position = "";
+    }
+    if (position === "absolute" || position === "fixed") return true;
+  }
+  // Zero-size inline host (e.g. an empty overlay hit span): a trailing inline child
+  // would also be zero-size, so treat it as a region and place the chip absolutely.
+  // Guard against no-layout realms (jsdom) where EVERYTHING reports a zero rect: if
+  // the document body is itself zero-size there is no layout engine, so the signal
+  // is meaningless — skip it rather than mis-classify every inline mark as a region.
+  const rect = typeof element.getBoundingClientRect === "function" ? element.getBoundingClientRect() : null;
+  if (rect && rect.width === 0 && rect.height === 0) {
+    const bodyRect = element.ownerDocument?.body?.getBoundingClientRect?.();
+    const hasLayout = !!bodyRect && (bodyRect.width > 0 || bodyRect.height > 0);
+    if (hasLayout) return true;
+  }
+  return false;
+}
+
+// Paint the inline-adjacent markers as a TRAILING child of the annotated element
+// (V1 simple — not a true margin gutter). Left = one anchor glyph; right = one
+// glyph per DISTINCT note type, with a count superscript when a type repeats or the
+// anchor carries multiple notes. Appended as a `.sv-anchor-markers` span so the
+// existing `.sv-annotated` hover/click delegation still resolves via closest().
+// `contenteditable=false` + `data-sv=1` so it is treated as chrome, not content.
+export function paintAnchorMarkers(element: Element, payload?: HighlightPayload): void {
+  const doc = element.ownerDocument;
+  if (!doc) return;
+  // Remove any prior marker span so repaints don't stack. Region chips are attached
+  // to the host's PARENT (see below) and keyed by data-sv-marker-for, so clear both
+  // the inline child and any prior parent-attached chip for this element.
+  element.querySelectorAll(`:scope > .${MARKER_WRAP_CLASS}`).forEach((n) => n.remove());
+  const markerKey = element.getAttribute("data-sv-key") ?? "";
+  if (markerKey) {
+    doc.querySelectorAll(`.${MARKER_WRAP_CLASS}[data-sv-marker-for="${markerKey.replace(/"/g, '\\"')}"]`).forEach((n) => n.remove());
+  }
+
+  const types = payload?.noteTypes ?? [];
+  const noteCount = payload?.noteCount ?? types.length;
+
+  // Count per distinct type (in first-seen order) so a repeated type shows once
+  // with a superscript rather than a duplicated glyph.
+  const counts = new Map<string, number>();
+  for (const t of types) counts.set(t, (counts.get(t) ?? 0) + 1);
+
+  let glyphs = "";
+  if (counts.size) {
+    for (const [type, n] of counts) glyphs += markerHtml(markerGlyph(type), n);
+  } else {
+    // No type info: fall back to the markdown glyph, carrying the note count.
+    glyphs += markerHtml(markerGlyph("markdown"), noteCount > 1 ? noteCount : undefined);
+  }
+
+  const wrap = doc.createElement("span");
+  wrap.className = MARKER_WRAP_CLASS;
+  wrap.setAttribute("contenteditable", "false");
+  wrap.setAttribute("data-sv", "1");
+  wrap.innerHTML = markerHtml(ANCHOR_GLYPH) + glyphs;
+
+  if (isRegionOverlay(element)) {
+    // Region/overlay realm (e.g. a PDF.js text-layer span): appending INSIDE the host
+    // fails twice — `.textLayer span { color:transparent }` hides the glyphs, and the
+    // span's inline `transform: scaleX(...)` (PDF.js fits text width that way) scales
+    // the child chip down so the glyphs collapse/overlap. A descendant can't escape an
+    // ancestor transform, so attach the chip to the host's PARENT (the text-layer
+    // container, not a span) and place it at the host's VISUAL top-right via rect
+    // deltas. Keyed by data-sv-marker-for so repaint/clear can find it.
+    wrap.classList.add(MARKER_REGION_CLASS);
+    if (markerKey) wrap.setAttribute("data-sv-marker-for", markerKey);
+    const host = element as HTMLElement;
+    const parent = host.parentElement as HTMLElement | null;
+    if (parent && typeof host.getBoundingClientRect === "function") {
+      // Ensure the parent is a positioning context. Use getComputedStyle when a live
+      // view is available (it isn't in a detached test document), else treat as static.
+      const view = doc.defaultView;
+      let pcs = "";
+      if (view && typeof view.getComputedStyle === "function") {
+        try { pcs = view.getComputedStyle(parent).position; } catch { pcs = ""; }
+      }
+      if (pcs !== "absolute" && pcs !== "relative" && pcs !== "fixed" && parent.style) {
+        parent.dataset.svMarkerPos = "1";
+        parent.style.position = "relative";
+      }
+      const hr = host.getBoundingClientRect();
+      const pr = parent.getBoundingClientRect();
+      wrap.style.left = `${Math.round(hr.right - pr.left)}px`;
+      wrap.style.top = `${Math.round(hr.top - pr.top)}px`;
+      wrap.style.right = "auto";
+      parent.appendChild(wrap);
+      return;
+    }
+  }
+
+  element.appendChild(wrap);
 }
 
 // Mark an already-resolved element as annotated and stash the note text for the
@@ -609,6 +689,8 @@ export function applyHighlight(element: Element, noteText: string, key?: string,
   else element.removeAttribute("data-sv-note-count");
   if (payload) highlightPayloads.set(element, payload);
   else highlightPayloads.delete(element);
+  // Every reader gets inline-adjacent markers for free (uniform paint path).
+  paintAnchorMarkers(element, payload);
 }
 
 // The ONE shared "scroll the focused passage into view" helper for every surface
@@ -670,6 +752,15 @@ export function setSelectedAnchorInDoc(root: ParentNode | null | undefined, anch
 // Unwraps the <mark>s created by highlightQuote and clears class/attr from any
 // element-level highlights (e.g. study-id elements).
 export function clearAnnotations(root: ParentNode): void {
+  // Remove marker spans first so their glyph SVGs aren't left behind as text.
+  // (Absolutely-positioned region chips are `.sv-anchor-markers` too, so this
+  // covers both realms.)
+  root.querySelectorAll(`.${MARKER_WRAP_CLASS}`).forEach((n) => n.remove());
+  // Revert any positioning context paintAnchorMarkers added on a region host.
+  root.querySelectorAll<HTMLElement>("[data-sv-marker-pos]").forEach((el) => {
+    if (el.style) el.style.position = "";
+    delete el.dataset.svMarkerPos;
+  });
   root.querySelectorAll('mark[data-sv="1"]').forEach((mark) => {
     mark.replaceWith(mark.textContent ?? "");
   });
@@ -813,15 +904,14 @@ export function paintMarginNotes(doc: Document, items: MarginItem[]): void {
   connectors.setAttribute("height", `${contentHeight}`);
 
   // First pass: create cards at their desired tops and measure heights.
-  const placedCards = items.map(({ element, noteText, noteHtml, key }) => {
+  const placedCards = items.map(({ element, noteHtml, key }) => {
     const card = doc.createElement("div");
     card.className = "sv-margin-note";
     if (key) card.setAttribute("data-sv-key", key);
     const cardBody = doc.createElement("div");
     cardBody.className = "sv-margin-note-body";
-    cardBody.innerHTML = noteHtml
-      ? `<div class="sv-annotation-card-list">${noteHtml}</div>`
-      : renderNoteContent("markdown", noteText).html;
+    // Content-only: the sanctioned note preview HTML renders directly.
+    cardBody.innerHTML = noteHtml ?? "";
     card.appendChild(cardBody);
     layer.appendChild(card);
     const elRect = element.getBoundingClientRect();

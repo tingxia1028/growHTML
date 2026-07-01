@@ -23,7 +23,7 @@ import type { NoteRecord } from "../data/entityClient";
 import { getNoteType } from "../notes/noteTypeRegistry";
 import { noteTypeIcon } from "../notes/noteTypeIcon";
 import { InertNote } from "../notes/builtinNoteTypes";
-import { noteCardMeta } from "./noteCardMeta";
+import { noteCardMeta } from "../notes/noteCardMeta";
 
 export type FocusOverlayBlock = {
   /** The registered contentType deciding which plugin renders (the discriminator). */

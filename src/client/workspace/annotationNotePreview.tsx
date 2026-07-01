@@ -1,29 +1,18 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import type { AnyAnchor, NoteRecord, StudyLayerRecord } from "../data/entityClient";
-import { ArtifactCard } from "./ArtifactCard";
+import { getNoteType } from "../notes/noteTypeRegistry";
 
-function anchorPage(anchor: AnyAnchor): number | undefined {
-  return "page" in anchor ? anchor.page : undefined;
-}
-
-function noteLayerTitle(note: NoteRecord, layers: StudyLayerRecord[]): string {
-  const layerId = note.layerIds[0];
-  return layerId ? layers.find((layer) => layer.id === layerId)?.title ?? "My Notes" : "My Notes";
-}
-
-export function renderAnnotationNotePreview(note: NoteRecord, anchor: AnyAnchor, layers: StudyLayerRecord[]): string {
-  const contentType = note.contentType ?? "markdown";
+// Render a note preview for the in-reader card as CONTENT-ONLY: the sanctioned note
+// body renders directly through getNoteType(contentType).render — no ArtifactCard
+// chrome (title bar / icon / footer). The `?? "markdown"` below is a default for the
+// registry LOOKUP, not a contentType=== render branch. `anchor` / `layers` are kept
+// in the signature (callers pass them) but unused now that there is no card footer.
+export function renderAnnotationNotePreview(note: NoteRecord, _anchor: AnyAnchor, _layers: StudyLayerRecord[]): string {
+  const plugin = getNoteType(note.contentType ?? "markdown");
+  const body = plugin ? plugin.render({ content: note.content, note, mode: "card" }) : null;
   return renderToStaticMarkup(
     <div className="sv-annotation-preview" data-note-id={note.id}>
-      <ArtifactCard
-        block={{
-          contentType,
-          content: note.content,
-          note,
-          page: anchorPage(anchor),
-          layer: noteLayerTitle(note, layers)
-        }}
-      />
+      <div className="sv-note-content">{body}</div>
     </div>
   );
 }

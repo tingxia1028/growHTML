@@ -242,14 +242,14 @@ describe("card geometry persistence", () => {
     expect(card.style.top).toBe("-234px");
   });
 
-  it("renders rich preview cards from highlight payloads and exposes the note count badge", () => {
+  it("renders the content-only preview body from the highlight payload (no card chrome)", () => {
     const doc = document.implementation.createHTMLDocument("rich-card");
     doc.body.innerHTML = '<p id="t">hello</p>';
     ensureAnnotationLayer(doc);
     const el = doc.getElementById("t")!;
     applyHighlight(el, "fallback text", "k-rich", {
       noteCount: 2,
-      noteHtml: '<div class="sv-annotation-preview"><div class="sv-artifact-card">Preview card</div></div>'
+      noteHtml: '<div class="sv-annotation-preview"><div class="sv-note-content">Preview card</div></div>'
     });
 
     expect(el.getAttribute("data-sv-note-count")).toBe("2");
@@ -257,8 +257,9 @@ describe("card geometry persistence", () => {
 
     const card = doc.getElementById("sv-note-card")!;
     expect(card.classList.contains("sv-note-card-show")).toBe(true);
-    expect(card.querySelector(".sv-note-card-grip")?.textContent).toContain("2 notes");
-    expect(card.querySelector(".sv-artifact-card")?.textContent).toContain("Preview card");
+    // Content-only: no title bar / grip chrome, just the rendered note body.
+    expect(card.querySelector(".sv-note-card-bar")).toBeNull();
+    expect(card.querySelector(".sv-note-content")?.textContent).toContain("Preview card");
     expect(card.querySelector(".sv-note-card-body")?.textContent).not.toContain("fallback text");
   });
 });
@@ -291,13 +292,15 @@ describe("paintMarginNotes", () => {
   it("builds a gutter with one card per item, reserves body space, draws connectors", () => {
     document.body.innerHTML = '<p id="a">one</p><p id="b">two</p>';
     paintMarginNotes(document, [
-      { element: document.getElementById("a")!, noteText: "**first**", key: "k1" },
-      { element: document.getElementById("b")!, noteText: "second", key: "k2" }
+      // Content-only: the sanctioned preview HTML renders directly (no fallback
+      // markdown pass over noteText).
+      { element: document.getElementById("a")!, noteText: "first", noteHtml: "<strong>first</strong>", key: "k1" },
+      { element: document.getElementById("b")!, noteText: "second", noteHtml: "<p>second</p>", key: "k2" }
     ]);
     expect(document.body.classList.contains("sv-annot-margin")).toBe(true);
     const cards = document.querySelectorAll("#sv-margin-layer .sv-margin-note");
     expect(cards).toHaveLength(2);
-    // Markdown is rendered (not raw): the first note becomes a <strong>.
+    // The preview body renders as-is: the first note's <strong> is present.
     expect(cards[0].querySelector("strong")?.textContent).toBe("first");
     expect(cards[0].getAttribute("data-sv-key")).toBe("k1");
     expect(document.querySelectorAll("#sv-margin-connectors path")).toHaveLength(2);
@@ -318,7 +321,7 @@ describe("paintMarginNotes", () => {
     document.body.innerHTML = '<p data-study-id="s1">Hello world</p>';
     decorateAnnotations(document, {
       anchors: [{ id: "a1", anchorKind: "html_selection", studyId: "s1", quote: "Hello world" }],
-      notes: [{ anchorIds: ["a1"], content: "margin note" }],
+      notes: [{ anchorIds: ["a1"], content: "margin note", previewHtml: "<p>margin note</p>" }],
       mode: "margin"
     });
     expect(document.querySelector("#sv-margin-layer .sv-margin-note")?.textContent).toContain("margin note");

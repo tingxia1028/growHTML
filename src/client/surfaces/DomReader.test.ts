@@ -72,7 +72,15 @@ describe("paintDomAnchors", () => {
   it("paints only html_selection anchors onto their study-id elements", () => {
     document.body.innerHTML = '<p data-study-id="s1">Hello world</p><p data-study-id="s2">Other</p>';
     paintDomAnchors(document, [
-      anchor({ id: "a1", studyId: "s1", quote: "Hello world", note: "note A" }),
+      anchor({
+        id: "a1",
+        studyId: "s1",
+        quote: "Hello world",
+        note: "note A",
+        // Converged paint path: the highlight is driven by the anchor's note
+        // previews (one per note), not the merged plain-text `note`.
+        notePreviews: [{ id: "n1", contentType: "markdown", text: "note A", html: "<p>note A</p>" }]
+      }),
       // A web anchor must be ignored by the DOM surface.
       anchor({ id: "w1", anchorKind: "web_text_quote", quote: "Other", note: "ignored" })
     ]);
@@ -86,7 +94,14 @@ describe("paintDomAnchors", () => {
 
   it("merges multiple anchors' notes onto the document (idempotent repaint)", () => {
     document.body.innerHTML = '<p data-study-id="s1">Hello world</p>';
-    const anchors = [anchor({ studyId: "s1", quote: "Hello world", note: "first" })];
+    const anchors = [
+      anchor({
+        studyId: "s1",
+        quote: "Hello world",
+        note: "first",
+        notePreviews: [{ id: "n1", contentType: "markdown", text: "first", html: "<p>first</p>" }]
+      })
+    ];
     paintDomAnchors(document, anchors);
     paintDomAnchors(document, anchors); // repaint must not duplicate
     expect(document.querySelectorAll(".sv-annotated").length).toBe(1);
@@ -129,7 +144,16 @@ describe("paintDomAnchors", () => {
 
   it("defaults to floating (no gutter); margin mode lays cards into the gutter", () => {
     document.body.innerHTML = '<p data-study-id="s1">Hello world</p>';
-    const anchors = [anchor({ studyId: "s1", quote: "Hello world", note: "margin note" })];
+    // Converged paint path: notes come from previews (an anchor with no preview
+    // paints highlight + markers but contributes no card body).
+    const anchors = [
+      anchor({
+        studyId: "s1",
+        quote: "Hello world",
+        note: "margin note",
+        notePreviews: [{ id: "n1", contentType: "markdown", text: "margin note", html: "<p>margin note</p>" }]
+      })
+    ];
 
     // Default (floating): inline highlight only, no margin layer.
     paintDomAnchors(document, anchors);

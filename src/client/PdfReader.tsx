@@ -31,7 +31,8 @@ function annotationPayload(anchor: PaintAnchor, showBadge = true): HighlightPayl
   const noteHtml = anchor.notePreviews?.map((preview) => preview.html).join("") || undefined;
   const fallbackCount = anchor.note ? 1 : 0;
   const noteCount = anchor.notePreviews ? anchor.notePreviews.length : fallbackCount;
-  return { noteHtml, noteCount: showBadge ? noteCount : 0 };
+  const noteTypes = anchor.notePreviews?.map((p) => p.contentType) ?? [];
+  return { noteHtml, noteCount: showBadge ? noteCount : 0, noteTypes };
 }
 
 // PDF surface adapter — one of the two OVERLAY readers. Renders a PDF with the

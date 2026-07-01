@@ -14,7 +14,8 @@ function annotationPayload(anchor: PaintAnchor): HighlightPayload {
   const noteHtml = anchor.notePreviews?.map((preview) => preview.html).join("") || undefined;
   const fallbackCount = anchor.note ? 1 : 0;
   const noteCount = anchor.notePreviews ? anchor.notePreviews.length : fallbackCount;
-  return { noteHtml, noteCount };
+  const noteTypes = anchor.notePreviews?.map((p) => p.contentType) ?? [];
+  return { noteHtml, noteCount, noteTypes };
 }
 
 // Image surface adapter — the other OVERLAY reader. An image has no text to select,

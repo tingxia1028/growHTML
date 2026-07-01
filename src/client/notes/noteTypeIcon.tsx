@@ -17,7 +17,10 @@ import {
   type LucideIcon
 } from "lucide-react";
 
-const ICONS: Record<string, LucideIcon> = {
+// Exported so the framework-free marker-glyph map in annotationLayer.ts can be
+// asserted (in a unit test) to cover every note type this icon map knows about —
+// the two must stay in sync so a passage's inline marker matches its list icon.
+export const ICONS: Record<string, LucideIcon> = {
   markdown: FileText,
   "plain-text": FileText,
   flashcard: CreditCard,

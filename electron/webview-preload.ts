@@ -19,6 +19,7 @@ type WebAnchorMsg = {
   note?: string;
   noteHtml?: string;
   noteCount?: number;
+  noteTypes?: string[];
 };
 
 const CONTEXT = 32;
@@ -103,7 +104,7 @@ ipcRenderer.on("sv:anchors", (_event, anchors: WebAnchorMsg[]) => {
       { exact: anchor.quote, prefix: anchor.contextBefore, suffix: anchor.contextAfter },
       anchor.note ?? "",
       anchor.id,
-      { noteHtml: anchor.noteHtml, noteCount: anchor.noteCount }
+      { noteHtml: anchor.noteHtml, noteCount: anchor.noteCount, noteTypes: anchor.noteTypes }
     );
   }
   // Re-apply the selection after the repaint (the marks were just re-created).

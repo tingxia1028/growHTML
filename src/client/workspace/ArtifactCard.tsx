@@ -22,7 +22,7 @@ import { MoreHorizontal } from "lucide-react";
 import { getNoteType } from "../notes/noteTypeRegistry";
 import { noteTypeIcon } from "../notes/noteTypeIcon";
 import { FocusOverlay, type FocusOverlayBlock } from "./FocusOverlay";
-import { noteCardMeta } from "./noteCardMeta";
+import { noteCardMeta } from "../notes/noteCardMeta";
 
 // A plain-text snippet from any content shape (string passes through; an object is
 // JSON-stringified) — the generic card's title fallback, never raw HTML.

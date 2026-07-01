@@ -57,15 +57,16 @@ export function paintDomAnchors(doc: Document, anchors: PaintAnchor[], mode: Htm
       contextBefore: anchor.contextBefore,
       contextAfter: anchor.contextAfter
     })),
+    // Always map previews (converged paint path — no plain-text divergence). An
+    // anchor with no previews contributes no note (it paints highlight + markers
+    // but no card body), so HTML renders identically to the overlay readers.
     notes: htmlAnchors.flatMap((anchor) =>
-      anchor.notePreviews?.length
-        ? anchor.notePreviews.map((preview) => ({
-            anchorIds: [anchor.id],
-            content: preview.text,
-            previewHtml: preview.html,
-            contentType: preview.contentType
-          }))
-        : [{ anchorIds: [anchor.id], content: anchor.note }]
+      (anchor.notePreviews ?? []).map((preview) => ({
+        anchorIds: [anchor.id],
+        content: preview.text,
+        previewHtml: preview.html,
+        contentType: preview.contentType
+      }))
     ),
     mode
   });

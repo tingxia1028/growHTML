@@ -63,6 +63,7 @@ export type WebAnchorMsg = {
   note?: string;
   noteHtml?: string;
   noteCount?: number;
+  noteTypes?: string[];
 };
 
 // The preload file:// url the host attaches to each guest webview so it captures
@@ -199,6 +200,7 @@ export function toWebAnchorMsgs(anchors: PaintAnchor[]): WebAnchorMsg[] {
       const noteHtml = anchor.notePreviews?.map((preview) => preview.html).join("") || undefined;
       if (noteHtml) msg.noteHtml = noteHtml;
       if (anchor.notePreviews?.length) msg.noteCount = anchor.notePreviews.length;
+      if (anchor.notePreviews?.length) msg.noteTypes = anchor.notePreviews.map((preview) => preview.contentType);
       return msg;
     });
 }

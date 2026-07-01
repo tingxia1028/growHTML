@@ -1,4 +1,4 @@
-import { getNoteType } from "../notes/noteTypeRegistry";
+import { getNoteType } from "./noteTypeRegistry";
 
 export type NoteCardMeta = {
   typeLabel: string;

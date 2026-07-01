@@ -134,34 +134,36 @@ const htmlHighlightRenderer: AnnotationRenderer = {
 // Resolve anchors to elements (study-id fast path, else edit-resilient text
 // re-find), apply the inline highlight, and merge notes that land on the same
 // element. The returned targets drive marginalia layout.
-function notePayload(notes: AnnotationNote[]): { noteText: string; noteHtml: string; noteCount: number } {
+function notePayload(notes: AnnotationNote[]): { noteText: string; noteHtml: string; noteCount: number; noteTypes: string[] } {
   return {
     noteText: notes.map((note) => note.content).join("\n\n"),
     noteHtml: notes
       .map((note) => note.previewHtml)
       .filter((html): html is string => Boolean(html))
       .join(""),
-    noteCount: notes.length
+    noteCount: notes.length,
+    noteTypes: notes.map((note) => note.contentType ?? "markdown")
   };
 }
 
-function payloadFor(noteHtml: string, noteCount: number): HighlightPayload {
-  return { noteHtml: noteHtml || undefined, noteCount };
+function payloadFor(noteHtml: string, noteCount: number, noteTypes: string[]): HighlightPayload {
+  return { noteHtml: noteHtml || undefined, noteCount, noteTypes };
 }
 
 function resolveTargets(
   doc: Document,
   items: AnchorNotes[]
 ): { element: Element; noteText: string; noteHtml: string; noteCount: number; key: string }[] {
-  const byElement = new Map<Element, { lines: string[]; htmls: string[]; count: number; key: string }>();
+  const byElement = new Map<Element, { lines: string[]; htmls: string[]; types: string[]; count: number; key: string }>();
   for (const { anchor, notes } of items) {
-    const { noteText, noteHtml, noteCount } = notePayload(notes);
+    const { noteText, noteHtml, noteCount, noteTypes } = notePayload(notes);
     const studyEl = anchor.studyId ? doc.querySelector(`[data-study-id="${cssEscape(anchor.studyId)}"]`) : null;
     if (studyEl) {
-      const entry = byElement.get(studyEl) ?? { lines: [], htmls: [], count: 0, key: anchor.id };
+      const entry = byElement.get(studyEl) ?? { lines: [], htmls: [], types: [], count: 0, key: anchor.id };
       for (const note of notes) {
         entry.lines.push(note.content);
         if (note.previewHtml) entry.htmls.push(note.previewHtml);
+        entry.types.push(note.contentType ?? "markdown");
         entry.count += 1;
       }
       byElement.set(studyEl, entry);
@@ -171,19 +173,19 @@ function resolveTargets(
         { exact: anchor.quote, prefix: anchor.contextBefore ?? "", suffix: anchor.contextAfter ?? "" },
         noteText,
         anchor.id,
-        payloadFor(noteHtml, noteCount)
+        payloadFor(noteHtml, noteCount, noteTypes)
       );
       const mark = doc.querySelector(`mark[data-sv="1"][data-sv-key="${cssEscape(anchor.id)}"]`);
       if (mark && !byElement.has(mark)) {
-        byElement.set(mark, { lines: [noteText], htmls: [noteHtml], count: noteCount, key: anchor.id });
+        byElement.set(mark, { lines: [noteText], htmls: [noteHtml], types: noteTypes, count: noteCount, key: anchor.id });
       }
     }
   }
   const out: { element: Element; noteText: string; noteHtml: string; noteCount: number; key: string }[] = [];
-  for (const [element, { lines, htmls, count, key }] of byElement) {
+  for (const [element, { lines, htmls, types, count, key }] of byElement) {
     const noteText = lines.join("\n\n");
     const noteHtml = htmls.join("");
-    applyHighlight(element, noteText, key, payloadFor(noteHtml, count));
+    applyHighlight(element, noteText, key, payloadFor(noteHtml, count, types));
     out.push({ element, noteText, noteHtml, noteCount: count, key });
   }
   return out;

@@ -365,7 +365,8 @@ describe("toWebAnchorMsgs", () => {
         contextAfter: "",
         note: "merged text",
         noteHtml: "<div>Card one</div><div>Card two</div>",
-        noteCount: 2
+        noteCount: 2,
+        noteTypes: ["markdown", "quiz"]
       }
     ]);
   });
