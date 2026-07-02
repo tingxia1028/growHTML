@@ -8272,6 +8272,42 @@ select {
   white-space: nowrap;
 }
 
+/* REV-2 弱项 header — top weak buckets as clickable filter chips. */
+.review-weak-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--sv-text-muted);
+}
+
+.review-weak-label {
+  white-space: nowrap;
+}
+
+.review-weak-chip {
+  padding: 0 9px;
+  line-height: 1.8;
+  border-radius: 999px;
+  border: 1px solid var(--sv-danger-bg-strong);
+  background: var(--sv-danger-bg);
+  color: var(--sv-danger-2);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.review-weak-chip:hover {
+  border-color: var(--sv-danger-2);
+}
+
+.review-weak-chip.active {
+  border-color: var(--sv-danger-2);
+  box-shadow: 0 0 0 1px var(--sv-danger-2);
+  font-weight: 600;
+}
+
 .review-error {
   font-size: 12px;
   color: var(--sv-danger-strong);
@@ -8319,6 +8355,13 @@ select {
 }
 
 .review-reason[data-reason="mistake-failed"] {
+  background: var(--sv-danger-bg);
+  border-color: var(--sv-danger-bg-strong);
+  color: var(--sv-danger-2);
+}
+
+/* REV-2 group-3 items: reasons are dynamic "弱项:{bucket}" strings. */
+.review-reason[data-reason^="弱项"] {
   background: var(--sv-danger-bg);
   border-color: var(--sv-danger-bg-strong);
   color: var(--sv-danger-2);

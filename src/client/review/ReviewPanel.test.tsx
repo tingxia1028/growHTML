@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
-// ReviewPanel (REV-1) — the runner against seeded notes+events through the swappable
-// IO seam: queue order rendered, reveal→self-grade emits the RIGHT note.review memory
-// event (capture.ts test seams), the AI-check flow with a stubbed generate dispatch
-// (check → answer → grade → explain), 存为错题/存为练习 through the note-create
-// dispatch, skip semantics, scope toggle, and the end-of-session tally.
+// ReviewPanel (REV-1 + REV-2) — the runner against seeded notes+events through the
+// swappable IO seam: queue order rendered, reveal→self-grade emits the RIGHT
+// note.review memory event (capture.ts test seams), the AI-check flow with a stubbed
+// generate dispatch (check → answer → grade → explain), 存为错题/存为练习 through the
+// note-create dispatch, skip semantics, scope toggle, and the end-of-session tally.
+// REV-2: 弱项 chips render from digest summaries (human labels, hidden facts
+// excluded) and filter the queue; the explain dispatch carries the compact
+// profileContext (and omits the key when no facts exist); note.review subjects carry
+// contentType so digests can bucket per type.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
@@ -20,7 +24,8 @@ import "../../kits/clientKits";
 import "./ReviewPanel";
 
 import { getView, type WorkspaceContext } from "../workspace/viewRegistry";
-import type { MemoryEventInput, NoteRecord } from "../data/entityClient";
+import type { MemoryDimensionSummary } from "../../core/memory/digest";
+import type { MemoryEventInput, NoteRecord, ProfileFactView } from "../data/entityClient";
 import {
   flushNow,
   resetMemoryCaptureForTests,
@@ -67,6 +72,37 @@ const reviewEvent = (noteId: string, createdAt: string, result: string): ReviewE
   createdAt,
   subject: { noteId },
   payload: { result }
+});
+
+// —— REV-2 fixtures: digest summary cells + profile fact views ——————————————
+const summaryCell = (
+  dimension: MemoryDimensionSummary["dimension"],
+  bucket: string,
+  fail: number,
+  pass: number
+): MemoryDimensionSummary => ({
+  dimension,
+  bucket,
+  events: fail + pass,
+  counts: { "note.review": fail + pass },
+  review: {
+    pass,
+    fail,
+    skip: 0,
+    attempts: pass + fail,
+    failRatio: pass + fail > 0 ? fail / (pass + fail) : 0
+  },
+  firstAt: "2026-06-01T00:00:00.000Z",
+  lastAt: "2026-06-20T00:00:00.000Z"
+});
+
+const factView = (over: Partial<ProfileFactView> & { key: string; kind: ProfileFactView["kind"] }): ProfileFactView => ({
+  title: over.key,
+  value: "",
+  evidence: [],
+  pinned: false,
+  hidden: false,
+  ...over
 });
 
 // The stubbed generate dispatch: deterministic content per operation id.
@@ -373,6 +409,149 @@ describe("ReviewPanel — AI check flow (mistake items)", () => {
       })
     );
     expect(container.querySelector(".review-explanation")!.textContent).toContain("详解正文");
+    cleanup();
+  });
+});
+
+describe("ReviewPanel — REV-2 弱项 header + queue weights", () => {
+  it("renders top weak buckets as chips (human titles), boosts the queue, and a click filters it", async () => {
+    setReviewIoForTests({
+      fetchEvents: async () => [],
+      // quiz is the weak TYPE (3/4 failed) → boosted + chip; the subject bucket also chips.
+      fetchDigestSummaries: async () => [summaryCell("contentType", "quiz", 3, 1), summaryCell("subject", "浮力", 2, 2)],
+      fetchProfileFacts: async () => [],
+      generate: generateStub()
+    });
+    const { container, cleanup, click } = await renderPanel(
+      ctxWith({ notes: [flashcardNote("n_f1"), quizNote("n_q1")] })
+    );
+
+    // Chips, strongest first: quiz (0.75) → its registered TITLE, then 浮力 verbatim.
+    const chips = Array.from(container.querySelectorAll<HTMLButtonElement>(".review-weak-chip"));
+    expect(chips.map((chip) => chip.dataset.bucket)).toEqual(["quiz", "浮力"]);
+    expect(chips[0].textContent).toBe("小测");
+    expect(chips[1].textContent).toBe("浮力");
+
+    // The boost: without digests id-order puts n_f1 first; weak quiz floats n_q1.
+    expect(container.querySelector(".review-item")!.getAttribute("data-note-id")).toBe("n_q1");
+    expect(container.querySelector(".review-count")!.textContent).toBe("2 项待复习");
+
+    // Chip click = component-local bucket filter; clicking again clears it.
+    await click(".review-weak-chip[data-bucket='quiz']");
+    expect(container.querySelector(".review-count")!.textContent).toBe("1 项待复习");
+    expect(container.querySelector(".review-item")!.getAttribute("data-note-id")).toBe("n_q1");
+    expect(container.querySelector(".review-weak-chip[data-bucket='quiz']")!.getAttribute("aria-pressed")).toBe("true");
+    await click(".review-weak-chip[data-bucket='quiz']");
+    expect(container.querySelector(".review-count")!.textContent).toBe("2 项待复习");
+    cleanup();
+  });
+
+  it("a weak bucket re-surfaces a RETIRED mistake as a 弱项 item (group 3, verbatim reason chip)", async () => {
+    setReviewIoForTests({
+      fetchEvents: async () => [reviewEvent("n_m1", "2026-06-01T00:00:00.000Z", "pass")],
+      fetchDigestSummaries: async () => [summaryCell("contentType", "textbook.mistake", 2, 1)],
+      fetchProfileFacts: async () => [],
+      generate: generateStub()
+    });
+    const { container, cleanup } = await renderPanel(ctxWith({ notes: [mistakeNote("n_m1")] }));
+    const item = container.querySelector(".review-item")!;
+    expect(item.getAttribute("data-note-id")).toBe("n_m1");
+    expect(item.getAttribute("data-reason")).toBe("弱项:textbook.mistake");
+    expect(container.querySelector(".review-reason")!.textContent).toBe("弱项:textbook.mistake");
+    cleanup();
+  });
+
+  it("a weak fact the user HID on the 画像页 loses its chip (hide honored end-to-end)", async () => {
+    setReviewIoForTests({
+      fetchEvents: async () => [],
+      fetchDigestSummaries: async () => [summaryCell("contentType", "quiz", 3, 1), summaryCell("subject", "浮力", 2, 2)],
+      fetchProfileFacts: async () => [
+        factView({ key: "weak:contentType:quiz", kind: "weak", title: "弱项:quiz", hidden: true })
+      ],
+      generate: generateStub()
+    });
+    const { container, cleanup } = await renderPanel(ctxWith({ notes: [quizNote("n_q1")] }));
+    const chips = Array.from(container.querySelectorAll<HTMLButtonElement>(".review-weak-chip"));
+    expect(chips.map((chip) => chip.dataset.bucket)).toEqual(["浮力"]); // quiz chip suppressed
+    // The QUEUE weighting itself is digest-driven and unaffected by the display hide.
+    expect(container.querySelector(".review-item")!.getAttribute("data-note-id")).toBe("n_q1");
+    cleanup();
+  });
+});
+
+describe("ReviewPanel — REV-2 profileContext into review.explain", () => {
+  const PROFILE_FACTS: ProfileFactView[] = [
+    factView({
+      key: "weak:subject:浮力",
+      kind: "weak",
+      title: "弱项:浮力",
+      value: "复习错误率 67%(4/6 次未过,学科)"
+    }),
+    factView({
+      key: "weak:contentType:quiz",
+      kind: "weak",
+      title: "弱项:quiz",
+      value: "复习错误率 60%(3/5 次未过,类型)",
+      hidden: true // hidden → must NOT appear in the context
+    }),
+    factView({ key: "activity:streak", kind: "activity", title: "连续学习", value: "3 天(至 2026-07-01)" })
+  ];
+  const EXPECTED_CONTEXT = "弱项:浮力 — 复习错误率 67%(4/6 次未过,学科)\n连续学习 — 3 天(至 2026-07-01)";
+
+  it("the explain dispatch carries the compact context (hidden facts excluded)", async () => {
+    const generate = generateStub();
+    setReviewIoForTests({
+      fetchEvents: async () => [],
+      fetchDigestSummaries: async () => [],
+      fetchProfileFacts: async () => PROFILE_FACTS,
+      generate
+    });
+    const { cleanup, click } = await renderPanel(ctxWith({ notes: [quizNote("n_q1")] }));
+
+    await click(".review-reveal-btn");
+    await click(".review-fail-btn");
+    await click(".review-explain-btn");
+
+    const explainCall = generate.mock.calls.find(([request]) => request.promptId === "review.explain")![0];
+    expect(explainCall.input!.profileContext).toBe(EXPECTED_CONTEXT);
+    expect(explainCall.input!.profileContext).not.toContain("弱项:quiz");
+    cleanup();
+  });
+
+  it("no facts → the explain input has NO profileContext key (REV-1 wire shape)", async () => {
+    const generate = generateStub();
+    setReviewIoForTests({
+      fetchEvents: async () => [],
+      fetchDigestSummaries: async () => [],
+      fetchProfileFacts: async () => [],
+      generate
+    });
+    const { cleanup, click } = await renderPanel(ctxWith({ notes: [quizNote("n_q1")] }));
+
+    await click(".review-reveal-btn");
+    await click(".review-fail-btn");
+    await click(".review-explain-btn");
+
+    const explainCall = generate.mock.calls.find(([request]) => request.promptId === "review.explain")![0];
+    expect("profileContext" in explainCall.input!).toBe(false);
+    cleanup();
+  });
+
+  it("note.review subjects now carry contentType — the fuel of the 弱项 signal", async () => {
+    setReviewIoForTests({
+      fetchEvents: async () => [],
+      fetchDigestSummaries: async () => [],
+      fetchProfileFacts: async () => [],
+      generate: generateStub()
+    });
+    const { cleanup, click } = await renderPanel(ctxWith({ notes: [flashcardNote("n_f1")] }));
+    await click(".review-reveal-btn");
+    await click(".review-pass-btn");
+    const events = await postedEvents();
+    expect(events[0]).toMatchObject({
+      verb: "note.review",
+      subject: { noteId: "n_f1", sourceId: SRC, contentType: "flashcard" }
+    });
     cleanup();
   });
 });

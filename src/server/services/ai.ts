@@ -19,6 +19,7 @@ import {
 } from "../../core/notes/formRouter";
 import { getNoteContentSpec } from "../../core/notes/contentTypes";
 import { generateStructuredContent, StructuredGenerationError } from "../../kits/structured";
+import { explainPrompt } from "../../kits/review/prompts/explain.prompt";
 import type { StudyVault } from "../../core/vault";
 import { readOperationPrefs } from "./workspace";
 
@@ -72,17 +73,53 @@ export async function* streamChatDeltas(
 }
 
 /**
+ * REV-2 privacy gate (learner-memory §5/§6.3): the learner profile is default-on for
+ * LOCAL provider kinds (mock / cli-agent / http-BYOK) and HARD OFF for `kind:
+ * "managed"` — it must never leave the machine silently, and the explicit-consent UI
+ * only arrives with MEM-3, so under a managed provider the key is STRIPPED here
+ * before the prompt is built. This function is the authoritative choke point: the
+ * server (not the client) holds the live ModelProvider and its capabilities.kind,
+ * and every transport (HTTP route + the direct-call adapter) funnels through
+ * generateKitContent.
+ *
+ * MEM-3 seam: today the gate is deliberately scoped to `review.explain` — the ONLY
+ * operation that carries profileContext (review-loop.md §4-REV-2, "the first MEM-3
+ * consumer"). MEM-3 generalizes profileContext into ChatContext/every operation and
+ * replaces this per-prompt strip with ONE per-provider-kind policy (plus the consent
+ * switch) applied wherever profile data enters a provider request.
+ */
+const PROFILE_CONTEXT_KEY = "profileContext";
+const PROFILE_GATED_PROMPT_IDS: readonly string[] = [explainPrompt.id];
+
+function applyProfileContextGate(
+  provider: ModelProvider,
+  promptId: string,
+  runtimeInput: Record<string, unknown>
+): Record<string, unknown> {
+  if (provider.capabilities.kind !== "managed") return runtimeInput;
+  if (!PROFILE_GATED_PROMPT_IDS.includes(promptId)) return runtimeInput;
+  if (!(PROFILE_CONTEXT_KEY in runtimeInput)) return runtimeInput;
+  const { [PROFILE_CONTEXT_KEY]: _stripped, ...rest } = runtimeInput;
+  return rest;
+}
+
+/**
  * Product Kit structured generation: merge the per-vault placeholder params for
  * this promptId UNDER the runtime input (so runtime values like anchorText always
- * win), build the kit prompt, generate, validate against the contentType's
- * NoteContentSpec schema. Unknown prompt/contentType or unsatisfiable output →
- * StructuredGenerationError (mapped to 400 at the edge — a client/AI problem, not
- * a server fault). Custom op_ ids simply have no params.
+ * win), apply the profileContext privacy gate, build the kit prompt, generate,
+ * validate against the contentType's NoteContentSpec schema. Unknown
+ * prompt/contentType or unsatisfiable output → StructuredGenerationError (mapped to
+ * 400 at the edge — a client/AI problem, not a server fault). Custom op_ ids simply
+ * have no params.
  */
 export async function generateKitContent({ vault, provider }: KitGenerateDeps, input: KitGenerateInput) {
   const prefs = await readOperationPrefs({ vault });
   const params = prefs.params[input.promptId] ?? {};
-  const merged = { ...input, input: { ...params, ...(input.input ?? {}) } };
+  const runtimeInput = applyProfileContextGate(provider, input.promptId, {
+    ...params,
+    ...(input.input ?? {})
+  });
+  const merged = { ...input, input: runtimeInput };
   const content = await generateStructuredContent(provider, merged, 3, vault.stores.operations);
   return { content, provider: provider.id };
 }

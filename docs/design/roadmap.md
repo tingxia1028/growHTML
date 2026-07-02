@@ -82,10 +82,10 @@ Concept P-C1 (aggregation page, additive to existing API) ──> P-C2 (graph vi
 
 **✅ Shipped this cycle (for the record):** svpack A–D (`c287d87`…`1a1bf27`) · AI provider server side A1–A4a (`4b9c950`,`5b35272`,`df2337e`,`3014f07`) · managed code side G-A1–A3a (`358c126`,`bf7dcb2`,`b8a974d`) · MEM-1 (`44acb3f`) · X0a services (`b0913c4`) · F7a (`a462207`).
 
-**P0 — 闭合学习环 (the product's #1, per the kernel doc):**
-1. **REV-1** — the review loop, deterministic (1 view + queue policy fn + 3 operations + `note.review` events; zero new entities). Ships value before MEM-2; events accumulate meanwhile. Parallel-safe.
-2. **MEM-2** — digests + profile facts engine (+画像页 when client files free).
-3. **REV-2** — digests→queue weights + **profileContext into review.explain (the first MEM-3 consumer)**. The measurably-AI-native moment: the same button explains differently per student.
+**P0 — 闭合学习环 — ✅ COMPLETE (all three shipped same-day):**
+1. **REV-1 ✅ `aa7c55b`** — the review loop, deterministic (复习 rail view + explainable queue + 3 operations + `note.review` events; zero new entities).
+2. **MEM-2 ✅ `828ae25`** — day-grain digests (idempotent consolidation, raw 14d/digests 12mo) + profile facts (弱项/活跃/常用) + overrides + 画像页 + transport parity + export-guard extended.
+3. **REV-2 ✅** — weak buckets into queue (group 3 `弱项:{bucket}` + in-group boost; thresholds imported from profile.ts, never duplicated) + **profileContext into review.explain via the server-side gate in generateKitContent (managed kind = hard strip; the MEM-3 seam)**. The measurably-AI-native moment shipped: the same button explains differently per student.
 
 **P1 — in flight / next slots:**
 - **SC-0** (slash engine+palette) + **X0b** (transport seam + direct adapter) — agents running.

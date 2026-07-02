@@ -1,8 +1,11 @@
-// Review operations (REV-1) — the three kit-prompt records through the REAL
+// Review operations (REV-1 + REV-2) — the three kit-prompt records through the REAL
 // structured-generation engine + MockModelProvider: declared-form check generation
 // (outputType quiz), the grade schema roundtrip incl. the re-prompt path, explain as
 // markdown, the review.grade spec validation, and the server registration threading
-// (kitPrompts/kitContentSpecs aggregation installServerKits consumes).
+// (kitPrompts/kitContentSpecs aggregation installServerKits consumes). REV-2: the
+// explain profileContext weave — facts present ⇒ one delimited 学生画像 section;
+// absent ⇒ byte-identical REV-1 prompt (regression-pinned). The managed-provider
+// strip is the SERVER's (services/ai.ts) — tested there, not here.
 
 import { describe, expect, it } from "vitest";
 import { MockModelProvider } from "../../ai/mockProvider";
@@ -148,6 +151,62 @@ describe("review.explain — markdown explanation", () => {
     expect(getNoteContentSpec("markdown")!.schema.parse(content)).toBe(content);
     expect(content as string).toContain("为什么错了");
     expect(content as string).toContain("排开液体的重力");
+  });
+});
+
+describe("review.explain — REV-2 profileContext weave", () => {
+  const base = { question: "浮力等于什么?", expected: "排开液体的重力", userAnswer: "物体的重力" };
+  const PROFILE = "弱项:浮力 — 复习错误率 67%(4/6 次未过,学科)\n连续学习 — 3 天(至 2026-07-01)";
+
+  it("with a profileContext the prompt gains ONE clearly-delimited 学生画像 section", () => {
+    const built = explainPrompt.build({ ...base, profileContext: PROFILE });
+    expect(built).toContain("学生画像(供个性化,不要复述):");
+    expect(built).toContain("弱项:浮力 — 复习错误率 67%(4/6 次未过,学科)");
+    expect(built).toContain("连续学习 — 3 天(至 2026-07-01)");
+    // Appended AFTER the REV-1 body — the base prompt is an exact prefix.
+    expect(built.startsWith(explainPrompt.build(base))).toBe(true);
+  });
+
+  it("REGRESSION PIN: without profileContext the prompt is byte-identical to REV-1", () => {
+    const rev1 = [
+      "A student just got a review item WRONG. Explain it so they master it:",
+      "state the correct idea, why their answer misses it, and one memorable takeaway.",
+      "Answer in the student's language, in concise markdown.",
+      "Return the markdown as ONE JSON-encoded string — the entire reply is a single",
+      'JSON string value (e.g. "## Why…"), not an object.',
+      "",
+      "Item: 浮力等于什么?",
+      "Correct answer: 排开液体的重力",
+      "Student's answer: 物体的重力"
+    ].join("\n");
+    expect(explainPrompt.build(base)).toBe(rev1);
+    expect(explainPrompt.build({ ...base, profileContext: undefined })).toBe(rev1);
+    // Empty/whitespace contexts are ABSENT, not an empty section.
+    expect(explainPrompt.build({ ...base, profileContext: "" })).toBe(rev1);
+    expect(explainPrompt.build({ ...base, profileContext: "  \n " })).toBe(rev1);
+    expect(explainPrompt.build(base)).not.toContain("学生画像");
+  });
+
+  it("through the engine: a message-capturing provider sees the facts iff provided", async () => {
+    const seen: string[] = [];
+    const capturing: ModelProvider = {
+      id: "capturing",
+      capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, kind: "mock" },
+      async complete(request): Promise<ChatResponse> {
+        seen.push(request.messages[1].content); // [0] is the JSON-only system message
+        return { message: { role: "assistant", content: '"**为什么错了** …"' } };
+      }
+    };
+    await generateStructuredContent(capturing, {
+      promptId: "review.explain",
+      contentType: "markdown",
+      input: { ...base, profileContext: PROFILE }
+    });
+    await generateStructuredContent(capturing, { promptId: "review.explain", contentType: "markdown", input: base });
+    expect(seen[0]).toContain("学生画像(供个性化,不要复述):");
+    expect(seen[0]).toContain("弱项:浮力");
+    expect(seen[1]).not.toContain("学生画像");
+    expect(seen[1]).toBe(explainPrompt.build(base)); // absent-identical at the wire too
   });
 });
 

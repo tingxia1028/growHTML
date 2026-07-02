@@ -1,15 +1,25 @@
-// Review view (REV-1, review-loop.md §2) — the 复习 surface that CLOSES the learning
-// loop: 读→锚→记→问→复→memory. It is deliberately just COMPOSITION of existing organs:
-//   queue     — the pure policy in ./queue over notes + note.review memory events
+// Review view (REV-1 + REV-2, review-loop.md §2/§4) — the 复习 surface that CLOSES the
+// learning loop: 读→锚→记→问→复→memory→AI 适配. It is deliberately just COMPOSITION of
+// existing organs:
+//   queue     — the pure policy in ./queue over notes + note.review memory events +
+//               [REV-2] MEM-2 digest summaries (weak buckets weight/extend the queue)
 //   render    — EVERY piece of note/draft/verdict content displays through the ONE
 //               getNoteType(contentType).render contract (mode "card" = the question
 //               presentation, mode "full" = the revealed answer) — no bespoke path
 //   operations— review.generate-check / review.grade-answer / review.explain, kit-prompt
-//               records dispatched through the EXISTING /api/kits/generate binding
+//               records dispatched through the EXISTING /api/kits/generate binding;
+//               [REV-2] explain carries a compact profileContext (the first MEM-3
+//               consumer) — the SAME button explains differently per student. The
+//               managed-provider privacy gate lives SERVER-SIDE in the generate path
+//               (services/ai.ts), where the provider kind is authoritatively known.
 //   memory    — every completed item emits ONE note.review event via the MEM-1 capture
-//               queue; the session tally is component-local (the durable record IS the
-//               event stream, consolidated later by MEM-2)
+//               queue (subject carries noteId/sourceId/contentType so digests can
+//               bucket per type); the session tally is component-local (the durable
+//               record IS the event stream, consolidated by MEM-2)
 //   saving    — 存为练习/存为错题 go through the EXISTING anchor.add-note dispatch
+//   弱项 header — [REV-2] top weak buckets as chips (digest summaries, minus facts the
+//               user HID on the 画像页); a chip click filters the queue to its bucket
+//               (component-local — the session queue itself stays frozen).
 // Registered exactly like plugin.manager: registerView + a preset node + an IconRail
 // entry (WorkspaceShell side-effect-imports this module).
 
@@ -18,12 +28,21 @@ import { BookOpenCheck } from "lucide-react";
 import { registerView, type WorkspaceContext } from "../workspace/viewRegistry";
 import { getNoteType, type NoteRenderMode } from "../notes/noteTypeRegistry";
 import { getNoteContentSpec } from "../../core/notes/contentTypes";
-import type { NoteRecord } from "../data/entityClient";
+import type { MemoryDimensionSummary } from "../../core/memory/digest";
+import type { NoteRecord, ProfileFactView } from "../data/entityClient";
 import { recordMemoryEvent } from "../memory/capture";
 import { mistakeSpec } from "../../kits/textbook-learning/contentTypes";
 import { REVIEW_GRADE_CONTENT_TYPE, type ReviewGradeContent } from "../../kits/review/contentTypes";
 import { explainPrompt, generateCheckPrompt, gradeAnswerPrompt } from "../../kits/review/prompts";
-import { buildReviewQueue, MISTAKE_CONTENT_TYPE, type ReviewQueueItem } from "./queue";
+import {
+  buildReviewQueue,
+  MISTAKE_CONTENT_TYPE,
+  noteMatchesWeakBucket,
+  weakReviewBuckets,
+  type ReviewQueueItem,
+  type ReviewWeakBucket
+} from "./queue";
+import { buildProfileContext } from "./profileContext";
 import { getReviewIo } from "./reviewIo";
 
 type ReviewScope = "source" | "vault";
@@ -36,6 +55,11 @@ const REASON_LABEL: Record<string, string> = {
   "mistake-failed": "上次答错",
   due: "待复习"
 };
+// REV-2 弱项 reasons are dynamic ("弱项:{bucket}") — they display verbatim via the
+// `?? current.reason` fallback below.
+
+/** How many 弱项 chips the header shows (top by fail ratio). */
+const WEAK_CHIP_LIMIT = 3;
 
 // The draft check-question shape (the built-in quiz content). The server already
 // validated it against the quiz spec; this is defensive coercion for rendering/grading.
@@ -92,6 +116,11 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
   const [loadError, setLoadError] = useState("");
   const [index, setIndex] = useState(0);
   const [tally, setTally] = useState({ pass: 0, fail: 0, skip: 0 });
+  // REV-2 session data: digest summaries feed the queue weights + 弱项 chips;
+  // profile facts feed the explain profileContext (hidden facts honored in both).
+  const [digestSummaries, setDigestSummaries] = useState<MemoryDimensionSummary[]>([]);
+  const [profileFacts, setProfileFacts] = useState<ProfileFactView[]>([]);
+  const [weakFilter, setWeakFilter] = useState<ReviewWeakBucket | null>(null);
 
   // Current-item state.
   const [revealed, setRevealed] = useState(false);
@@ -118,17 +147,22 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
     try {
       const io = getReviewIo();
       const workspace = ctxRef.current;
-      const [reviewEvents, notes] = await Promise.all([
+      const [reviewEvents, notes, summaries, facts] = await Promise.all([
         io.fetchEvents(),
-        nextScope === "vault" ? io.fetchAllNotes() : Promise.resolve(workspace.notes)
+        nextScope === "vault" ? io.fetchAllNotes() : Promise.resolve(workspace.notes),
+        io.fetchDigestSummaries(),
+        io.fetchProfileFacts()
       ]);
-      setQueue(buildReviewQueue({ notes, reviewEvents }));
+      setDigestSummaries(summaries);
+      setProfileFacts(facts);
+      setQueue(buildReviewQueue({ notes, reviewEvents, digestSummaries: summaries }));
     } catch (error) {
       setQueue([]);
       setLoadError(error instanceof Error ? error.message : "加载复习队列失败");
     }
     setIndex(0);
     setTally({ pass: 0, fail: 0, skip: 0 });
+    setWeakFilter(null);
     resetItemState();
   }, []);
 
@@ -136,19 +170,42 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
     void load(scope);
   }, [scope, load]);
 
-  const items = queue ?? [];
+  // —— REV-2 弱项 header: top weak buckets (digest summaries), minus the ones whose
+  // profile fact the user HID on the 画像页 (hide is honored end-to-end). Chips show
+  // HUMAN buckets only (subject/contentType) — the profile tier's own readability rule;
+  // sourceId weak buckets still weight the queue silently.
+  const hiddenFactKeys = new Set(profileFacts.filter((fact) => fact.hidden).map((fact) => fact.key));
+  const weakChips = weakReviewBuckets(digestSummaries)
+    .filter((bucket) => bucket.dimension !== "sourceId")
+    .filter((bucket) => !hiddenFactKeys.has(`weak:${bucket.dimension}:${bucket.bucket}`))
+    .slice(0, WEAK_CHIP_LIMIT);
+
+  // A chip click narrows the SESSION VIEW to that bucket (component-local filter —
+  // the frozen queue order is untouched; clicking the active chip clears it).
+  const toggleWeakFilter = (bucket: ReviewWeakBucket) => {
+    setWeakFilter((active) =>
+      active && active.dimension === bucket.dimension && active.bucket === bucket.bucket ? null : bucket
+    );
+    setIndex(0);
+    resetItemState();
+  };
+
+  const allItems = queue ?? [];
+  const items = weakFilter ? allItems.filter((item) => noteMatchesWeakBucket(item.note, weakFilter)) : allItems;
   const current = index < items.length ? items[index] : null;
   const remaining = items.length - index;
   const isMistakeItem = current?.note.contentType === MISTAKE_CONTENT_TYPE;
   const itemMode: ReviewMode = isMistakeItem ? "ai-check" : "self";
 
   // ONE memory event per completed item — the loop's durable output (MEM-1 verb
-  // `note.review`; payload result/mode per review-loop.md §2).
+  // `note.review`; payload result/mode per review-loop.md §2). The subject carries
+  // contentType so MEM-2 digests can bucket pass/fail per type — the fuel of the
+  // very 弱项 signal this panel consumes.
   const complete = (result: ReviewResult, mode: ReviewMode) => {
     if (!current || outcome) return;
     recordMemoryEvent(
       "note.review",
-      { noteId: current.note.id, sourceId: current.note.sourceId },
+      { noteId: current.note.id, sourceId: current.note.sourceId, contentType: current.note.contentType },
       { result, mode }
     );
     setTally((t) => ({ ...t, [result]: t[result] + 1 }));
@@ -215,10 +272,15 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
     setBusy(true);
     setAiError("");
     try {
+      // REV-2: weave the compact 学生画像 into THIS one operation (the first MEM-3
+      // consumer). No facts → the key is omitted entirely, so the built prompt stays
+      // byte-identical to REV-1. The managed-provider hard-off gate is server-side in
+      // the generate path (services/ai.ts), where the provider kind is known.
+      const profileContext = buildProfileContext(profileFacts);
       const { content } = await getReviewIo().generate({
         promptId: explainPrompt.id,
         contentType: explainPrompt.outputType,
-        input: { question, expected, userAnswer }
+        input: { question, expected, userAnswer, ...(profileContext ? { profileContext } : {}) }
       });
       setExplanation(typeof content === "string" ? content : JSON.stringify(content));
     } catch (error) {
@@ -436,12 +498,38 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
         <span className="review-count">{queue === null ? "加载中…" : `${remaining} 项待复习`}</span>
       </div>
 
+      {weakChips.length > 0 ? (
+        <div className="review-weak-header" role="group" aria-label="弱项">
+          <span className="review-weak-label">弱项:</span>
+          {weakChips.map((bucket) => {
+            const active =
+              weakFilter !== null && weakFilter.dimension === bucket.dimension && weakFilter.bucket === bucket.bucket;
+            return (
+              <button
+                key={`${bucket.dimension}:${bucket.bucket}`}
+                type="button"
+                className={`review-weak-chip${active ? " active" : ""}`}
+                aria-pressed={active}
+                data-dimension={bucket.dimension}
+                data-bucket={bucket.bucket}
+                title={`复习错误率 ${Math.round(bucket.failRatio * 100)}%(${bucket.attempts} 次作答)— 点击筛选`}
+                onClick={() => toggleWeakFilter(bucket)}
+              >
+                {bucket.dimension === "contentType" ? typeTitle(bucket.bucket) : bucket.bucket}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
       {loadError ? <div className="review-error">{loadError}</div> : null}
       {aiError ? <div className="review-error review-ai-error">{aiError}</div> : null}
 
       {queue === null ? null : items.length === 0 ? (
         <div className="empty-state review-empty">
-          暂无待复习内容。错题、小测、闪卡和复习包会自动进入队列。
+          {weakFilter
+            ? "该弱项下暂无可复习条目——再点一次弱项标签可清除筛选。"
+            : "暂无待复习内容。错题、小测、闪卡和复习包会自动进入队列。"}
         </div>
       ) : current ? (
         <section className="review-item" data-note-id={current.note.id} data-reason={current.reason}>

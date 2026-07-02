@@ -2,7 +2,12 @@
 // generated from the reviewed item + the wrong answer. Output type is the EXISTING
 // `markdown` (schema: string) — rendered through getNoteType("markdown").render like
 // every other markdown body; no new renderer. REV-2 threads profileContext into this
-// exact prompt (the first MEM-3 consumer). React-free.
+// exact prompt (the first MEM-3 consumer): a compact 学生画像 section is appended
+// ONLY when the input carries one — absent, the built prompt is byte-identical to
+// its REV-1 form. The managed-provider privacy gate (learner-memory §5: profile
+// facts never reach `kind:"managed"` without consent) lives in the server generate
+// path (src/server/services/ai.ts), NOT here — build() stays a pure formatter.
+// React-free.
 
 import type { KitPrompt } from "../../types";
 
@@ -12,6 +17,11 @@ export type ExplainInput = {
   expected?: string;
   /** The student's wrong answer (or a self-grade marker like "自评:没答对"). */
   userAnswer?: string;
+  /**
+   * REV-2: the compact learner profile (a few lines — top 弱项 + streak), built by
+   * the client's buildProfileContext. Optional; empty/whitespace is treated as absent.
+   */
+  profileContext?: string;
 };
 
 const snippet = (text: string | undefined, n = 80) => {
@@ -22,8 +32,8 @@ const snippet = (text: string | undefined, n = 80) => {
 export const explainPrompt: KitPrompt<ExplainInput> = {
   id: "review.explain",
   outputType: "markdown",
-  build: (input) =>
-    [
+  build: (input) => {
+    const lines = [
       "A student just got a review item WRONG. Explain it so they master it:",
       "state the correct idea, why their answer misses it, and one memorable takeaway.",
       "Answer in the student's language, in concise markdown.",
@@ -33,7 +43,13 @@ export const explainPrompt: KitPrompt<ExplainInput> = {
       `Item: ${input.question ?? ""}`,
       input.expected ? `Correct answer: ${input.expected}` : "",
       `Student's answer: ${input.userAnswer ?? ""}`
-    ].join("\n"),
+    ];
+    // REV-2: the clearly-delimited 学生画像 section — appended, never interleaved, so
+    // the no-profile prompt stays byte-identical to REV-1 (regression-pinned).
+    const profile = typeof input.profileContext === "string" ? input.profileContext.trim() : "";
+    if (profile) lines.push("", "学生画像(供个性化,不要复述):", profile);
+    return lines.join("\n");
+  },
   // Deterministic markdown sample (a plain string — valid against the markdown spec).
   mockContent: (input): string => {
     const lines = ["**为什么错了**", "", `题目:${snippet(input.question) || "(本条复习项)"}`];
