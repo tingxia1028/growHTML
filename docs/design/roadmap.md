@@ -26,6 +26,7 @@ One dependency-ordered plan over the six design docs written this cycle. Purpose
 | `study-report-delivery.md` | 学习报告(digests→可编辑报告→长图/PDF)· 导出族(Anki/Markdown/错题集)· **配对推送→老师收件箱(基于现有客户端,不做第二套系统)**· 家长=导出物→P3 web 页 | REPORT-1 · REPORT-2 · DELIVER-1 · DELIVER-2 · DELIVER-3(P3) |
 | `vision-input.md` | 多模态输入(A5 内容分片+vision 能力位,**预留 audio 分片**)+ **拍错题 kit**(吸收 AIHomework:规则优先/阈值路由/本地 PaddleOCR 三车道成本) | V-1(A5) · V-2 · V-3(X2) |
 | `speech-and-young-learners.md` | 低龄适配:朗读 TTS(V1=speechSynthesis 免费内建)· 语音输入 STT(**三车道**:BYOK 音频模型/managed/本地 whisper;Web Speech 在国内/Electron 不可用——诚实记录)· 注音 ruby · 小学 kit young 默认;**低龄复习环**=听题→语音作答→朗读讲解 | SPEECH-1 · SPEECH-2 · SPEECH-3 |
+| `proactive-learning.md` | **主动学习引擎**(kernel AI-native 第四级):触发器(定时/事件 hook)推动 AI 主动学习;克制约束一等公民;**教回/口语 kit**(AI 装不懂=费曼)· 主动复习推动 | PRO-1 · PRO-2 · PRO-3 |
 | `architecture-review.md` | Foundation assessment | F1–F7 (refactors, below) |
 | (this) `roadmap.md` | Sequencing | — |
 
@@ -103,6 +104,7 @@ Concept P-C1 (aggregation page, additive to existing API) ──> P-C2 (graph vi
 - **REPORT-1/2** 学习报告 + 导出族 → **DELIVER-1/2** 配对推送 + 老师收件箱 (study-report-delivery.md; parent web = DELIVER-3, P3).
 - **A5/V-1** vision content-parts seam → **V-2** 拍错题 kit (vision-input.md; V-3 camera rides X2).
 - **SPEECH-1** 朗读 (free, built-in) → **SPEECH-2** 语音输入 (three lanes) → **SPEECH-3** 注音 (speech-and-young-learners.md; 低龄复习环 = the payoff).
+- **PRO-1** trigger engine + review-push → **PRO-2** 教回/口语 kit text-first (proactive-learning.md; the kernel's 4th AI-native rung — voice rides SPEECH).
 
 **P2 — surfaces & market (behind P0, beside it when parallel-safe):**
 - **Market M1 (+F4+F5)** — unblocks subjects; **carries MH-0**: the manager lists through the `CatalogSource` interface (local now, remote later — marketplace-hosted.md §5, the one hosted-market hook V1 pays for). Then **M-B** (KaTeX decision first — the flagged hole).
@@ -151,4 +153,5 @@ Rule: a task is buildable only when its spec (a) lives in a design doc, (b) is *
 | **TRUST-1/2/3** 数据信任 | data-trust.md | ✅ (vault dir layout known — 94MB real data; envelope schema additive deletedAt; export-guard test extends to soft-deleted; hub 数据 section = the surface, shipped SHELL-1) | n/a — local-only; sync deliberately RECORDED-not-scheduled (own design round with X2) |
 | **REPORT/DELIVER** 报告+推送 | study-report-delivery.md | ✅ (digests/profile APIs shipped 828ae25; svpack identity + import + HTTP server exist for pairing/inbox; long-image = WeChat-native artifact) | ⚠️ Anki .apkg generation (lib vs sqlite hand-roll) verify at REPORT-2; relay/parent-web rides G/WEB/ICP (P3) |
 | **V-1/2/3** 视觉输入+拍错题 | vision-input.md | ✅ (AI SDK v7 content-parts + claude-agent-sdk image blocks known; gateway pricing already models modality×vendor; AIHomework absorbed as kit logic — local PaddleOCR service exists at C:\CG\AIHomework services/ai-ocr-service) | ⚠️ per-preset vision model ids (deepseek/GLM naming) verify at V-1 build; asset-store refs not base64 (guard) |
+| **PRO-1/2/3** 主动学习 | proactive-learning.md | ✅ (trigger = schedule/event over the MEM-2 idle-scheduler pattern + memory-event stream; actionRef = operations-as-data; nudge surface clean files; desktop Notification API in Electron; teach-back steers via MEM-3 profileContext; note.review mode:"teach" = payload not new verb) | n/a — pure composition; voice modes gate on SPEECH; calendar-based preview deferred (PRO-3) |
 | **SPEECH-1/2/3** 低龄语音 | speech-and-young-learners.md | ✅ (+roundtable absorbed: **edge-tts** = free/keyless neural zh TTS, JS ports research-verified (edge-tts-universal/msedge-tts), MUST run server-side (custom ws header — browsers can't) = our Express ✓; **faster-whisper** desktop lane proven in roundtable stt.py (large-v3 GPU, webm/PyAV, infer lock); **sherpa-onnx** research-verified for mobile: active v1.13.3 2026-06, official Android/iOS on-device, Paraformer zh, NNAPI/CoreML/QNN, RN/Flutter bindings; mobile TTS = native OS via Capacitor plugin — edge-tts ruled out on-device (no Node); toSpokenText/MediaRecorder/runner/kit-config grounding unchanged) | ⚠️ remaining: sherpa-onnx as ONE cross-platform local engine (it does TTS+ASR+Node) vs faster-whisper desktop — evaluate at SPEECH-2 · pinyin-pro bundle/polyphone · aliyun/讯飞 managed pricing · speechSynthesis zh fallback on real build; Web Speech SpeechRecognition ruled OUT (Google-proxied) |
