@@ -23,10 +23,17 @@
 //     prepends its JSON-only instruction), so every call opts in.
 //   - `generateObject({ output: "no-schema" })` is still supported and is the
 //     native structured path used below.
+//   - The §4.1(4) agent surface survived v6→v7 by name: `ToolLoopAgent` +
+//     `stepCountIs` + `tool()` are all stable exports. `agent.stream()` returns
+//     a StreamTextResult whose `.stream` (the non-deprecated name for the doc's
+//     `fullStream`, same type) yields TextStreamPart events; NOTE the v7
+//     text-delta part carries `.text` (the model layer's `.delta` was renamed).
 
-import type { LanguageModel, ModelMessage } from "ai";
+import type { LanguageModel, ModelMessage, ToolSet } from "ai";
 import { contextPreamble } from "../buildPrompt";
 import type {
+  AgentRequest,
+  AgentStepEvent,
   ChatContext,
   ChatMessage,
   ChatRequest,
@@ -34,9 +41,13 @@ import type {
   ModelProvider,
   StructuredRequest
 } from "../provider";
+import type { ToolDefinition } from "../tools";
 
 /** The slice of the `ai` module the provider uses (loaded lazily, see above). */
-type AiCore = Pick<typeof import("ai"), "generateText" | "streamText" | "generateObject" | "NoObjectGeneratedError">;
+type AiCore = Pick<
+  typeof import("ai"),
+  "generateText" | "streamText" | "generateObject" | "NoObjectGeneratedError" | "ToolLoopAgent" | "stepCountIs" | "tool"
+>;
 
 // Lazy ESM load (see module comment). The loader caches the module, so the
 // per-call await is a lookup after the first use.
@@ -95,16 +106,17 @@ export class AiSdkProvider implements ModelProvider {
   readonly label: string;
   readonly capabilities = {
     chat: true,
-    // runAgent (the multi-step app-tool loop) and app-defined tool calling are
-    // the A4 slice — not advertised until they exist.
-    agentic: false,
+    // The http family implements runAgent (the multi-step APP-tool loop, A4a
+    // below), so tools + agentic are honestly true — the only kind that takes
+    // our ToolDefinitions (cli-agent binaries run their own tools instead).
+    agentic: true,
     streaming: true,
     // Native structured path: generateObject's no-schema JSON mode (vendor
     // JSON output where supported; DeepSeek and mainstream OpenAI-compatible
     // endpoints do). A long-tail endpoint that rejects JSON mode surfaces its
     // vendor error honestly rather than degrading silently.
     structured: true,
-    tools: false,
+    tools: true,
     kind: "http"
   } as const;
 
@@ -178,4 +190,90 @@ export class AiSdkProvider implements ModelProvider {
       throw error;
     }
   }
+
+  /**
+   * The §4.1(2)/§4.3 multi-step tool loop (A4a), delegated to the SDK's
+   * ToolLoopAgent: LLM call → tool-calls → execute via our ToolDefinitions →
+   * results fed back → repeat until `stepCountIs(maxSteps)`. The result's
+   * typed event stream is mapped onto our provider-agnostic AgentStepEvents:
+   *
+   *   start-step            → { type: "step", index }        (0-based counter)
+   *   text-delta (.text)    → { type: "text-delta", delta }
+   *   tool-call             → { type: "tool-call", toolName, args: input, id: toolCallId }
+   *   tool-result           → { type: "tool-result", id: toolCallId, result: output }
+   *   tool-error            → { type: "tool-result", id, result: { error } }   (kept in-band:
+   *                            the loop feeds the failure back to the model the same way)
+   *   error                 → THROWN (the SSE route turns it into `event: error`)
+   *   stream end            → { type: "done", message } — result.text = the final step's
+   *                            full text ("" when the budget stopped a still-tool-calling
+   *                            model, which is the honest answer).
+   * Everything else (text-start/end, tool-input-*, reasoning, finish-step,
+   * start/finish, raw, …) is loop plumbing with no AgentStepEvent equivalent.
+   */
+  async *runAgent(request: AgentRequest): AsyncIterable<AgentStepEvent> {
+    const model = await this.getModel(); // config gate — BEFORE the SDK loads
+    const core = await loadAiCore();
+    const agent = new core.ToolLoopAgent({
+      model,
+      tools: toSdkTools(request.tools ?? [], core),
+      allowSystemInMessages: true,
+      stopWhen: core.stepCountIs(request.maxSteps ?? DEFAULT_AGENT_MAX_STEPS)
+    });
+    const result = await agent.stream({ messages: toModelMessages(request.messages, request.context) });
+
+    let stepIndex = 0;
+    for await (const part of result.stream) {
+      switch (part.type) {
+        case "start-step":
+          yield { type: "step", index: stepIndex };
+          stepIndex += 1;
+          break;
+        case "text-delta":
+          yield { type: "text-delta", delta: part.text };
+          break;
+        case "tool-call":
+          yield { type: "tool-call", toolName: part.toolName, args: part.input, id: part.toolCallId };
+          break;
+        case "tool-result":
+          yield { type: "tool-result", id: part.toolCallId, result: part.output };
+          break;
+        case "tool-error":
+          yield { type: "tool-result", id: part.toolCallId, result: { error: describeError(part.error) } };
+          break;
+        case "error":
+          // In-stream failures are EMITTED by the SDK, not thrown — rethrow so
+          // the caller's error path runs (SSE route → `event: error`).
+          throw part.error instanceof Error ? part.error : new Error(describeError(part.error));
+        default:
+          break;
+      }
+    }
+    yield { type: "done", message: { role: "assistant", content: await result.text } };
+  }
+}
+
+/** Default step budget for runAgent when the request doesn't set one. */
+export const DEFAULT_AGENT_MAX_STEPS = 8;
+
+/**
+ * Our provider-agnostic ToolDefinitions → the SDK's ToolSet via `tool()`. The
+ * SDK validates the model's arguments against `inputSchema` before calling
+ * execute. ToolDefinition's `ctx` is per-call context the A4a loop doesn't
+ * carry yet (concrete server tools close over their vault deps instead), so
+ * the driver passes `undefined`.
+ */
+function toSdkTools(definitions: ToolDefinition[], core: Pick<AiCore, "tool">): ToolSet {
+  const tools: ToolSet = {};
+  for (const definition of definitions) {
+    tools[definition.name] = core.tool({
+      description: definition.description,
+      inputSchema: definition.inputSchema,
+      execute: (input: unknown) => definition.execute(input, undefined)
+    });
+  }
+  return tools;
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

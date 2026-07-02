@@ -4,6 +4,7 @@
 // behind it. Tests run against the mock so they are deterministic and offline.
 
 import { z } from "zod";
+import type { ToolDefinition } from "./tools";
 
 export const chatRoleSchema = z.enum(["system", "user", "assistant"]);
 export type ChatRole = z.infer<typeof chatRoleSchema>;
@@ -84,6 +85,20 @@ export type ProviderCapabilities = {
   kind: "mock" | "cli-agent" | "http" | "managed";
 };
 
+// One typed event of the multi-step agent loop (docs/design/multi-provider-ai-agent.md
+// §4.1(2)): text as it streams, each tool call and its result, step boundaries, and a
+// final `done` carrying the assistant message — the superset the /api/agent/stream SSE
+// route forwards so the client can render tool-call/result cards.
+export type AgentStepEvent =
+  | { type: "text-delta"; delta: string }
+  | { type: "tool-call"; toolName: string; args: unknown; id: string }
+  | { type: "tool-result"; id: string; result: unknown }
+  | { type: "step"; index: number }
+  | { type: "done"; message: ChatMessage };
+
+/** A chat request plus the tools the loop may call and a step budget. */
+export type AgentRequest = ChatRequest & { tools?: ToolDefinition[]; maxSteps?: number };
+
 export interface ModelProvider {
   readonly id: string;
   readonly capabilities: ProviderCapabilities;
@@ -101,4 +116,11 @@ export interface ModelProvider {
    * absent, the streaming endpoint falls back to `complete()` emitted as one chunk.
    */
   stream?(request: ChatRequest): AsyncIterable<string>;
+  /**
+   * Optional multi-step tool loop, streamed as typed events. Present iff
+   * `capabilities.agentic` (http providers today; cli-agent binaries run their
+   * OWN tools and never implement this). Feature-detected by the agent SSE route
+   * exactly like `stream` is by /api/chat/stream — purely additive.
+   */
+  runAgent?(request: AgentRequest): AsyncIterable<AgentStepEvent>;
 }

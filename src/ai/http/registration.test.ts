@@ -53,15 +53,16 @@ describe("registry — http BYOK presets (A3a registrations)", () => {
     expect(createModelProvider({ STUDY_VAULT_AI_PROVIDER: "OpenAI-Compatible" })).toBeInstanceOf(AiSdkProvider);
   });
 
-  it("the presets advertise the A3a http capability row through the registry", () => {
+  it("the presets advertise the http capability row through the registry (A4a: tools/agentic true)", () => {
     const provider = createModelProvider({ STUDY_VAULT_AI_PROVIDER: "deepseek" });
     expect(provider.capabilities).toEqual({
       chat: true,
-      agentic: false,
+      agentic: true,
       streaming: true,
       structured: true,
-      tools: false,
+      tools: true,
       kind: "http"
     });
+    expect(typeof provider.runAgent).toBe("function");
   });
 });

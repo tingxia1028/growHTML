@@ -30,6 +30,9 @@ export {
   type ProviderFactory,
   type ProviderDescriptor
 } from "./registry";
+// Tool registry (A4a, §4.3) — AgentStepEvent/AgentRequest ride out via
+// `export * from "./provider"` above.
+export { registerTool, listTools, getTool, clearToolsForTests, type ToolDefinition } from "./tools";
 
 // Built-in providers, registered at module scope (Phase 0 registry refactor —
 // docs/design/multi-provider-ai-agent.md §5). Construction args are IDENTICAL

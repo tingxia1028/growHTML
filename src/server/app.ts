@@ -40,6 +40,7 @@ import { buildStudyPack, commitImport, parseStudyPack, previewImport } from "./s
 import { defaultIdentityDir } from "../core/identity/paths";
 import { createSealedRuntime, registerSvpackRoutes, type SealedRuntime } from "./svpack";
 import { registerMemoryRoutes } from "./memory";
+import { registerAgentRoutes } from "./agent";
 import type { StudyVault } from "../core/vault";
 import {
   deleteSource,
@@ -1072,6 +1073,10 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
   // Learner-memory MEM-1 (docs/design/learner-memory.md): event capture/read/prune +
   // the vault-level capture switch — see src/server/memory.ts.
   registerMemoryRoutes(app, { vault, now: clock });
+
+  // Agent loop A4a (docs/design/multi-provider-ai-agent.md §4.1(2)/§4.3): the
+  // /api/agent/stream SSE route + read-only vault tool registration — src/server/agent.ts.
+  registerAgentRoutes(app, { vault, provider });
 
   // Preview an import: match the pack to a local source + rematch every anchor.
   // Does NOT persist anything.
