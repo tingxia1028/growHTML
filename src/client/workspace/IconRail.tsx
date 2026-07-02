@@ -11,14 +11,11 @@
 // R1.5 static "Growte" placeholder now that a real (optional) identity exists.
 
 import {
-  Anchor,
   Blocks,
   BookOpenCheck,
   Code2,
   Folder,
-  Layers,
   Network,
-  NotebookPen,
   UserRound
 } from "lucide-react";
 import type { ComponentType } from "react";
@@ -30,18 +27,15 @@ export type RailEntry = {
   Icon: ComponentType<{ size?: number }>;
 };
 
-// Maps to existing registered view kinds (spec §4). "Notes" has no standalone pane in R1
-// (notes live inside the study panel), so it focuses the study/notes column by selecting
-// the library slot's note context — kept as a Library-adjacent entry that opens Library
-// (the notes list is in the right column). To avoid a dead entry we map Notes → library
-// for now and note it as deferred.
+// Maps to existing registered view kinds (spec §4). Anchors/Bookmarks (bookmark.list),
+// AI Chat (study) and Layers (layer.switcher) were removed from the rail — they duplicate
+// the right sidebar's tabs (Anchor / Notes / Layers / AI Chat). layer.switcher stays
+// reachable from the user menu (分享身份) and onboarding; the bookmark.list/study views
+// stay registered (right sidebar + navigation resolve them) — only the rail icons are gone.
 export const RAIL_ENTRIES: RailEntry[] = [
   { kind: "library", label: "Library", Icon: Folder },
-  { kind: "bookmark.list", label: "Anchors / Bookmarks", Icon: Anchor },
-  { kind: "study", label: "Notes", Icon: NotebookPen },
   { kind: "concept.list", label: "Concepts", Icon: Network },
   { kind: "operation.manager", label: "Operations", Icon: Code2 },
-  { kind: "layer.switcher", label: "Layers", Icon: Layers },
   { kind: "plugin.manager", label: "Kit & Plugin", Icon: Blocks },
   { kind: "review.panel", label: "复习 (Review)", Icon: BookOpenCheck },
   { kind: "profile.panel", label: "画像 (Profile)", Icon: UserRound }
