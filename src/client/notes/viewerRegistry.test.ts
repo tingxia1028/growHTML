@@ -11,6 +11,8 @@ import {
 } from "./viewerRegistry";
 import type { NoteRecord, PluginPrefs } from "../data/entityClient";
 import { isPipeTable, registerTableViewer } from "./tableViewer";
+import { registerCatalogEntry, resetCatalog } from "../../kits/catalog";
+import { resetInstallState, syncInstallState } from "../../kits/installState";
 
 // A minimal viewer factory — `score` is a constant match() result unless a `match` fn is
 // given; `render` is irrelevant to the resolver (it never renders in these tests).
@@ -175,5 +177,51 @@ describe("Table viewer match() rule", () => {
     const proseInput: ViewerInput = { note: proseNote, contentType: "markdown" };
     expect(resolveViewer(tableInput, EMPTY_PREFS).viewerId).toBe("core:table");
     expect(resolveViewer(proseInput, EMPTY_PREFS).viewerId).toBe(NOTETYPE_SENTINEL);
+  });
+});
+
+// —— M1 (§8.5.1): viewers of a NOT-effective-installed plugin DECLINE — filtered from
+// the candidate set so display falls down the chain to the NoteType renderer. Pins
+// pointing at a now-ineligible viewer are ignored (the stale-pin rule covers them).
+describe("marketplace eligibility — uninstalled plugin's viewer declines", () => {
+  afterEach(() => {
+    resetInstallState();
+    resetCatalog();
+  });
+
+  it("an uninstalled cataloged plugin's viewer is not a candidate; reinstalling restores it", () => {
+    registerCatalogEntry({
+      id: "fancy-viewer-plugin",
+      kind: "plugin",
+      name: "Fancy",
+      description: "",
+      defaultInstalled: true,
+      source: "bundled"
+    });
+    registerViewer(viewer({ id: "fancy", pluginId: "fancy-viewer-plugin", match: () => 5 }));
+
+    // Default install state (null = default-installed) → eligible.
+    expect(resolveViewer({ contentType: "markdown" }, EMPTY_PREFS).viewerId).toBe("fancy");
+
+    // Uninstalled → declines; fallback to the NoteType renderer (pre-viewer behavior).
+    syncInstallState({ catalogState: { installedPlugins: [], installedKits: [] }, userKits: [] });
+    const r = resolveViewer({ contentType: "markdown" }, EMPTY_PREFS);
+    expect(r.viewerId).toBe(NOTETYPE_SENTINEL);
+    expect(r.candidates).toEqual([]);
+
+    // A pin at the ineligible viewer is ignored (stale-pin rule → chain continues).
+    const pinned = resolveViewer({ contentType: "markdown" }, prefsWith({ byContentType: { markdown: "fancy" } }));
+    expect(pinned.viewerId).toBe(NOTETYPE_SENTINEL);
+
+    // Direct reinstall restores eligibility.
+    syncInstallState({ catalogState: { installedPlugins: ["fancy-viewer-plugin"], installedKits: [] }, userKits: [] });
+    expect(resolveViewer({ contentType: "markdown" }, EMPTY_PREFS).viewerId).toBe("fancy");
+  });
+
+  it("viewers with no/uncataloged pluginId are always eligible", () => {
+    registerViewer(viewer({ id: "anon", match: () => 1 }));
+    registerViewer(viewer({ id: "test-owned", pluginId: "not-in-catalog", match: () => 2 }));
+    syncInstallState({ catalogState: { installedPlugins: [], installedKits: [] }, userKits: [] });
+    expect(resolveViewer({ contentType: "markdown" }, EMPTY_PREFS).viewerId).toBe("test-owned");
   });
 });

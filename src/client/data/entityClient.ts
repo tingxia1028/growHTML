@@ -8,6 +8,7 @@
 // stay HTTP-only — see ./transport for the rationale.
 
 import { createHttpTransport, type VaultTransport } from "./transport";
+import { syncInstallState } from "../../kits/installState";
 
 export { ApiError } from "./transport";
 export type { VaultTransport } from "./transport";
@@ -160,12 +161,16 @@ export type OperationPrefs = {
 
 // PluginPrefs — the per-vault "Kit & Plugin" prefs (mirrors the server's
 // pluginPrefsSchema). `disabledContributions` is the set of namespaced contribution ids
-// the manager panel has switched off; `viewerAssociations` / `userKits` are declared now
-// but unused until P3/P4. Absent file → all-empty default.
+// the manager has switched off; `viewerAssociations` holds the viewer pins; `userKits`
+// + `catalogState` are the M1 MARKET install state (plugin-viewer-model §8.3 — null
+// lists = the default-installed set, so an untouched vault behaves as today). Both
+// market fields are optional here so pre-M1 prefs objects (and the workspace context's
+// empty default) stay type-valid; the server always returns them.
 export type PluginPrefs = {
   disabledContributions: string[];
   viewerAssociations: { byContentType: Record<string, string>; byNoteId: Record<string, string> };
   userKits: unknown[];
+  catalogState?: { installedPlugins: string[] | null; installedKits: string[] | null };
 };
 
 // —— Learner memory (MEM-1, docs/design/learner-memory.md) — behavior capture is
@@ -519,6 +524,14 @@ function sendJson<T>(method: string, url: string, input: unknown): Promise<T> {
   return activeTransport.request<T>(method, url, input);
 }
 
+// Push the market install state from a plugin-prefs response into the module-scope
+// store the availability selectors read (see the Plugin prefs section below). Identity
+// on the response so it chains in a .then().
+function syncInstallStateFrom<T extends { prefs: PluginPrefs }>(res: T): T {
+  syncInstallState({ catalogState: res.prefs.catalogState, userKits: res.prefs.userKits });
+  return res;
+}
+
 /** Kept as a named alias: these call sites rely on ApiError's machine `code`. */
 function fetchCoded<T>(method: string, url: string, input?: unknown): Promise<T> {
   return activeTransport.request<T>(method, url, input);
@@ -670,13 +683,25 @@ export const entityClient = {
     return sendJson<{ prefs: OperationPrefs }>("PUT", "/api/operation-prefs", prefs);
   },
 
-  // —— Plugin prefs (Kit & Plugin: disabled contributions + declared viewer/userKit slots) ——
-  /** The per-vault Kit & Plugin prefs (disabled contribution ids + declared P3/P4 slots). */
+  // —— Plugin prefs (Kit & Plugin: disabled contributions + viewer pins + the M1 market
+  // install state). Every round-trip SYNCS the module-scope install-state store
+  // (src/kits/installState.ts) from the server response, so the pure availability
+  // selectors (kitSurfaceItems / slash adapter / viewer resolver) see the vault's
+  // effective-installed set without threading React state — the same push pattern as
+  // WorkspaceContext → setDisabledContributions. ——
+  /** The per-vault Kit & Plugin prefs (disabled ids + pins + market install state). */
   pluginPrefs() {
-    return getJson<{ prefs: PluginPrefs }>("/api/plugin-prefs");
+    return getJson<{ prefs: PluginPrefs }>("/api/plugin-prefs").then(syncInstallStateFrom);
   },
+  /** The workspace-panel write seam (disabled set + pins). The server preserves the
+      stored market fields regardless of what this body carries (single-writer rule). */
   putPluginPrefs(prefs: PluginPrefs) {
-    return sendJson<{ prefs: PluginPrefs }>("PUT", "/api/plugin-prefs", prefs);
+    return sendJson<{ prefs: PluginPrefs }>("PUT", "/api/plugin-prefs", prefs).then(syncInstallStateFrom);
+  },
+  /** The MARKET write seam (install/uninstall — catalogState + userKits only; the
+      server preserves the stored panel fields). */
+  putPluginCatalog(body: { catalogState: NonNullable<PluginPrefs["catalogState"]>; userKits?: unknown[] }) {
+    return sendJson<{ prefs: PluginPrefs }>("PUT", "/api/plugin-prefs/catalog", body).then(syncInstallStateFrom);
   },
 
   // —— Study Layers ——

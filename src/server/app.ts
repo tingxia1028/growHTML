@@ -638,7 +638,11 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
     }
   });
 
-  // —— Plugin prefs (Kit & Plugin: disabled contributions + declared viewer/userKit slots) ——
+  // —— Plugin prefs (Kit & Plugin: disabled contributions + viewer pins + the M1 market
+  // install state). Field-group ownership (see services/workspace.ts): the legacy PUT
+  // owns the panel fields and PRESERVES the stored market fields, so a stale full-body
+  // PUT from the workspace seams can never clobber an install; the /catalog PUT is the
+  // market's single write seam for catalogState (+ userKits). GET returns everything. ——
   app.get("/api/plugin-prefs", async (_req, res, next) => {
     try {
       res.json({ prefs: await workspaceService.readPluginPrefs({ vault }) });
@@ -649,8 +653,22 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
 
   app.put("/api/plugin-prefs", async (req, res, next) => {
     try {
-      const prefs = workspaceService.pluginPrefsSchema.parse(req.body);
-      res.json({ prefs: await workspaceService.writePluginPrefs({ vault }, prefs) });
+      const body = workspaceService.pluginPrefsSchema.parse(req.body);
+      res.json({ prefs: await workspaceService.writePluginPanelPrefs({ vault }, body) });
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  app.put("/api/plugin-prefs/catalog", async (req, res, next) => {
+    try {
+      const body = z
+        .object({
+          catalogState: workspaceService.catalogStateSchema,
+          userKits: z.array(workspaceService.userKitSchema).optional()
+        })
+        .parse(req.body);
+      res.json({ prefs: await workspaceService.writePluginCatalogPrefs({ vault }, body) });
     } catch (error) {
       if (!handleServiceError(res, error)) next(error);
     }

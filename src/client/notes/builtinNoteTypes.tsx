@@ -163,6 +163,10 @@ function diagramPlugin(
   registerNoteType({
     contentType,
     label,
+    // F5 / plugin-viewer-model §8.1: the diagram types belong to the cataloged
+    // `diagrams` plugin (one plugin providing mermaid + markmap + the legacy mindmap),
+    // not to the synthetic "core" record.
+    pluginId: "diagrams",
     title: display.title,
     aliases: display.aliases,
     render: ({ content, mode }) => {
@@ -220,6 +224,7 @@ function StructuredJsonEditor({ content, onChange, contentType }: NoteEditInput 
 registerNoteType({
   contentType: "mindmap",
   label: "mindmap",
+  pluginId: "diagrams",
   title: "思维导图",
   aliases: ["静态导图"],
   hidden: true,
@@ -283,6 +288,8 @@ function FlashcardEditor({ content, onChange }: NoteEditInput) {
 registerNoteType({
   contentType: "flashcard",
   label: "flashcard",
+  // F5: reclassified out of the "core" seed — the cataloged `flashcard` plugin.
+  pluginId: "flashcard",
   title: "闪卡",
   aliases: ["卡片", "记忆卡", "card"],
   render: (input) => <FlashcardRender {...input} />,
@@ -389,6 +396,8 @@ function QuizEditor({ content, onChange }: NoteEditInput) {
 registerNoteType({
   contentType: "quiz",
   label: "quiz",
+  // F5: reclassified out of the "core" seed — the cataloged `quiz` plugin.
+  pluginId: "quiz",
   // Reality check vs the design sketch: this quiz IS a options+answerIndex 选择题, so
   // "小测" titles it; "判断题" stays an alias (the design doc's example query must hit).
   title: "小测",
@@ -882,6 +891,9 @@ function BookmarkEditor({ content, onChange }: NoteEditInput) {
 registerNoteType({
   contentType: "bookmark",
   label: "bookmark",
+  // F5 / §8.6: bookmark is an upper-layer functional unit — the cataloged `bookmark`
+  // plugin (metadata-first; the spec stays in core contentTypes for now, §8.10).
+  pluginId: "bookmark",
   title: "书签",
   aliases: ["收藏", "mark"],
   // Hidden from the composer's generic type picker — a bookmark is created via the

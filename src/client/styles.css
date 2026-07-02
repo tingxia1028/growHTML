@@ -7740,6 +7740,238 @@ select {
   grid-column: 1 / -1;
 }
 
+/* --- Kit & Plugin MARKET (M1, plugin-viewer-model §8.4) --- */
+.market-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+.market-tab {
+  border: 1px solid var(--sv-border-muted);
+  border-radius: var(--sv-radius-pill);
+  background: var(--sv-surface-card);
+  color: var(--sv-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 12px;
+  cursor: pointer;
+}
+.market-tab.active {
+  color: var(--sv-accent-text);
+  border-color: var(--sv-accent);
+}
+.market-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  font-size: 12px;
+  padding: 3px 8px;
+  border: 1px solid var(--sv-border-muted);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface-card);
+  color: var(--sv-text);
+}
+.market-error {
+  margin-top: 8px;
+}
+.market-installed,
+.market-browse {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.plugin-kit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.plugin-kit-head .plugin-kit-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.market-kit-count {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--sv-text-muted);
+  background: var(--sv-surface-tag);
+  border-radius: var(--sv-radius-pill);
+  padding: 1px 7px;
+  margin-left: 6px;
+}
+.installed-plugin-row {
+  padding: 5px 8px;
+  border: 1px solid var(--sv-border-muted);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface-card);
+}
+.installed-plugin-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.installed-plugin-head .plugin-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plugin-provenance {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--sv-text-muted);
+}
+.plugin-uninstall-btn,
+.kit-uninstall-btn {
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+.plugin-advanced {
+  margin-top: 4px;
+}
+.plugin-advanced-summary {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sv-text-muted);
+  cursor: pointer;
+}
+.plugin-advanced[open] .plugin-advanced-summary {
+  margin-bottom: 4px;
+}
+.kit-removal-confirm {
+  border: 1px solid var(--sv-border-muted);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface-card);
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+.kit-removal-title {
+  font-size: 12px;
+  font-weight: 700;
+}
+.kit-removal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+}
+.kit-removal-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+.kit-removal-name {
+  font-weight: 600;
+}
+.kit-removal-outcome.removed {
+  color: var(--sv-danger, #c0392b);
+}
+.kit-removal-outcome.kept {
+  color: var(--sv-text-muted);
+}
+.kit-removal-viewer-note {
+  font-size: 11px;
+  color: var(--sv-text-muted);
+}
+.kit-removal-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.kit-removal-confirm-btn {
+  border: 1px solid var(--sv-border-muted);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface-tag);
+  font-size: 12px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.market-kind-filter {
+  display: flex;
+  gap: 6px;
+  margin: 10px 0 8px;
+}
+.market-kind-chip {
+  border: 1px solid var(--sv-border-muted);
+  border-radius: var(--sv-radius-pill);
+  background: var(--sv-surface-card);
+  color: var(--sv-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.market-kind-chip.active {
+  color: var(--sv-accent-text);
+  border-color: var(--sv-accent);
+}
+.market-card-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.market-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--sv-border-muted);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface-card);
+}
+.market-card-icon {
+  flex: 0 0 auto;
+  color: var(--sv-text-muted);
+  margin-top: 1px;
+}
+.market-card-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.market-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sv-text-strong);
+}
+.market-card-desc {
+  font-size: 12px;
+  color: var(--sv-text-muted);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.market-installed-badge {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sv-text-muted);
+  padding: 2px 8px;
+}
+.market-install-btn {
+  flex: 0 0 auto;
+  border: 1px solid var(--sv-accent);
+  border-radius: var(--sv-radius-pill);
+  background: transparent;
+  color: var(--sv-accent-text);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 12px;
+  cursor: pointer;
+}
+
 /* Note "Open with…" escape hatch — a small menu of candidate viewers + the default. */
 .note-open-with {
   position: relative;

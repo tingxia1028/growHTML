@@ -106,10 +106,40 @@ export type KitInstallContext = {
   surfaces: { contribute(slot: string, items: KitSurfaceItem[]): void };
 };
 
+// A kit MEMBER plugin (F5 / plugin-viewer-model §8.10): the minimal extension unit a
+// kit bundles. Each member registers its own contributions through the SAME sinks —
+// installClientKits runs member.install with a context tagged by the member's plugin id
+// (so the read model, the namespaced contribution ids, and the catalog agree on
+// ownership), while kit-scoped registries (language lookup, foregrounding) still see the
+// owning kit id.
+export type KitMemberPlugin = {
+  /** The plugin id — doubles as the CatalogEntry id (§8.2). */
+  id: string;
+  name: string;
+  description?: string;
+  install(ctx: KitInstallContext): void;
+};
+
 export type ProductKit = {
   id: string;
   name: string;
   description: string;
+  /**
+   * What KIND of market unit this registration vehicle is (plugin-viewer-model §8.1):
+   * "kit" (default) = a curated bundle listed on the Kits side, an activation choice;
+   * "plugin" = a STANDALONE plugin (e.g. the review loop) that merely uses the ProductKit
+   * registration vehicle — it is NOT an activation choice and registers a plain
+   * PluginRecord (no kitId).
+   */
+  unit?: "kit" | "plugin";
+  /**
+   * Member plugins (F5). When present, installClientKits registers ONE PluginRecord per
+   * member and runs each member's install under its own plugin id; the kit's own
+   * `install` then registers only kit-level config (layout / policy). When absent, the
+   * kit installs as a single unit under its own id (plugin==kit, the pre-F5 shape —
+   * still what `unit:"plugin"` entries use).
+   */
+  members?: KitMemberPlugin[];
   // The React-free content specs (server + client both register these so the API
   // can validate the kit's note content). Kept separate from `install` so the
   // SERVER can register them WITHOUT importing the kit's React plugins.

@@ -5,10 +5,14 @@
 //
 // This is registered TWO ways (side effect on import):
 //   1. registerViewer(...) — into the exclusive viewer registry the resolver reads.
-//   2. registerContribution("core", { kind: "viewer", ... }) — into the plugin READ MODEL
-//      so the Kit & Plugin manager panel + its conflict UI can enumerate it.
-// No note/source schema changes; markdown notes with non-table bodies render exactly as
-// today (the fallback path is untouched).
+//   2. registerContribution("table-viewer", { kind: "viewer", ... }) — into the plugin
+//      READ MODEL so the market/manager + its conflict UI can enumerate it.
+// F5 re-home (plugin-viewer-model §8.10): this is the cataloged `table-viewer` plugin,
+// no longer filed under the synthetic "core" record. The VIEWER ID string keeps its
+// historical "core:table" value on purpose — per-vault viewerAssociations pins persist
+// that string, and renaming it would silently orphan them (the stale-pin rule would
+// drop the pin). No note/source schema changes; markdown notes with non-table bodies
+// render exactly as today (the fallback path is untouched).
 
 import type { ReactNode } from "react";
 import { registerViewer, type Viewer, type ViewerInput } from "./viewerRegistry";
@@ -73,13 +77,15 @@ function TableView({ markdown }: { markdown: string }): ReactNode {
   );
 }
 
+// Kept as "core:table" for pin back-compat (see header) even though the plugin re-homed.
 export const TABLE_VIEWER_ID = "core:table";
+export const TABLE_VIEWER_PLUGIN_ID = "table-viewer";
 
 // The viewer object, exported so tests can (re-)register it deterministically after a
 // registry reset (side-effect registration below runs once at import).
 export const tableViewer: Viewer = {
   id: TABLE_VIEWER_ID,
-  pluginId: "core",
+  pluginId: TABLE_VIEWER_PLUGIN_ID,
   label: "Table",
   // 1 when the note's markdown body IS a pipe table, else 0 (declines → markdown fallback).
   match: (input) => (isPipeTable(markdownOf(input)) ? 1 : 0),
@@ -90,8 +96,8 @@ export const tableViewer: Viewer = {
     Idempotent (both registries de-dupe by id), so re-calling is safe. */
 export function registerTableViewer(): void {
   registerViewer(tableViewer);
-  registerContribution("core", {
-    id: namespaceId("core", "viewer", "table"),
+  registerContribution(TABLE_VIEWER_PLUGIN_ID, {
+    id: namespaceId(TABLE_VIEWER_PLUGIN_ID, "viewer", "table"),
     kind: "viewer",
     label: "Table",
     key: "table"

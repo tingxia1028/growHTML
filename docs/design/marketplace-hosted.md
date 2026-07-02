@@ -47,9 +47,13 @@ will NOT build this; this doc pins the shape + the one cheap hook M1 must leave.
    is the enforcement; the marketplace only decides WHO gets a pack + for how long.
 
 ## 5. Phasing (all P3 except the M1 hook)
-- **MH-0 (rides M1, P2 — the one thing to do NOW):** the client market lists through a
-  `CatalogSource` interface — `local` (bundled/registry) today, `remote` (catalog API) later.
-  One seam, zero extra UI. M1's acceptance includes it. **The contract:**
+- **MH-0 (rides M1, P2 — the one thing to do NOW): ✅ shipped (2026-07-02)** —
+  `src/kits/catalogSource.ts` implements the contract below verbatim; the manager's 市场
+  tab renders from `catalogSource("local")` (acceptance pinned by a source-scan test in
+  `pluginManagerViews.test.tsx`: no direct catalog-registry import); a remote source
+  registers later via `registerCatalogSource` with zero UI change. The client market
+  lists through a `CatalogSource` interface — `local` (bundled/registry) today,
+  `remote` (catalog API) later. One seam, zero extra UI. **The contract:**
   ```ts
   type CatalogListing = {
     id: string;                            // local: kit/plugin id · remote: listing id

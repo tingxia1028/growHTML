@@ -3,30 +3,31 @@
 // registration system: `noteTypes.register` registers both halves of a note type
 // (core spec + client plugin) into the same registries the built-ins use.
 //
-// Each registration is tagged with its owning `kitId` so the host can gate
-// creation/interaction entry-points by a document's active kits (per-source
-// activation). Rendering is NOT gated — note-type render + content specs register
-// globally, so any contentType displays in any document.
+// F5 (plugin ≠ kit, docs/design/plugin-viewer-model.md §8.10): a kit installs through
+// its MEMBER plugins — installClientKits registers one PluginRecord per member and runs
+// each member's install under its OWN plugin id (contributions, namespaced ids, and
+// `NoteTypePlugin.pluginId` all carry the member id, so the catalog, the read model,
+// and the renderer registry agree on ownership). Kit-scoped registries (language
+// lookup, foreground ordering) still see the owning KIT id via the install options.
 //
-// Plugin read model (docs/design/plugin-viewer-model.md): every sink ALSO records a
-// Contribution on the owning plugin (plugin==kit 1:1 today), and installClientKits
-// registers a PluginRecord per kit + a synthetic "core" plugin for the built-in note
-// types. That read model is what the Kit & Plugin manager panel enumerates. It NEVER
-// changes install/behavior — the host registries above stay the source of truth. The
-// only ENFORCEMENT the read model drives is the disabled set: surface (and thus command)
-// contributions whose namespaced id is disabled are filtered out of kitSurfaceItems, so
-// their CREATE affordance disappears. getNoteType() is left untouched (disabling a
-// note-type contribution hides its create affordance only, never its render — the
-// adaptive-note contract holds).
+// F4 (effective-installed replaces the single-active-kit gate): availability of the
+// CREATE affordances is decided by the marketplace effective-installed set
+// (src/kits/installState.ts) — a surface item shows iff its owning plugin is
+// effective-installed AND its contribution is not disabled. The per-source active kit
+// ids DEMOTE from filter to FOREGROUND: they only float the active kit's items to the
+// front ("foreground not filter", subject-kits M-B). Rendering was never gated and
+// still isn't — getNoteType() stays global (the adaptive-note contract).
 
 import { registerNoteContentSpec } from "../core/notes/contentTypes";
 import { listNoteTypes, registerNoteType } from "../client/notes/noteTypeRegistry";
 import { registerCommand } from "../client/commands/registry";
 import { registerKitLanguage } from "./language";
+import { getCatalogEntry, catalogKitMembers } from "./catalog";
+import { isPluginEffectiveInstalled } from "./installState";
 import {
+  ensurePluginRecord,
   namespaceId,
   registerContribution,
-  registerPlugin,
   type Contribution
 } from "./plugin";
 import type {
@@ -39,15 +40,26 @@ import type {
 } from "./types";
 
 // Commands are wired straight into the host CommandRegistry; views/layouts are
-// collected for phase-3 consumers; surface contributions feed the toolbars. Each
-// carries the owning kitId for per-source activation filtering.
-export const kitCommands: { kitId: string; command: KitCommand }[] = [];
+// collected for phase-3 consumers; surface contributions feed the toolbars. Each entry
+// carries the OWNING PLUGIN id (F5) plus the enclosing kit id (for legacy disabled ids
+// + foreground ordering).
+export const kitCommands: { pluginId: string; kitId: string; command: KitCommand }[] = [];
 export const kitViews: { id: string; view: KitView }[] = [];
 export const kitLayouts: KitLayout[] = [];
-export const kitSurfaceContributions: { slot: string; kitId: string; items: KitSurfaceItem[] }[] = [];
-// contentType → owning kit id. Built-in/core types are absent here (= always available).
+export const kitSurfaceContributions: {
+  slot: string;
+  /** The member plugin that owns these items (F5). */
+  pluginId: string;
+  /** The enclosing kit (== pluginId for standalone/plugin-unit installs). */
+  kitId: string;
+  items: KitSurfaceItem[];
+}[] = [];
+// contentType → owning PLUGIN id (F5 — member granularity). Built-in/core types are
+// absent here (= always available).
 export const kitNoteTypeOwners = new Map<string, string>();
-// Installed kits (id + display name) — the source for the activation dropdown.
+// Installed KITS (id + display name) — the source for the activation (foreground)
+// dropdown. Standalone `unit:"plugin"` registrations (e.g. the review loop) are NOT
+// listed here: they are market plugins, not activation choices.
 export const installedKits: { id: string; name: string }[] = [];
 
 // The DISABLED contribution set (namespaced ids) — the register-only enforcement seam.
@@ -64,36 +76,69 @@ export function setDisabledContributions(ids: readonly string[]): void {
 }
 
 /** The stable namespaced id of a surface contribution (a command surfaced in a slot),
-    used both to record the Contribution and to test the disabled set. */
-export function surfaceContributionId(kitId: string, commandId: string): string {
-  return namespaceId(kitId, "surface", commandId);
+    used both to record the Contribution and to test the disabled set. `ownerId` is the
+    owning PLUGIN id (F5); pre-split prefs stored KIT-scoped ids, which kitSurfaceItems
+    still honors as a legacy fallback. */
+export function surfaceContributionId(ownerId: string, commandId: string): string {
+  return namespaceId(ownerId, "surface", commandId);
+}
+
+// Whether a surface item is switched off — by its owning plugin's namespaced id, or by
+// the LEGACY kit-scoped id a pre-F5 prefs file may still carry (migration-safe: an old
+// `textbook-learning:surface:…` disable keeps working after the member split).
+function isSurfaceDisabled(entry: { pluginId: string; kitId: string }, commandId: string): boolean {
+  return (
+    disabledContributionIds.has(surfaceContributionId(entry.pluginId, commandId)) ||
+    (entry.kitId !== entry.pluginId && disabledContributionIds.has(surfaceContributionId(entry.kitId, commandId)))
+  );
+}
+
+// The plugin ids an ACTIVE kit set foregrounds: the kits themselves + their catalog
+// members (so member-owned items float when their kit is the source's active kit).
+function foregroundPluginIds(kitIds: readonly string[]): Set<string> {
+  const ids = new Set<string>(kitIds);
+  for (const kitId of kitIds) for (const member of catalogKitMembers(kitId)) ids.add(member);
+  return ids;
 }
 
 /**
- * Surface items contributed to a slot, highest priority first. When `kitIds` is
- * provided, only items whose owning kit is in that set are returned (the per-source
- * activation gate); omit it to get every installed kit's items (back-compat).
- * DISABLED contributions (their namespaced surface id is in the disabled set) are
- * filtered out — this is where disabling a contribution removes its CREATE affordance.
+ * Surface items contributed to a slot — the F4 seam. AVAILABILITY = the marketplace
+ * effective-installed set (an item shows iff its owning plugin is effective-installed
+ * and not disabled); the per-source active kits (`foregroundKitIds`) only ORDER the
+ * result — the active kit's items first, then the rest, priority-sorted within each
+ * group ("foreground not filter"). Omit `foregroundKitIds` for the plain
+ * priority-sorted list (workspace-wide surfaces, back-compat callers).
  */
-export function kitSurfaceItems(slot: string, kitIds?: readonly string[]): KitSurfaceItem[] {
-  return kitSurfaceContributions
-    .filter((entry) => entry.slot === slot && (!kitIds || kitIds.includes(entry.kitId)))
+export function kitSurfaceItems(slot: string, foregroundKitIds?: readonly string[]): KitSurfaceItem[] {
+  const foreground = foregroundKitIds ? foregroundPluginIds(foregroundKitIds) : null;
+  const entries = kitSurfaceContributions
+    .filter((entry) => entry.slot === slot && isPluginEffectiveInstalled(entry.pluginId))
     .flatMap((entry) =>
-      entry.items.filter((item) => !disabledContributionIds.has(surfaceContributionId(entry.kitId, item.commandId)))
-    )
-    .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+      entry.items
+        .filter((item) => !isSurfaceDisabled(entry, item.commandId))
+        .map((item) => ({ item, fg: foreground ? foreground.has(entry.pluginId) || foreground.has(entry.kitId) : true }))
+    );
+  return entries
+    .sort((a, b) => Number(b.fg) - Number(a.fg) || (b.item.priority ?? 0) - (a.item.priority ?? 0))
+    .map((entry) => entry.item);
 }
 
-/** The kit that owns a note contentType, or undefined for built-in/core types. */
+/** The PLUGIN that owns a note contentType (member granularity after F5), or undefined
+    for built-in/core types. */
 export function noteTypeOwnerKit(contentType: string): string | undefined {
   return kitNoteTypeOwners.get(contentType);
 }
 
-export function createKitInstallContext(kitId: string): KitInstallContext {
-  // Every sink records a Contribution on the owning plugin (plugin==kit) IN ADDITION to
-  // its real host-registry effect, so the manager panel can enumerate what was installed.
-  const contribute = (contribution: Contribution) => registerContribution(kitId, contribution);
+/**
+ * Build the sink context for one OWNER (a member plugin, a standalone plugin, or a
+ * kit registering kit-level config). `ownerId` tags every contribution + registration;
+ * `kitId` (default = ownerId) is the enclosing kit for kit-scoped registries.
+ */
+export function createKitInstallContext(ownerId: string, opts?: { kitId?: string }): KitInstallContext {
+  const kitId = opts?.kitId ?? ownerId;
+  // Every sink records a Contribution on the OWNING PLUGIN in addition to its real
+  // host-registry effect, so the manager can enumerate what was installed.
+  const contribute = (contribution: Contribution) => registerContribution(ownerId, contribution);
   return {
     noteTypes: {
       register(spec, plugin) {
@@ -108,11 +153,11 @@ export function createKitInstallContext(kitId: string): KitInstallContext {
           icon: plugin.icon,
           hidden: plugin.hidden,
           priority: plugin.priority,
-          pluginId: kitId
+          pluginId: ownerId
         });
-        kitNoteTypeOwners.set(spec.contentType, kitId);
+        kitNoteTypeOwners.set(spec.contentType, ownerId);
         contribute({
-          id: namespaceId(kitId, "noteType", spec.contentType),
+          id: namespaceId(ownerId, "noteType", spec.contentType),
           kind: "noteType",
           label: plugin.label ?? spec.contentType,
           key: spec.contentType
@@ -121,16 +166,19 @@ export function createKitInstallContext(kitId: string): KitInstallContext {
     },
     language: {
       register: (language) => {
+        // Language stays registered under the KIT id — per-source activation scopes
+        // language lookups by ACTIVE KIT ids (kitTerm/kitContentTypeLabel), and
+        // foregrounding is a kit-level concern. The contribution lands on the member.
         registerKitLanguage(language, kitId);
-        contribute({ id: namespaceId(kitId, "language", kitId), kind: "language", label: "Language", key: kitId });
+        contribute({ id: namespaceId(ownerId, "language", kitId), kind: "language", label: "Language", key: kitId });
       }
     },
     commands: {
       register: (command) => {
-        kitCommands.push({ kitId, command });
+        kitCommands.push({ pluginId: ownerId, kitId, command });
         registerCommand(command);
         contribute({
-          id: namespaceId(kitId, "command", command.id),
+          id: namespaceId(ownerId, "command", command.id),
           kind: "command",
           label: command.title ?? command.id,
           key: command.id
@@ -143,15 +191,15 @@ export function createKitInstallContext(kitId: string): KitInstallContext {
     layouts: {
       register: (layout) => {
         kitLayouts.push(layout);
-        contribute({ id: namespaceId(kitId, "layout", kitId), kind: "layout", label: "Layout", key: kitId });
+        contribute({ id: namespaceId(ownerId, "layout", kitId), kind: "layout", label: "Layout", key: kitId });
       }
     },
     surfaces: {
       contribute: (slot, items) => {
-        kitSurfaceContributions.push({ slot, kitId, items });
+        kitSurfaceContributions.push({ slot, pluginId: ownerId, kitId, items });
         for (const item of items) {
           contribute({
-            id: surfaceContributionId(kitId, item.commandId),
+            id: surfaceContributionId(ownerId, item.commandId),
             kind: "surface",
             label: item.title,
             key: item.commandId
@@ -164,30 +212,56 @@ export function createKitInstallContext(kitId: string): KitInstallContext {
 
 export function installClientKits(kits: ProductKit[]): void {
   for (const kit of kits) {
-    if (!installedKits.some((entry) => entry.id === kit.id)) {
+    const isKitUnit = (kit.unit ?? "kit") === "kit";
+    if (isKitUnit && !installedKits.some((entry) => entry.id === kit.id)) {
       installedKits.push({ id: kit.id, name: kit.name });
     }
-    // Register the plugin record (plugin==kit 1:1) BEFORE install so the sinks attach
-    // their contributions onto it. install() runs its sinks, each appending a Contribution.
-    registerPlugin({ id: kit.id, name: kit.name, kitId: kit.id, contributions: [] });
+    // F5: register + install each MEMBER plugin under its own id (contributions attach
+    // to the member's PluginRecord; kitId groups it under the kit in the manager).
+    for (const member of kit.members ?? []) {
+      ensurePluginRecord({ id: member.id, name: member.name, kitId: kit.id });
+      member.install(createKitInstallContext(member.id, { kitId: kit.id }));
+    }
+    // The kit's own record: kit-level config for kit units (layout / policy); the whole
+    // plugin for standalone `unit:"plugin"` registrations (no kitId — it IS a plugin).
+    ensurePluginRecord({
+      id: kit.id,
+      name: kit.name,
+      kitId: isKitUnit ? kit.id : undefined
+    });
     kit.install(createKitInstallContext(kit.id));
   }
-  seedCorePlugin();
+  seedBuiltinPlugins();
 }
 
-// Seed a synthetic "core" plugin from the BUILT-IN note types (those with no owning
-// kit) so the manager panel shows the built-ins too. Called after installs so the
-// built-ins are already registered; idempotent (registerPlugin replaces by id, and
-// registerContribution de-dupes by contribution id).
-function seedCorePlugin(): void {
-  registerPlugin({ id: "core", name: "Core", contributions: [] });
+// Seed PluginRecords for the BUILT-IN note types (those registered outside a kit
+// install). F5 fix: registrations that carry a REAL `pluginId` (flashcard / quiz /
+// bookmark / diagrams — see builtinNoteTypes.tsx) get their OWN PluginRecord named from
+// the catalog; only true core primitives (no pluginId) land on the synthetic "core"
+// record. The old seedCorePlugin over-claimed all of them under "core". Idempotent
+// (registerContribution de-dupes by id; existing kit-owned records are skipped via the
+// owners map).
+function seedBuiltinPlugins(): void {
+  ensurePluginRecord({ id: "core", name: "Core" });
   for (const plugin of listNoteTypes()) {
-    if (kitNoteTypeOwners.has(plugin.contentType)) continue; // owned by a kit, not core
-    registerContribution("core", {
-      id: namespaceId("core", "noteType", plugin.contentType),
+    if (kitNoteTypeOwners.has(plugin.contentType)) continue; // owned via a kit install
+    const ownerId = plugin.pluginId ?? "core";
+    if (ownerId !== "core") {
+      ensurePluginRecord({ id: ownerId, name: getCatalogEntry(ownerId)?.name ?? ownerId });
+    }
+    registerContribution(ownerId, {
+      id: namespaceId(ownerId, "noteType", plugin.contentType),
       kind: "noteType",
       label: plugin.label ?? plugin.contentType,
       key: plugin.contentType
     });
   }
+  // The bookmark plugin's command contribution (§8.6 day-one metadata: the noteType +
+  // the bookmark.add command; the host surface item migrates gradually).
+  registerContribution("bookmark", {
+    id: namespaceId("bookmark", "command", "bookmark.add"),
+    kind: "command",
+    label: "Add bookmark",
+    key: "bookmark.add"
+  });
 }

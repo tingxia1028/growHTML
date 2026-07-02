@@ -955,7 +955,10 @@ describe("vault server API", () => {
     expect(empty.body.prefs).toEqual({
       disabledContributions: [],
       viewerAssociations: { byContentType: {}, byNoteId: {} },
-      userKits: []
+      userKits: [],
+      // M1 back-compat default (plugin-viewer-model §8.3): null = the default-installed
+      // set — an untouched vault behaves byte-for-byte as before the market existed.
+      catalogState: { installedPlugins: null, installedKits: null }
     });
 
     const prefs = {
@@ -972,6 +975,47 @@ describe("vault server API", () => {
 
     // Structurally invalid prefs are rejected.
     await request(app).put("/api/plugin-prefs").send({ disabledContributions: "nope" }).expect(400);
+  });
+
+  it("M1 install state: the /catalog PUT owns catalogState; the legacy PUT can never clobber it", async () => {
+    // The market's write seam: PUT /api/plugin-prefs/catalog (catalogState + userKits).
+    const catalogState = { installedPlugins: ["flashcard"], installedKits: ["textbook-learning"] };
+    const saved = await request(app).put("/api/plugin-prefs/catalog").send({ catalogState }).expect(200);
+    expect(saved.body.prefs.catalogState).toEqual(catalogState);
+
+    // Single-writer-per-field-group: a FULL legacy PUT (the workspace seams' stale
+    // React-state body — pinViewer/setContributionEnabled) carries a different (or
+    // missing) catalogState; the server preserves the STORED market fields.
+    await request(app)
+      .put("/api/plugin-prefs")
+      .send({
+        disabledContributions: ["x:surface:y"],
+        viewerAssociations: { byContentType: {}, byNoteId: {} },
+        userKits: [],
+        catalogState: { installedPlugins: null, installedKits: null } // stale — must be ignored
+      })
+      .expect(200);
+
+    const reloaded = await request(app).get("/api/plugin-prefs").expect(200);
+    expect(reloaded.body.prefs.disabledContributions).toEqual(["x:surface:y"]); // panel write applied
+    expect(reloaded.body.prefs.catalogState).toEqual(catalogState); // market state preserved
+
+    // And the catalog PUT preserves the stored panel fields + validates its body.
+    const next = { installedPlugins: [], installedKits: [] };
+    await request(app).put("/api/plugin-prefs/catalog").send({ catalogState: next }).expect(200);
+    const merged = await request(app).get("/api/plugin-prefs").expect(200);
+    expect(merged.body.prefs.disabledContributions).toEqual(["x:surface:y"]);
+    expect(merged.body.prefs.catalogState).toEqual(next);
+    await request(app)
+      .put("/api/plugin-prefs/catalog")
+      .send({ catalogState: { installedPlugins: "nope" } })
+      .expect(400);
+
+    // Typed userKits (§8.3) round-trip through the catalog seam.
+    const userKits = [{ id: "user:exam-prep", name: "Exam Prep", description: "", members: ["quiz"] }];
+    await request(app).put("/api/plugin-prefs/catalog").send({ catalogState: next, userKits }).expect(200);
+    const withKits = await request(app).get("/api/plugin-prefs").expect(200);
+    expect(withKits.body.prefs.userKits).toEqual(userKits);
   });
 
   it("generates structured content for a stored op_ promptId and for a built-in", async () => {

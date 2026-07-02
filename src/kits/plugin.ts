@@ -74,6 +74,22 @@ export function registerPlugin(rec: PluginRecord): void {
   else installedPlugins[index] = rec;
 }
 
+/** Create the plugin record if absent, else UPDATE its metadata (name / kitId) while
+    PRESERVING already-registered contributions. The seeding path uses this so a record
+    whose contributions were attached earlier (e.g. the table viewer's import-time
+    registerContribution) is never clobbered by a later registerPlugin-style call. */
+export function ensurePluginRecord(rec: Omit<PluginRecord, "contributions">): PluginRecord {
+  let plugin = installedPlugins.find((p) => p.id === rec.id);
+  if (!plugin) {
+    plugin = { ...rec, contributions: [] };
+    installedPlugins.push(plugin);
+    return plugin;
+  }
+  plugin.name = rec.name;
+  if (rec.kitId !== undefined) plugin.kitId = rec.kitId;
+  return plugin;
+}
+
 /** Attach a contribution to a plugin, creating the plugin record if it does not exist
     yet (so a sink can register a contribution before/without an explicit registerPlugin).
     De-dupes by contribution id (a re-register updates the existing entry in place). */

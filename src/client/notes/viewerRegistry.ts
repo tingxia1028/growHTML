@@ -20,6 +20,7 @@
 
 import type { ReactNode } from "react";
 import type { NoteRecord, SourceRecord, PluginPrefs } from "../data/entityClient";
+import { isPluginEffectiveInstalled } from "../../kits/installState";
 
 // What a viewer is asked to match/render against. All fields optional so a viewer can key
 // off whichever locator it understands (a saved note, a raw source/file, or just a
@@ -93,9 +94,15 @@ export function resetViewers(): void {
 // The candidates a given input matches (score>0), in REGISTRATION order (so a later
 // caller can apply the last-wins tie-break by reading right-to-left). Each carries its
 // score; sorting/tie-breaking is the resolver's job.
+//
+// Marketplace eligibility (plugin-viewer-model §8.5.1): a viewer owned by a cataloged
+// plugin that is NOT effective-installed DECLINES here — it is filtered from the
+// candidate set, so display falls down the chain to the NoteType renderer (the exact
+// pre-viewer behavior). Viewers with no/uncataloged pluginId are always eligible.
 function matchingViewers(input: ViewerInput): { viewer: Viewer; score: number }[] {
   const out: { viewer: Viewer; score: number }[] = [];
   for (const viewer of registry) {
+    if (!isPluginEffectiveInstalled(viewer.pluginId)) continue; // uninstalled → declines
     let score = 0;
     try {
       score = viewer.match(input);

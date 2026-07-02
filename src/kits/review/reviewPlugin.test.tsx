@@ -44,12 +44,17 @@ describe("review plugin client install", () => {
     expect(plugin!.hidden).toBe(true);
     expect(plugin!.pluginId).toBe("review");
     expect(getNoteContentSpec(REVIEW_GRADE_CONTENT_TYPE)).toBeTruthy();
-    expect(installedKits.some((kit) => kit.id === "review")).toBe(true);
+    // F5 (plugin ≠ kit): review is a STANDALONE PLUGIN (unit:"plugin"), so it is NOT
+    // an activation choice — the Product Kit dropdown lists real kits only.
+    expect(installedKits.some((kit) => kit.id === "review")).toBe(false);
+    expect(installedKits.some((kit) => kit.id === "textbook-learning")).toBe(true);
   });
 
   it("records the noteType contribution on the plugin read model (manager panel rows)", () => {
     const record = listInstalledPlugins().find((p) => p.id === "review");
     expect(record).toBeTruthy();
+    // A standalone plugin record — not grouped under a kit (kitId absent).
+    expect(record!.kitId).toBeUndefined();
     expect(record!.contributions).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

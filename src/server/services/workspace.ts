@@ -43,11 +43,32 @@ export const emptyOperationPrefs: OperationPrefs = {
 };
 
 // plugin-prefs.json — the per-vault "Kit & Plugin" prefs, the write side of the plugin
-// read model (docs/design/plugin-viewer-model.md §7). Same vault.storage/JSON pattern as
-// operation-prefs above. `disabledContributions` is the enabled/disabled set (namespaced
-// contribution ids) the manager panel toggles; `viewerAssociations` (per-contentType /
-// per-note viewer pins) and `userKits` are DECLARED now but UNUSED until P3/P4 — carried
-// so the schema is stable and no migration is needed later. Absent file → empty default.
+// read model (docs/design/plugin-viewer-model.md §7/§8.3). Same vault.storage/JSON
+// pattern as operation-prefs above. `disabledContributions` is the enabled/disabled set
+// (namespaced contribution ids) the manager toggles; `viewerAssociations` holds the
+// per-contentType / per-note viewer pins; `userKits` (typed since M1, declared as
+// unknown[] since P2) + `catalogState` (NEW, M1) are the MARKET install state.
+//
+// Back-compat default (locked, §8.3): an existing vault — absent file, or a prefs file
+// without `catalogState` — parses to { installedPlugins: null, installedKits: null },
+// and null means the DEFAULT-INSTALLED set (every bundled entry). Existing vaults see
+// no change; the first explicit install/uninstall materializes concrete arrays.
+export const userKitSchema = z.object({
+  id: z.string().min(1), // "user:" prefix, e.g. "user:exam-prep"
+  name: z.string().min(1),
+  description: z.string().default(""),
+  members: z.array(z.string()).default([]) // cataloged plugin ids
+});
+export type UserKit = z.infer<typeof userKitSchema>;
+
+export const catalogStateSchema = z
+  .object({
+    // null = vault has never touched the market → the DEFAULT-INSTALLED set.
+    installedPlugins: z.array(z.string()).nullable().default(null),
+    installedKits: z.array(z.string()).nullable().default(null)
+  })
+  .default({ installedPlugins: null, installedKits: null });
+
 export const pluginPrefsSchema = z.object({
   disabledContributions: z.array(z.string()).default([]),
   viewerAssociations: z
@@ -56,13 +77,15 @@ export const pluginPrefsSchema = z.object({
       byNoteId: z.record(z.string(), z.string()).default({})
     })
     .default({ byContentType: {}, byNoteId: {} }),
-  userKits: z.array(z.unknown()).default([])
+  userKits: z.array(userKitSchema).default([]),
+  catalogState: catalogStateSchema
 });
 export type PluginPrefs = z.infer<typeof pluginPrefsSchema>;
 export const emptyPluginPrefs: PluginPrefs = {
   disabledContributions: [],
   viewerAssociations: { byContentType: {}, byNoteId: {} },
-  userKits: []
+  userKits: [],
+  catalogState: { installedPlugins: null, installedKits: null }
 };
 
 // Workspace layout is UI state, not a core entity: stored as a single JSON file
@@ -108,6 +131,43 @@ export async function readPluginPrefs({ vault }: WorkspaceDeps): Promise<PluginP
 export async function writePluginPrefs({ vault }: WorkspaceDeps, prefs: PluginPrefs): Promise<PluginPrefs> {
   await vault.storage.writeTextAtomic(pluginPrefsPath(vault), `${JSON.stringify(prefs, null, 2)}\n`);
   return prefs;
+}
+
+// —— single-writer-per-field-group merges (M1) ————————————————————————————————
+// plugin-prefs.json has TWO independent client writers: the workspace panel seams
+// (setContributionEnabled / pinViewer PUT the full prefs from React state) and the
+// MARKET (installs/uninstalls write catalogState). To keep a stale full-body PUT from
+// one writer silently clobbering the other's fields (lost update), each route owns only
+// its field group and the service merges against the STORED file:
+//   • PUT /api/plugin-prefs        → owns disabledContributions + viewerAssociations
+//   • PUT /api/plugin-prefs/catalog → owns catalogState + userKits
+// GET always returns the whole merged file.
+
+/** The panel write: body's disabled set + pins over the STORED market fields. */
+export async function writePluginPanelPrefs(
+  deps: WorkspaceDeps,
+  body: Pick<PluginPrefs, "disabledContributions" | "viewerAssociations">
+): Promise<PluginPrefs> {
+  const stored = await readPluginPrefs(deps);
+  return writePluginPrefs(deps, {
+    ...stored,
+    disabledContributions: body.disabledContributions,
+    viewerAssociations: body.viewerAssociations
+  });
+}
+
+/** The market write: body's catalogState (+ optional userKits) over the STORED panel
+    fields. `userKits` omitted → stored user kits are kept. */
+export async function writePluginCatalogPrefs(
+  deps: WorkspaceDeps,
+  body: { catalogState: PluginPrefs["catalogState"]; userKits?: PluginPrefs["userKits"] }
+): Promise<PluginPrefs> {
+  const stored = await readPluginPrefs(deps);
+  return writePluginPrefs(deps, {
+    ...stored,
+    catalogState: body.catalogState,
+    userKits: body.userKits ?? stored.userKits
+  });
 }
 
 export async function readWorkspace({ vault }: WorkspaceDeps): Promise<WorkspaceState> {

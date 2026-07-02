@@ -20,6 +20,10 @@ export const reviewPlugin: ProductKit = {
   id: "review",
   name: "Review Loop",
   description: "复习环:把错题、小测、闪卡、复习包排成确定性的队列,AI 出题/判分/讲解,复习结果写入 learner memory.",
+  // A STANDALONE plugin (plugin-viewer-model §8.1), not a kit: it uses the ProductKit
+  // registration vehicle but is not an activation choice and registers a plain
+  // PluginRecord (F5 — no more plugin==kit conflation for it).
+  unit: "plugin",
   contentSpecs: reviewContentSpecs,
   prompts: reviewPrompts,
   install(ctx) {
