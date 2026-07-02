@@ -14,6 +14,7 @@ One dependency-ordered plan over the six design docs written this cycle. Purpose
 | `multi-provider-ai-agent.md` (+§9) | BYOK 多厂商 + `cli-agent` kind (claude/codex 官方 SDK) + agent loop | A1 · A2 · A3 · A4 |
 | `managed-ai-credits.md` (+§10) | 托管网关 + 积分 + 月费/AI Group 档位 | G-A · G-B · G-C (external-gated) |
 | `multi-platform.md` | macOS/Android/iOS + 打包发布流水线 (Capacitor 共享核心) | X0 · X1 · X2 · X3 · X4 |
+| `learner-memory.md` | 分级记忆(短/中长/长期+画像): 机制=core, taxonomy=kit 注册 | MEM-1 · MEM-2 · MEM-3 |
 | `architecture-review.md` | Foundation assessment | F1–F7 (refactors, below) |
 | (this) `roadmap.md` | Sequencing | — |
 
@@ -98,6 +99,11 @@ Concept P-C1 (aggregation page, additive to existing API) ──> P-C2 (graph vi
 - **X3 — mobile distribution:** direct APK + TestFlight now; domestic stores (软著) + App Store China (ICP) ride the license track.
 - **X4 — release train:** e2e gates, channels, changelog, crash/log story.
 
+**Learner-memory track (MEM, `learner-memory.md` — mechanism in core, taxonomy kit-registered per the F7 lesson):**
+- **MEM-1 — capture + store + export-guard:** `memoryEvent` entity + compacting jsonl; the one `runCommand` hook (registry.ts:626 — all commands flow through it) + server emits; capture on/off switch; guard test that memory entities can never ride `.svpack`. Parallel-safe now.
+- **MEM-2 — tiers + 画像页:** deterministic consolidation (events→digests→profile facts) on start/idle; the editable profile/manager view; retention defaults.
+- **MEM-3 — taxonomy + AI hookup:** `registerBehaviorTaxonomy` (textbook first); profileContext into ChatContext/operations — **on by default for local kinds, OFF for managed until explicit consent**; M-A auto-switch prior.
+
 **Next (after M1):**
 4. **Subject M-B** — vocab + formula + timeline exemplars (KaTeX decision); **Market M2** (previews + user kits).
 5. **N3 (D6)** — AI anchor-context results auto-materialize as draft notes (undo toast).
@@ -129,3 +135,4 @@ Rule: a task is buildable only when its spec (a) lives in a design doc, (b) is *
 | **A4** agent loop | multi-provider §4.3 | ✅ (SSE precedent `/api/chat/stream`) | ✅ in-doc: ToolLoopAgent / fullStream events |
 | **G-A/B/C** managed | managed-ai-credits.md (+§10) | ✅ G-A1 shipped `358c126`; G-A2 in flight | ✅ in-doc(dated, re-verify flags): DeepSeek/千帆定价·微信Native/支付宝·合规;✅ 2026-07: one-api/new-api (§10.4);⚠️ **周期扣款(自动续费)个体工商户资质未验** — V2 前必须验 |
 | **X0–X4** multi-platform | multi-platform.md | ✅ (no packager confirmed; StorageAdapter seam; node-dep audit table; entityClient seam) | ✅ approach research'd (Capacitor vs nodejs-mobile vs thin-client); ⚠️ 商店合规细节(软著/ICP流程)到 X3 再展开;Apple Developer 账号 = user to-do |
+| **MEM-1/2/3** learner memory | learner-memory.md | ✅ (zero existing telemetry confirmed; runCommand choke point registry.ts:626; entity-store one-liner; buildStudyPack export-safety structural) | n/a — fully local; V1 deterministic (no LLM); privacy invariants specified |
