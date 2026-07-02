@@ -21,6 +21,10 @@ One dependency-ordered plan over the six design docs written this cycle. Purpose
 | `marketplace-hosted.md` | 托管市场(web 门面+客户端安装):笔记市场=svpack 服务器层、插件市场=**纯数据插件**;`CatalogSource` 接口约定 | MH-0 ✅(骑 M1)· MH-1 · MH-2 · MH-3(P3) |
 | `app-shell-ux.md` | 左下角用户菜单 + Settings Hub(registerSettingsSection,A3b/G-A3b 的落点)+ 新手引导(V1 清单式,聚光灯=阅读器批) | SHELL-1 · SHELL-2 · SHELL-3(gated) |
 | `website.md` | 官网:Astro+MDX(website/,复用 --sv-* tokens)· 首页/教育版/下载/文档+插件教程/定价 | WEB-1 · WEB-2 · WEB-3(P3,下载链接 gate on X1) |
+| `global-search.md` | **全局搜索/Cmd+K**(验证过的空白)— 笔记/文档/命令三族,复用 SC-0 面板,V1 无索引线扫 | SEARCH-1 · SEARCH-2 |
+| `data-trust.md` | 备份轮转 · 全库导出导入 · 回收站(软删除)+ 同步问题记录(V0=同步盘+锁文件) | TRUST-1 · TRUST-2 · TRUST-3 |
+| `study-report-delivery.md` | 学习报告(digests→可编辑报告→长图/PDF)· 导出族(Anki/Markdown/错题集)· **配对推送→老师收件箱(基于现有客户端,不做第二套系统)**· 家长=导出物→P3 web 页 | REPORT-1 · REPORT-2 · DELIVER-1 · DELIVER-2 · DELIVER-3(P3) |
+| `vision-input.md` | 多模态输入(A5 内容分片+vision 能力位)+ **拍错题 kit**(吸收 AIHomework:规则优先/阈值路由/本地 PaddleOCR 三车道成本) | V-1(A5) · V-2 · V-3(X2) |
 | `architecture-review.md` | Foundation assessment | F1–F7 (refactors, below) |
 | (this) `roadmap.md` | Sequencing | — |
 
@@ -93,6 +97,11 @@ Concept P-C1 (aggregation page, additive to existing API) ──> P-C2 (graph vi
 - **SC-0** (slash engine+palette) + **X0b** (transport seam + direct adapter) — agents running.
 - Then per slot: **SRC-1 create half** · **N6 board (+F7b)** · **W1** (chat sessions ≡ first F1 slice) · **Subject M-A ✅** (auto-switch engine + chip landed post-F4 — subject-kits.md §7; per-kit `detection` tables, pin = `activeKitIds`; only the chip's topbar mount rides the reader-gated batch).
 
+**P1.5 — product table stakes (user-endorsed 2026-07-02, unplanned-gap audit):**
+- **SEARCH-1** 全局搜索/Cmd+K (global-search.md) · **TRUST-1/2/3** 备份/导出/回收站 (data-trust.md) — both clean-file, slot-ready.
+- **REPORT-1/2** 学习报告 + 导出族 → **DELIVER-1/2** 配对推送 + 老师收件箱 (study-report-delivery.md; parent web = DELIVER-3, P3).
+- **A5/V-1** vision content-parts seam → **V-2** 拍错题 kit (vision-input.md; V-3 camera rides X2).
+
 **P2 — surfaces & market (behind P0, beside it when parallel-safe):**
 - **Market M1 (+F4+F5)** — unblocks subjects; **carries MH-0**: the manager lists through the `CatalogSource` interface (local now, remote later — marketplace-hosted.md §5, the one hosted-market hook V1 pays for). Then **M-B** (KaTeX decision first — the flagged hole).
 - **N3 (D6)** auto-materialize.
@@ -136,3 +145,7 @@ Rule: a task is buildable only when its spec (a) lives in a design doc, (b) is *
 | **MH-0/1/2/3** hosted marketplace | marketplace-hosted.md | ✅ substrate inventory (svpack trust chain shipped `1a1bf27`; G-gateway auth/ledger/payments shipped `bf7dcb2`; contentTypes summary in packs; Kit&Plugin manager = M1 territory); `CatalogSource` contract pinned in-doc §5 — **MH-0 ✅ `cfcc48c`** | ⚠️ Apple IAP policy detail + ICP/UGC obligations to re-verify at MH-1 time (P3 — user defers V1); WeChat Pay real adapter rides the G license chain |
 | **SHELL-1/2/3** shell UX | app-shell-ux.md | ✅ (IconRail mount clean — 复习/画像 entries prove it; svpack identity supplies display name; onboarding done-detection = pure fns over existing vault/prefs/memory-events data — every step's signal already recorded; sample doc = the self-verify fixture) | n/a — in-app only; SHELL-3 spotlight rides the reader-gated batch |
 | **WEB-1/2/3** 官网 | website.md | ✅ (Astro+MDX decision in-doc; tokens importable from styles.css; Releases API for download feed; plugin-dev tutorial content = the shipped contracts: operations/kit registration/CatalogSource) | ⚠️ domain + hosting choice (ICP if in-country — rides the license chain); Lighthouse/a11y gates pinned in-doc; real links gate on X1 |
+| **SEARCH-1/2** 全局搜索 | global-search.md | ✅ (gap grep-verified — no user search surface; toSearchText on every spec; SC-0 palette+ranking reusable; X0a services seam for the endpoint; anchor-focus mechanics for jump-to-note) | n/a V1 (CJK substring, no tokenizer dep); pinyin lib decision rides SC-3 |
+| **TRUST-1/2/3** 数据信任 | data-trust.md | ✅ (vault dir layout known — 94MB real data; envelope schema additive deletedAt; export-guard test extends to soft-deleted; hub 数据 section = the surface, shipped SHELL-1) | n/a — local-only; sync deliberately RECORDED-not-scheduled (own design round with X2) |
+| **REPORT/DELIVER** 报告+推送 | study-report-delivery.md | ✅ (digests/profile APIs shipped 828ae25; svpack identity + import + HTTP server exist for pairing/inbox; long-image = WeChat-native artifact) | ⚠️ Anki .apkg generation (lib vs sqlite hand-roll) verify at REPORT-2; relay/parent-web rides G/WEB/ICP (P3) |
+| **V-1/2/3** 视觉输入+拍错题 | vision-input.md | ✅ (AI SDK v7 content-parts + claude-agent-sdk image blocks known; gateway pricing already models modality×vendor; AIHomework absorbed as kit logic — local PaddleOCR service exists at C:\CG\AIHomework services/ai-ocr-service) | ⚠️ per-preset vision model ids (deepseek/GLM naming) verify at V-1 build; asset-store refs not base64 (guard) |
