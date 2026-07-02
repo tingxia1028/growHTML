@@ -9,6 +9,8 @@
 //   • MANAGER: create a CUSTOM layer; rename / recolor / reorder any owned/custom layer;
 //     delete a CUSTOM layer (preset / owned / imported are structural — no delete).
 //   • EXPORT a layer → a portable `.studypack`; IMPORT a `.studypack` (preview → commit).
+//   • PROTECTED sharing (.svpack): a 分享… action on shareable rows + a 导入 .svpack
+//     button — both just open the dialogs in svpackViews (the flows live there).
 //
 // Like the concept pane it is ADDITIVE (its own pane node) and talks only through the
 // WorkspaceContext + entity client. Export and the two-step file import are done here
@@ -16,9 +18,10 @@
 // reused as the filter include/exclude (routed through ctx.toggleLayerFilter).
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Layers, Upload, Download, Plus, Trash2 } from "lucide-react";
+import { Layers, Upload, Download, Plus, Share2, Lock, Trash2 } from "lucide-react";
 import { entityClient, type ImportPreview, type StudyLayerRecord, type StudyPack } from "../data/entityClient";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
+import { SvpackExportDialog, SvpackImportDialog } from "./svpackViews";
 
 // Trigger a browser/Electron-renderer download of a `.studypack`.
 export function downloadPack(pack: StudyPack, fileName: string) {
@@ -55,6 +58,9 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
   const [pending, setPending] = useState<{ pack: StudyPack; preview: ImportPreview } | null>(null);
   // The new-custom-layer draft title (the create row), kept local to the pane.
   const [newTitle, setNewTitle] = useState("");
+  // Protected sharing dialogs (svpackViews): the layer being 分享'd / the import flow.
+  const [shareLayer, setShareLayer] = useState<StudyLayerRecord | null>(null);
+  const [svpackImportOpen, setSvpackImportOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
@@ -234,6 +240,15 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
             event.target.value = ""; // allow re-picking the same file
           }}
         />
+        {/* Protected import — opens the svpack dialog (inspect → code → preview → commit). */}
+        <button
+          type="button"
+          className="icon-button svpack-import-open-btn"
+          onClick={() => setSvpackImportOpen(true)}
+        >
+          <Lock size={16} />
+          导入 .svpack
+        </button>
       </section>
 
       {/* Import preview: the 3-state match summary + per-anchor list, awaiting confirm. */}
@@ -368,6 +383,18 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
                         </button>
                       </>
                     ) : null}
+                    {/* Protected share — own content only: never a shared (imported)
+                        row, never a sealed one (the server refuses re-export anyway). */}
+                    {groupOf(layer) !== "shared" && !layer.sealed ? (
+                      <button
+                        type="button"
+                        className="link-button layer-share-btn"
+                        title="以受保护 .svpack 分享（每位接收者一个口令）"
+                        onClick={() => setShareLayer(layer)}
+                      >
+                        <Share2 size={13} /> 分享…
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className="link-button layer-export-btn"
@@ -396,6 +423,13 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
         {activeSourceId && layers.length === 0 ? <div className="empty-state">No layers yet.</div> : null}
         {!activeSourceId ? <div className="empty-state">Open a source to see its layers.</div> : null}
       </div>
+
+      {/* Protected-sharing dialogs (portal-rendered; a successful import refreshes the
+          layer list + repaints the reader through the shared refreshLayers idiom). */}
+      {shareLayer ? <SvpackExportDialog layer={shareLayer} onClose={() => setShareLayer(null)} /> : null}
+      {svpackImportOpen ? (
+        <SvpackImportDialog onClose={() => setSvpackImportOpen(false)} onCommitted={refreshLayers} />
+      ) : null}
     </aside>
   );
 }

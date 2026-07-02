@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { entityClient } from "./entityClient";
+import { ApiError, entityClient } from "./entityClient";
 
 type Call = { url: string; method: string; body: unknown };
 
@@ -170,5 +170,51 @@ describe("entityClient", () => {
 
   it("exposes a direct asset url", () => {
     expect(entityClient.assetUrl("asset_1")).toBe("/api/assets/asset_1");
+  });
+});
+
+describe("entityClient — protected sharing (.svpack)", () => {
+  it("hits the right method/path/body for the whole svpack flow", async () => {
+    const calls = mockFetch({ packs: [] });
+    await entityClient.exportSvpack("layer_1", {
+      recipients: [{ label: "张三" }, { label: "李四" }],
+      validUntil: "2026-09-01T00:00:00.000Z"
+    });
+    await entityClient.inspectSvpack("AQIDBA==");
+    await entityClient.openSvpack("AQIDBA==", "CODE40");
+    await entityClient.commitSvpack("AQIDBA==", "CODE40");
+    await entityClient.sealedImports();
+    await entityClient.deleteSealedImport("pack_1");
+
+    expect(calls[0]).toMatchObject({
+      url: "/api/layers/layer_1/export-svpack",
+      method: "POST",
+      body: { recipients: [{ label: "张三" }, { label: "李四" }], validUntil: "2026-09-01T00:00:00.000Z" }
+    });
+    expect(calls[1]).toMatchObject({ url: "/api/svpack/inspect", method: "POST", body: { fileB64: "AQIDBA==" } });
+    expect(calls[2]).toMatchObject({
+      url: "/api/svpack/open",
+      method: "POST",
+      body: { fileB64: "AQIDBA==", code: "CODE40" }
+    });
+    expect(calls[3]).toMatchObject({
+      url: "/api/svpack/commit",
+      method: "POST",
+      body: { fileB64: "AQIDBA==", code: "CODE40", rememberCode: false }
+    });
+    expect(calls[4]).toMatchObject({ url: "/api/svpack", method: "GET", body: undefined });
+    expect(calls[5]).toMatchObject({ url: "/api/svpack/pack_1", method: "DELETE" });
+  });
+
+  it("throws ApiError carrying the HTTP status + the server's machine code", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "wrong code for this pack", code: "wrong-code" }), { status: 403 }))
+    );
+    const error = await entityClient.openSvpack("AQIDBA==", "BAD").catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).status).toBe(403);
+    expect((error as ApiError).code).toBe("wrong-code");
+    expect((error as ApiError).message).toBe("wrong code for this pack");
   });
 });

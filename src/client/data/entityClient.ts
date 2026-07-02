@@ -196,6 +196,9 @@ export type StudyLayerRecord = {
   // Layer Lens hierarchy (R7): the parent layer this nests under (undefined = top-level).
   // Import-driven (a `.studypack` hangs under the per-source "Imported" parent).
   parentId?: string;
+  // Protected `.svpack` import (sealed store, read-only): the server merges sealed
+  // layers into the read model flagged `sealed: true`. Absent on normal layers.
+  sealed?: boolean;
 };
 
 // A `.studypack` — only portable fields travel; the importer rebuilds local
@@ -225,6 +228,83 @@ export type ImportCommitResult = {
   createdAnchors: number;
   importedNotes: number;
   stats: { matched: number; fuzzy: number; unmatched: number };
+};
+
+// —— Protected sharing (.svpack) — docs/design/studypack-sharing.md §5–§7. Encrypted +
+// signed layer packs: per-recipient one-time codes, TOFU publisher pinning, sealed
+// (read-only) import store. Shapes mirror src/server/svpack.ts verbatim. ——
+
+export type SvpackValidity = { notBefore: string | null; validUntil: string | null };
+
+/** One roster line from export: `code` arrives ALREADY display-formatted (8×5 groups). */
+export type SvpackRosterEntry = { label: string; code: string; codeId: string };
+
+export type SvpackExportResult = {
+  packId: string;
+  revision: number;
+  /** The `.svpack` file bytes, base64 — codes and file are returned exactly ONCE here. */
+  fileB64: string;
+  fileName: string;
+  roster: SvpackRosterEntry[];
+  /** Notes refused at the export choke point (origin.exportable === false). */
+  refusedCount: number;
+};
+
+/** TOFU pin verdict for the pack's publisher id (§5.1). */
+export type SvpackPinStatus = "unknown" | "pinned-match" | "pinned-mismatch";
+
+/** Cleartext header echo (safe pre-code): what inspect/open show about a pack. */
+export type SvpackHeaderEcho = {
+  packId: string;
+  revision: number;
+  title: string;
+  publisher: { id: string; displayName: string; signingPubKey: string };
+  createdAt: string;
+  validity: SvpackValidity;
+  sourceHash: string;
+  sourceType: string;
+  contentTypes: string[];
+};
+
+export type SvpackInspectResult = {
+  header: SvpackHeaderEcho;
+  pinStatus: SvpackPinStatus;
+  /** Local source matched by content hash, or null (import stays possible, unbound). */
+  sourceMatch: { sourceId: string; title: string } | null;
+};
+
+export type SvpackOpenResult = {
+  header: SvpackHeaderEcho;
+  codeId: string;
+  preview: ImportPreview;
+};
+
+export type SvpackCommitResult = {
+  packId: string;
+  layerId: string;
+  counts: { anchors: number; notes: number; stats: { matched: number; fuzzy: number; unmatched: number } };
+  sealed: true;
+};
+
+export type SealedPackStatus = "active" | "expired" | "not-yet-valid" | "clock-rollback" | "unreadable";
+
+/** Manager-list row for an installed sealed pack (GET /api/svpack). */
+export type SealedPackRow = {
+  packId: string;
+  status: SealedPackStatus;
+  echo?: {
+    packId: string;
+    revision: number;
+    publisher: { id: string; displayName: string; publicKeyB64u: string };
+    validity: SvpackValidity;
+    title: string;
+    sourceHash: string;
+    sourceType: string;
+    codeId: string;
+    contentTypes: string[];
+  };
+  importedAt?: string;
+  counts?: { anchors: number; notes: number };
 };
 
 export type AssetRecord = {
@@ -308,6 +388,42 @@ async function sendJson<T>(method: string, url: string, input: unknown): Promise
   });
   const body = await response.json();
   if (!response.ok) throw new Error(body.error ?? `Request failed: ${url}`);
+  return body as T;
+}
+
+/**
+ * Failure carrying the HTTP status + the server's machine error `code`. The svpack
+ * flows branch on these ("wrong-code" vs "expired" vs "stale-revision" need different
+ * honest messages), so a bare message string is not enough.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code?: string;
+
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+/** Like getJson/sendJson but throws `ApiError` (status + machine code) on failure. */
+async function fetchCoded<T>(method: string, url: string, input?: unknown): Promise<T> {
+  const response = await fetch(
+    url,
+    input === undefined
+      ? { method }
+      : { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }
+  );
+  const body = (await response.json().catch(() => ({}))) as { error?: string; code?: string };
+  if (!response.ok) {
+    throw new ApiError(
+      body.error ?? `Request failed: ${url}`,
+      response.status,
+      typeof body.code === "string" ? body.code : undefined
+    );
+  }
   return body as T;
 }
 
@@ -488,6 +604,32 @@ export const entityClient = {
   /** Commit an import: create an imported layer + re-located anchors + notes. */
   importCommit(pack: StudyPack, targetSourceId?: string) {
     return sendJson<{ result: ImportCommitResult }>("POST", "/api/layers/import/commit", { pack, targetSourceId });
+  },
+
+  // —— Protected sharing (.svpack) — all throw ApiError so views can branch on `code` ——
+  /** Publisher: export a layer as an encrypted+signed pack. Roster codes show ONCE. */
+  exportSvpack(layerId: string, input: { recipients: Array<{ label: string }>; validUntil: string; notBefore?: string }) {
+    return fetchCoded<SvpackExportResult>("POST", `/api/layers/${layerId}/export-svpack`, input);
+  },
+  /** Recipient step 1: code-free header inspection (publisher pin status, source match). */
+  inspectSvpack(fileB64: string) {
+    return fetchCoded<SvpackInspectResult>("POST", "/api/svpack/inspect", { fileB64 });
+  },
+  /** Recipient step 2: open with a code → re-anchor preview. Nothing persisted. */
+  openSvpack(fileB64: string, code: string) {
+    return fetchCoded<SvpackOpenResult>("POST", "/api/svpack/open", { fileB64, code });
+  },
+  /** Recipient step 3: commit into the sealed (read-only) store. 201 on success. */
+  commitSvpack(fileB64: string, code: string, rememberCode = false) {
+    return fetchCoded<SvpackCommitResult>("POST", "/api/svpack/commit", { fileB64, code, rememberCode });
+  },
+  /** Installed sealed packs (manager rows; validity statuses current-as-of-now). */
+  sealedImports() {
+    return fetchCoded<{ packs: SealedPackRow[] }>("GET", "/api/svpack");
+  },
+  /** Delete an imported pack = delete its sealed blob (content leaves the read model). */
+  deleteSealedImport(packId: string) {
+    return fetchCoded<{ ok: true }>("DELETE", `/api/svpack/${packId}`);
   },
 
   // —— Assets ——

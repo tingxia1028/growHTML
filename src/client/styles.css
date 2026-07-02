@@ -7790,3 +7790,334 @@ select {
   background: var(--sv-surface-hover, rgba(0, 0, 0, 0.04));
   font-weight: 600;
 }
+
+/* ============================================================================
+   Protected sharing (.svpack) dialogs — svpackViews.tsx. The modal chrome reuses
+   .sv-focus-overlay/.sv-focus-dialog (FocusOverlay); rules here size the dialog
+   and style the export roster / import flow / sealed list. Token-only color. */
+.svpack-dialog {
+  width: min(640px, 92vw);
+}
+
+.svpack-body {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.svpack-step,
+.svpack-file-pick,
+.svpack-inspect,
+.svpack-code-entry,
+.svpack-success,
+.svpack-sealed-list {
+  display: grid;
+  gap: 8px;
+}
+
+.svpack-file-pick {
+  grid-template-columns: max-content 1fr;
+  align-items: center;
+}
+
+.svpack-file-name {
+  font-size: 12px;
+  color: var(--sv-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.svpack-field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sv-text-muted);
+}
+
+.svpack-recipients {
+  display: grid;
+  gap: 6px;
+}
+
+.svpack-recipient-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.svpack-recipient-input {
+  flex: 1 1 auto;
+}
+
+.svpack-recipient-add.link-button,
+.svpack-recipient-remove.link-button {
+  margin-top: 0;
+}
+
+.svpack-recipient-remove.link-button {
+  color: var(--sv-danger-2);
+}
+
+.svpack-valid-until {
+  justify-self: start;
+}
+
+/* Honest-copy blocks: soft limits (export form) + the one-time-codes warning. */
+.svpack-soft-limits {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--sv-text-muted);
+  background: var(--sv-surface-tag);
+  padding: 8px 10px;
+  border-radius: var(--sv-radius-xs);
+}
+
+.svpack-once-warning {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--sv-danger-2);
+  background: var(--sv-danger-bg-tint);
+  border: 1px solid var(--sv-danger-2);
+  border-radius: var(--sv-radius-xs);
+  padding: 8px 10px;
+}
+
+.svpack-refused-note {
+  font-size: 12px;
+  color: var(--sv-fuzzy-text);
+  background: var(--sv-fuzzy-bg);
+  padding: 6px 10px;
+  border-radius: var(--sv-radius-xs);
+}
+
+.svpack-roster {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.svpack-roster-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--sv-border-muted);
+  border-radius: var(--sv-radius-xs);
+  background: var(--sv-surface-card);
+}
+
+.svpack-roster-label {
+  font-weight: 600;
+  flex: 0 0 auto;
+  min-width: 56px;
+}
+
+.svpack-code {
+  flex: 1 1 auto;
+  font-family: var(--sv-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  overflow-wrap: anywhere;
+}
+
+.svpack-copy-btn.link-button,
+.svpack-sealed-delete.link-button,
+.svpack-export-cancel.link-button,
+.svpack-roster-close.link-button {
+  margin-top: 0;
+}
+
+.svpack-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* The shared .icon-button.primary is a full-width form submit; inside a dialog
+   action row it sits inline like its siblings. */
+.svpack-actions .icon-button,
+.svpack-actions .icon-button.primary {
+  width: auto;
+  margin-top: 0;
+}
+
+/* —— Import: inspect summary (pin status is the TOFU verdict, §5.1) —— */
+.svpack-inspect {
+  padding: 10px 12px;
+  border: 1px solid var(--sv-border-muted);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface-card);
+}
+
+.svpack-inspect-title {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.svpack-revision {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--sv-surface-tag);
+  color: var(--sv-text-muted);
+}
+
+.svpack-publisher {
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.svpack-fingerprint {
+  font-family: var(--sv-font-mono);
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: var(--sv-radius-xs);
+  background: var(--sv-surface-tag);
+  color: var(--sv-text-muted);
+}
+
+.svpack-pin {
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: var(--sv-radius-xs);
+  background: var(--sv-surface-tag);
+  color: var(--sv-text-muted);
+}
+
+.svpack-pin[data-status="pinned-match"] {
+  background: var(--sv-success-bg);
+  color: var(--sv-success);
+}
+
+.svpack-pin[data-status="pinned-mismatch"] {
+  background: var(--sv-danger-bg-tint);
+  color: var(--sv-danger-2);
+  border: 1px solid var(--sv-danger-2);
+  font-weight: 600;
+}
+
+.svpack-source-match {
+  font-size: 12px;
+}
+
+.svpack-source-match[data-matched="false"] {
+  color: var(--sv-fuzzy-text);
+}
+
+.svpack-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--sv-text-muted);
+}
+
+.svpack-code-input {
+  width: 100%;
+  font-family: var(--sv-font-mono);
+}
+
+/* —— Import: success + sealed-imports manager list —— */
+.svpack-success {
+  padding: 10px 12px;
+  border: 1px solid var(--sv-accent-border);
+  border-radius: var(--sv-radius);
+  background: var(--sv-accent-weak);
+}
+
+.svpack-success-head {
+  font-weight: 600;
+}
+
+.svpack-success-counts,
+.svpack-success-note {
+  font-size: 12px;
+}
+
+.svpack-success-note {
+  color: var(--sv-text-muted);
+}
+
+.svpack-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--sv-text-muted);
+}
+
+.svpack-sealed-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.svpack-sealed-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--sv-border-muted);
+  border-radius: var(--sv-radius-xs);
+  background: var(--sv-surface-card);
+}
+
+.svpack-sealed-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.svpack-sealed-counts {
+  font-size: 12px;
+  color: var(--sv-text-muted);
+}
+
+.svpack-status {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--sv-surface-tag);
+  color: var(--sv-text-muted);
+}
+
+.svpack-status[data-status="active"] {
+  background: var(--sv-success-bg);
+  color: var(--sv-success);
+}
+
+.svpack-status[data-status="expired"],
+.svpack-status[data-status="clock-rollback"],
+.svpack-status[data-status="unreadable"] {
+  background: var(--sv-danger-bg-tint);
+  color: var(--sv-danger-2);
+}
+
+.svpack-status[data-status="not-yet-valid"] {
+  background: var(--sv-fuzzy-bg);
+  color: var(--sv-fuzzy-text);
+}
+
+.svpack-sealed-delete.link-button {
+  color: var(--sv-danger-2);
+}
+
+/* Entry points in the Layers pane. */
+.svpack-import-open-btn.icon-button {
+  margin-top: 0;
+}
+
+.layer-share-btn.link-button {
+  margin-top: 0;
+  color: var(--sv-accent);
+}
