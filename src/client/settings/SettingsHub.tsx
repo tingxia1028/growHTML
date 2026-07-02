@@ -13,9 +13,10 @@ import { Settings } from "lucide-react";
 import { registerView } from "../workspace/viewRegistry";
 import { navigateShell } from "../workspace/shellNav";
 import { setMemoryCaptureEnabled } from "../memory/capture";
-import type { AiProvidersInfo, MemorySettings } from "../data/entityClient";
+import type { MemorySettings } from "../data/entityClient";
 import { listSettingsSections, registerSettingsSection } from "./registry";
 import { getSettingsIo } from "./settingsIo";
+import { AiProvidersSection } from "./AiProvidersSection";
 
 // —— per-section error boundary (a broken section must never take the hub down) ——
 class SectionBoundary extends Component<{ sectionId: string; children: ReactNode }, { failed: boolean }> {
@@ -42,58 +43,9 @@ function SectionBody({ section }: { section: { render(): ReactNode } }) {
 }
 
 // —— built-in sections ————————————————————————————————————————————————————————
-
-const PROVIDER_KIND_LABEL: Record<string, string> = {
-  mock: "离线 Mock",
-  "cli-agent": "本地 CLI（订阅）",
-  http: "BYOK API",
-  managed: "托管积分"
-};
-
-/** AI 提供方 — A3b's future mount; today a read-only env-detection readout. */
-function AiProvidersSection() {
-  const [info, setInfo] = useState<AiProvidersInfo | null>(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let cancelled = false;
-    getSettingsIo()
-      .fetchProviders()
-      .then((next) => {
-        if (!cancelled) setInfo(next);
-      })
-      .catch(() => {
-        if (!cancelled) setError("无法读取 AI 提供方状态");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (error) return <p className="settings-hub-muted">{error}</p>;
-  if (!info) return <p className="settings-hub-muted">检测中…</p>;
-
-  return (
-    <div className="settings-ai-section">
-      <p className="settings-active-provider" data-provider-id={info.active.id} data-provider-kind={info.active.kind}>
-        当前提供方:<strong>{info.active.id}</strong>
-        <span className="settings-provider-kind">{PROVIDER_KIND_LABEL[info.active.kind] ?? info.active.kind}</span>
-      </p>
-      <p className="settings-hub-muted settings-env-readout">
-        环境变量 STUDY_VAULT_AI_PROVIDER = {info.envProviderId ?? "(未设置，默认 mock)"}
-      </p>
-      <ul className="settings-provider-list">
-        {info.providers.map((provider) => (
-          <li key={provider.id} className="settings-provider-row" data-provider-id={provider.id}>
-            <span className="settings-provider-label">{provider.label}</span>
-            <code className="settings-provider-id">{provider.id}</code>
-          </li>
-        ))}
-      </ul>
-      <p className="settings-hub-note">完整配置界面随 A3b 到来——当前为只读检测。</p>
-    </div>
-  );
-}
+// AI 提供方 lives in ./AiProvidersSection (A3b): it REPLACED the SHELL-1 read-only
+// stub through the same id-keyed registration below (re-registering "ai-providers"
+// replaces — the seam the hub was built around).
 
 /** 记忆与隐私 — mirrors the vault capture switch + deep-links to the 画像页. */
 function MemoryPrivacySection() {

@@ -23,12 +23,17 @@ const stubIo = (over: Parameters<typeof setSettingsIoForTests>[0] = {}) =>
   setSettingsIoForTests({
     fetchProviders: async () => ({
       active: { id: "claude-agent", kind: "cli-agent" },
+      activeSource: "env",
       providers: [
         { id: "mock", kind: "mock", label: "Mock (offline)" },
         { id: "claude-agent", kind: "cli-agent", label: "Claude (subscription, Agent SDK)" }
       ],
-      envProviderId: "claude-agent"
+      envProviderId: "claude-agent",
+      config: { activeProviderId: null, providers: [], error: null },
+      keyStore: { kind: "safe-storage", persistent: true }
     }),
+    detectProvider: async (id) => ({ id, spec: "claude", ok: true, version: "1.0.0" }),
+    testProvider: async (id) => ({ provider: { id, kind: "cli-agent" }, ok: true, latencyMs: 5 }),
     fetchVaultInfo: async () => ({ manifest: { name: "My Vault" }, paths: { rootDir: "C:/vaults/demo" } }),
     fetchAbout: async () => ({ app: "ai-study-vault", version: "0.1.0" }),
     fetchMemorySettings: async () => ({ settings: { captureEnabled: true } }),
@@ -67,19 +72,20 @@ describe("SettingsHub", () => {
     expect(builtins).toEqual(["ai-providers", "memory-privacy", "data", "about"]);
   });
 
-  it("AI 提供方 section shows the ACTIVE provider + env readout + the A3b stub note", async () => {
+  it("AI 提供方 section (the A3b panel that REPLACED the stub) renders active + rows + env banner", async () => {
     await renderHub();
     const active = container.querySelector(".settings-active-provider")!;
     expect(active.getAttribute("data-provider-id")).toBe("claude-agent");
     expect(active.getAttribute("data-provider-kind")).toBe("cli-agent");
-    expect(container.querySelector(".settings-env-readout")!.textContent).toContain("STUDY_VAULT_AI_PROVIDER");
-    expect(container.querySelector(".settings-env-readout")!.textContent).toContain("claude-agent");
-    // Both registered descriptors are listed.
-    const rows = Array.from(container.querySelectorAll(".settings-provider-row")).map((el) =>
+    // Explicit-beats-config: the env override is surfaced as a banner.
+    expect(container.querySelector(".settings-env-override-note")!.textContent).toContain("STUDY_VAULT_AI_PROVIDER");
+    expect(container.querySelector(".settings-env-override-note")!.textContent).toContain("claude-agent");
+    // Both registered descriptors are listed as picker rows (detailed flows are
+    // covered by AiProvidersSection.test.tsx).
+    const rows = Array.from(container.querySelectorAll(".settings-ai-row")).map((el) =>
       el.getAttribute("data-provider-id")
     );
     expect(rows).toEqual(["mock", "claude-agent"]);
-    expect(container.querySelector(".settings-hub-note")!.textContent).toContain("A3b");
   });
 
   it("数据 section reads the vault path; 关于 shows the version + a DISABLED 检查更新 stub", async () => {

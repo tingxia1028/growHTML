@@ -33,6 +33,20 @@ export {
 // Tool registry (A4a, §4.3) — AgentStepEvent/AgentRequest ride out via
 // `export * from "./provider"` above.
 export { registerTool, listTools, getTool, clearToolsForTests, type ToolDefinition } from "./tools";
+// cli-agent specs (detection probes for the settings UI) + the http preset
+// surface the A3b stored-config path resolves through (server-side).
+export { claudeAgentSpec } from "./cliAgent/claude";
+export { codexAgentSpec } from "./cliAgent/codex";
+export type { CliAgentDetectResult, CliAgentSpec } from "./cliAgent/spec";
+export {
+  DEFAULT_DEEPSEEK_MODEL,
+  HTTP_PRESET_ENV_KEYS,
+  HttpProviderNotConfiguredError,
+  isHttpPresetId,
+  makeHttpProviderFromSettings,
+  type HttpPresetId,
+  type HttpProviderSettings
+} from "./http/presets";
 
 // Built-in providers, registered at module scope (Phase 0 registry refactor —
 // docs/design/multi-provider-ai-agent.md §5). Construction args are IDENTICAL

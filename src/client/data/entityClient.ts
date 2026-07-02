@@ -481,15 +481,78 @@ export type OnboardingState = {
 /** GET /api/about — app id + package.json version (关于 surfaces). */
 export type AboutInfo = { app: string; version: string };
 
-/** One registered AI provider descriptor (the A1 registry's listing shape). */
-export type AiProviderDescriptor = { id: string; kind: string; label: string };
+/** A provider's declared capability row (mirrors src/ai ProviderCapabilities). */
+export type AiProviderCapabilities = {
+  chat: boolean;
+  agentic: boolean;
+  streaming: boolean;
+  structured: boolean;
+  tools: boolean;
+  kind: string;
+};
 
-/** GET /api/ai/providers — active provider + registry readout (env detection). */
+/** One registered AI provider descriptor (the A1 registry's listing shape). */
+export type AiProviderDescriptor = {
+  id: string;
+  kind: string;
+  label: string;
+  /** A3b: the capability readout for the settings picker (absent pre-A3b stubs). */
+  capabilities?: AiProviderCapabilities;
+};
+
+/** One stored BYOK config entry as the server WRITES it (PUT body shape — no keys). */
+export type AiProviderEntryInput = {
+  id: string;
+  kind: "mock" | "cli-agent" | "http" | "managed";
+  preset?: string;
+  label?: string;
+  baseUrl?: string;
+  model?: string;
+};
+
+/** One stored entry as the server READS it back: + keySet flag (never key material). */
+export type AiProviderEntryView = AiProviderEntryInput & {
+  keySet: boolean;
+  capabilities?: AiProviderCapabilities;
+};
+
+/** The ai-providers.json view — activeProviderId + entries + non-fatal config errors. */
+export type AiProvidersConfigView = {
+  activeProviderId: string | null;
+  providers: AiProviderEntryView[];
+  error: string | null;
+};
+
+/** How the key backend holds BYOK keys: OS-encrypted at rest, or env vars only. */
+export type AiKeyStoreStatus = { kind: "safe-storage" | "env-only"; persistent: boolean; reason?: string };
+
+/**
+ * GET /api/ai/providers — active provider + registry readout, extended by A3b
+ * with the stored config + key-store mode. The A3b fields are optional in the
+ * TYPE (older test stubs predate them); the live server always sends them.
+ */
 export type AiProvidersInfo = {
   active: { id: string; kind: string };
+  /** Where the active choice came from: injected (tests) / env / config / default. */
+  activeSource?: "injected" | "env" | "config" | "default";
   providers: AiProviderDescriptor[];
   envProviderId: string | null;
+  /** Stored BYOK config; null when the server runs without app-level config storage. */
+  config?: AiProvidersConfigView | null;
+  keyStore?: AiKeyStoreStatus;
 };
+
+/** POST /api/ai/providers/:id/test — typed result (always 200; ok=false carries why). */
+export type AiTestConnectionResult = {
+  provider: { id: string; kind: string };
+  ok: boolean;
+  latencyMs: number;
+  replyPreview?: string;
+  reason?: string;
+};
+
+/** GET /api/ai/providers/:id/detect — cli-agent binary probe result. */
+export type AiDetectResult = { id: string; spec: string; ok: boolean; version?: string };
 
 /** GET /api/svpack/identity — the local Tier-A publisher identity, if one exists. */
 export type SvpackIdentityInfo = { identity: { id: string; displayName: string } | null };
@@ -989,6 +1052,43 @@ export const entityClient = {
   /** Active AI provider + the registered descriptor list (env detection readout). */
   aiProviders() {
     return getJson<AiProvidersInfo>("/api/ai/providers");
+  },
+  // —— AI provider config (A3b) — field-group-safe write seams ——
+  /** The LIST editor's seam: replaces `providers`; the server preserves the stored
+      activeProviderId and every entry's saved key (keyRef is server-owned). */
+  putAiProviderList(providers: AiProviderEntryInput[]) {
+    return sendJson<{ config: AiProvidersConfigView }>("PUT", "/api/ai/providers/config", { providers });
+  },
+  /** The PICKER's seam: owns activeProviderId only (config entry id / registry id / null). */
+  putAiActiveProvider(activeProviderId: string | null) {
+    return sendJson<{ config: AiProvidersConfigView }>("PUT", "/api/ai/providers/active", { activeProviderId });
+  },
+  /** Write-only BYOK key save — encrypted at rest server-side; never echoed back. */
+  putAiProviderKey(providerId: string, apiKey: string) {
+    return sendJson<{ ok: boolean; keySet: boolean; storage: string }>(
+      "PUT",
+      `/api/ai/providers/${encodeURIComponent(providerId)}/key`,
+      { apiKey }
+    );
+  },
+  deleteAiProviderKey(providerId: string) {
+    return sendJson<{ ok: boolean; keySet: boolean }>(
+      "DELETE",
+      `/api/ai/providers/${encodeURIComponent(providerId)}/key`,
+      {}
+    );
+  },
+  /** 测试连接 — one minimal completion against exactly that provider config. */
+  testAiProvider(providerId: string, timeoutMs?: number) {
+    return sendJson<AiTestConnectionResult>(
+      "POST",
+      `/api/ai/providers/${encodeURIComponent(providerId)}/test`,
+      timeoutMs ? { timeoutMs } : {}
+    );
+  },
+  /** cli-agent binary detection (刷新检测). */
+  detectAiProvider(providerId: string) {
+    return getJson<AiDetectResult>(`/api/ai/providers/${encodeURIComponent(providerId)}/detect`);
   },
   /** The local Tier-A publisher identity (null when this device never published). */
   svpackIdentity() {

@@ -5,13 +5,29 @@
 import {
   entityClient,
   type AboutInfo,
+  type AiDetectResult,
+  type AiProviderEntryInput,
+  type AiProvidersConfigView,
   type AiProvidersInfo,
+  type AiTestConnectionResult,
   type MemorySettings
 } from "../data/entityClient";
 
 export type SettingsIo = {
-  /** GET /api/ai/providers — active provider + registry readout (A1 env detection). */
+  /** GET /api/ai/providers — active provider + registry + stored config + key-store mode. */
   fetchProviders(): Promise<AiProvidersInfo>;
+  /** PUT /api/ai/providers/config — the LIST editor's field-group-safe write (A3b). */
+  saveProviderList(providers: AiProviderEntryInput[]): Promise<{ config: AiProvidersConfigView }>;
+  /** PUT /api/ai/providers/active — the PICKER's write seam (id or null = default). */
+  saveActiveProvider(activeProviderId: string | null): Promise<{ config: AiProvidersConfigView }>;
+  /** PUT /api/ai/providers/:id/key — write-only key save (encrypted at rest, never echoed). */
+  saveProviderKey(providerId: string, apiKey: string): Promise<{ ok: boolean; keySet: boolean; storage: string }>;
+  /** DELETE /api/ai/providers/:id/key. */
+  deleteProviderKey(providerId: string): Promise<{ ok: boolean; keySet: boolean }>;
+  /** POST /api/ai/providers/:id/test — 测试连接 (typed ok/fail result). */
+  testProvider(providerId: string): Promise<AiTestConnectionResult>;
+  /** GET /api/ai/providers/:id/detect — cli-agent binary probe (刷新检测). */
+  detectProvider(providerId: string): Promise<AiDetectResult>;
   /** GET /api/vault — manifest + vault root path (数据 section readout). */
   fetchVaultInfo(): Promise<{ manifest: { name?: string }; paths: { rootDir: string } }>;
   /** GET /api/about — app version (关于 section). */
@@ -24,6 +40,12 @@ export type SettingsIo = {
 
 const defaultIo: SettingsIo = {
   fetchProviders: () => entityClient.aiProviders(),
+  saveProviderList: (providers) => entityClient.putAiProviderList(providers),
+  saveActiveProvider: (activeProviderId) => entityClient.putAiActiveProvider(activeProviderId),
+  saveProviderKey: (providerId, apiKey) => entityClient.putAiProviderKey(providerId, apiKey),
+  deleteProviderKey: (providerId) => entityClient.deleteAiProviderKey(providerId),
+  testProvider: (providerId) => entityClient.testAiProvider(providerId),
+  detectProvider: (providerId) => entityClient.detectAiProvider(providerId),
   fetchVaultInfo: () => entityClient.vaultInfo(),
   fetchAbout: () => entityClient.about(),
   fetchMemorySettings: () => entityClient.memorySettings(),

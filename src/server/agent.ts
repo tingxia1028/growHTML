@@ -23,7 +23,9 @@ const agentStreamRequestSchema = chatRequestSchema.extend({
   maxSteps: z.number().int().min(1).max(AGENT_MAX_STEPS_LIMIT).optional()
 });
 
-export type AgentDeps = { vault: StudyVault; provider: ModelProvider };
+// `getProvider` resolves PER REQUEST (A3b: the active provider is stored config,
+// not a boot-time constant) — the same seam the chat routes consume in app.ts.
+export type AgentDeps = { vault: StudyVault; getProvider: () => Promise<ModelProvider> };
 
 /**
  * JSON-serialize an arbitrary tool payload safely: non-serializable values
@@ -43,7 +45,6 @@ export function serializePayload(value: unknown): { json: string; truncated: boo
 }
 
 export function registerAgentRoutes(app: Express, deps: AgentDeps): void {
-  const { provider } = deps;
   // Register the read-only vault tools once per app and keep THIS app's
   // instances in the closure: the src/ai registry is module-global (last
   // registration wins), so with several apps alive (tests spin publisher +
@@ -56,6 +57,13 @@ export function registerAgentRoutes(app: Express, deps: AgentDeps): void {
       input = agentStreamRequestSchema.parse(req.body);
     } catch (error) {
       next(error); // ZodError → 400 via the shared handler, headers untouched
+      return;
+    }
+    let provider: ModelProvider;
+    try {
+      provider = await deps.getProvider();
+    } catch (error) {
+      next(error); // resolution is designed not to throw; belt for the seam
       return;
     }
     // Capability gate (§4.3): feature-detect runAgent exactly like /api/chat/stream

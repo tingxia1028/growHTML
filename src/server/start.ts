@@ -3,6 +3,7 @@ import { openVault } from "../core/vault";
 import { migrateStudyLayers } from "../core/study-layer/layers";
 import { createApp } from "./app";
 import { consolidateMemory } from "./memory";
+import { defaultAiConfigDir } from "./services/aiProviders";
 
 export type StartServerOptions = {
   /** Listen port; 0 (default) picks a free port — read it back from `port`. */
@@ -10,6 +11,12 @@ export type StartServerOptions = {
   host?: string;
   /** Directory of the built client to serve (single-origin app). */
   clientDir?: string;
+  /**
+   * App-level AI provider config home (ai-providers.json + key blobs). Defaults
+   * to ~/.growte — the real entry points (CLI server, Electron main) always get
+   * stored provider config; unit tests build createApp directly and inject.
+   */
+  aiConfigDir?: string;
 };
 
 export type StartedServer = {
@@ -33,7 +40,14 @@ export async function startServer(options: StartServerOptions = {}): Promise<Sta
   } catch (error) {
     console.warn("[memory] app-start consolidation failed (will retry on next trigger):", error);
   }
-  const app = createApp({ vault, clientDir: options.clientDir });
+  const app = createApp({
+    vault,
+    clientDir: options.clientDir,
+    // A3b: stored provider selection + BYOK config (env vars still override/fallback).
+    // Under the packaged desktop app this code runs IN the Electron main process, so
+    // the default KeyStore resolves to safeStorage; plain Node (dev/CLI) → env-only.
+    aiConfig: { dir: options.aiConfigDir ?? defaultAiConfigDir() }
+  });
   const server = createServer(app);
 
   await new Promise<void>((resolve, reject) => {

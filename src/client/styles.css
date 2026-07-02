@@ -9398,6 +9398,183 @@ select {
   color: var(--sv-text);
 }
 
+/* —— A3b AI 提供方 section (provider list + BYOK form) ————————————————————— */
+.settings-ai-source {
+  font-size: 11px;
+  color: var(--sv-text-muted);
+}
+
+.settings-ai-banner {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface-tag);
+  color: var(--sv-text-subtle);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.settings-ai-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--sv-border-muted);
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface);
+}
+
+.settings-ai-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--sv-text);
+}
+
+.settings-ai-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.settings-ai-caps {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.settings-ai-cap {
+  padding: 0 6px;
+  border-radius: var(--sv-radius-pill);
+  background: var(--sv-accent-weak);
+  color: var(--sv-text-subtle);
+  font-size: 10px;
+}
+
+.settings-ai-key-badge {
+  font-size: 11px;
+  color: var(--sv-text-muted);
+}
+
+.settings-ai-key-badge[data-key-set="true"] {
+  color: var(--sv-success-strong, #2c7a4b);
+}
+
+.settings-ai-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--sv-text-muted);
+}
+
+.settings-ai-mini-btn {
+  padding: 2px 8px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface-card);
+  color: var(--sv-text-strong);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.settings-ai-mini-btn:hover:not([disabled]) {
+  background: var(--sv-surface-muted);
+}
+
+.settings-ai-mini-btn[disabled] {
+  color: var(--sv-text-faint);
+  cursor: not-allowed;
+}
+
+.settings-ai-detect {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-ai-detect[data-detect-status="ok"] {
+  color: var(--sv-success-strong, #2c7a4b);
+}
+
+.settings-ai-detect[data-detect-status="fail"] {
+  color: var(--sv-danger-strong);
+}
+
+.settings-ai-managed-note {
+  font-size: 11px;
+  color: var(--sv-text-faint);
+}
+
+.settings-ai-test-result {
+  margin: 0;
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.settings-ai-test-result[data-test-status="ok"] {
+  color: var(--sv-success-strong, #2c7a4b);
+}
+
+.settings-ai-test-result[data-test-status="fail"] {
+  color: var(--sv-danger-strong);
+}
+
+.settings-ai-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.settings-ai-form {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--sv-border-muted);
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-ai-form-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sv-text-heading);
+}
+
+.settings-ai-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--sv-text-muted);
+}
+
+.settings-ai-field input,
+.settings-ai-field select {
+  padding: 5px 8px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface-card);
+  color: var(--sv-text);
+  font-size: 12px;
+}
+
+.settings-ai-form-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-ai-form-actions .settings-link-btn {
+  margin-top: 0;
+}
+
 /* —— SHELL-2 onboarding checklist (center view) ——————————————————————————— */
 .onboarding-panel {
   min-width: 0;

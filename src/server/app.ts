@@ -23,7 +23,18 @@ import * as patchesService from "./services/patches";
 import * as assetsService from "./services/assets";
 import * as workspaceService from "./services/workspace";
 import * as aiService from "./services/ai";
-import { chatRequestSchema, createModelProvider, listProviderDescriptors, type ModelProvider } from "../ai";
+import * as aiProvidersService from "./services/aiProviders";
+import { KeyNotPersistableError, type KeyStore } from "./keyStore";
+import {
+  chatRequestSchema,
+  createRegisteredProvider,
+  HTTP_PRESET_ENV_KEYS,
+  isHttpPresetId,
+  listProviderDescriptors,
+  type CliAgentDetectResult,
+  type ModelProvider,
+  type ProviderCapabilities
+} from "../ai";
 import packageJson from "../../package.json";
 import { installServerKits } from "../kits/server";
 import { StructuredGenerationError } from "../kits/structured";
@@ -48,15 +59,36 @@ export type CreateAppOptions = {
   identityDir?: string;
   /** Injectable wall clock for the svpack validity gates (tests fake expiry/rollback). */
   now?: () => number;
+  /**
+   * App-level AI provider config (A3b, docs/design/multi-provider-ai-agent.md §4.2):
+   * where ai-providers.json + the safeStorage key blobs live, plus injectable seams
+   * for tests. ABSENT → stored config is disabled and provider selection stays the
+   * byte-identical A1 env behavior (which is also what keeps every legacy test
+   * hermetic — like identityDir, real entry points pass a dir and tests inject temp).
+   */
+  aiConfig?: {
+    dir: string;
+    /** Key backend override (tests); default = safeStorage in Electron main, env-only elsewhere. */
+    keyStore?: KeyStore;
+    /** cli-agent probe override (tests); default spawns `<cli> --version` with a 3s timeout. */
+    detectCliAgent?: (specId: aiProvidersService.CliAgentSpecId) => Promise<CliAgentDetectResult>;
+  };
 };
 
 const ingestUrlRequestSchema = z.object({
   url: z.string().url()
 });
 
-export function createApp({ vault, modelProvider, clientDir, identityDir, now }: CreateAppOptions) {
+export function createApp({ vault, modelProvider, clientDir, identityDir, now, aiConfig }: CreateAppOptions) {
   const app = express();
-  const provider = modelProvider ?? createModelProvider();
+  // Provider selection (A3b): a small manager replaces the boot-time singleton so
+  // the stored config's active pick takes effect per request (memoized by config
+  // fingerprint; a switch disposes the old instance, e.g. a live PTY session).
+  // Precedence: injected modelProvider → STUDY_VAULT_AI_PROVIDER env → stored
+  // config → default (mock) — see services/aiProviders.ts. Without `aiConfig`
+  // this constructs the exact legacy provider once, at createApp time, as before.
+  const aiManager = aiProvidersService.createAiProviderManager({ injected: modelProvider, aiConfig });
+  const getProvider = () => aiManager.getProvider();
 
   // Protected-pack (.svpack) plumbing: unseal any committed packs ONCE at app start
   // (the §8.1 per-session validity gate) into an in-memory cache that the read
@@ -78,15 +110,158 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
     res.json({ app: "ai-study-vault", version: packageJson.version });
   });
 
-  // AI provider readout (Settings Hub AI 提供方 stub + onboarding 接入 AI detection):
-  // the registered descriptor list plus which provider is ACTIVE on this server —
-  // read-only env detection (A1 registry); the full config UI arrives with A3b.
-  app.get("/api/ai/providers", (_req, res) => {
-    res.json({
-      active: { id: provider.id, kind: provider.capabilities.kind },
-      providers: listProviderDescriptors(),
-      envProviderId: process.env.STUDY_VAULT_AI_PROVIDER ?? null
-    });
+  // —— AI providers (A3b, docs/design/multi-provider-ai-agent.md §4.2/§5 Phase 1) ——
+  // The A1 read-only readout, EXTENDED (same route, additive fields): which provider
+  // is ACTIVE and why (activeSource), every registry descriptor with its capability
+  // row, the stored BYOK config (keySet flags — never key material), and the key
+  // store's mode so the UI can state env-only builds. Consumed by the Settings Hub
+  // AI 提供方 section + onboarding 接入 AI detection.
+  app.get("/api/ai/providers", async (_req, res, next) => {
+    try {
+      const { provider: active, source, configError } = await aiManager.resolveActive();
+      const env = process.env;
+      const providers = listProviderDescriptors().map((descriptor) => {
+        let capabilities: ProviderCapabilities | undefined;
+        try {
+          capabilities = createRegisteredProvider(descriptor.id, { env }).capabilities;
+        } catch {
+          capabilities = undefined;
+        }
+        return { ...descriptor, capabilities };
+      });
+      const deps = await aiManager.getDeps();
+      let config: aiProvidersService.AiProvidersConfigView | null = null;
+      if (deps) {
+        const { config: stored, error } = await aiProvidersService.readAiProvidersConfig(deps);
+        config = await aiProvidersService.configView(deps, stored, configError ?? error, env);
+      }
+      res.json({
+        active: { id: active.id, kind: active.capabilities.kind },
+        activeSource: source,
+        providers,
+        envProviderId: process.env.STUDY_VAULT_AI_PROVIDER ?? null,
+        config,
+        keyStore: (await aiManager.getKeyStore()).status()
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Requires the app-level config storage (real entry points always pass aiConfig;
+  // a server booted without it answers a typed 409 instead of writing anywhere).
+  const requireAiDeps = async (res: express.Response) => {
+    const deps = await aiManager.getDeps();
+    if (!deps) res.status(409).json({ error: "此服务器未启用应用级 AI 配置存储", code: "ai_config_disabled" });
+    return deps;
+  };
+
+  // The LIST editor's write seam — owns `providers` ONLY (activeProviderId and each
+  // entry's server-owned keyRef are preserved from the stored file; see the
+  // field-group notes in services/aiProviders.ts). Returns the merged view.
+  app.put("/api/ai/providers/config", async (req, res, next) => {
+    try {
+      const deps = await requireAiDeps(res);
+      if (!deps) return;
+      const body = z.object({ providers: z.array(aiProvidersService.aiProviderEntryInputSchema) }).parse(req.body);
+      const merged = await aiProvidersService.writeProviderList(deps, body.providers);
+      aiManager.invalidate();
+      res.json({ config: await aiProvidersService.configView(deps, merged, null, process.env) });
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  // The PICKER's write seam — owns `activeProviderId` ONLY (config entry id or a
+  // plain registry id; null clears back to the env/default chain).
+  app.put("/api/ai/providers/active", async (req, res, next) => {
+    try {
+      const deps = await requireAiDeps(res);
+      if (!deps) return;
+      const body = z.object({ activeProviderId: z.string().min(1).nullable() }).parse(req.body);
+      const merged = await aiProvidersService.writeActiveProvider(deps, body.activeProviderId);
+      aiManager.invalidate();
+      res.json({ config: await aiProvidersService.configView(deps, merged, null, process.env) });
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  // BYOK key write — write-only: the key goes INTO the KeyStore (safeStorage
+  // ciphertext at rest) and never appears in any response or GET. In env-only
+  // builds (web/dev — no safeStorage in reach) this answers a typed 409 naming
+  // the preset's env var instead of ever persisting plaintext (§4.2's rule).
+  app.put("/api/ai/providers/:id/key", async (req, res, next) => {
+    try {
+      const deps = await requireAiDeps(res);
+      if (!deps) return;
+      const body = z.object({ apiKey: z.string().min(1) }).parse(req.body);
+      await aiProvidersService.setProviderKey(deps, req.params.id, body.apiKey);
+      aiManager.invalidate();
+      res.json({ ok: true, keySet: true, storage: deps.keyStore.status().kind });
+    } catch (error) {
+      if (error instanceof KeyNotPersistableError) {
+        const { config } = await aiProvidersService.readAiProvidersConfig((await aiManager.getDeps())!);
+        const preset = config.providers.find((entry) => entry.id === req.params.id)?.preset;
+        const envVar = preset && isHttpPresetId(preset) ? HTTP_PRESET_ENV_KEYS[preset] : undefined;
+        res.status(409).json({
+          error: `${error.message}${envVar ? `（${envVar}）` : ""}`,
+          code: "key_not_persistable",
+          envVar: envVar ?? null
+        });
+        return;
+      }
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  app.delete("/api/ai/providers/:id/key", async (req, res, next) => {
+    try {
+      const deps = await requireAiDeps(res);
+      if (!deps) return;
+      await aiProvidersService.deleteProviderKey(deps, req.params.id);
+      aiManager.invalidate();
+      res.json({ ok: true, keySet: false });
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  // 测试连接 — one minimal complete() against EXACTLY the named provider config
+  // (config entry or registry id; freshly constructed, never the cached active),
+  // raced against a short timeout. Always 200 with a typed { ok, … } result: an
+  // unconfigured BYOK entry reports its HttpProviderNotConfiguredError message as
+  // `reason` without touching any vendor SDK or the network.
+  app.post("/api/ai/providers/:id/test", async (req, res, next) => {
+    try {
+      const body = z
+        .object({ timeoutMs: z.number().int().min(250).max(30000).optional() })
+        .parse(req.body ?? {});
+      const candidate = await aiManager.providerForId(req.params.id);
+      const result = await aiProvidersService.testProviderConnection(candidate, { timeoutMs: body.timeoutMs });
+      res.json({ provider: { id: candidate.id, kind: candidate.capabilities.kind }, ...result });
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  // cli-agent detection probe (`<cli> --version`) for the settings rows' 已检测✓ /
+  // 刷新检测 state. Only meaningful for the claude/codex families; anything else → 400.
+  app.get("/api/ai/providers/:id/detect", async (req, res, next) => {
+    try {
+      const deps = await aiManager.getDeps();
+      const config = deps ? (await aiProvidersService.readAiProvidersConfig(deps)).config : aiProvidersService.emptyAiProvidersConfig;
+      const specId = aiProvidersService.cliSpecIdFor(req.params.id, config);
+      if (!specId) {
+        res.status(400).json({ error: `提供方 "${req.params.id}" 不是 cli-agent，无检测可做` });
+        return;
+      }
+      const probe = aiConfig?.detectCliAgent ?? aiProvidersService.detectCliAgent;
+      const result = await probe(specId);
+      res.json({ id: req.params.id, spec: specId, ...result });
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
   });
 
   app.get("/api/vault", (_req, res) => {
@@ -426,7 +601,7 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
 
   // Agent loop A4a (docs/design/multi-provider-ai-agent.md §4.1(2)/§4.3): the
   // /api/agent/stream SSE route + read-only vault tool registration — src/server/agent.ts.
-  registerAgentRoutes(app, { vault, provider });
+  registerAgentRoutes(app, { vault, getProvider });
 
   // Preview an import: match the pack to a local source + rematch every anchor.
   // Does NOT persist anything.
@@ -765,7 +940,7 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
   app.post("/api/chat", async (req, res, next) => {
     try {
       const input = chatRequestSchema.parse(req.body);
-      res.json(await aiService.chatComplete({ provider }, input));
+      res.json(await aiService.chatComplete({ provider: await getProvider() }, input));
     } catch (error) {
       if (!handleServiceError(res, error)) next(error);
     }
@@ -790,6 +965,7 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
     const send = (event: string, data: unknown) =>
       res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     try {
+      const provider = await getProvider();
       let full = "";
       for await (const delta of aiService.streamChatDeltas({ provider }, input)) {
         full += delta;
@@ -811,7 +987,7 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
   app.post("/api/kits/generate", async (req, res, next) => {
     try {
       const input = aiService.kitGenerateSchema.parse(req.body);
-      res.json(await aiService.generateKitContent({ vault, provider }, input));
+      res.json(await aiService.generateKitContent({ vault, provider: await getProvider() }, input));
     } catch (error) {
       if (error instanceof StructuredGenerationError) {
         res.status(400).json({ error: error.message });
@@ -826,7 +1002,7 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
   app.post("/api/notes/generate-block", async (req, res, next) => {
     try {
       const input = aiService.generateBlockSchema.parse(req.body);
-      res.json(await aiService.generateBlock({ provider }, input));
+      res.json(await aiService.generateBlock({ provider: await getProvider() }, input));
     } catch (error) {
       if (!handleServiceError(res, error)) next(error);
     }
@@ -837,7 +1013,7 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
   app.post("/api/notes/classify", async (req, res, next) => {
     try {
       const input = aiService.generateBlockSchema.parse(req.body);
-      res.json(await aiService.classifyText({ provider }, input));
+      res.json(await aiService.classifyText({ provider: await getProvider() }, input));
     } catch (error) {
       if (!handleServiceError(res, error)) next(error);
     }
