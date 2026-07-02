@@ -66,12 +66,8 @@ function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
     setImportUrl,
     importFromUrl,
     openLiveUrl,
-    importXmindFile,
-    activeThemeId
+    importXmindFile
   } = ctx;
-
-  // A neutral identity initial for the optional bottom user chip (reference shows one).
-  const userInitial = "A";
 
   return (
     <aside className="library-panel">
@@ -210,10 +206,6 @@ function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
         </section>
       </div>
 
-      <div className="library-user" title="Account">
-        <span className="library-user-avatar" data-theme-id={activeThemeId}>{userInitial}</span>
-        <span className="library-user-name">Alex</span>
-      </div>
     </aside>
   );
 }
