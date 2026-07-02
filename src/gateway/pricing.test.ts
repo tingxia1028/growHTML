@@ -110,6 +110,17 @@ describe("pricing — estimateRun (conservative hold estimate)", () => {
   it("exposes the priceVersion for settle rows", () => {
     expect(pricing.priceVersion).toBe(DEFAULT_PRICING.priceVersion);
   });
+
+  it("exposes the routing entry per modality (undefined when not routed)", () => {
+    expect(pricing.routeFor("text")).toEqual({ vendor: "deepseek", model: "deepseek-v4-flash" });
+    expect(pricing.routeFor("image")).toEqual({ vendor: "baidu-qianfan", model: "ernie-image-turbo" });
+    const textOnly = new Pricing({
+      priceVersion: "v-test",
+      prices: DEFAULT_PRICING.prices,
+      routing: { text: DEFAULT_PRICING.routing.text }
+    });
+    expect(textOnly.routeFor("image")).toBeUndefined();
+  });
 });
 
 describe("pricing — config validation", () => {

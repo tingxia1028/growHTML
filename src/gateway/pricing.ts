@@ -102,6 +102,15 @@ export class Pricing {
     this.priceVersion = config.priceVersion;
   }
 
+  /**
+   * The configured routing entry for a modality (undefined when not routed).
+   * The gateway uses this to stamp vendor/model on hold/settle rows (§10.1
+   * auditable rate history) without re-owning the routing table.
+   */
+  routeFor(modality: keyof PricingConfig["routing"]): ModelRoute | undefined {
+    return this.config.routing[modality];
+  }
+
   /** Look up the configured price for a modality×vendor×model; throws UnknownPriceError. */
   priceFor(modality: string, vendor: string, model: string): PriceEntry {
     const key = priceKey(modality, vendor, model);
