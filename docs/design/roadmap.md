@@ -13,6 +13,7 @@ One dependency-ordered plan over the six design docs written this cycle. Purpose
 | `ai-workspace.md` | AI chat sessions + file/note attachments + doc synthesis | W1 · W2 · W3 |
 | `multi-provider-ai-agent.md` (+§9) | BYOK 多厂商 + `cli-agent` kind (claude/codex 官方 SDK) + agent loop | A1 · A2 · A3 · A4 |
 | `managed-ai-credits.md` (+§10) | 托管网关 + 积分 + 月费/AI Group 档位 | G-A · G-B · G-C (external-gated) |
+| `multi-platform.md` | macOS/Android/iOS + 打包发布流水线 (Capacitor 共享核心) | X0 · X1 · X2 · X3 · X4 |
 | `architecture-review.md` | Foundation assessment | F1–F7 (refactors, below) |
 | (this) `roadmap.md` | Sequencing | — |
 
@@ -88,7 +89,14 @@ Concept P-C1 (aggregation page, additive to existing API) ──> P-C2 (graph vi
 - **A2 — `cli-agent` kind.** Wire the two OFFICIAL SDKs behind thin `CliAgentSpec` adapters — claude via `@anthropic-ai/claude-agent-sdk` (**already a dep, unwired**), codex via `@openai/codex-sdk` (new dep); detection probes; **key-strip + safe-mode invariants unit-tested**; legacy claude-cli/pty stay as fallback entries. (multi-provider §9, researched.)
 - **A3 — BYOK HTTP MVP.** Add `ai` + `@ai-sdk/openai-compatible` (+ DeepSeek preset); `AiSdkProvider` (complete/stream/completeStructured); `ai-providers.json` config + safeStorage keys (env fallback); AI-Providers settings view + test-connection + active picker. (multi-provider §3-§5.)
 - **A4 — tools + agent loop.** `ToolDefinition` registry → `runAgent` typed events → `POST /api/agent/stream`; read-mostly tool set + `createNote` gated by the preview loop; client tool-call cards. (multi-provider §4.3.)
-- **G (managed, external-gated).** Design locked incl. §10 (月费=每月积分 grant + AI Group=可售 SKU + one-api/new-api adopt-or-copy). **Not locally executable:** gated on 个体工商户 → 商户号/SMS 签名/算法备案 + the decision to operate a gateway. Starts when the user green-lights the backend commitment.
+- **G (managed).** User green-lit the code side (license paperwork in progress on the user's side): **G-A1 ✅ shipped `358c126`** (ledger hold/settle/refund + phone auth + pricing, mocks for SMS/pay); **G-A2 in flight** (HTTP service: SSE agent stream with hold→run→settle, mock top-up webhook, signup bonus); then **G-A3** (client: ManagedProvider kind:"managed" + login/balance/top-up UI). Real adapters (WeChat Native, aliyun SMS, moderation, 备案) slot in when the 个体工商户 chain lands.
+
+**Multi-platform track (X, `multi-platform.md` — decisions locked: Capacitor both-platforms simultaneously · mobile V1 = 阅读+批注+AI聊天 · desktop = GitHub Releases + auto-update):**
+- **X0 — shared-core enabler (⊃ F2 in full):** app.ts route bodies → transport-agnostic services (desktop wraps in Express unchanged; mobile calls directly); entityClient backend-adapter seam; Capacitor-FS storage adapter; node-dep audit. Desktop zero behavior change — parallel-safe now.
+- **X1 — desktop packaging:** electron-builder (Win NSIS + macOS universal, notarized — needs the user's Apple Developer account) + electron-updater on GitHub Releases + CI release job.
+- **X2 — mobile shell (Android+iOS together):** Capacitor project, direct-core backend, V1 scope; node-pty/webview/cli-agent/svpack explicitly excluded (kind- and flag-gated).
+- **X3 — mobile distribution:** direct APK + TestFlight now; domestic stores (软著) + App Store China (ICP) ride the license track.
+- **X4 — release train:** e2e gates, channels, changelog, crash/log story.
 
 **Next (after M1):**
 4. **Subject M-B** — vocab + formula + timeline exemplars (KaTeX decision); **Market M2** (previews + user kits).
@@ -119,4 +127,5 @@ Rule: a task is buildable only when its spec (a) lives in a design doc, (b) is *
 | **A2** cli-agent | multi-provider §9 | ✅ (claude providers; **agent-sdk already a dep, unwired**; zod ^4.4.3 ✓) | ✅ 2026-07: official **Claude Agent SDK** + **Codex SDK** verified; ai-sdk-provider-claude-code as reference |
 | **A3** BYOK HTTP | multi-provider §3–§5 | ✅ (config/secrets patterns, in-process server → safeStorage) | ✅ in-doc: AI SDK 6 / openai-compatible / safeStorage caveats |
 | **A4** agent loop | multi-provider §4.3 | ✅ (SSE precedent `/api/chat/stream`) | ✅ in-doc: ToolLoopAgent / fullStream events |
-| **G-A/B/C** managed | managed-ai-credits.md (+§10) | ✅ (client seams: resolveForm, assets gap) | ✅ in-doc(dated, re-verify flags): DeepSeek/千帆定价·微信Native/支付宝·合规;✅ 2026-07: one-api/new-api (§10.4);⚠️ **周期扣款(自动续费)个体工商户资质未验** — V2 前必须验 |
+| **G-A/B/C** managed | managed-ai-credits.md (+§10) | ✅ G-A1 shipped `358c126`; G-A2 in flight | ✅ in-doc(dated, re-verify flags): DeepSeek/千帆定价·微信Native/支付宝·合规;✅ 2026-07: one-api/new-api (§10.4);⚠️ **周期扣款(自动续费)个体工商户资质未验** — V2 前必须验 |
+| **X0–X4** multi-platform | multi-platform.md | ✅ (no packager confirmed; StorageAdapter seam; node-dep audit table; entityClient seam) | ✅ approach research'd (Capacitor vs nodejs-mobile vs thin-client); ⚠️ 商店合规细节(软著/ICP流程)到 X3 再展开;Apple Developer 账号 = user to-do |
