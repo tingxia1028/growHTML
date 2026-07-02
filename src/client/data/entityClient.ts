@@ -461,7 +461,38 @@ export type WorkspaceLayout = {
 export type WorkspaceState = {
   activeLayoutId: string;
   layouts: WorkspaceLayout[];
+  /** SHELL-2 onboarding block (server-owned field group; absent on old files). */
+  onboarding?: OnboardingState;
 };
+
+// —— App shell (SHELL-1/SHELL-2) — shapes mirror src/server/services/workspace.ts +
+// the tiny readout endpoints in app.ts / svpack.ts. ——
+
+/** The onboarding checklist block persisted in workspace.json (own write seam). */
+export type OnboardingState = {
+  dismissed: boolean;
+  completedAt: string | null;
+  /** Latched step completions — once a step is detected done it stays done. */
+  doneSteps: string[];
+  /** The 载入示例文档 seed, remembered so re-seeding stays idempotent. */
+  sampleSourceId: string | null;
+};
+
+/** GET /api/about — app id + package.json version (关于 surfaces). */
+export type AboutInfo = { app: string; version: string };
+
+/** One registered AI provider descriptor (the A1 registry's listing shape). */
+export type AiProviderDescriptor = { id: string; kind: string; label: string };
+
+/** GET /api/ai/providers — active provider + registry readout (env detection). */
+export type AiProvidersInfo = {
+  active: { id: string; kind: string };
+  providers: AiProviderDescriptor[];
+  envProviderId: string | null;
+};
+
+/** GET /api/svpack/identity — the local Tier-A publisher identity, if one exists. */
+export type SvpackIdentityInfo = { identity: { id: string; displayName: string } | null };
 
 export type ChatContext = {
   sourceTitle?: string;
@@ -933,8 +964,35 @@ export const entityClient = {
   workspace() {
     return getJson<{ workspace: WorkspaceState }>("/api/workspace");
   },
+  /** The LAYOUT write seam — the server preserves the stored onboarding block
+      regardless of what this body carries (single-writer rule, as plugin-prefs). */
   saveWorkspace(state: WorkspaceState) {
     return sendJson<{ workspace: WorkspaceState }>("PUT", "/api/workspace", state);
+  },
+  /** The ONBOARDING write seam (SHELL-2 checklist progress/dismiss). */
+  onboardingState() {
+    return getJson<{ onboarding: OnboardingState }>("/api/workspace/onboarding");
+  },
+  putOnboardingState(onboarding: OnboardingState) {
+    return sendJson<{ onboarding: OnboardingState }>("PUT", "/api/workspace/onboarding", onboarding);
+  },
+
+  // —— App shell readouts (SHELL-1 user menu + Settings Hub) ——
+  /** App id + version (关于). */
+  about() {
+    return getJson<AboutInfo>("/api/about");
+  },
+  /** Vault manifest + root path (Settings Hub 数据 section readout). */
+  vaultInfo() {
+    return getJson<{ manifest: { name?: string }; paths: { rootDir: string } }>("/api/vault");
+  },
+  /** Active AI provider + the registered descriptor list (env detection readout). */
+  aiProviders() {
+    return getJson<AiProvidersInfo>("/api/ai/providers");
+  },
+  /** The local Tier-A publisher identity (null when this device never published). */
+  svpackIdentity() {
+    return getJson<SvpackIdentityInfo>("/api/svpack/identity");
   }
 };
 

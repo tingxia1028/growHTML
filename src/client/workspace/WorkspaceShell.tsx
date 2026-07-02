@@ -55,6 +55,13 @@ import "./pluginManagerViews";
 import "../review/ReviewPanel";
 //   ../profile/ProfilePanel → profile.panel (the MEM-2 画像/记忆管理 page — IconRail)
 import "../profile/ProfilePanel";
+//   ../settings/SettingsHub → settings.hub (SHELL-1 — reached via the user menu, no rail icon)
+import "../settings/SettingsHub";
+//   ../onboarding/OnboardingPanel → onboarding.checklist (SHELL-2 — center slot on first run)
+import "../onboarding/OnboardingPanel";
+import { entityClient } from "../data/entityClient";
+import { shouldAutoOpenOnboarding } from "../onboarding/steps";
+import { registerShellNavigator } from "./shellNav";
 import { TopBar } from "./TopBar";
 import { IconRail } from "./IconRail";
 import { SelectionFloatingToolbar } from "./SelectionFloatingToolbar";
@@ -72,6 +79,12 @@ const RAIL_PX = 34;
 // always-on columns. Default selection = library.
 const LEFT_SLOT_NODE_ID = "library";
 const DEFAULT_LEFT_KIND = "library";
+
+// The CENTER slot (the reader leaf) — SHELL-2 swaps it to the onboarding checklist
+// (first run / user-menu reopen) exactly the way the IconRail swaps the left slot:
+// the SAME leaf renders a different registered kind; closing restores the reader.
+const CENTER_SLOT_NODE_ID = "source-viewer";
+const ONBOARDING_KIND = "onboarding.checklist";
 
 function loadSizes(): Record<string, number> {
   try {
@@ -113,6 +126,11 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
   // Which view-kind the switchable LEFT_SLOT renders (IconRail / TopBar buttons set it).
   const [leftPaneKind, setLeftPaneKind] = useState<string>(DEFAULT_LEFT_KIND);
 
+  // Whether the CENTER slot shows the onboarding checklist instead of the reader
+  // (SHELL-2). Set by the first-run effect below + the shell nav bus (user menu's
+  // 帮助/新手引导 reopens it; the checklist's own 跳过/带我去 actions close it).
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+
   // Register the "show the operation manager" handler the Customize-Toolbar seam fires
   // (R6.3): the manager is reachable as the left-slot kind, so showing it = swapping the
   // left pane to "operation.manager". This is how an ActionMoreMenu's Customize footer
@@ -121,6 +139,40 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
   useEffect(() => {
     registerOpenOperationManager(() => setLeftPaneKind("operation.manager"));
   }, [registerOpenOperationManager]);
+
+  // The shell nav bus (SHELL-1/2): user menu entries, settings deep-links and
+  // onboarding 带我去 buttons navigate through this ONE registered handler instead
+  // of reaching into the shell (the registerOpenOperationManager idiom, module-scope).
+  useEffect(() => {
+    registerShellNavigator((target) => {
+      if (target.type === "pane") setLeftPaneKind(target.kind);
+      else setOnboardingOpen(target.open);
+    });
+    return () => registerShellNavigator(null);
+  }, []);
+
+  // First-run detection (SHELL-2): fresh vault (no sources) AND a pristine onboarding
+  // block → auto-open the checklist as the initial center view. Self-contained reads
+  // (race-free against the context's own loading); any failure means NO auto-open.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [{ sources }, { onboarding }] = await Promise.all([
+          entityClient.sources(),
+          entityClient.onboardingState()
+        ]);
+        if (!cancelled && shouldAutoOpenOnboarding({ sourceCount: sources.length, onboarding })) {
+          setOnboardingOpen(true);
+        }
+      } catch {
+        // Endpoints unreachable (tests / degraded transport) — never auto-open.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // User collapse flags (explicit toggles) + the live viewport width (drives responsive
   // auto-collapse of secondary panes). Both feed `isPaneCollapsed`.
@@ -269,6 +321,13 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
       // so the panes that used to be always-on columns are reached here on demand.
       if (wsNode.id === LEFT_SLOT_NODE_ID && leftPaneKind !== wsNode.kind) {
         const swapped: WorkspaceNode = { ...wsNode, kind: leftPaneKind };
+        return renderNode(swapped, ctx);
+      }
+      // The center slot swaps to the onboarding checklist while it is open (SHELL-2) —
+      // the same kind-swap mechanism, so the checklist IS the initial center view on
+      // a first run and the reader returns untouched on close.
+      if (wsNode.id === CENTER_SLOT_NODE_ID && onboardingOpen) {
+        const swapped: WorkspaceNode = { ...wsNode, kind: ONBOARDING_KIND };
         return renderNode(swapped, ctx);
       }
       return renderNode(wsNode, ctx);

@@ -4,14 +4,11 @@
 // Library. This is how the panes that used to be always-on columns (Bookmarks / Concepts /
 // Operations / Layers) are now reached — they stay registered + fully reachable.
 //
-// Bottom: a static avatar placeholder that opens the same Settings affordance the gear
-// hosts (account/settings menu) — here it just toggles the gear menu by selecting nothing
-// destructive; R1 keeps it a placeholder per spec.
-//
-// R1.5 note: this app is local-first with NO user/account/auth concept (WorkspaceContext
-// has no current-user/profile name, and there is no login). So there is no real user name
-// to show. The avatar therefore carries a neutral app-derived identity ("Growte" / "G")
-// instead of the old hardcoded "Alex". When an account model lands, point AVATAR_NAME at it.
+// Bottom: the SHELL-1 user menu (UserMenu) — the avatar/identity button + popover
+// aggregating the app's scattered settings/config surfaces (设置 / Kit & 插件 /
+// 画像与记忆 / 分享身份 / 账户积分-stub / 新手引导 / 关于). The display name is the
+// local Tier-A svpack identity when one exists, else 本地用户 — replacing the old
+// R1.5 static "Growte" placeholder now that a real (optional) identity exists.
 
 import {
   Anchor,
@@ -25,6 +22,7 @@ import {
   UserRound
 } from "lucide-react";
 import type { ComponentType } from "react";
+import { UserMenu } from "./UserMenu";
 
 export type RailEntry = {
   kind: string;
@@ -48,12 +46,6 @@ export const RAIL_ENTRIES: RailEntry[] = [
   { kind: "review.panel", label: "复习 (Review)", Icon: BookOpenCheck },
   { kind: "profile.panel", label: "画像 (Profile)", Icon: UserRound }
 ];
-
-// Neutral app-derived identity for the bottom avatar. This app has no user/account model
-// (see header note), so there is no real name to show — we use the product identity rather
-// than the old hardcoded "Alex". AVATAR_DOT stays in sync with AVATAR_NAME's initial.
-const AVATAR_NAME = "Growte";
-const AVATAR_DOT = AVATAR_NAME.charAt(0).toUpperCase();
 
 export type IconRailProps = {
   /** The view-kind currently shown in the left rail slot. */
@@ -80,12 +72,7 @@ export function IconRail({ selected, onSelect }: IconRailProps) {
           </button>
         ))}
       </div>
-      <button type="button" className="icon-rail-avatar" title={AVATAR_NAME}>
-        <span className="icon-rail-avatar-dot" aria-hidden="true">
-          {AVATAR_DOT}
-        </span>
-        <span className="icon-rail-avatar-label">{AVATAR_NAME}</span>
-      </button>
+      <UserMenu />
     </nav>
   );
 }

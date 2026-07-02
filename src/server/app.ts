@@ -23,7 +23,8 @@ import * as patchesService from "./services/patches";
 import * as assetsService from "./services/assets";
 import * as workspaceService from "./services/workspace";
 import * as aiService from "./services/ai";
-import { chatRequestSchema, createModelProvider, type ModelProvider } from "../ai";
+import { chatRequestSchema, createModelProvider, listProviderDescriptors, type ModelProvider } from "../ai";
+import packageJson from "../../package.json";
 import { installServerKits } from "../kits/server";
 import { StructuredGenerationError } from "../kits/structured";
 import { readFile } from "node:fs/promises";
@@ -68,6 +69,24 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, app: "ai-study-vault" });
+  });
+
+  // App identity for the 关于 surfaces (user menu / Settings Hub) — the version is
+  // the package.json version, resolved at build/require time. 检查更新 stays a
+  // disabled stub until the desktop update channel (X1) wires electron-updater.
+  app.get("/api/about", (_req, res) => {
+    res.json({ app: "ai-study-vault", version: packageJson.version });
+  });
+
+  // AI provider readout (Settings Hub AI 提供方 stub + onboarding 接入 AI detection):
+  // the registered descriptor list plus which provider is ACTIVE on this server —
+  // read-only env detection (A1 registry); the full config UI arrives with A3b.
+  app.get("/api/ai/providers", (_req, res) => {
+    res.json({
+      active: { id: provider.id, kind: provider.capabilities.kind },
+      providers: listProviderDescriptors(),
+      envProviderId: process.env.STUDY_VAULT_AI_PROVIDER ?? null
+    });
   });
 
   app.get("/api/vault", (_req, res) => {
@@ -675,6 +694,10 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
   });
 
   // —— Workspace layout (UI state) —————————————————————————————————————
+  // Field-group ownership (see services/workspace.ts, the M1 plugin-prefs rule):
+  // the legacy PUT owns activeLayoutId+layouts and PRESERVES the stored onboarding
+  // block, so the WorkspaceContext full-body layout PUT can never clobber checklist
+  // progress; /onboarding is the checklist's single write seam. GET returns everything.
   app.get("/api/workspace", async (_req, res, next) => {
     try {
       res.json({ workspace: await workspaceService.readWorkspace({ vault }) });
@@ -686,7 +709,25 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
   app.put("/api/workspace", async (req, res, next) => {
     try {
       const state = workspaceService.workspaceStateSchema.parse(req.body);
-      res.json({ workspace: await workspaceService.writeWorkspace({ vault }, state) });
+      res.json({ workspace: await workspaceService.writeWorkspaceLayout({ vault }, state) });
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  // —— Onboarding checklist state (SHELL-2 first-run block in workspace.json) ——
+  app.get("/api/workspace/onboarding", async (_req, res, next) => {
+    try {
+      res.json({ onboarding: await workspaceService.readWorkspaceOnboarding({ vault }) });
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  app.put("/api/workspace/onboarding", async (req, res, next) => {
+    try {
+      const onboarding = workspaceService.onboardingStateSchema.parse(req.body);
+      res.json({ onboarding: await workspaceService.writeWorkspaceOnboarding({ vault }, onboarding) });
     } catch (error) {
       if (!handleServiceError(res, error)) next(error);
     }

@@ -68,7 +68,12 @@ export const studyVaultLayout: WorkspaceLayout = {
     // Review runner (REV-1 复习环) — reached via the IconRail.
     { id: "review", kind: "review.panel" },
     // Learner profile 画像 + 记忆管理 (MEM-2) — reached via the IconRail.
-    { id: "profile", kind: "profile.panel" }
+    { id: "profile", kind: "profile.panel" },
+    // Settings Hub (SHELL-1) — reached via the user menu (left-slot swap), NOT a rail icon.
+    { id: "settings", kind: "settings.hub" },
+    // Onboarding checklist (SHELL-2) — swapped into the CENTER slot on first run /
+    // via the user menu's 帮助/新手引导.
+    { id: "onboarding", kind: "onboarding.checklist" }
   ],
   layout: studyVaultDock
 };

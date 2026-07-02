@@ -102,9 +102,33 @@ const workspaceLayoutSchema = z.object({
   nodes: z.array(workspaceNodeSchema),
   layout: z.unknown()
 });
+
+// onboarding — the SHELL-2 first-run checklist block inside workspace.json
+// (docs/design/app-shell-ux.md §2). `dismissed`/`completedAt` are the design's
+// first-run flag; `doneSteps` LATCHES step completions (a step once detected done
+// stays done even if the underlying data is later deleted); `sampleSourceId`
+// remembers the 载入示例文档 seed so re-seeding stays idempotent. Every field
+// defaults, so an absent block (all pre-SHELL-2 files) parses to the pristine
+// "never seen" state.
+export const onboardingStateSchema = z.object({
+  dismissed: z.boolean().default(false),
+  completedAt: z.string().nullable().default(null),
+  doneSteps: z.array(z.string()).default([]),
+  sampleSourceId: z.string().nullable().default(null)
+});
+export type OnboardingState = z.infer<typeof onboardingStateSchema>;
+export const emptyOnboardingState: OnboardingState = {
+  dismissed: false,
+  completedAt: null,
+  doneSteps: [],
+  sampleSourceId: null
+};
+
 export const workspaceStateSchema = z.object({
   activeLayoutId: z.string(),
-  layouts: z.array(workspaceLayoutSchema)
+  layouts: z.array(workspaceLayoutSchema),
+  // Optional so pre-SHELL-2 files (and the layout writer's body) stay valid.
+  onboarding: onboardingStateSchema.optional()
 });
 export type WorkspaceState = z.infer<typeof workspaceStateSchema>;
 export const emptyWorkspaceState = { activeLayoutId: "", layouts: [] };
@@ -178,4 +202,44 @@ export async function readWorkspace({ vault }: WorkspaceDeps): Promise<Workspace
 export async function writeWorkspace({ vault }: WorkspaceDeps, state: WorkspaceState): Promise<WorkspaceState> {
   await vault.storage.writeTextAtomic(workspacePath(vault), `${JSON.stringify(state, null, 2)}\n`);
   return state;
+}
+
+// —— single-writer-per-field-group merges (SHELL-2, same M1 rule as plugin-prefs) ——
+// workspace.json now has TWO independent client writers: the layout persistence in
+// WorkspaceContext (a full-body PUT of {activeLayoutId, layouts} from React state)
+// and the onboarding checklist (dismiss/progress writes). Each route owns only its
+// field group and merges against the STORED file, so a stale layout PUT can never
+// clobber onboarding progress and vice versa:
+//   • PUT /api/workspace            → owns activeLayoutId + layouts
+//   • PUT /api/workspace/onboarding → owns the onboarding block
+// GET always returns the whole merged file.
+
+/** The layout write: body's layout fields over the STORED onboarding block. A body
+    that happens to carry `onboarding` is deliberately ignored (field ownership). */
+export async function writeWorkspaceLayout(
+  deps: WorkspaceDeps,
+  body: Pick<WorkspaceState, "activeLayoutId" | "layouts">
+): Promise<WorkspaceState> {
+  const stored = await readWorkspace(deps);
+  return writeWorkspace(deps, {
+    ...stored,
+    activeLayoutId: body.activeLayoutId,
+    layouts: body.layouts
+  });
+}
+
+/** Read just the onboarding block (absent block ⇒ the pristine default state). */
+export async function readWorkspaceOnboarding(deps: WorkspaceDeps): Promise<OnboardingState> {
+  const stored = await readWorkspace(deps);
+  return stored.onboarding ?? emptyOnboardingState;
+}
+
+/** The onboarding write: the block over the STORED layout fields. */
+export async function writeWorkspaceOnboarding(
+  deps: WorkspaceDeps,
+  onboarding: OnboardingState
+): Promise<OnboardingState> {
+  const stored = await readWorkspace(deps);
+  await writeWorkspace(deps, { ...stored, onboarding });
+  return onboarding;
 }

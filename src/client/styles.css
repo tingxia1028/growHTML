@@ -9127,3 +9127,488 @@ select {
   color: var(--sv-text-muted-soft);
   line-height: 1.5;
 }
+
+/* —— SHELL-1 user menu (bottom of the IconRail) ———————————————————————————
+   The avatar/identity trigger + its popover. Token-only append; replaces the old
+   (hidden) .icon-rail-avatar placeholder. */
+.shell-menu {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  /* Bottom-anchor inside the rail regardless of its justify-content (the Growte
+     reskin sets the rail to flex-start). */
+  margin-top: auto;
+  padding-bottom: 4px;
+}
+
+.shell-menu-trigger {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 0;
+  border: none;
+  border-radius: var(--sv-radius);
+  background: transparent;
+  color: var(--sv-text-muted);
+  cursor: pointer;
+}
+
+.shell-menu-trigger:hover {
+  background: var(--sv-surface-muted);
+  color: var(--sv-text);
+}
+
+.shell-menu-avatar-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--sv-radius-pill);
+  background: var(--sv-accent-weak);
+  color: var(--sv-accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.shell-menu-avatar-label {
+  max-width: 52px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.shell-menu-pop {
+  position: absolute;
+  left: 52px;
+  bottom: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  padding: 6px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+
+.shell-menu-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--sv-border-soft);
+}
+
+.shell-menu-identity-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sv-text-strong);
+}
+
+.shell-menu-identity-id {
+  font-size: 10px;
+  color: var(--sv-text-muted);
+}
+
+.shell-menu-identity-hint {
+  font-size: 11px;
+  color: var(--sv-text-faint);
+}
+
+.shell-menu-item {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--sv-radius-sm);
+  background: transparent;
+  color: var(--sv-text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shell-menu-item:hover:not([disabled]) {
+  background: var(--sv-surface-muted);
+  color: var(--sv-text-strong);
+}
+
+.shell-menu-item[disabled] {
+  color: var(--sv-text-faint);
+  cursor: not-allowed;
+}
+
+/* —— SHELL-1 Settings Hub ————————————————————————————————————————————————— */
+.settings-hub {
+  min-width: 0;
+  overflow: auto;
+  padding: var(--sv-space-4);
+  background: var(--sv-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-hub-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-hub-section {
+  padding: 12px 14px;
+  border: 1px solid var(--sv-border-muted);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface-card);
+}
+
+.settings-hub-section-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sv-text-heading);
+}
+
+.settings-hub-section-error {
+  padding: 8px 10px;
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-danger-bg);
+  color: var(--sv-danger-strong);
+  font-size: 12px;
+}
+
+.settings-hub-muted {
+  margin: 0;
+  font-size: 12px;
+  color: var(--sv-text-muted);
+}
+
+.settings-hub-note {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--sv-text-muted-soft);
+}
+
+.settings-hub-error-text {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--sv-danger-strong);
+}
+
+.settings-active-provider {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--sv-text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-provider-kind {
+  padding: 1px 8px;
+  border-radius: var(--sv-radius-pill);
+  background: var(--sv-surface-tag);
+  color: var(--sv-text-subtle);
+  font-size: 11px;
+}
+
+.settings-env-readout {
+  margin-bottom: 8px;
+}
+
+.settings-provider-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-provider-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--sv-text);
+}
+
+.settings-provider-id {
+  font-size: 11px;
+  color: var(--sv-text-muted);
+  background: var(--sv-surface-tag);
+  padding: 1px 6px;
+  border-radius: var(--sv-radius-xs);
+}
+
+.settings-link-btn {
+  margin-top: 8px;
+  padding: 5px 10px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface-card);
+  color: var(--sv-text-strong);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings-link-btn:hover:not([disabled]) {
+  background: var(--sv-surface-muted);
+}
+
+.settings-link-btn[disabled] {
+  color: var(--sv-text-faint);
+  cursor: not-allowed;
+}
+
+.settings-capture-switch {
+  font-size: 12px;
+}
+
+.settings-vault-name {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: var(--sv-text);
+}
+
+.settings-vault-path {
+  display: block;
+  margin-top: 4px;
+  padding: 6px 8px;
+  border-radius: var(--sv-radius-xs);
+  background: var(--sv-surface-tag);
+  color: var(--sv-text-subtle);
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.settings-about-version {
+  margin: 0;
+  font-size: 13px;
+  color: var(--sv-text);
+}
+
+/* —— SHELL-2 onboarding checklist (center view) ——————————————————————————— */
+.onboarding-panel {
+  min-width: 0;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: var(--sv-space-4);
+  background: var(--sv-bg);
+}
+
+.onboarding-card {
+  width: 100%;
+  max-width: 640px;
+  margin-top: 24px;
+  padding: 20px 22px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface);
+}
+
+.onboarding-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.onboarding-head-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--sv-radius-pill);
+  background: var(--sv-accent-weak);
+  color: var(--sv-accent);
+}
+
+.onboarding-head-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.onboarding-title {
+  margin: 0;
+  font-size: 16px;
+  color: var(--sv-text-heading);
+}
+
+.onboarding-subtitle {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--sv-text-muted);
+}
+
+.onboarding-progress {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sv-accent-text);
+  white-space: nowrap;
+}
+
+.onboarding-complete {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-success-bg);
+  color: var(--sv-success-strong);
+  font-size: 12px;
+}
+
+.onboarding-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.onboarding-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--sv-border-muted);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface-card);
+}
+
+.onboarding-step.done {
+  background: var(--sv-surface-muted);
+  border-color: var(--sv-border-soft);
+}
+
+.onboarding-step-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  border-radius: var(--sv-radius-pill);
+  background: var(--sv-surface-tag);
+  color: var(--sv-text-subtle);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.onboarding-step.done .onboarding-step-mark {
+  background: var(--sv-success-bg);
+  color: var(--sv-success-strong);
+}
+
+.onboarding-step-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.onboarding-step-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sv-text-strong);
+}
+
+.onboarding-step.done .onboarding-step-title {
+  color: var(--sv-text-muted);
+}
+
+.onboarding-step-hint {
+  font-size: 11px;
+  color: var(--sv-text-muted);
+}
+
+.onboarding-step-done-label {
+  font-size: 11px;
+  color: var(--sv-success-strong);
+  white-space: nowrap;
+}
+
+.onboarding-go-btn {
+  padding: 5px 12px;
+  border: 1px solid var(--sv-accent-border);
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-accent-weak);
+  color: var(--sv-accent-text);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.onboarding-go-btn:hover:not([disabled]) {
+  background: var(--sv-accent-weak-hover);
+}
+
+.onboarding-go-btn[disabled] {
+  color: var(--sv-text-faint);
+  cursor: not-allowed;
+}
+
+.onboarding-error {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--sv-danger-strong);
+}
+
+.onboarding-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.onboarding-foot-gap {
+  flex: 1;
+}
+
+.onboarding-sample-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface-card);
+  color: var(--sv-text-strong);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.onboarding-sample-btn:hover:not([disabled]) {
+  background: var(--sv-surface-muted);
+}
+
+.onboarding-sample-btn[disabled] {
+  color: var(--sv-text-faint);
+  cursor: wait;
+}
+
+.onboarding-dismiss-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: var(--sv-radius-sm);
+  background: transparent;
+  color: var(--sv-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.onboarding-dismiss-btn:hover {
+  background: var(--sv-surface-muted);
+  color: var(--sv-text);
+}

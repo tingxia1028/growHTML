@@ -8,7 +8,7 @@
 // unseal cache that app.ts merges into the read model, flagged `sealed: true`.
 
 import path from "node:path";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { Express } from "express";
 import { z } from "zod";
 import {
@@ -35,7 +35,7 @@ import {
 } from "../core/crypto/svpackFrame";
 import { checkValidity } from "../core/identity/clock";
 import { loadOrCreateDeviceKey } from "../core/identity/deviceKey";
-import { loadOrCreatePublisher, type PublisherIdentity } from "../core/identity/publisher";
+import { PUBLISHER_KEY_FILE, loadOrCreatePublisher, type PublisherIdentity } from "../core/identity/publisher";
 import { pinPublisher, pinStatus } from "../core/identity/pins";
 import { createEntityId } from "../core/ids";
 import { noteSchema, type AnchorRecord, type NoteRecord, type StudyLayerRecord } from "../core/schema";
@@ -667,6 +667,27 @@ export function registerSvpackRoutes(app: Express, deps: SvpackDeps & { runtime:
         res.status(mapped.status).json(mapped.body);
         return;
       }
+      next(error);
+    }
+  });
+
+  // The LOCAL Tier-A identity readout (SHELL-1 user menu): whether this device has
+  // a publisher keypair in ~/.growte/identity and, if so, its self-certifying id +
+  // the display name packs would carry (the same vault.manifest.name expression
+  // composeProtectedPack stamps into headers). STRICTLY read-only: a device that
+  // never published must NOT grow an identity as a side effect of opening the menu,
+  // so a missing key file answers { identity: null } without loadOrCreate.
+  app.get("/api/svpack/identity", (_req, res, next) => {
+    try {
+      if (!existsSync(path.join(identityDir, PUBLISHER_KEY_FILE))) {
+        res.json({ identity: null });
+        return;
+      }
+      const publisher = loadOrCreatePublisher(identityDir); // key exists ⇒ pure load
+      res.json({
+        identity: { id: publisher.id, displayName: vault.manifest.name || "Growte Publisher" }
+      });
+    } catch (error) {
       next(error);
     }
   });
