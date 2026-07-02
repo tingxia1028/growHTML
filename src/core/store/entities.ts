@@ -3,6 +3,7 @@ import {
   anchorSchema,
   assetSchema,
   conceptSchema,
+  memoryEventSchema,
   noteSchema,
   operationSchema,
   patchSchema,
@@ -12,6 +13,7 @@ import {
   type AnchorRecord,
   type AssetRecord,
   type ConceptRecord,
+  type MemoryEventRecord,
   type NoteRecord,
   type OperationRecord,
   type PatchRecord,
@@ -32,7 +34,10 @@ export const entityFileNames = {
   relations: "relations.jsonl",
   assets: "assets.jsonl",
   layers: "layers.jsonl",
-  operations: "operations.jsonl"
+  operations: "operations.jsonl",
+  // Learner-memory 短期 stream (learner-memory.md §2) — its OWN jsonl so the raw,
+  // prunable event stream never mingles with the durable entities above.
+  memoryEvents: "memory-events.jsonl"
 } as const;
 
 export type EntityStores = {
@@ -45,6 +50,7 @@ export type EntityStores = {
   assets: SnapshotStore<AssetRecord>;
   layers: SnapshotStore<StudyLayerRecord>;
   operations: SnapshotStore<OperationRecord>;
+  memoryEvents: SnapshotStore<MemoryEventRecord>;
 };
 
 export function createEntityStores(studyDir: string, storage: StorageAdapter = nodeStorage): EntityStores {
@@ -58,7 +64,8 @@ export function createEntityStores(studyDir: string, storage: StorageAdapter = n
     relations: createSnapshotStore({ filePath: filePath(entityFileNames.relations), schema: relationSchema, storage }),
     assets: createSnapshotStore({ filePath: filePath(entityFileNames.assets), schema: assetSchema, storage }),
     layers: createSnapshotStore({ filePath: filePath(entityFileNames.layers), schema: studyLayerSchema, storage }),
-    operations: createSnapshotStore({ filePath: filePath(entityFileNames.operations), schema: operationSchema, storage })
+    operations: createSnapshotStore({ filePath: filePath(entityFileNames.operations), schema: operationSchema, storage }),
+    memoryEvents: createSnapshotStore({ filePath: filePath(entityFileNames.memoryEvents), schema: memoryEventSchema, storage })
   };
 }
 

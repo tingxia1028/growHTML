@@ -159,6 +159,49 @@ export type PluginPrefs = {
   userKits: unknown[];
 };
 
+// —— Learner memory (MEM-1, docs/design/learner-memory.md) — behavior capture is
+// TELEMETRY, not a ledger: batched, fire-and-forget, never blocks UX. Shapes mirror
+// src/core/schema/memory.ts + src/server/memory.ts. ——
+
+/** The CLOSED core verb envelope (§3) — kits enrich via taxonomy, never new verbs. */
+export type MemoryVerb =
+  | "open"
+  | "read"
+  | "anchor.create"
+  | "note.create"
+  | "note.edit"
+  | "note.review"
+  | "ai.ask"
+  | "ai.generate"
+  | "import"
+  | "export"
+  | "search"
+  | "navigate";
+
+/** What the behavior touched — all optional, ids of the referenced entities. */
+export type MemorySubject = {
+  sourceId?: string;
+  anchorId?: string;
+  noteId?: string;
+  conceptId?: string;
+  layerId?: string;
+  kitId?: string;
+  contentType?: string;
+};
+
+/** Wire shape of one captured event; the server owns the record envelope. */
+export type MemoryEventInput = {
+  verb: MemoryVerb;
+  subject?: MemorySubject;
+  payload?: Record<string, unknown>;
+  sessionId?: string;
+  /** Client capture time (ISO) — batching delays arrival, so the queue stamps it. */
+  ts?: string;
+};
+
+/** The vault-level capture switch (learner-memory §6.4). */
+export type MemorySettings = { captureEnabled: boolean };
+
 export type NodeRef =
   | { type: "source"; id: string }
   | { type: "anchor"; id: string }
@@ -630,6 +673,28 @@ export const entityClient = {
   /** Delete an imported pack = delete its sealed blob (content leaves the read model). */
   deleteSealedImport(packId: string) {
     return fetchCoded<{ ok: true }>("DELETE", `/api/svpack/${packId}`);
+  },
+
+  // —— Learner memory (MEM-1) ——
+  /**
+   * Append a batch (≤100) of captured behavior events. Fire-and-forget semantics:
+   * capture-off answers 204 WITH NO BODY, so nothing is parsed — callers (the
+   * capture queue) treat any 2xx as success and swallow rejections.
+   */
+  async postMemoryEvents(events: MemoryEventInput[]): Promise<void> {
+    const response = await fetch("/api/memory/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ events })
+    });
+    if (!response.ok) throw new Error(`Request failed: /api/memory/events (${response.status})`);
+  },
+  /** The vault-level capture switch (the user owns capture — learner-memory §6). */
+  memorySettings() {
+    return getJson<{ settings: MemorySettings }>("/api/memory/settings");
+  },
+  putMemorySettings(settings: MemorySettings) {
+    return sendJson<{ settings: MemorySettings }>("PUT", "/api/memory/settings", settings);
   },
 
   // —— Assets ——

@@ -39,6 +39,7 @@ import { studyLayerSchema } from "../core/schema";
 import { buildStudyPack, commitImport, parseStudyPack, previewImport } from "./studyLayer";
 import { defaultIdentityDir } from "../core/identity/paths";
 import { createSealedRuntime, registerSvpackRoutes, type SealedRuntime } from "./svpack";
+import { registerMemoryRoutes } from "./memory";
 import type { StudyVault } from "../core/vault";
 import {
   deleteSource,
@@ -1067,6 +1068,10 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
   // Protected `.svpack` endpoints (export-svpack / renew / inspect / open / commit /
   // list / delete) — see src/server/svpack.ts and docs/design/studypack-sharing.md.
   registerSvpackRoutes(app, { vault, identityDir: svpackIdentityDir, now: clock, runtime: sealed });
+
+  // Learner-memory MEM-1 (docs/design/learner-memory.md): event capture/read/prune +
+  // the vault-level capture switch — see src/server/memory.ts.
+  registerMemoryRoutes(app, { vault, now: clock });
 
   // Preview an import: match the pack to a local source + rematch every anchor.
   // Does NOT persist anything.

@@ -17,6 +17,7 @@ import type {
 } from "../data/entityClient";
 import type { FocusContextValue } from "../focus/FocusContext";
 import { BOOKMARK_CONTENT_TYPE } from "../../core/notes/contentTypes";
+import { recordCommandMemory } from "../memory/commandCapture";
 
 // A unit of AI output BEFORE it is persisted: the prompt/contentType it came from,
 // the input that produced it, the generated `content`, and the anchor/source it
@@ -627,6 +628,10 @@ export async function runCommand(id: string, ctx: CommandContext): Promise<boole
   const command = registry.get(id);
   if (!command || !command.isAvailable(ctx)) return false;
   await command.run(ctx);
+  // Learner-memory capture (MEM-1): a command that just succeeded queues one
+  // fire-and-forget memory event IF it is on the explicit verb whitelist —
+  // unmapped commands record nothing (see src/client/memory/commandCapture.ts).
+  recordCommandMemory(id, ctx);
   return true;
 }
 
