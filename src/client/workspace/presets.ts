@@ -66,7 +66,9 @@ export const studyVaultLayout: WorkspaceLayout = {
     // Kit & Plugin manager — reached via the IconRail (left-slot swap resolves the kind).
     { id: "plugin-manager", kind: "plugin.manager" },
     // Review runner (REV-1 复习环) — reached via the IconRail.
-    { id: "review", kind: "review.panel" }
+    { id: "review", kind: "review.panel" },
+    // Learner profile 画像 + 记忆管理 (MEM-2) — reached via the IconRail.
+    { id: "profile", kind: "profile.panel" }
   ],
   layout: studyVaultDock
 };

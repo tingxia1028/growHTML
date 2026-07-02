@@ -53,6 +53,8 @@ import "./RightSidebarTabs";
 import "./pluginManagerViews";
 //   ../review/ReviewPanel → review.panel (the REV-1 复习 runner — reached via the IconRail)
 import "../review/ReviewPanel";
+//   ../profile/ProfilePanel → profile.panel (the MEM-2 画像/记忆管理 page — IconRail)
+import "../profile/ProfilePanel";
 import { TopBar } from "./TopBar";
 import { IconRail } from "./IconRail";
 import { SelectionFloatingToolbar } from "./SelectionFloatingToolbar";

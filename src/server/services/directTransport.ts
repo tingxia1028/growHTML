@@ -36,6 +36,11 @@
 //             GET  /api/memory/events                 · since/limit read-back
 //             GET  /api/memory/settings               · capture switch
 //             PUT  /api/memory/settings               · capture switch
+//             POST /api/memory/consolidate            · MEM-2 pass (events→digests + compaction)
+//             GET  /api/memory/digests                · day digests (?dimension=) + tier meta
+//             GET  /api/memory/profile                · facts + overrides + digestMeta
+//             PUT  /api/memory/profile                · replace the override document
+//             DELETE /api/memory                      · clear every tier (events/digests/overrides)
 // Anything else — including the HTTP-only streams (SSE chat, binary assets/files)
 // — throws DirectTransportUnsupportedError naming the method+path.
 
@@ -45,10 +50,16 @@ import { deleteSource, listSources } from "../../core/store/sources";
 import type { StudyVault } from "../../core/vault";
 import {
   appendMemoryEvents,
+  clearMemory,
+  consolidateMemory,
+  getMemoryProfile,
+  listMemoryDigests,
+  listMemoryDigestsQuerySchema,
   listMemoryEvents,
   listMemoryEventsQuerySchema,
   putMemorySettingsSchema,
   readMemorySettings,
+  writeMemoryProfileOverrides,
   writeMemorySettings
 } from "../memory";
 import type { SealedRuntime } from "../svpack";
@@ -297,6 +308,39 @@ const routes: DirectRoute[] = [
     pattern: "/api/memory/settings",
     schema: putMemorySettingsSchema,
     call: async ({ deps, input }) => ({ settings: await writeMemorySettings(deps, input) })
+  }),
+
+  // —— Learner memory (MEM-2 tiers) — the SAME service fns + schemas the routes wrap ——
+  route({
+    method: "POST",
+    pattern: "/api/memory/consolidate",
+    call: async ({ deps }) => ({ consolidated: await consolidateMemory(deps) })
+  }),
+  route({
+    method: "GET",
+    pattern: "/api/memory/digests",
+    call: ({ deps, query }) =>
+      listMemoryDigests(
+        deps,
+        listMemoryDigestsQuerySchema.parse({ dimension: query.get("dimension") ?? undefined })
+      )
+  }),
+  route({
+    method: "GET",
+    pattern: "/api/memory/profile",
+    call: ({ deps }) => getMemoryProfile(deps)
+  }),
+  route({
+    method: "PUT",
+    pattern: "/api/memory/profile",
+    // No `schema` here ON PURPOSE (the events-POST idiom): writeMemoryProfileOverrides
+    // parses the SAME exported putMemoryProfileSchema internally — one source of truth.
+    call: async ({ deps, body }) => ({ overrides: await writeMemoryProfileOverrides(deps, body) })
+  }),
+  route({
+    method: "DELETE",
+    pattern: "/api/memory",
+    call: ({ deps }) => clearMemory(deps)
   })
 ];
 

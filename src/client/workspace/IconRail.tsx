@@ -21,7 +21,8 @@ import {
   Folder,
   Layers,
   Network,
-  NotebookPen
+  NotebookPen,
+  UserRound
 } from "lucide-react";
 import type { ComponentType } from "react";
 
@@ -44,7 +45,8 @@ export const RAIL_ENTRIES: RailEntry[] = [
   { kind: "operation.manager", label: "Operations", Icon: Code2 },
   { kind: "layer.switcher", label: "Layers", Icon: Layers },
   { kind: "plugin.manager", label: "Kit & Plugin", Icon: Blocks },
-  { kind: "review.panel", label: "复习 (Review)", Icon: BookOpenCheck }
+  { kind: "review.panel", label: "复习 (Review)", Icon: BookOpenCheck },
+  { kind: "profile.panel", label: "画像 (Profile)", Icon: UserRound }
 ];
 
 // Neutral app-derived identity for the bottom avatar. This app has no user/account model

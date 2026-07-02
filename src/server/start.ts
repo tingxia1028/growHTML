@@ -2,6 +2,7 @@ import { createServer, type Server } from "node:http";
 import { openVault } from "../core/vault";
 import { migrateStudyLayers } from "../core/study-layer/layers";
 import { createApp } from "./app";
+import { consolidateMemory } from "./memory";
 
 export type StartServerOptions = {
   /** Listen port; 0 (default) picks a free port — read it back from `port`. */
@@ -25,6 +26,13 @@ export async function startServer(options: StartServerOptions = {}): Promise<Sta
   const vault = await openVault();
   // Backfill the owned-layer membership for any pre-Study-Layer anchors/notes.
   await migrateStudyLayers(vault);
+  // MEM-2 app-start consolidation pass (learner-memory §4): roll captured events into
+  // digests + compact the raw stream once per boot. Never blocks serving on failure.
+  try {
+    await consolidateMemory({ vault });
+  } catch (error) {
+    console.warn("[memory] app-start consolidation failed (will retry on next trigger):", error);
+  }
   const app = createApp({ vault, clientDir: options.clientDir });
   const server = createServer(app);
 

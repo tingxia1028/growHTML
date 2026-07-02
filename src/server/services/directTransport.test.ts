@@ -219,6 +219,63 @@ describe("direct transport acceptance — entityClient with no HTTP", () => {
     expect((await entityClient.sources()).sources).toEqual([]);
   });
 
+  it("runs the MEM-2 tier flow (consolidate → digests → profile → overrides → clear) with HTTP parity", async () => {
+    // Same seed on both sides: an OLD event (freezes+prunes at the pinned 14d
+    // boundary, 2026-06-17) + three graded failures that derive a 弱项 fact.
+    const seed = [
+      { verb: "open" as const, subject: { contentType: "markdown" }, ts: "2026-06-10T08:00:00.000Z", sessionId: "s1" },
+      { verb: "note.review" as const, subject: { contentType: "quiz" }, payload: { result: "fail" }, ts: "2026-06-20T08:00:00.000Z", sessionId: "s1" },
+      { verb: "note.review" as const, subject: { contentType: "quiz" }, payload: { result: "fail" }, ts: "2026-06-20T09:00:00.000Z", sessionId: "s1" },
+      { verb: "note.review" as const, subject: { contentType: "quiz" }, payload: { result: "fail" }, ts: "2026-06-21T09:00:00.000Z", sessionId: "s1" }
+    ];
+    const overrides = { facts: [{ key: "weak:contentType:quiz", pinned: true, note: "统一更正" }] };
+
+    // —— Direct side, through entityClient's real bindings ——
+    await entityClient.postMemoryEvents(seed);
+    const consolidated = (await entityClient.consolidateMemory()).consolidated;
+    const digests = await entityClient.memoryDigests();
+    const filtered = await entityClient.memoryDigests("contentType");
+    await entityClient.putMemoryProfile(overrides);
+    const profile = await entityClient.memoryProfile();
+
+    // —— The SAME flow over HTTP ——
+    await request(app).post("/api/memory/events").send({ events: seed }).expect(201);
+    const httpConsolidated = (await request(app).post("/api/memory/consolidate").expect(200)).body.consolidated;
+    const httpDigests = (await request(app).get("/api/memory/digests").expect(200)).body;
+    const httpFiltered = (await request(app).get("/api/memory/digests?dimension=contentType").expect(200)).body;
+    await request(app).put("/api/memory/profile").send(overrides).expect(200);
+    const httpProfile = (await request(app).get("/api/memory/profile").expect(200)).body;
+
+    // Pinned clock + no per-vault ids in this seed ⇒ byte-identical bodies.
+    expect(consolidated).toEqual(httpConsolidated);
+    expect(consolidated.prunedEvents).toBe(1);
+    expect(JSON.stringify(digests)).toBe(JSON.stringify(httpDigests));
+    expect(JSON.stringify(filtered)).toBe(JSON.stringify(httpFiltered));
+    expect(filtered.digests.every((row) => row.dimension === "contentType")).toBe(true);
+    expect(JSON.stringify(profile)).toBe(JSON.stringify(httpProfile));
+    expect(profile.facts[0]).toMatchObject({ key: "weak:contentType:quiz", pinned: true, note: "统一更正" });
+    expect(profile.digestMeta.retention).toEqual({ rawEventDays: 14, digestDays: 365 });
+
+    // Invalid override document → the SAME 400 ("Invalid request") both sides.
+    const badPut = await direct
+      .request("PUT", "/api/memory/profile", { facts: [{ key: "" }] })
+      .catch((err: unknown) => err);
+    expect(badPut).toBeInstanceOf(ApiError);
+    expect((badPut as ApiError).status).toBe(400);
+    const httpBadPut = (
+      await request(app).put("/api/memory/profile").send({ facts: [{ key: "" }] }).expect(400)
+    ).body;
+    expect((badPut as ApiError).message).toBe(httpBadPut.error);
+
+    // Clear-all parity: every tier wiped on both sides.
+    const cleared = await entityClient.clearMemory();
+    const httpCleared = (await request(app).delete("/api/memory").expect(200)).body;
+    expect(cleared).toEqual(httpCleared);
+    expect(cleared.cleared).toEqual({ events: 3, digests: true, overrides: true });
+    expect((await entityClient.memoryProfile()).facts).toEqual([]);
+    expect((await request(app).get("/api/memory/profile").expect(200)).body.facts).toEqual([]);
+  });
+
   it("maps typed service failures to the SAME ApiError(status/message) http produces", async () => {
     // NotFound: identical status AND message, and the client-facing class is ApiError
     // exactly as if the http transport had parsed a 404 response.

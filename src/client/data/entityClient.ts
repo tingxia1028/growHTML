@@ -211,6 +211,74 @@ export type MemoryEventInput = {
 /** The vault-level capture switch (learner-memory §6.4). */
 export type MemorySettings = { captureEnabled: boolean };
 
+/** A stored event as GET /api/memory/events returns it (server envelope included). */
+export type MemoryEventRow = {
+  id: string;
+  verb: MemoryVerb;
+  subject?: MemorySubject;
+  payload?: Record<string, unknown>;
+  sessionId?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+// —— Learner memory MEM-2 (tiers) — shapes mirror src/core/memory/digest.ts +
+// profile.ts and src/server/memory.ts. ——
+
+/** One day×dimension×bucket digest row (the 中长期 tier read model). */
+export type MemoryDigestRow = {
+  period: "day";
+  date: string;
+  dimension: "overall" | "subject" | "contentType" | "sourceId";
+  bucket: string;
+  events: number;
+  counts: Record<string, number>;
+  review: { pass: number; fail: number; skip: number };
+  firstAt: string;
+  lastAt: string;
+};
+
+export type MemoryDigestListMeta = {
+  frozenThrough: string | null;
+  consolidatedAt: string | null;
+  rows: number;
+};
+
+/** One derived profile fact merged with its user override (the 长期 tier). */
+export type ProfileFactView = {
+  key: string;
+  kind: "weak" | "activity" | "top";
+  title: string;
+  value: string;
+  evidence: string[];
+  confidence?: number;
+  pinned: boolean;
+  hidden: boolean;
+  note?: string;
+};
+
+export type ProfileFactOverride = { key: string; pinned?: boolean; hidden?: boolean; note?: string };
+export type ProfileOverrides = { facts: ProfileFactOverride[] };
+
+export type MemoryDigestMeta = MemoryDigestListMeta & {
+  events: number;
+  captureEnabled: boolean;
+  retention: { rawEventDays: number; digestDays: number };
+};
+
+export type MemoryProfileResponse = {
+  facts: ProfileFactView[];
+  overrides: ProfileOverrides;
+  digestMeta: MemoryDigestMeta;
+};
+
+export type ConsolidateMemorySummary = {
+  frozenThrough: string | null;
+  consolidatedAt: string | null;
+  rows: number;
+  prunedEvents: number;
+};
+
 export type NodeRef =
   | { type: "source"; id: string }
   | { type: "anchor"; id: string }
@@ -685,6 +753,42 @@ export const entityClient = {
   },
   putMemorySettings(settings: MemorySettings) {
     return sendJson<{ settings: MemorySettings }>("PUT", "/api/memory/settings", settings);
+  },
+  /** Read back stored events (manager/review consumers; server caps limit at 1000). */
+  listMemoryEvents(query?: { since?: string; limit?: number }) {
+    const params = new URLSearchParams();
+    if (query?.since) params.set("since", query.since);
+    if (query?.limit !== undefined) params.set("limit", String(query.limit));
+    const qs = params.toString();
+    return getJson<{ events: MemoryEventRow[]; total: number }>(`/api/memory/events${qs ? `?${qs}` : ""}`);
+  },
+
+  // —— Learner memory (MEM-2 tiers) ——
+  /** Live day-digest rows (the 中长期 tier), optionally filtered to one dimension. */
+  memoryDigests(dimension?: MemoryDigestRow["dimension"]) {
+    return getJson<{ digests: MemoryDigestRow[]; meta: MemoryDigestListMeta }>(
+      `/api/memory/digests${dimension ? `?dimension=${encodeURIComponent(dimension)}` : ""}`
+    );
+  },
+  /** The 画像: deterministic facts merged with overrides + tier meta (§4/§6.4). */
+  memoryProfile() {
+    return getJson<MemoryProfileResponse>("/api/memory/profile");
+  },
+  /** Replace the profile override document (pin/hide/correct — survives recomputes). */
+  putMemoryProfile(overrides: ProfileOverrides) {
+    return sendJson<{ overrides: ProfileOverrides }>("PUT", "/api/memory/profile", overrides);
+  },
+  /** Run one consolidation pass now (events→digests + raw compaction). Idempotent. */
+  consolidateMemory() {
+    return sendJson<{ consolidated: ConsolidateMemorySummary }>("POST", "/api/memory/consolidate", {});
+  },
+  /** 清除记忆 — wipe every tier (events + digests + overrides). The switch stays. */
+  clearMemory() {
+    return sendJson<{ cleared: { events: number; digests: boolean; overrides: boolean } }>(
+      "DELETE",
+      "/api/memory",
+      undefined
+    );
   },
 
   // —— Assets ——

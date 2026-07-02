@@ -1,11 +1,9 @@
 // Review panel IO — the panel's three data edges behind ONE swappable seam (the
 // capture.ts test-seam idiom), so the jsdom component tests stub network without
 // touching global fetch:
-//   events   — GET /api/memory/events (MEM-1's shipped read-back route). entityClient
-//              deliberately gains NO new binding here (it is parallel-owned right now;
-//              "do not add bindings"), so this is a plain HTTP fetch like the
-//              chatStream/assetUrl HTTP-only paths. When entityClient grows a
-//              listMemoryEvents binding, swap defaultIo.fetchEvents to it (one line).
+//   events   — the entityClient.listMemoryEvents binding (MEM-2 landed it; this is
+//              the documented one-line swap off the interim plain fetch), so review
+//              rides the shared VaultTransport like every other data edge.
 //   allNotes — the existing entityClient.allNotes binding (全库 scope).
 //   generate — the existing entityClient.generateStructured binding — the SAME
 //              /api/kits/generate dispatch every kit command uses.
@@ -24,12 +22,9 @@ export type ReviewIo = {
 // The server caps the read-back at 1000 (listMemoryEventsQuerySchema) — ask for the
 // max; the queue only needs the LATEST event per note, so older overflow only ever
 // makes a note look less-recently-reviewed (safe degradation for V1).
-async function fetchEventsHttp(): Promise<ReviewEventLike[]> {
+async function fetchEventsViaClient(): Promise<ReviewEventLike[]> {
   try {
-    const response = await fetch("/api/memory/events?limit=1000");
-    if (!response.ok) return [];
-    const body = (await response.json()) as { events?: ReviewEventLike[] };
-    return Array.isArray(body.events) ? body.events : [];
+    return (await entityClient.listMemoryEvents({ limit: 1000 })).events;
   } catch {
     // Review must degrade, not break: no events just means "everything looks new".
     return [];
@@ -37,7 +32,7 @@ async function fetchEventsHttp(): Promise<ReviewEventLike[]> {
 }
 
 const defaultIo: ReviewIo = {
-  fetchEvents: fetchEventsHttp,
+  fetchEvents: fetchEventsViaClient,
   fetchAllNotes: async () => (await entityClient.allNotes()).notes,
   generate: (request) => entityClient.generateStructured(request)
 };

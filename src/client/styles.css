@@ -8510,3 +8510,318 @@ select {
   font-weight: 600;
   color: var(--sv-text-heading);
 }
+
+/* ————————————————————————————————————————————————————————————————————————
+   画像页 (MEM-2) — ProfilePanel.tsx. The left-slot Profile panel: fact list
+   with pin/hide/correct overrides, per-dimension digest bars (plain divs),
+   and the 记忆管理 block (capture switch / 汇总 / 清除 confirm / retention).
+   Token-only; reuses the shared .panel-title / .empty-state chrome. */
+.profile-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  padding: 12px;
+  overflow-y: auto;
+  background: var(--sv-surface);
+  color: var(--sv-text);
+}
+
+.profile-error {
+  font-size: 12px;
+  color: var(--sv-danger-strong);
+  background: var(--sv-danger-bg);
+  border: 1px solid var(--sv-danger-bg-strong);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.profile-capture-off {
+  font-size: 12px;
+  color: var(--sv-text-muted);
+  background: var(--sv-surface-muted);
+  border: 1px dashed var(--sv-border);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.profile-loading {
+  font-size: 12px;
+  color: var(--sv-text-muted);
+}
+
+.profile-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--sv-border);
+  border-radius: 10px;
+  background: var(--sv-surface-card);
+  padding: 10px;
+}
+
+.profile-head {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--sv-text-heading);
+}
+
+.profile-subhead {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sv-text-muted);
+}
+
+.profile-empty {
+  padding: 8px 2px;
+}
+
+.profile-fact-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.profile-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--sv-border-soft);
+  border-radius: 8px;
+  background: var(--sv-surface);
+  padding: 8px;
+}
+
+.profile-fact-list-hidden .profile-fact {
+  opacity: 0.65;
+}
+
+.profile-fact-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.profile-fact-kind {
+  flex: none;
+  font-size: 10px;
+  line-height: 1.7;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--sv-surface-tag);
+  color: var(--sv-text-muted);
+  white-space: nowrap;
+}
+
+.profile-fact-kind[data-kind="weak"] {
+  background: var(--sv-danger-bg);
+  color: var(--sv-danger-2);
+}
+
+.profile-fact-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sv-text-heading);
+}
+
+.profile-fact-pin {
+  margin-left: auto;
+  font-size: 10px;
+  line-height: 1.7;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--sv-accent-weak);
+  border: 1px solid var(--sv-accent-border);
+  color: var(--sv-accent-text);
+  white-space: nowrap;
+}
+
+.profile-fact-value {
+  font-size: 12px;
+  color: var(--sv-text);
+  overflow-wrap: anywhere;
+}
+
+.profile-fact-note {
+  font-size: 12px;
+  color: var(--sv-text-quote);
+  border-left: 3px solid var(--sv-accent-border);
+  background: var(--sv-accent-weak);
+  border-radius: 0 6px 6px 0;
+  padding: 4px 8px;
+  overflow-wrap: anywhere;
+}
+
+.profile-fact-actions,
+.profile-manage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.profile-btn {
+  border: 1px solid var(--sv-border);
+  border-radius: 8px;
+  background: var(--sv-surface-card);
+  color: var(--sv-text-strong);
+  font-size: 12px;
+  padding: 3px 9px;
+  cursor: pointer;
+}
+
+.profile-btn:hover:not(:disabled) {
+  background: var(--sv-surface-muted);
+}
+
+.profile-btn:disabled {
+  color: var(--sv-text-faint);
+  cursor: default;
+}
+
+.profile-pin-btn[aria-pressed="true"] {
+  background: var(--sv-accent-weak);
+  border-color: var(--sv-accent-border);
+  color: var(--sv-accent-text);
+}
+
+.profile-clear-btn,
+.profile-clear-yes-btn {
+  border-color: var(--sv-danger-bg-strong);
+  background: var(--sv-danger-bg);
+  color: var(--sv-danger-2);
+}
+
+.profile-note-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.profile-note-input {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--sv-border);
+  border-radius: 8px;
+  background: var(--sv-surface-card);
+  color: var(--sv-text);
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.profile-note-input:focus {
+  outline: none;
+  border-color: var(--sv-accent-border);
+}
+
+.profile-hidden-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.profile-hidden-toggle {
+  align-self: flex-start;
+}
+
+.profile-activity {
+  margin: 0;
+  font-size: 12px;
+  color: var(--sv-text-muted);
+}
+
+.profile-dimension {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.profile-dimension-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.profile-dimension-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.profile-dimension-bucket {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sv-text-strong);
+}
+
+.profile-dimension-count {
+  flex: none;
+  color: var(--sv-text-muted-soft);
+}
+
+.profile-fail {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.profile-bar {
+  display: inline-block;
+  width: 72px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--sv-surface-muted);
+  overflow: hidden;
+}
+
+.profile-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--sv-danger-2);
+}
+
+.profile-fail-label {
+  font-size: 11px;
+  color: var(--sv-danger-2);
+  white-space: nowrap;
+}
+
+.profile-capture-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--sv-text-strong);
+  cursor: pointer;
+}
+
+.profile-clear-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--sv-danger-2);
+}
+
+.profile-retention {
+  margin: 0;
+  font-size: 11px;
+  color: var(--sv-text-muted-soft);
+  line-height: 1.5;
+}
