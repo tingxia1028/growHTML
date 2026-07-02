@@ -15,13 +15,18 @@ import {
 afterEach(() => resetCatalog());
 
 describe("bundled catalog invariants (§8.1)", () => {
-  it("ids are unique and every entry is bundled + defaultInstalled (V1)", () => {
+  it("ids are unique, every entry is bundled; defaultInstalled = everything except the M-B subject entries", () => {
     const entries = listCatalogEntries();
     const ids = entries.map((e) => e.id);
     expect(new Set(ids).size).toBe(ids.length);
     for (const entry of entries) {
       expect(entry.source, `${entry.id} source`).toBe("bundled");
-      expect(entry.defaultInstalled, `${entry.id} defaultInstalled`).toBe(true);
+      // Pre-M-B goods stay defaultInstalled (a null catalogState behaves byte-for-byte
+      // as before the market). The subject kits/plugins (subject-kits.md M-B) are the
+      // first install-to-activate entries: bundled but NOT default-installed —
+      // "installing 英语 Kit lights up vocab in the composer" (PART 5).
+      const optIn = entry.id.startsWith("subject-");
+      expect(entry.defaultInstalled, `${entry.id} defaultInstalled`).toBe(!optIn);
       expect(entry.description.length, `${entry.id} needs a description`).toBeGreaterThan(0);
     }
   });
@@ -61,6 +66,16 @@ describe("bundled catalog invariants (§8.1)", () => {
       "review-pack",
       "textbook-language"
     ]);
+  });
+
+  it("lists the M-B subject exemplars: 3 plugins + 3 kits whose members mix new and existing plugins", () => {
+    for (const id of ["subject-vocab", "subject-formula", "subject-timeline"]) {
+      expect(getCatalogEntry(id)?.kind, id).toBe("plugin");
+    }
+    expect(getCatalogEntry("subject-english")?.kind).toBe("kit");
+    expect(catalogKitMembers("subject-english")).toEqual(["subject-vocab", "flashcard"]);
+    expect(catalogKitMembers("subject-math")).toEqual(["subject-formula", "mistake", "quiz"]);
+    expect(catalogKitMembers("subject-history-geo")).toEqual(["subject-timeline"]);
   });
 
   it("HIDES core primitives — no catalog entry for the always-on content basics", () => {

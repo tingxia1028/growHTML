@@ -9612,3 +9612,186 @@ select {
   background: var(--sv-surface-muted);
   color: var(--sv-text);
 }
+
+/* ==== Subject kits (subject-kits.md M-B): 生词卡 / 公式卡 / 时间线 ============== */
+
+/* —— 公式卡 —— */
+.sv-latex-block {
+  padding: 6px 0;
+  overflow-x: auto;
+}
+
+.sv-latex-raw {
+  font-family: var(--sv-mono, monospace);
+  font-size: 12px;
+}
+
+.sv-card-formula {
+  padding: 2px 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sv-formula-empty,
+.sv-timeline-empty {
+  color: var(--sv-text-faint);
+  font-size: 12px;
+}
+
+.sv-formula-variables {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  margin: 8px 0;
+}
+
+.sv-formula-variables th,
+.sv-formula-variables td {
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--sv-border-soft, #e5e7eb);
+}
+
+.sv-formula-variables th {
+  color: var(--sv-text-muted);
+  font-weight: 500;
+}
+
+.sv-formula-usage {
+  font-size: 13px;
+  margin: 6px 0 0;
+}
+
+.sv-formula-derivation-ref {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--sv-accent, #2563eb);
+}
+
+.sv-formula-edit-preview {
+  min-height: 20px;
+  padding: 4px 8px;
+  border: 1px dashed var(--sv-border-soft, #e5e7eb);
+  border-radius: var(--sv-radius-sm);
+}
+
+/* —— 生词卡 —— */
+.sv-card-vocab .sv-vocab-word {
+  font-weight: 600;
+  margin: 0;
+}
+
+.sv-card-vocab .sv-vocab-def {
+  margin: 2px 0;
+  color: var(--sv-text-muted);
+  font-size: 12.5px;
+}
+
+.sv-vocab-meta {
+  display: flex;
+  gap: 8px;
+  color: var(--sv-text-muted);
+  font-size: 12.5px;
+  margin: 2px 0 0;
+}
+
+.sv-vocab-senses {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.sv-vocab-sense-def {
+  margin: 0;
+}
+
+.sv-vocab-sense-example {
+  margin: 1px 0 4px;
+  color: var(--sv-text-muted);
+  font-size: 12.5px;
+  font-style: italic;
+}
+
+.sv-vocab-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--sv-text-muted);
+  margin: 6px 0 0;
+}
+
+.sv-vocab-chip {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--sv-surface-muted, #f3f4f6);
+  color: var(--sv-text, #111827);
+}
+
+/* —— 时间线 —— */
+.sv-card-timeline-event {
+  margin: 1px 0;
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sv-timeline-track {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 6px;
+  border-left: 2px solid var(--sv-border-soft, #e5e7eb);
+}
+
+.sv-timeline-node {
+  margin: 6px 0;
+}
+
+.sv-timeline-head {
+  display: inline-flex;
+  gap: 8px;
+  align-items: baseline;
+  cursor: default;
+}
+
+.sv-timeline-details > summary.sv-timeline-head {
+  cursor: pointer;
+  list-style: none;
+}
+
+.sv-timeline-dot {
+  color: var(--sv-accent, #2563eb);
+  font-size: 10px;
+  margin-left: -12px;
+}
+
+.sv-timeline-date {
+  font-variant-numeric: tabular-nums;
+  color: var(--sv-text-muted);
+  font-size: 12.5px;
+  min-width: 48px;
+}
+
+.sv-timeline-event-title {
+  font-weight: 500;
+}
+
+.sv-timeline-detail,
+.sv-timeline-significance {
+  margin: 2px 0 2px 44px;
+  font-size: 12.5px;
+  color: var(--sv-text-muted);
+}
+
+/* —— subject editors: compact repeatable rows —— */
+.sv-edit-row {
+  display: flex;
+  gap: 6px;
+}
+
+.sv-edit-row .note-edit-field {
+  flex: 1;
+  min-width: 0;
+}

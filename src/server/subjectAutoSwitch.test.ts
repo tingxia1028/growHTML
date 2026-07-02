@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openVault, type StudyVault } from "../core/vault";
 import { createApp } from "./app";
 import { foregroundForSource } from "../kits/activation";
+import { detectKit } from "../core/subject/detectSubject";
 
 // M-A persistence roundtrip (subject-kits.md §3.7, post-F4): the per-source USER PIN is
 // the existing `metadata.activeKitIds` array, written through the SAME merge-patch
@@ -16,7 +17,10 @@ import { foregroundForSource } from "../kits/activation";
 //
 // createApp's module import runs installServerKits, which registers the textbook kit's
 // detection table (the M-A seed) — the same table installClientKits registers, so this
-// exercises the real registration seam end to end.
+// exercises the real registration seam end to end. Since M-B the subject kits' tables
+// (英语/数学/史地) register beside it; the roundtrip fixture title deliberately hits
+// ONLY the textbook table (教材) so the detected kit is an INSTALLED one — the
+// uninstalled-winner path has its own test below.
 
 let tempDir = "";
 let vault: StudyVault;
@@ -43,7 +47,7 @@ describe("subject auto-switch — pin persistence roundtrip over the real API", 
   it("detects on open, pin beats detection across a re-fetch, clearing re-detects", async () => {
     const created = await request(app)
       .post("/api/sources/html")
-      .send({ title: "人教版数学教材 第一章 集合", content: "<article><p>集合的概念。</p></article>" })
+      .send({ title: "人教版教材 第一章 集合", content: "<article><p>集合的概念。</p></article>" })
       .expect(201);
     const sourceId: string = created.body.source.id;
 
@@ -77,5 +81,22 @@ describe("subject auto-switch — pin persistence roundtrip over the real API", 
     const resolution = foregroundForSource(await fetchSource(created.body.source.id));
     expect(resolution.mode).toBe("default");
     expect(resolution.kitIds).toEqual(["textbook-learning"]); // the server-side fallback default
+  });
+
+  it("M-B: an UNINSTALLED subject-kit winner foregrounds nothing (§3.5) while the engine keeps the candidate", async () => {
+    // subject-math's registered table wins this title, but the kit is not
+    // default-installed (install-to-activate) → the resolver falls to the default;
+    // the engine still names the winner for the future install-suggestion UI.
+    const created = await request(app)
+      .post("/api/sources/html")
+      .send({ title: "高一数学函数练习", content: "<article><p>求函数定义域。</p></article>" })
+      .expect(201);
+    const source = await fetchSource(created.body.source.id);
+    const resolution = foregroundForSource(source);
+    expect(resolution.mode).toBe("default");
+    expect(resolution.kitIds).toEqual(["textbook-learning"]);
+    const engine = detectKit({ title: source.title, sourceType: source.sourceType });
+    expect(engine.candidates[0]?.kitId).toBe("subject-math");
+    expect(engine.candidates[0]?.confidence).toBeGreaterThanOrEqual(0.6);
   });
 });

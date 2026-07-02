@@ -40,6 +40,7 @@
     "fflate": "^0.8.3",
     "grapesjs": "latest",
     "grapesjs-preset-webpage": "latest",
+    "katex": "^0.17.0",
     "linkedom": "^0.18.12",
     "lucide-react": "^1.21.0",
     "markmap-lib": "^0.18.12",

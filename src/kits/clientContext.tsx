@@ -153,6 +153,7 @@ export function createKitInstallContext(ownerId: string, opts?: { kitId?: string
           aliases: plugin.aliases,
           icon: plugin.icon,
           hidden: plugin.hidden,
+          focusable: plugin.focusable,
           priority: plugin.priority,
           pluginId: ownerId
         });

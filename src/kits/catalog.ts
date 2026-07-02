@@ -176,6 +176,42 @@ const BUNDLED_CATALOG: CatalogEntry[] = [
     defaultInstalled: true,
     source: "bundled"
   },
+  // (b) subject exemplar plugins (subject-kits.md M-B). NOT default-installed: the
+  // first true install-to-activate market goods — installing lights up their create
+  // affordances (slash/composer/toolbar); rendering is never gated.
+  {
+    id: "subject-vocab",
+    kind: "plugin",
+    name: "生词卡 Vocab",
+    icon: "spell-check",
+    description: "生词卡:音标/词性/多释义/例句,近反义词,闪卡式翻面复习.",
+    author: "growte",
+    provides: ["subject.vocab"],
+    defaultInstalled: false,
+    source: "bundled"
+  },
+  {
+    id: "subject-formula",
+    kind: "plugin",
+    name: "公式卡 Formula",
+    icon: "sigma",
+    description: "公式卡:KaTeX 排版的 LaTeX 公式 + 变量表(符号/含义/单位)+ 用法.",
+    author: "growte",
+    provides: ["subject.formula"],
+    defaultInstalled: false,
+    source: "bundled"
+  },
+  {
+    id: "subject-timeline",
+    kind: "plugin",
+    name: "时间线 Timeline",
+    icon: "history",
+    description: "时间线:纵向年表,事件节点可展开细节与意义.",
+    author: "growte",
+    provides: ["subject.timeline"],
+    defaultInstalled: false,
+    source: "bundled"
+  },
   // (c) kits — bundles of plugin refs + kit-level config
   {
     id: "textbook-learning",
@@ -187,6 +223,42 @@ const BUNDLED_CATALOG: CatalogEntry[] = [
     author: "growte",
     members: ["explanation", "practice", "mistake", "review-pack", "textbook-language"],
     defaultInstalled: true,
+    source: "bundled"
+  },
+  // (c) subject kits (subject-kits.md PART 2, M-B slice) — members mix the new exemplar
+  // plugin with EXISTING plugins (referenced, not re-created; the members-union refcount
+  // §8.5.2 covers the sharing). The M-C types append to members[] when they ship.
+  {
+    id: "subject-english",
+    kind: "kit",
+    name: "英语 Kit",
+    icon: "languages",
+    description: "英语学习包:生词卡 + 闪卡(M-C 再加语法点/摘抄赏析).",
+    author: "growte",
+    members: ["subject-vocab", "flashcard"],
+    defaultInstalled: false,
+    source: "bundled"
+  },
+  {
+    id: "subject-math",
+    kind: "kit",
+    name: "数学 Kit",
+    icon: "sigma",
+    description: "数学学习包:公式卡 + 错题 + 小测(M-C 再加推导/定理卡).",
+    author: "growte",
+    members: ["subject-formula", "mistake", "quiz"],
+    defaultInstalled: false,
+    source: "bundled"
+  },
+  {
+    id: "subject-history-geo",
+    kind: "kit",
+    name: "史地 Kit",
+    icon: "map",
+    description: "史地学习包:时间线(M-C 再加人物卡/因果链).",
+    author: "growte",
+    members: ["subject-timeline"],
+    defaultInstalled: false,
     source: "bundled"
   }
 ];

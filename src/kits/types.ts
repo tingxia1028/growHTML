@@ -37,6 +37,11 @@ export type KitNoteTypePlugin = {
       `review.grade` verdict shape), never authored from a generic composer entry.
       Rendering/editing through the registry is unaffected. */
   hidden?: boolean;
+  /** Opt into the centered FocusOverlay "Open interactively" affordance (same semantics
+      as NoteTypePlugin.focusable — a REGISTRY capability flag, never a host branch).
+      Kit types with a rich/interactive full view (e.g. subject.formula's block math +
+      legend, subject.timeline's expandable track) set this true. */
+  focusable?: boolean;
   /** Dup-registration precedence for the exclusive `contentType` slot (plugin-viewer-model
       §4/§6.1): higher wins, default 0. A kit sets this to OVERRIDE a built-in renderer for
       the same contentType. Optional — omitting it keeps last-wins-at-equal-priority. */

@@ -101,6 +101,17 @@ export function noteCardMeta(contentType: string, content: unknown): NoteCardMet
         stripHtml(html);
     } else if (contentType === "mindmap") {
       title = stringField(record, ["title", "text"]);
+    } else if (contentType === "subject.vocab") {
+      // Subject types with no title/label/name key (subject-kits.md §6.4 — the M-B
+      // debt): map each type's natural heading field. grammar/excerpt/argument ship
+      // in M-C; their fallbacks are already correct for imported/shared notes.
+      title = stringField(record, ["word"]);
+    } else if (contentType === "subject.grammar") {
+      title = stringField(record, ["pattern"]);
+    } else if (contentType === "subject.excerpt") {
+      title = stringField(record, ["quote"]);
+    } else if (contentType === "subject.argument") {
+      title = stringField(record, ["claim"]);
     }
   }
 
@@ -114,6 +125,10 @@ export function noteCardMeta(contentType: string, content: unknown): NoteCardMet
     extra = "Interactive";
   } else if (contentType.startsWith("textbook.")) {
     extra = stringField(record, ["level", "difficulty", "mastery"]) || undefined;
+  } else if (contentType === "subject.timeline") {
+    // §1.8: the card is "title + event count" — the count rides the footer meta.
+    const events = Array.isArray(record.events) ? record.events.length : 0;
+    extra = `${events} 事件`;
   } else if (contentType === "video" || contentType === "audio" || contentType === "image") {
     extra = contentType === "image" ? "image" : contentType;
   }

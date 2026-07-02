@@ -585,3 +585,51 @@ chip only adds the visibility + pin affordance.
 · `src/kits/activation.ts`(+tests) · `src/kits/types.ts`/`index.ts`/`server.ts`/`clientContext.tsx`
 (registration seam) · `src/client/workspace/KitForegroundChip.tsx`(+jsdom test) ·
 `src/server/subjectAutoSwitch.test.ts` (pin persistence roundtrip over the real API) · `styles.css`.
+
+---
+
+## 8. M-B implementation note (landed 2026-07-02) — §KaTeX decision + the exemplar slice
+
+### 8.1 KaTeX decision — ADOPTED (the ⚠️ research hole, resolved empirically)
+
+Verified against the live registry + this repo's toolchain on 2026-07-02, not from memory:
+
+| Check | Result |
+|---|---|
+| Installable now | `katex@0.17.0`, MIT, unpacked 4.02 MB / 213 files (fonts 1.2 MB · katex.min.js 268 KB · katex.min.css 24 KB); ships own TS types (`types/katex.d.ts`), ESM+CJS; sole runtime dep `commander` (CLI only, tree-shaken out of browser bundles) |
+| jsdom (the render-contract gate) | `renderToString` AND `katex.render(el)` both work under the repo's vitest jsdom env — `.katex`/`.katex-display` queryable; `import "katex/dist/katex.min.css"` is inert under vitest. `getNoteType().render` stays fully testable (subject/noteTypes.test.tsx asserts `.katex` in the real render path) |
+| Vite bundling | scratch `vite build` importing katex + katex.min.css: relative `url(fonts/…)` resolved, fonts emitted as hashed assets, CSS bundled — **77.6 KB gzip JS + 7.9 KB gzip CSS**; fonts fetched on demand by the browser |
+| SSR / no-window | `renderToString` is a pure string renderer — runs in plain Node with `typeof window === "undefined"` |
+| Failure posture | `throwOnError:false` → bad TeX degrades to an inert `.katex-error` span (never throws); `trust:false` → `\href{javascript:…}` emits no live URL; CJK passes through `\text{…}` |
+
+**Landed:** the dep + the PART 4.1 seam — `src/client/notes/Latex.tsx` (`renderMath` helper +
+`<Latex value inline?>`; hard-wired `trust:false, throwOnError:false`, escaped-`<code>`
+fallback for non-parse throws). Used ONLY by the math types' render/edit; no other module
+imports katex. The PART 4.1 raw+copy fallback stays documented but was NOT needed.
+
+### 8.2 What shipped in the M-B slice
+
+- **Types (PART 5 exemplars, schemas verbatim):** `subject.vocab` · `subject.formula` ·
+  `subject.timeline` — core specs `src/kits/subject/contentTypes.ts`, plugins
+  `src/kits/subject/noteTypes.tsx` (card/full through the one render path; 中文 title+aliases+icon;
+  formula/timeline `focusable:true` — the flag now threads through `KitNoteTypePlugin`).
+- **Kits (PART 2 rows, M-B slice):** `subject-english` {subject-vocab, flashcard} ·
+  `subject-math` {subject-formula, mistake, quiz} · `subject-history-geo` {subject-timeline} —
+  post-F5 members (existing plugins referenced in catalog `members[]`, never re-installed),
+  kit-level language config only, one §3.3 detection table each, per-type KitPrompts
+  (`subject.generate-vocab/-formula/-timeline`) + selection-toolbar commands. M-C appends the
+  remaining 8 types + 语文/理化生.
+- **First install-to-activate market goods:** all six CatalogEntries ship `defaultInstalled:false`
+  — listed in the 市场 tab via `CatalogSource("local")` automatically; installing 英语 Kit lights
+  生词卡 up in the slash palette (PART 5's M-B acceptance, jsdom-asserted). Consequence for M-A:
+  a 数学教材-titled source now ties textbook↔subject-math at 0.6 and the kitId-ASC leg names
+  `subject-math` — uninstalled ⇒ §3.5 foregrounds nothing (default holds; the engine's
+  `candidates` keep the winner for the future suggestion UI). Covered in
+  `subjectAutoSwitch.test.ts`.
+- **§6.4 debt cleared:** `noteCardMeta` title fallbacks for vocab(`word`) / grammar(`pattern`) /
+  excerpt(`quote`) / argument(`claim`) (the M-C types' fallbacks are pre-landed for imported
+  notes) + the §1.8 event-count `extra` for timeline.
+- **Deferred to the reader-gated batch:** `noteTypeIcon.ICONS` subject rows — the parity test
+  pairs ICONS with `annotationLayer.ts`'s `MARKER_GLYPHS`, a reader-session-contended file.
+  Until then subject types show the plugin `icon` string in palettes and the generic glyph in
+  the linked-notes row/markers.

@@ -5,7 +5,10 @@
 import { installClientKits } from "./clientContext";
 import { textbookLearningKit } from "./textbook-learning";
 import { reviewPlugin } from "./review";
+import { subjectKits } from "./subject";
 
-export const productKits = [textbookLearningKit, reviewPlugin];
+// The subject kits (M-B) register like every kit — types render everywhere — but are
+// NOT default-installed (catalog.ts): their create affordances light up on market install.
+export const productKits = [textbookLearningKit, reviewPlugin, ...subjectKits];
 
 installClientKits(productKits);
