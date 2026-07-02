@@ -4,13 +4,23 @@
 core organs (speech seams), experience = kit defaults (小学 kit turns them on). Grounded
 2026-07-02.
 
-## 1. 朗读 TTS (SPEECH-1) — V1 is FREE and built-in
-- **Engine:** `speechSynthesis` (Web Speech API) ships in Electron/Chromium — zh voices come
-  from the OS (Windows Huihui/Xiaoxiao family). Zero dep, zero cost, offline.
-  ⚠️ verify zh voice presence/quality on the real Electron build at implementation (voice list
-  is async + platform-dependent; fallback = pick any `zh-*`, else disable with tooltip).
-- **Quality lane later:** cloud neural TTS = another MODALITY in the managed AI Group (the
-  gateway pricing table already models modality×vendor — same as vision; no billing rework).
+## 1. 朗读 TTS (SPEECH-1) — roundtable absorption (user-directed 2026-07-02)
+The sibling prototype **C:\CG\roundtable** (本地播客录制台) shipped the answer: **edge-tts** —
+Microsoft Edge read-aloud neural voices over wss, free, keyless, VERY natural zh
+(zh-CN-XiaoxiaoNeural family). Honest correction: it is **free-and-keyless but ONLINE**
+(talks to Microsoft; proxy env fallback), not offline.
+- **Desktop primary lane: edge-tts SERVER-SIDE in our Express** — mature JS ports exist
+  (research-verified: `edge-tts-universal`, `msedge-tts`, `node-edge-tts` …); the protocol
+  needs a custom `Sec-WebSocket-Version` header that browser WebSocket API canNOT set →
+  **must run in Node, which we have**. Absorb from roundtable's tts.py: the curated zh voice
+  shortlist, rate/pitch delta mapping, lazy-import + graceful-degrade pattern.
+- **Offline fallback lane:** `speechSynthesis` (OS voices — robotic but zero-dep, works
+  air-gapped) ⚠️ zh voice presence on real Electron build verify in-task.
+- **Mobile lane (X2): native OS TTS** — Android `TextToSpeech` / iOS `AVSpeechSynthesizer` via
+  the Capacitor community plugin (offline, free; China Android ROMs ship decent zh engines).
+  edge-tts from the WebView is ruled out by the header restriction (no Node on the phone).
+- **Paid quality lane later:** cloud neural TTS = another MODALITY in the managed AI Group
+  (the gateway pricing table already models modality×vendor — no billing rework).
 - **Content source:** `toSpokenText(content)` per content type — defaults to the existing
   `toSearchText`, overridable where reading order matters (quiz: 题干→选项 slowly; formula:
   KaTeX → spoken form is HARD, V1 reads the explanation text and skips TeX, honestly).
@@ -27,8 +37,17 @@ core organs (speech seams), experience = kit defaults (小学 kit turns them on)
   ① **BYOK audio-capable model** — audio content part to Qwen-Audio/GPT-4o-audio class models
   (the A5 ContentPart union gains `{type:"audio"}` — vision-input.md V-1 should reserve it now);
   ② **managed STT** — aliyun/讯飞 behind the gateway as a priced modality;
-  ③ **local lane** — whisper.cpp small-model service (detected like PaddleOCR, optional, free).
-  ⚠️ all three verified at build time, not assumed (lane availability = capability probe).
+  ③ **local lane, per platform:**
+  - **Desktop:** roundtable's proven **faster-whisper** service (large-v3 on the user's GPU,
+    PyAV webm decode, single-flight infer lock — stt.py is the reference; wrap as a detected
+    local service like PaddleOCR) — fully offline, best zh accuracy.
+  - **Mobile (X2): sherpa-onnx** — research-verified (active, v1.13.3 2026-06): official
+    Android/iOS on-device ASR with **Paraformer zh models** (FunASR lineage, fast+accurate
+    Chinese), NNAPI/CoreML/QNN acceleration, RN/Flutter bindings exist → a Capacitor bridge is
+    realistic. faster-whisper/large-v3 canNOT run on phones (CTranslate2 + ~3GB — ruled out).
+  - **Consolidation candidate ⚠️ verify:** sherpa-onnx also does offline TTS + has Node
+    bindings — potentially ONE local speech engine across desktop+mobile (ASR+TTS); evaluate
+    at SPEECH-2 build vs the faster-whisper desktop lane.
 - **UX:** push-to-talk mic in the chat composer (mount rides the views.tsx gate — the button
   itself is a clean component) + in note editors (dictation → text field) + the review runner
   (语音作答 → grade-answer takes the transcript). Recording = MediaRecorder (works in Electron),
