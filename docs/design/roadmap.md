@@ -18,6 +18,7 @@ One dependency-ordered plan over the six design docs written this cycle. Purpose
 | `slash-composer.md` | `/类型` 通用生成入口(chat+toolbar, AI/手敲双模, 类型注册表驱动) | SC-0 · SC-1 · SC-2 · SC-3 |
 | `source-authoring.md` | Library "+"新建(md/html/…)+ 源编辑 + 纯编辑模式 + 补丁 apply 引擎 | SRC-1 · SRC-2 · SRC-3 · SRC-4 |
 | `review-loop.md` | **最小复习环**(环闭合头号任务)= 第一个上层 AI-native 插件;掌握度=memory 动词,零新实体 | REV-1 · REV-2 · REV-3 |
+| `marketplace-hosted.md` | 托管市场(web 门面+客户端安装):笔记市场=svpack 服务器层、插件市场=**纯数据插件**;`CatalogSource` 接口约定 | MH-0(骑 M1)· MH-1 · MH-2 · MH-3(P3) |
 | `architecture-review.md` | Foundation assessment | F1–F7 (refactors, below) |
 | (this) `roadmap.md` | Sequencing | — |
 
@@ -91,7 +92,7 @@ Concept P-C1 (aggregation page, additive to existing API) ──> P-C2 (graph vi
 - Then per slot: **SRC-1 create half** · **N6 board (+F7b)** · **W1** (chat sessions ≡ first F1 slice) · **Subject M-A** (auto-switch engine, feeds the loop's subject dimension).
 
 **P2 — surfaces & market (behind P0, beside it when parallel-safe):**
-- **Market M1 (+F4+F5)** — unblocks subjects; then **M-B** (KaTeX decision first — the flagged hole).
+- **Market M1 (+F4+F5)** — unblocks subjects; **carries MH-0**: the manager lists through the `CatalogSource` interface (local now, remote later — marketplace-hosted.md §5, the one hosted-market hook V1 pays for). Then **M-B** (KaTeX decision first — the flagged hole).
 - **N3 (D6)** auto-materialize.
 - **Reader-gated batch** (when the concurrent reader session settles, as ONE coordinated window): **F3 (D1 adapter) → N1 (D2+D5 — fixes "AI note 丢右栏") → N5 (D10+D11 note 钉住+导出) → N2 (D4+D3, F6 rides D4b)** · SC-1/SC-2 · A3b/A4b · G-A3b · SRC-2 · MEM 的 source-open capture.
 
@@ -99,6 +100,7 @@ Concept P-C1 (aggregation page, additive to existing API) ──> P-C2 (graph vi
 - **X1** desktop packaging (needs the user's Apple Developer account) → **X2** mobile shell → **X3** distribution (软著/ICP ride the license track) → **X4** release train.
 - **G real adapters** (WeChat Native/aliyun SMS/moderation/备案 — the 个体工商户 chain).
 - **W2/W3** · **M3** · **F1≡P-A1 → P-A2 → P-B** · **P-C1** · **MCP** (server = thin exporter over the A4a tool registry, privacy-gated; client = external tools — interop/reach, NOT a generation improver).
+- **MH-1 → MH-3 hosted marketplace** (marketplace-hosted.md): web storefront + catalog API + entitlements over the G-gateway; 笔记市场 = the deferred svpack server tier; 插件市场 = data-only plugins (no code sandbox). Client side needs only M1's `CatalogSource` seam (MH-0, paid in P2).
 
 **Deferred (blessed, per kernel §3):** terminal panel hidden from study builds (dev flag) · GrapesJS (SRC-4) · M2 user-kit builder (until M1 proves demand) · P-C2 · MEM LLM narrative profile · A4b write-tools beyond createNote-through-preview.
 
@@ -127,3 +129,4 @@ Rule: a task is buildable only when its spec (a) lives in a design doc, (b) is *
 | **SC-0/1/2/3** slash composer | slash-composer.md | ✅ ("Type / for commands" placeholder exists UNIMPLEMENTED views.tsx:505; createDefault() = manual seed; declared-form generation + preview loop shipped; SC-1 gated on contended views.tsx) | n/a — pure composition of shipped substrate; pinyin lib decision at SC-3 |
 | **SRC-1/2/3/4** source authoring | source-authoring.md | ✅ (create paths + ingestSource(markdown) exist; patch schema FULLY DESIGNED core/schema/patch.ts but apply engine never built — grep-verified; grapesjs a zero-usage dep; matched/fuzzy/unmatched projection exists; X0a services landed `b0913c4` — update-source builds on them) | n/a — conflicts identified in-doc (anchors re-project by quote/context, contentHash→svpack warning via publish ledger); GrapesJS bundle decision at SRC-4 |
 | **REV-1/2/3** review loop | review-loop.md | ✅ (all parts exist: mistake/quiz/flashcard/review-pack types, declared-form gen+preview, note.review verb in MEM-1's enum, view registry; NEW = 1 view + 3 operations + queue policy fn — zero entities/schema changes) | n/a — pure composition; SRS = later policy swap; REV-2 depends on MEM-2 digests |
+| **MH-0/1/2/3** hosted marketplace | marketplace-hosted.md | ✅ substrate inventory (svpack trust chain shipped `1a1bf27`; G-gateway auth/ledger/payments shipped `bf7dcb2`; contentTypes summary in packs; Kit&Plugin manager = M1 territory); `CatalogSource` contract pinned in-doc §5 | ⚠️ Apple IAP policy detail + ICP/UGC obligations to re-verify at MH-1 time (P3 — user defers V1); WeChat Pay real adapter rides the G license chain |
