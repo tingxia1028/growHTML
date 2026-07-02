@@ -2,6 +2,7 @@ import { ClaudeCliProvider } from "./claudeCliProvider";
 import { ClaudePtyProvider } from "./claudePtyProvider";
 import { claudeAgentSpec } from "./cliAgent/claude";
 import { codexAgentSpec } from "./cliAgent/codex";
+import { makeDeepSeekProvider, makeOpenAiCompatibleProvider } from "./http/presets";
 import { ManagedProvider } from "./managed";
 import { MockModelProvider } from "./mockProvider";
 import { createClaudePtySession } from "./pty/nodePtySession";
@@ -55,6 +56,18 @@ registerProvider(
 registerProvider(
   { id: "codex", kind: "cli-agent", label: "Codex (ChatGPT subscription)" },
   ({ env }) => codexAgentSpec.makeProvider({ env })
+);
+
+// http kind, A3a (§3.1/§3.4/§4.1 Phase 1): BYOK API-key vendors over ONE
+// AiSdkProvider (Vercel AI SDK engine, src/ai/http). Registered ALWAYS so
+// pickers can list them; USE is gated — unconfigured, the first call throws a
+// typed HttpProviderNotConfiguredError naming the env vars, before any vendor
+// SDK import or network (same semantic as the managed entry below). Env config
+// is this slice; A3b swaps it for stored config + safeStorage keychain.
+registerProvider({ id: "deepseek", kind: "http", label: "DeepSeek (BYOK)" }, ({ env }) => makeDeepSeekProvider(env));
+registerProvider(
+  { id: "openai-compatible", kind: "http", label: "OpenAI-compatible (BYOK)" },
+  ({ env }) => makeOpenAiCompatibleProvider(env)
 );
 
 // managed kind, G-A3a (docs/design/managed-ai-credits.md §4.1): the thin client

@@ -6,7 +6,9 @@
 //   2. prompt shaping      — weave ChatContext (source/quote/context) into prompt
 //                            text and pick turn-vs-transcript per session state,
 //                            mirroring the legacy claudeCliProvider byte-for-byte
-//                            (reimplemented here: cliAgent must not import legacy).
+//                            (the context blocks live in the shared
+//                            src/ai/buildPrompt.ts so http providers weave the
+//                            SAME text; cliAgent must not import legacy).
 //   3. probeCliVersion     — `<cli> --version` detection probe with an injectable
 //                            spawn so tests never launch a real binary.
 //   4. scratch dir helpers — invariant 2 (§9.3) anchors each agent in a throwaway
@@ -19,6 +21,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { passageBlock, sourceBlock } from "../buildPrompt";
 import type { ChatRequest, ModelProvider } from "../provider";
 
 export type CliAgentDetectResult = { ok: boolean; version?: string };
@@ -75,32 +78,13 @@ function lastUserMessage(request: ChatRequest): string {
   return [...request.messages].reverse().find((message) => message.role === "user")?.content ?? "";
 }
 
-// Identify the source so the model knows what's being discussed: title, type,
-// and where it lives (URL / file path / page).
-function sourceBlock(request: ChatRequest): string {
-  const ctx = request.context;
-  if (!ctx) return "";
-  const head = [ctx.sourceTitle, ctx.sourceType ? `(${ctx.sourceType})` : ""].filter(Boolean).join(" ");
-  const lines = [head ? `Source: ${head}` : "", ctx.location ? `Location: ${ctx.location}` : ""].filter(Boolean);
-  return lines.join("\n");
-}
-
-// The selected passage with its surrounding context, so the model can locate the
-// exact span the user means even when the quote is short or ambiguous.
-function passageBlock(request: ChatRequest): string {
-  const ctx = request.context;
-  if (!ctx?.quote) return "";
-  const before = ctx.contextBefore ? `…${ctx.contextBefore}` : "";
-  const after = ctx.contextAfter ? `${ctx.contextAfter}…` : "";
-  return `Selected passage (between ⟦⟧, with surrounding context):\n${before}⟦${ctx.quote}⟧${after}`;
-}
-
 /**
  * Full transcript — used only to seed a fresh session that already has history
  * (e.g. the server restarted mid-conversation, so the CLI can't resume it).
+ * The source/passage blocks come from the shared buildPrompt module.
  */
 export function flattenPrompt(request: ChatRequest): string {
-  const parts = [sourceBlock(request), passageBlock(request)].filter(Boolean);
+  const parts = [sourceBlock(request.context), passageBlock(request.context)].filter(Boolean);
   for (const message of request.messages) {
     parts.push(`${message.role.toUpperCase()}: ${message.content}`);
   }
@@ -112,9 +96,11 @@ export function flattenPrompt(request: ChatRequest): string {
  * only) and the current passage+context (selection can change between turns).
  */
 export function turnPrompt(request: ChatRequest, firstTurn: boolean): string {
-  const parts = [firstTurn ? sourceBlock(request) : "", passageBlock(request), lastUserMessage(request)].filter(
-    Boolean
-  );
+  const parts = [
+    firstTurn ? sourceBlock(request.context) : "",
+    passageBlock(request.context),
+    lastUserMessage(request)
+  ].filter(Boolean);
   return parts.join("\n\n");
 }
 
