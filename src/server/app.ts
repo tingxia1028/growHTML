@@ -1,71 +1,31 @@
 import path from "node:path";
 import express from "express";
 import { z } from "zod";
-import { applyHtmlPatchWithGuard, createHtmlSelectionAnchor } from "../adapters/html/anchor";
-import { injectStudyIds, materializeHtml } from "../adapters/html/core";
 import { ingestWebpageFromUrl } from "../adapters/web/ingest";
 import { ingestWebLiveSource } from "../adapters/web/liveSource";
-import { createWebTextQuoteAnchor } from "../adapters/web/anchor";
-import { createPdfSelectionAnchor } from "../adapters/pdf/anchor";
-import { createImageRegionAnchor } from "../adapters/image/anchor";
-import { createEntityId } from "../core/ids";
-import {
-  conceptSchema,
-  nodeRefSchema,
-  noteSchema,
-  operationSchema,
-  operationVariableSchema,
-  patchActionSchema,
-  patchSchema,
-  relationKindSchema,
-  relationSchema,
-  sourceSchema,
-  type AnchorRecord,
-  type HtmlSelectionAnchor,
-  type OperationRecord,
-  type PatchRecord,
-  type PatchStatus
-} from "../core/schema";
-import { extractVariables } from "../ai/template";
-import { getNoteContentSpec, parseNoteContent } from "../core/notes/contentTypes";
-import { assetBytesPath, importLocalAsset } from "../core/store/assets";
+import { importLocalAsset } from "../core/store/assets";
 import { parseRange } from "./httpRange";
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
-import { createCustomLayer, ensureOwnedLayer, ensurePresetStages } from "../core/study-layer/layers";
-import { activeKitIdsForSource } from "../kits/activation";
-import { stagePresetForKits } from "../kits/policy";
-import { studyLayerSchema } from "../core/schema";
-import { buildStudyPack, commitImport, parseStudyPack, previewImport } from "./studyLayer";
 import { defaultIdentityDir } from "../core/identity/paths";
 import { createSealedRuntime, registerSvpackRoutes, type SealedRuntime } from "./svpack";
 import { registerMemoryRoutes } from "./memory";
 import { registerAgentRoutes } from "./agent";
 import type { StudyVault } from "../core/vault";
-import {
-  deleteSource,
-  ingestBinarySource,
-  ingestHtmlSource,
-  listSources,
-  readSourceContent,
-  readSourceFile
-} from "../core/store/sources";
-import {
-  chatContextSchema,
-  chatRequestSchema,
-  createModelProvider,
-  generateStructured,
-  FORM_ROUTER_CONTENT_TYPE,
-  type ModelProvider
-} from "../ai";
-import {
-  formRouterSchema,
-  routerOutputToNote,
-  INLINE_HTML_INSTRUCTION,
-  type FormRouterOutput
-} from "../core/notes/formRouter";
+import { deleteSource, listSources } from "../core/store/sources";
+import { handleServiceError } from "./services/errors";
+import * as sourcesService from "./services/sources";
+import * as anchorsService from "./services/anchors";
+import * as notesService from "./services/notes";
+import * as layersService from "./services/layers";
+import * as conceptsService from "./services/concepts";
+import * as operationsService from "./services/operations";
+import * as patchesService from "./services/patches";
+import * as assetsService from "./services/assets";
+import * as workspaceService from "./services/workspace";
+import * as aiService from "./services/ai";
+import { chatRequestSchema, createModelProvider, type ModelProvider } from "../ai";
 import { installServerKits } from "../kits/server";
-import { generateStructuredContent, StructuredGenerationError } from "../kits/structured";
+import { StructuredGenerationError } from "../kits/structured";
 import { readFile } from "node:fs/promises";
 import { ingestLocalFile, listDirectory, mimeForPath } from "./localFiles";
 import { importXmindToMarkmap } from "./xmindImport";
@@ -73,24 +33,6 @@ import { importXmindToMarkmap } from "./xmindImport";
 // Register Product Kit content specs + prompts (React-free) so the API validates
 // kit note content and can run kit structured generation. Idempotent.
 installServerKits();
-
-// Body for POST /api/kits/generate — a kit AI command's structured request.
-const kitGenerateSchema = z.object({
-  promptId: z.string().min(1),
-  contentType: z.string().min(1),
-  input: z.record(z.string(), z.unknown()).optional()
-});
-
-// Body for POST /api/notes/generate-block — the form-router request (adaptive note
-// forms §4 Phase 4 item 1). The model is given the user's text + optional study
-// context and returns a discriminated-union member (formRouterSchema); the server
-// unwraps it into a real { contentType, content }. An optional `sample` lets a caller
-// force a deterministic form against the offline mock (the e2e seeds a markmap).
-const generateBlockSchema = z.object({
-  text: z.string().min(1),
-  context: chatContextSchema.optional(),
-  sample: z.unknown().optional()
-});
 
 export type CreateAppOptions = {
   vault: StudyVault;
@@ -107,247 +49,9 @@ export type CreateAppOptions = {
   now?: () => number;
 };
 
-const ingestHtmlRequestSchema = z.object({
-  title: z.string().min(1),
-  content: z.string().min(1)
-});
-
 const ingestUrlRequestSchema = z.object({
   url: z.string().url()
 });
-
-const ingestPdfRequestSchema = z.object({
-  title: z.string().min(1),
-  dataBase64: z.string().min(1),
-  // Absolute disk path of the picked file (desktop only), so the AI terminal can
-  // default its working directory to the folder this file lives in.
-  originalPath: z.string().min(1).optional()
-});
-
-const ingestImageRequestSchema = z.object({
-  title: z.string().min(1),
-  dataBase64: z.string().min(1),
-  mimeType: z.string().min(1).default("image/png"),
-  originalPath: z.string().min(1).optional()
-});
-
-const createAnchorRequestSchema = z
-  .object({
-    sourceId: z.string().min(1),
-    anchorKind: z
-      .enum(["html_selection", "web_text_quote", "pdf_selection", "image_region"])
-      .default("html_selection"),
-    studyId: z.string().min(1).optional(),
-    selector: z.string().min(1).optional(),
-    normalizedUrl: z.string().min(1).optional(),
-    page: z.number().int().positive().optional(),
-    // Geometric region [x, y, w, h] (0..1) for figures / scanned pages / images.
-    rect: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional(),
-    // Quote is optional now: a region anchor has no text. Text kinds still require
-    // a non-empty quote OR a rect (enforced below).
-    quote: z.string().default(""),
-    contextBefore: z.string().default(""),
-    contextAfter: z.string().default("")
-  })
-  // An anchor must carry SOMETHING to locate it: a non-empty quote or a rect.
-  .refine((input) => input.quote.trim().length > 0 || !!input.rect, {
-    message: "anchor requires a non-empty quote or a rect"
-  });
-
-const createNoteRequestSchema = z.object({
-  sourceId: z.string().min(1).optional(),
-  anchorIds: z.array(z.string().min(1)).default([]),
-  conceptIds: z.array(z.string().min(1)).default([]),
-  // Study Layer membership (multi). When omitted, a source-attached note defaults to
-  // that source's owned layer so it is never orphaned to invisibility (spec §5).
-  layerIds: z.array(z.string().min(1)).optional(),
-  contentType: z.string().min(1).default("markdown"),
-  // Shape validated per-type by the NoteContentSpec, not here.
-  content: z.unknown()
-});
-
-// Partial note update — attach/detach a note to concepts/anchors/layers after
-// creation AND (since note-edit-delete V1) edit the note's CONTENT in place. When
-// `content` is present it is re-validated against the note's own contentType spec
-// (getNoteContentSpec(...).schema) before persisting, exactly like create — an
-// unknown/invalid shape never reaches storage. The contentType itself is fixed on
-// edit (editing content within the same type; changing type is out of scope).
-// At least one field must be present.
-const updateNoteRequestSchema = z
-  .object({
-    conceptIds: z.array(z.string().min(1)).optional(),
-    anchorIds: z.array(z.string().min(1)).optional(),
-    // Study Layer membership — add/remove/move a note between layers (the full set
-    // replaces the note's current layerIds, spec §8).
-    layerIds: z.array(z.string().min(1)).optional(),
-    // The note's structured content, re-validated per-type at the handler (not here).
-    content: z.unknown().optional()
-  })
-  .refine(
-    (input) =>
-      input.conceptIds !== undefined ||
-      input.anchorIds !== undefined ||
-      input.layerIds !== undefined ||
-      input.content !== undefined,
-    { message: "note update requires conceptIds, anchorIds, layerIds, or content" }
-  );
-
-const createPatchRequestSchema = z.object({
-  sourceId: z.string().min(1),
-  anchorId: z.string().min(1),
-  action: patchActionSchema,
-  oldText: z.string().default(""),
-  newContent: z.string().min(1),
-  summary: z.string().optional()
-});
-
-const updatePatchRequestSchema = z.object({
-  status: z.enum(["pending", "accepted", "rejected", "applied", "reverted"])
-});
-
-const createConceptRequestSchema = z.object({
-  name: z.string().min(1),
-  aliases: z.array(z.string().min(1)).default([]),
-  description: z.string().default(""),
-  tags: z.array(z.string().min(1)).default([]),
-  confidence: z.number().min(0).max(1).optional()
-});
-
-const createRelationRequestSchema = z.object({
-  from: nodeRefSchema,
-  to: nodeRefSchema,
-  relationKind: relationKindSchema,
-  label: z.string().optional(),
-  confidence: z.number().min(0).max(1).optional()
-});
-
-// A custom AI Operation authored as DATA. POST creates from scratch (or from a
-// "复制为我的插件" fork); PATCH merge-updates an existing one. The envelope fields
-// (id/type/timestamps) are server-set, so the request shapes carry only the
-// editable body.
-const createOperationRequestSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().default(""),
-  outputContentType: z.string().min(1),
-  promptTemplate: z.string().min(1),
-  declaredVariables: z.array(operationVariableSchema).default([]),
-  source: z.enum(["custom", "fork"]).default("custom"),
-  forkedFrom: z.string().optional(),
-  scope: z.enum(["anchor", "source"]).default("anchor")
-});
-const updateOperationRequestSchema = z
-  .object({
-    name: z.string().min(1).optional(),
-    description: z.string().optional(),
-    outputContentType: z.string().min(1).optional(),
-    promptTemplate: z.string().min(1).optional(),
-    declaredVariables: z.array(operationVariableSchema).optional(),
-    source: z.enum(["custom", "fork"]).optional(),
-    forkedFrom: z.string().optional(),
-    scope: z.enum(["anchor", "source"]).optional()
-  })
-  .refine((input) => Object.keys(input).length > 0, { message: "operation update requires at least one field" });
-
-// operation-prefs.json — a workspace-level small JSON file (same vault.storage
-// pattern as workspace.json) holding the action ORDER + DISABLED set (built-in
-// command ids + op_ ids) and per-built-in placeholder PARAMS the server merges
-// into generate input before build().
-// `surfaces` (R6.3) is the optional PER-SURFACE override: for each surface key
-// (inline / anchor / source / bottom) its own action `order` + `hidden` set. When a
-// surface entry is absent the surface falls back to the GLOBAL `order`/`disabled`
-// above, so old prefs files (no `surfaces`) keep working unchanged — no migration.
-const operationPrefsSchema = z.object({
-  order: z.array(z.string()).default([]),
-  disabled: z.array(z.string()).default([]),
-  params: z.record(z.string(), z.record(z.string(), z.string())).default({}),
-  surfaces: z
-    .record(
-      z.string(),
-      z.object({ order: z.array(z.string()).default([]), hidden: z.array(z.string()).default([]) })
-    )
-    .default({}),
-  // `icons` (R6 polish) — a TOP-LEVEL action id → chosen lucide icon NAME map (global,
-  // not per-surface, so an action's glyph is consistent across surfaces). Absent in old
-  // prefs files → defaults to {} (additive, no migration).
-  icons: z.record(z.string(), z.string()).default({})
-});
-const emptyOperationPrefs: z.infer<typeof operationPrefsSchema> = {
-  order: [],
-  disabled: [],
-  params: {},
-  surfaces: {},
-  icons: {}
-};
-
-// plugin-prefs.json — the per-vault "Kit & Plugin" prefs, the write side of the plugin
-// read model (docs/design/plugin-viewer-model.md §7). Same vault.storage/JSON pattern as
-// operation-prefs above. `disabledContributions` is the enabled/disabled set (namespaced
-// contribution ids) the manager panel toggles; `viewerAssociations` (per-contentType /
-// per-note viewer pins) and `userKits` are DECLARED now but UNUSED until P3/P4 — carried
-// so the schema is stable and no migration is needed later. Absent file → empty default.
-const pluginPrefsSchema = z.object({
-  disabledContributions: z.array(z.string()).default([]),
-  viewerAssociations: z
-    .object({
-      byContentType: z.record(z.string(), z.string()).default({}),
-      byNoteId: z.record(z.string(), z.string()).default({})
-    })
-    .default({ byContentType: {}, byNoteId: {} }),
-  userKits: z.array(z.unknown()).default([])
-});
-const emptyPluginPrefs: z.infer<typeof pluginPrefsSchema> = {
-  disabledContributions: [],
-  viewerAssociations: { byContentType: {}, byNoteId: {} },
-  userKits: []
-};
-
-// Workspace layout is UI state, not a core entity: stored as a single JSON file
-// in the vault and validated only structurally.
-const workspaceNodeSchema = z.object({
-  id: z.string().min(1),
-  kind: z.string().min(1),
-  params: z.record(z.string(), z.unknown()).optional()
-});
-const workspaceLayoutSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  mode: z.enum(["dock", "canvas"]),
-  nodes: z.array(workspaceNodeSchema),
-  layout: z.unknown()
-});
-const workspaceStateSchema = z.object({
-  activeLayoutId: z.string(),
-  layouts: z.array(workspaceLayoutSchema)
-});
-const emptyWorkspaceState = { activeLayoutId: "", layouts: [] };
-
-async function deleteAnchorsWithoutNotes(vault: StudyVault, anchorIds: Iterable<string>) {
-  const candidates = [...new Set(anchorIds)];
-  if (candidates.length === 0) return;
-
-  const [notes, patches] = await Promise.all([vault.stores.notes.list(), vault.stores.patches.list()]);
-  const referencedByNote = new Set<string>();
-  for (const note of notes) {
-    for (const anchorId of note.anchorIds) referencedByNote.add(anchorId);
-  }
-  const referencedByPatch = new Set(patches.map((patch) => patch.anchorId));
-
-  for (const anchorId of candidates) {
-    if (!referencedByNote.has(anchorId) && !referencedByPatch.has(anchorId)) {
-      await vault.stores.anchors.delete(anchorId);
-    }
-  }
-}
-
-// `conflict` is system-set (never requested); other transitions follow a minimal state machine.
-const patchTransitions: Record<PatchStatus, readonly PatchStatus[]> = {
-  pending: ["accepted", "rejected", "applied"],
-  accepted: ["applied", "rejected"],
-  applied: ["reverted"],
-  reverted: ["applied"],
-  rejected: [],
-  conflict: ["applied"]
-};
 
 export function createApp({ vault, modelProvider, clientDir, identityDir, now }: CreateAppOptions) {
   const app = express();
@@ -396,43 +100,23 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
     }
   });
 
-  // Merge-patch a source's metadata. Used by per-source Product Kit activation
-  // (metadata.activeKitIds) — a generic metadata merge so the kit seam never needs
-  // a core schema change. Only metadata is mutable here; identity fields are fixed.
-  const updateSourceRequestSchema = z.object({ metadata: z.record(z.string(), z.unknown()) });
+  // Merge-patch a source's metadata (Product Kit activation writes metadata.activeKitIds).
   app.patch("/api/sources/:sourceId", async (req, res, next) => {
     try {
-      const input = updateSourceRequestSchema.parse(req.body);
-      const existing = await vault.stores.sources.get(req.params.sourceId);
-      if (!existing) {
-        res.status(404).json({ error: "Source not found" });
-        return;
-      }
-      const source = sourceSchema.parse({
-        ...existing,
-        metadata: { ...existing.metadata, ...input.metadata },
-        updatedAt: new Date().toISOString()
-      });
-      await vault.stores.sources.upsert(source);
+      const input = sourcesService.updateSourceRequestSchema.parse(req.body);
+      const source = await sourcesService.updateSourceMetadata({ vault }, { sourceId: req.params.sourceId, ...input });
       res.json({ source });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
   app.post("/api/sources/html", async (req, res, next) => {
     try {
-      const input = ingestHtmlRequestSchema.parse(req.body);
-      const injected = injectStudyIds(input.content, { idPrefix: "html" });
-      const source = await ingestHtmlSource(vault, {
-        title: input.title,
-        content: injected.content,
-        createdBy: "user"
-      });
-
-      res.status(201).json({ source, injected: { added: injected.added, ids: injected.ids } });
+      const input = sourcesService.ingestHtmlRequestSchema.parse(req.body);
+      res.status(201).json(await sourcesService.ingestHtml({ vault }, input));
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
@@ -459,23 +143,11 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
 
   app.post("/api/sources/pdf", async (req, res, next) => {
     try {
-      const input = ingestPdfRequestSchema.parse(req.body);
-      const data = Buffer.from(input.dataBase64, "base64");
-      if (data.length === 0 || !data.subarray(0, 5).toString("latin1").startsWith("%PDF-")) {
-        res.status(400).json({ error: "Provided data is not a valid PDF" });
-        return;
-      }
-
-      const source = await ingestBinarySource(vault, {
-        title: input.title,
-        data,
-        sourceType: "pdf",
-        createdBy: "user",
-        metadata: input.originalPath ? { originalPath: input.originalPath } : undefined
-      });
+      const input = sourcesService.ingestPdfRequestSchema.parse(req.body);
+      const source = await sourcesService.ingestPdf({ vault }, input);
       res.status(201).json({ source });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
@@ -483,23 +155,11 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
   // Images render in the host-page ImageReader so a region can be marked on them.
   app.post("/api/sources/image", async (req, res, next) => {
     try {
-      const input = ingestImageRequestSchema.parse(req.body);
-      const data = Buffer.from(input.dataBase64, "base64");
-      if (data.length === 0) {
-        res.status(400).json({ error: "Provided image data is empty" });
-        return;
-      }
-      const source = await ingestBinarySource(vault, {
-        title: input.title,
-        data,
-        sourceType: "image",
-        mimeType: input.mimeType,
-        createdBy: "user",
-        metadata: input.originalPath ? { originalPath: input.originalPath } : undefined
-      });
+      const input = sourcesService.ingestImageRequestSchema.parse(req.body);
+      const source = await sourcesService.ingestImage({ vault }, input);
       res.status(201).json({ source });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
@@ -544,232 +204,57 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
   // Serve the raw stored bytes (used by the PDF reader and any binary source).
   app.get("/api/sources/:sourceId/file", async (req, res, next) => {
     try {
-      const source = await vault.stores.sources.get(req.params.sourceId);
-      if (!source) {
-        res.status(404).json({ error: "Source not found" });
-        return;
-      }
-
-      res.type(source.mimeType ?? "application/octet-stream").send(await readSourceFile(vault, source));
+      const { source, data } = await sourcesService.readSourceFileById({ vault }, { sourceId: req.params.sourceId });
+      res.type(source.mimeType ?? "application/octet-stream").send(data);
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
   app.get("/api/sources/:sourceId/content", async (req, res, next) => {
     try {
-      const source = await vault.stores.sources.get(req.params.sourceId);
-      if (!source) {
-        res.status(404).json({ error: "Source not found" });
-        return;
-      }
-
-      res.type(source.mimeType ?? "text/plain").send(await readSourceContent(vault, source));
+      const { source, content } = await sourcesService.readSourceContentById({ vault }, { sourceId: req.params.sourceId });
+      res.type(source.mimeType ?? "text/plain").send(content);
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
   app.get("/api/sources/:sourceId/rendered", async (req, res, next) => {
     try {
-      const source = await vault.stores.sources.get(req.params.sourceId);
-      if (!source) {
-        res.status(404).json({ error: "Source not found" });
-        return;
-      }
-
-      const content = await readSourceContent(vault, source);
-      const anchors = await getHtmlAnchorsForSource(vault, source.id);
-      const patches = (await vault.stores.patches.list()).filter((patch) => patch.sourceId === source.id);
-      const anchorsById = Object.fromEntries(anchors.map((anchor) => [anchor.id, anchor]));
-      const rendered = materializeHtml(content, anchorsById, patches);
-
-      res.json({ source, content: rendered.content, results: rendered.results });
+      res.json(await sourcesService.renderSource({ vault }, { sourceId: req.params.sourceId }));
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
   app.post("/api/anchors", async (req, res, next) => {
     try {
-      const input = createAnchorRequestSchema.parse(req.body);
-      const source = await vault.stores.sources.get(input.sourceId);
-      if (!source) {
-        res.status(404).json({ error: "Source not found" });
-        return;
-      }
-      // Every new anchor joins this source's "owned" layer (created on first use).
-      const ownedLayer = await ensureOwnedLayer(vault, source);
-      const stampLayer = <T extends { id: string }>(anchor: T) => ({ ...anchor, layerId: ownedLayer.id });
-
-      if (input.anchorKind === "web_text_quote") {
-        const normalizedUrl =
-          input.normalizedUrl ?? (source.metadata?.normalizedUrl as string | undefined);
-        if (!normalizedUrl) {
-          res.status(400).json({ error: "web_text_quote anchors require a normalizedUrl" });
-          return;
-        }
-        const webAnchor = createWebTextQuoteAnchor({
-          sourceId: source.id,
-          normalizedUrl,
-          quote: input.quote,
-          contextBefore: input.contextBefore,
-          contextAfter: input.contextAfter,
-          createdBy: "user"
-        });
-        const stamped = stampLayer(webAnchor);
-        await vault.stores.anchors.upsert(stamped);
-        res.status(201).json({ anchor: stamped });
-        return;
-      }
-
-      if (input.anchorKind === "pdf_selection") {
-        if (!input.page) {
-          res.status(400).json({ error: "pdf_selection anchors require a page" });
-          return;
-        }
-        // A pdf anchor is either a text quote or a geometric region (rect, empty
-        // quote). The request schema already guarantees one of them is present.
-        const pdfAnchor = createPdfSelectionAnchor({
-          sourceId: source.id,
-          page: input.page,
-          rect: input.rect,
-          quote: input.quote,
-          contextBefore: input.contextBefore,
-          contextAfter: input.contextAfter,
-          createdBy: "user"
-        });
-        const stamped = stampLayer(pdfAnchor);
-        await vault.stores.anchors.upsert(stamped);
-        res.status(201).json({ anchor: stamped });
-        return;
-      }
-
-      if (input.anchorKind === "image_region") {
-        if (!input.rect) {
-          res.status(400).json({ error: "image_region anchors require a rect" });
-          return;
-        }
-        const imageAnchor = createImageRegionAnchor({
-          sourceId: source.id,
-          rect: input.rect,
-          quote: input.quote,
-          createdBy: "user"
-        });
-        const stamped = stampLayer(imageAnchor);
-        await vault.stores.anchors.upsert(stamped);
-        res.status(201).json({ anchor: stamped });
-        return;
-      }
-
-      // html_selection requires both a studyId and a non-empty quote.
-      if (!input.studyId) {
-        res.status(400).json({ error: "html_selection anchors require a studyId" });
-        return;
-      }
-      if (!input.quote.trim()) {
-        res.status(400).json({ error: "html_selection anchors require a quote" });
-        return;
-      }
-      const anchor = createHtmlSelectionAnchor({
-        sourceId: source.id,
-        studyId: input.studyId,
-        selector: input.selector,
-        quote: input.quote,
-        contextBefore: input.contextBefore,
-        contextAfter: input.contextAfter,
-        createdBy: "user"
-      });
-      const stamped = stampLayer(anchor);
-      await vault.stores.anchors.upsert(stamped);
-      res.status(201).json({ anchor: stamped });
+      const input = anchorsService.createAnchorRequestSchema.parse(req.body);
+      const anchor = await anchorsService.createAnchor({ vault }, input);
+      res.status(201).json({ anchor });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
+  // Derived anchor painting + orphan prune + svpack read-model merge — see the service.
   app.get("/api/sources/:sourceId/anchors", async (req, res, next) => {
     try {
-      // Anchor painting is DERIVED, not stored: an anchor paints iff it has a note in
-      // an ENABLED layer (OR across that note's layers). One anchor can be shared by
-      // several notes with different layers, so we can't read `anchor.layerId` (kept
-      // only for backward-compat). Note-less anchors are no longer painted; truly
-      // orphaned ones are pruned so stale highlights cannot reappear.
-      const sourceId = req.params.sourceId;
-      const layers = await vault.stores.layers.list();
-      const enabled = new Set(layers.filter((layer) => layer.enabled).map((layer) => layer.id));
-      const sourceNotes = (await vault.stores.notes.list()).filter((note) => note.sourceId === sourceId);
-      const sourceAnchors = (await vault.stores.anchors.list()).filter((anchor) => anchor.sourceId === sourceId);
-
-      // Anchor id -> does any note on it sit in an enabled layer? A note with EMPTY
-      // layerIds is "always visible" (never orphan it), so it paints its anchors
-      // regardless of the enabled set.
-      const paintedByNote = new Set<string>();
-      const noted = new Set<string>();
-      for (const note of sourceNotes) {
-        const visible = note.layerIds.length === 0 || note.layerIds.some((id) => enabled.has(id));
-        for (const anchorId of note.anchorIds) {
-          noted.add(anchorId);
-          if (visible) paintedByNote.add(anchorId);
-        }
-      }
-
-      await deleteAnchorsWithoutNotes(
-        vault,
-        sourceAnchors.filter((anchor) => !noted.has(anchor.id)).map((anchor) => anchor.id)
-      );
-
-      // Current rule: only note-backed anchors paint; note-less anchors never do.
-      const anchors = sourceAnchors.filter((anchor) => paintedByNote.has(anchor.id));
-      // Read-model merge (svpack §7.1): anchors of ACTIVE sealed packs paint alongside
-      // store anchors, flagged `sealed: true`. They are note-backed by construction
-      // (realizeImportRecords only realizes anchors its notes reference), and never
-      // pass through the orphan prune above (which walks store anchors only).
-      const sealedAnchors = sealed.snapshot().anchors.filter((anchor) => anchor.sourceId === sourceId);
-      res.json({ anchors: [...anchors, ...sealedAnchors] });
+      const anchors = await anchorsService.listSourceAnchors({ vault, sealed }, { sourceId: req.params.sourceId });
+      res.json({ anchors });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
   app.post("/api/notes", async (req, res, next) => {
     try {
-      const input = createNoteRequestSchema.parse(req.body);
-      // Unknown content type → 400 (a plain Error here would otherwise be 500).
-      if (!getNoteContentSpec(input.contentType)) {
-        res.status(400).json({ error: `Unknown note contentType: ${input.contentType}` });
-        return;
-      }
-      // Validate content against its type's spec (ZodError → 400 via handler).
-      const content = parseNoteContent(input.contentType, input.content);
-      const now = new Date().toISOString();
-      // Membership: explicit layerIds win; else a source-attached note defaults to that
-      // source's "owned" layer (never orphan it to invisibility, spec §5); else empty.
-      let layerIds: string[] = input.layerIds ?? [];
-      if (!input.layerIds && input.sourceId) {
-        const source = await vault.stores.sources.get(input.sourceId);
-        if (source) layerIds = [(await ensureOwnedLayer(vault, source)).id];
-      }
-      const note = noteSchema.parse({
-        id: createEntityId("note"),
-        type: "note",
-        schemaVersion: 1,
-        createdAt: now,
-        updatedAt: now,
-        createdBy: "user",
-        sourceId: input.sourceId,
-        anchorIds: input.anchorIds,
-        conceptIds: input.conceptIds,
-        contentType: input.contentType,
-        content,
-        visibility: "private",
-        layerIds
-      });
-
-      await vault.stores.notes.upsert(note);
+      const input = notesService.createNoteRequestSchema.parse(req.body);
+      const note = await notesService.createNote({ vault }, input);
       res.status(201).json({ note });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
@@ -792,16 +277,16 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
 
   app.get("/api/sources/:sourceId/notes", async (req, res, next) => {
     try {
-      const snapshot = sealed.snapshot();
-      const visible = await layerVisibilityFilter(vault, req.query.enabledLayerIds, snapshot.enabledLayerIds);
-      const matches = (note: { sourceId?: string; layerIds: string[] }) =>
-        note.sourceId === req.params.sourceId && visible(note);
-      const notes = (await vault.stores.notes.list()).filter(matches);
-      // Read-model merge (svpack §7.1): sealed notes ride along, flagged sealed: true.
-      const sealedNotes = snapshot.notes.filter(matches);
-      res.json({ notes: [...notes, ...sealedNotes] });
+      const notes = await notesService.listNotes(
+        { vault, sealed },
+        {
+          sourceId: req.params.sourceId,
+          enabledLayerIds: typeof req.query.enabledLayerIds === "string" ? req.query.enabledLayerIds : undefined
+        }
+      );
+      res.json({ notes });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
@@ -809,22 +294,18 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
   // off several of each). With no filter, returns all notes.
   app.get("/api/notes", async (req, res, next) => {
     try {
-      const conceptId = typeof req.query.conceptId === "string" ? req.query.conceptId : undefined;
-      const anchorId = typeof req.query.anchorId === "string" ? req.query.anchorId : undefined;
-      const sourceId = typeof req.query.sourceId === "string" ? req.query.sourceId : undefined;
-      const snapshot = sealed.snapshot();
-      const visible = await layerVisibilityFilter(vault, req.query.enabledLayerIds, snapshot.enabledLayerIds);
-      const matches = (note: { sourceId?: string; anchorIds: string[]; conceptIds: string[]; layerIds: string[] }) =>
-        (!conceptId || note.conceptIds.includes(conceptId)) &&
-        (!anchorId || note.anchorIds.includes(anchorId)) &&
-        (!sourceId || note.sourceId === sourceId) &&
-        visible(note);
-      const notes = (await vault.stores.notes.list()).filter(matches);
-      // Read-model merge (svpack §7.1): sealed notes ride along, flagged sealed: true.
-      const sealedNotes = snapshot.notes.filter(matches);
-      res.json({ notes: [...notes, ...sealedNotes] });
+      const notes = await notesService.listNotes(
+        { vault, sealed },
+        {
+          conceptId: typeof req.query.conceptId === "string" ? req.query.conceptId : undefined,
+          anchorId: typeof req.query.anchorId === "string" ? req.query.anchorId : undefined,
+          sourceId: typeof req.query.sourceId === "string" ? req.query.sourceId : undefined,
+          enabledLayerIds: typeof req.query.enabledLayerIds === "string" ? req.query.enabledLayerIds : undefined
+        }
+      );
+      res.json({ notes });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
@@ -837,232 +318,79 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
   // note id → 404.
   app.patch("/api/notes/:noteId", async (req, res, next) => {
     try {
-      // Sealed (protected-import) notes are read-only in V1 (svpack §7.1): annotate
-      // on top by creating your OWN note on the same anchor instead.
-      if (sealed.snapshot().noteIds.has(req.params.noteId)) {
-        res.status(403).json({ error: "sealed content is read-only" });
-        return;
-      }
-      const input = updateNoteRequestSchema.parse(req.body);
-      const existing = await vault.stores.notes.get(req.params.noteId);
-      if (!existing) {
-        res.status(404).json({ error: "Note not found" });
-        return;
-      }
-      // Re-validate edited content against the note's existing contentType (ZodError →
-      // 400 via the handler); when absent the stored content is kept unchanged.
-      const content =
-        input.content !== undefined
-          ? parseNoteContent(existing.contentType, input.content)
-          : existing.content;
-      const previousAnchorIds = existing.anchorIds;
-      const note = noteSchema.parse({
-        ...existing,
-        conceptIds: input.conceptIds ?? existing.conceptIds,
-        anchorIds: input.anchorIds ?? existing.anchorIds,
-        layerIds: input.layerIds ?? existing.layerIds,
-        content,
-        updatedAt: new Date().toISOString()
-      });
-      await vault.stores.notes.upsert(note);
-      if (input.anchorIds !== undefined) {
-        const nextAnchorIds = new Set(note.anchorIds);
-        await deleteAnchorsWithoutNotes(
-          vault,
-          previousAnchorIds.filter((anchorId) => !nextAnchorIds.has(anchorId))
-        );
-      }
+      // Sealed guard runs BEFORE body validation (403 wins over 400), as before.
+      notesService.assertNoteWritable({ sealed }, req.params.noteId);
+      const input = notesService.updateNoteRequestSchema.parse(req.body);
+      const note = await notesService.updateNote({ vault, sealed }, { noteId: req.params.noteId, ...input });
       res.json({ note });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
-  // Delete a note. Mirrors the operations/relations delete route: 200 {ok:true} on
-  // success, 404 if the id is absent. ORPHAN-ANCHOR CASCADE: painting is DERIVED from
-  // anchors (the reader maps every anchor in a source to a highlight), so deleting only
-  // the note record would leave its anchors behind and the highlight would STAY painted.
-  // So after deleting the note we cascade-delete each of its anchors that is now
-  // ORPHANED — referenced by NO remaining note (none whose anchorIds includes it) AND NO
-  // patch (none whose anchorId === it). Anchors still shared by another note (multi-
-  // anchor / shared) or referenced by a patch are KEPT. See docs/design/note-edit-delete.md.
+  // Delete a note (200 {ok:true} / 404) with the orphan-anchor cascade — see service.
   app.delete("/api/notes/:noteId", async (req, res, next) => {
     try {
-      // Sealed notes can only leave via DELETE /api/svpack/:packId (whole-pack delete).
-      if (sealed.snapshot().noteIds.has(req.params.noteId)) {
-        res.status(403).json({ error: "sealed content is read-only" });
-        return;
-      }
-      // Capture the note's anchorIds BEFORE deleting it, so we know which anchors to
-      // re-check for orphan-hood.
-      const note = await vault.stores.notes.get(req.params.noteId);
-      const removed = await vault.stores.notes.delete(req.params.noteId);
-      if (!removed || !note) {
-        res.status(404).json({ error: "Note not found" });
-        return;
-      }
-      await deleteAnchorsWithoutNotes(vault, note.anchorIds);
+      await notesService.deleteNote({ vault, sealed }, { noteId: req.params.noteId });
       res.json({ ok: true });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
   // —— Study Layers (a per-source lens axis: owned + preset stages + custom + imported) ——
-  // List the layers over a source, for the multi-select filter switcher. The owned layer
-  // and the preset stage axis are created on demand here (lazily, the same way
-  // ensureOwnedLayer works) so the switcher always sees them. F7a: the stage axis is no
-  // longer a core-hardcoded taxonomy — it is SEEDED FROM THE SOURCE'S ACTIVE KIT. We
-  // resolve the active kit ids (metadata.activeKitIds, else the workspace default — which
-  // is FALLBACK_DEFAULT_KIT="textbook-learning" server-side, so a default vault still gets
-  // 预习/学习/复习/拓展, now KIT-sourced) and ask the kit policies for their combined
-  // stagePreset. No active kit / no kit stagePreset ⇒ empty list ⇒ NO preset stages
-  // created (owned + custom + imported still work). ensurePresetStages never deletes, so
-  // pre-existing preset layers in migrated vaults are preserved.
+  // Lazy owned-layer + kit-seeded preset-stage creation (F7a) + sealed merge — see service.
   app.get("/api/sources/:sourceId/layers", async (req, res, next) => {
     try {
-      const source = await vault.stores.sources.get(req.params.sourceId);
-      if (source) {
-        await ensureOwnedLayer(vault, source);
-        await ensurePresetStages(vault, source, stagePresetForKits(activeKitIdsForSource(source)));
-      }
-      const layers = (await vault.stores.layers.list()).filter(
-        (layer) => layer.localSourceId === req.params.sourceId
-      );
-      // Read-model merge (svpack §7.1): sealed imported layers show in the Lens like
-      // any other (their plaintext "导入图层" umbrella parent is already in the store
-      // list above), flagged sealed: true. Unbound sealed layers (no matched source)
-      // have no localSourceId and only surface via GET /api/svpack until re-anchored.
-      const sealedLayers = sealed.snapshot().layers.filter((layer) => layer.localSourceId === req.params.sourceId);
-      res.json({ layers: [...layers, ...sealedLayers] });
+      const layers = await layersService.listSourceLayers({ vault, sealed }, { sourceId: req.params.sourceId });
+      res.json({ layers });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
   // Create a user-defined ("custom") layer over a source — backs the layer manager.
-  const createLayerRequestSchema = z.object({
-    title: z.string().min(1),
-    color: z.string().min(1).optional(),
-    order: z.number().optional()
-  });
   app.post("/api/sources/:sourceId/layers", async (req, res, next) => {
     try {
-      const input = createLayerRequestSchema.parse(req.body);
-      const source = await vault.stores.sources.get(req.params.sourceId);
-      if (!source) {
-        res.status(404).json({ error: "Source not found" });
-        return;
-      }
-      const layer = await createCustomLayer(vault, source, input);
+      const input = layersService.createLayerRequestSchema.parse(req.body);
+      const layer = await layersService.createLayer({ vault }, { sourceId: req.params.sourceId, ...input });
       res.status(201).json({ layer });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
   // Toggle a layer on/off (enabled, reused as the filter include/exclude), rename it,
   // or set its presentation fields (color/order) for the manager.
-  const updateLayerRequestSchema = z
-    .object({
-      enabled: z.boolean().optional(),
-      title: z.string().min(1).optional(),
-      color: z.string().min(1).optional(),
-      order: z.number().optional()
-    })
-    .refine(
-      (input) =>
-        input.enabled !== undefined ||
-        input.title !== undefined ||
-        input.color !== undefined ||
-        input.order !== undefined,
-      { message: "layer update requires enabled, title, color, or order" }
-    );
   app.patch("/api/layers/:layerId", async (req, res, next) => {
     try {
-      // Sealed imported layers are read-only records inside their pack blob (svpack §7.1).
-      if (sealed.snapshot().layerIds.has(req.params.layerId)) {
-        res.status(403).json({ error: "sealed content is read-only" });
-        return;
-      }
-      const input = updateLayerRequestSchema.parse(req.body);
-      const existing = await vault.stores.layers.get(req.params.layerId);
-      if (!existing) {
-        res.status(404).json({ error: "Layer not found" });
-        return;
-      }
-      const layer = studyLayerSchema.parse({
-        ...existing,
-        enabled: input.enabled ?? existing.enabled,
-        title: input.title ?? existing.title,
-        color: input.color ?? existing.color,
-        order: input.order ?? existing.order,
-        updatedAt: new Date().toISOString()
-      });
-      await vault.stores.layers.upsert(layer);
+      // Sealed guard runs BEFORE body validation (403 wins over 400), as before.
+      layersService.assertLayerWritable({ sealed }, req.params.layerId);
+      const input = layersService.updateLayerRequestSchema.parse(req.body);
+      const layer = await layersService.updateLayer({ vault, sealed }, { layerId: req.params.layerId, ...input });
       res.json({ layer });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
-  // Delete a CUSTOM layer (manager action). Preset / owned / imported layers are
-  // structural and cannot be deleted here (409). The deleted layer id is cascade-stripped
-  // from every note's `layerIds` so a note that lived ONLY in this layer collapses to
-  // [] — i.e. "always visible", never orphaned to invisibility (spec §5). Notes that
-  // also belong to other layers keep those memberships.
+  // Delete a CUSTOM layer (409 for structural roles; cascade-strips note memberships).
   app.delete("/api/layers/:layerId", async (req, res, next) => {
     try {
-      // A sealed imported layer is deleted by deleting its pack (DELETE /api/svpack/:packId).
-      if (sealed.snapshot().layerIds.has(req.params.layerId)) {
-        res.status(403).json({ error: "sealed content is read-only" });
-        return;
-      }
-      const existing = await vault.stores.layers.get(req.params.layerId);
-      if (!existing) {
-        res.status(404).json({ error: "Layer not found" });
-        return;
-      }
-      if (existing.role !== "custom") {
-        res.status(409).json({ error: "Only custom layers can be deleted" });
-        return;
-      }
-      const layerId = req.params.layerId;
-      const affected = (await vault.stores.notes.list()).filter((note) => note.layerIds.includes(layerId));
-      for (const note of affected) {
-        await vault.stores.notes.upsert(
-          noteSchema.parse({
-            ...note,
-            layerIds: note.layerIds.filter((id) => id !== layerId),
-            updatedAt: new Date().toISOString()
-          })
-        );
-      }
-      await vault.stores.layers.delete(layerId);
+      await layersService.deleteLayer({ vault, sealed }, { layerId: req.params.layerId });
       res.json({ ok: true });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
   // Export a layer as a portable `.studypack` (local realizations stripped).
   app.post("/api/layers/:layerId/export", async (req, res, next) => {
     try {
-      // Sealed imported layers are structurally absent from the entity stores that
-      // buildStudyPack reads (svpack §7.2) — answer with the read-only refusal rather
-      // than a misleading 404.
-      if (sealed.snapshot().layerIds.has(req.params.layerId)) {
-        res.status(403).json({ error: "sealed content is read-only" });
-        return;
-      }
-      const pack = await buildStudyPack(vault, req.params.layerId);
-      if (!pack) {
-        res.status(404).json({ error: "Layer not found" });
-        return;
-      }
+      const pack = await layersService.exportLayer({ vault, sealed }, { layerId: req.params.layerId });
       res.json({ pack, refusedCount: pack.refusedCount });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
@@ -1082,10 +410,10 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
   // Does NOT persist anything.
   app.post("/api/layers/import/preview", async (req, res, next) => {
     try {
-      const pack = parseStudyPack(z.object({ pack: z.unknown() }).parse(req.body).pack);
-      res.json({ preview: await previewImport(vault, pack) });
+      const body = z.object({ pack: z.unknown() }).parse(req.body);
+      res.json({ preview: await layersService.previewLayerImport({ vault }, { pack: body.pack }) });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
@@ -1093,10 +421,10 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
   app.post("/api/layers/import/commit", async (req, res, next) => {
     try {
       const body = z.object({ pack: z.unknown(), targetSourceId: z.string().min(1).optional() }).parse(req.body);
-      const pack = parseStudyPack(body.pack);
-      res.status(201).json({ result: await commitImport(vault, pack, { targetSourceId: body.targetSourceId }) });
+      const result = await layersService.commitLayerImport({ vault }, body);
+      res.status(201).json({ result });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
@@ -1133,14 +461,10 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
   //   • a syntactically valid range past EOF → 416 with `Content-Range: bytes */total`.
   app.get("/api/assets/:assetId", async (req, res, next) => {
     try {
-      const asset = await vault.stores.assets.get(req.params.assetId);
-      if (!asset) {
-        res.status(404).json({ error: "Asset not found" });
-        return;
-      }
-      const filePath = assetBytesPath(vault, asset);
-      const stats = await stat(filePath);
-      const total = stats.size;
+      const { asset, filePath, size: total } = await assetsService.getAssetFile(
+        { vault },
+        { assetId: req.params.assetId }
+      );
 
       res.type(asset.mimeType);
       res.setHeader("Accept-Ranges", "bytes");
@@ -1171,7 +495,7 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
       stream.on("error", next);
       stream.pipe(res);
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
@@ -1186,39 +510,20 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
 
   app.post("/api/concepts", async (req, res, next) => {
     try {
-      const input = createConceptRequestSchema.parse(req.body);
-      const now = new Date().toISOString();
-      const concept = conceptSchema.parse({
-        id: createEntityId("concept"),
-        type: "concept",
-        schemaVersion: 1,
-        createdAt: now,
-        updatedAt: now,
-        createdBy: "user",
-        ...input
-      });
-      await vault.stores.concepts.upsert(concept);
+      const input = conceptsService.createConceptRequestSchema.parse(req.body);
+      const concept = await conceptsService.createConcept({ vault }, input);
       res.status(201).json({ concept });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
   // Concept detail with back-references: which notes link it and which relations touch it.
   app.get("/api/concepts/:conceptId", async (req, res, next) => {
     try {
-      const concept = await vault.stores.concepts.get(req.params.conceptId);
-      if (!concept) {
-        res.status(404).json({ error: "Concept not found" });
-        return;
-      }
-      const notes = (await vault.stores.notes.list()).filter((note) => note.conceptIds.includes(concept.id));
-      const relations = (await vault.stores.relations.list()).filter(
-        (relation) => relation.from.id === concept.id || relation.to.id === concept.id
-      );
-      res.json({ concept, notes, relations });
+      res.json(await conceptsService.getConceptDetail({ vault }, { conceptId: req.params.conceptId }));
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
@@ -1233,21 +538,11 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
 
   app.post("/api/relations", async (req, res, next) => {
     try {
-      const input = createRelationRequestSchema.parse(req.body);
-      const now = new Date().toISOString();
-      const relation = relationSchema.parse({
-        id: createEntityId("relation"),
-        type: "relation",
-        schemaVersion: 1,
-        createdAt: now,
-        updatedAt: now,
-        createdBy: "user",
-        ...input
-      });
-      await vault.stores.relations.upsert(relation);
+      const input = conceptsService.createRelationRequestSchema.parse(req.body);
+      const relation = await conceptsService.createRelation({ vault }, input);
       res.status(201).json({ relation });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
@@ -1275,26 +570,11 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
 
   app.post("/api/operations", async (req, res, next) => {
     try {
-      const input = createOperationRequestSchema.parse(req.body);
-      const consistency = operationConsistencyError(input.promptTemplate, input.declaredVariables);
-      if (consistency) {
-        res.status(400).json({ error: consistency });
-        return;
-      }
-      const now = new Date().toISOString();
-      const operation = operationSchema.parse({
-        id: createEntityId("operation"),
-        type: "operation",
-        schemaVersion: 1,
-        createdAt: now,
-        updatedAt: now,
-        createdBy: "user",
-        ...input
-      });
-      await vault.stores.operations.upsert(operation);
+      const input = operationsService.createOperationRequestSchema.parse(req.body);
+      const operation = await operationsService.createOperation({ vault }, input);
       res.status(201).json({ operation });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
@@ -1313,23 +593,14 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
 
   app.patch("/api/operations/:operationId", async (req, res, next) => {
     try {
-      const input = updateOperationRequestSchema.parse(req.body);
-      const existing = await vault.stores.operations.get(req.params.operationId);
-      if (!existing) {
-        res.status(404).json({ error: "Operation not found" });
-        return;
-      }
-      const merged = { ...existing, ...input, updatedAt: new Date().toISOString() };
-      const consistency = operationConsistencyError(merged.promptTemplate, merged.declaredVariables);
-      if (consistency) {
-        res.status(400).json({ error: consistency });
-        return;
-      }
-      const operation = operationSchema.parse(merged);
-      await vault.stores.operations.upsert(operation);
+      const input = operationsService.updateOperationRequestSchema.parse(req.body);
+      const operation = await operationsService.updateOperation(
+        { vault },
+        { operationId: req.params.operationId, ...input }
+      );
       res.json({ operation });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
@@ -1347,98 +618,66 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
   });
 
   // —— Operation prefs (ordering / enable-disable / built-in placeholder params) ——
-  const operationPrefsPath = path.join(vault.paths.studyDir, "operation-prefs.json");
-
   app.get("/api/operation-prefs", async (_req, res, next) => {
     try {
-      const text = await vault.storage.readText(operationPrefsPath);
-      const prefs = text ? operationPrefsSchema.parse(JSON.parse(text)) : emptyOperationPrefs;
-      res.json({ prefs });
+      res.json({ prefs: await workspaceService.readOperationPrefs({ vault }) });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
   app.put("/api/operation-prefs", async (req, res, next) => {
     try {
-      const prefs = operationPrefsSchema.parse(req.body);
-      await vault.storage.writeTextAtomic(operationPrefsPath, `${JSON.stringify(prefs, null, 2)}\n`);
-      res.json({ prefs });
+      const prefs = workspaceService.operationPrefsSchema.parse(req.body);
+      res.json({ prefs: await workspaceService.writeOperationPrefs({ vault }, prefs) });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
   // —— Plugin prefs (Kit & Plugin: disabled contributions + declared viewer/userKit slots) ——
-  const pluginPrefsPath = path.join(vault.paths.studyDir, "plugin-prefs.json");
-
   app.get("/api/plugin-prefs", async (_req, res, next) => {
     try {
-      const text = await vault.storage.readText(pluginPrefsPath);
-      const prefs = text ? pluginPrefsSchema.parse(JSON.parse(text)) : emptyPluginPrefs;
-      res.json({ prefs });
+      res.json({ prefs: await workspaceService.readPluginPrefs({ vault }) });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
   app.put("/api/plugin-prefs", async (req, res, next) => {
     try {
-      const prefs = pluginPrefsSchema.parse(req.body);
-      await vault.storage.writeTextAtomic(pluginPrefsPath, `${JSON.stringify(prefs, null, 2)}\n`);
-      res.json({ prefs });
+      const prefs = workspaceService.pluginPrefsSchema.parse(req.body);
+      res.json({ prefs: await workspaceService.writePluginPrefs({ vault }, prefs) });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
   // —— Workspace layout (UI state) —————————————————————————————————————
-  const workspacePath = path.join(vault.paths.studyDir, "workspace.json");
-
   app.get("/api/workspace", async (_req, res, next) => {
     try {
-      const text = await vault.storage.readText(workspacePath);
-      const state = text ? workspaceStateSchema.parse(JSON.parse(text)) : emptyWorkspaceState;
-      res.json({ workspace: state });
+      res.json({ workspace: await workspaceService.readWorkspace({ vault }) });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
   app.put("/api/workspace", async (req, res, next) => {
     try {
-      const state = workspaceStateSchema.parse(req.body);
-      await vault.storage.writeTextAtomic(workspacePath, `${JSON.stringify(state, null, 2)}\n`);
-      res.json({ workspace: state });
+      const state = workspaceService.workspaceStateSchema.parse(req.body);
+      res.json({ workspace: await workspaceService.writeWorkspace({ vault }, state) });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
   app.post("/api/patches", async (req, res, next) => {
     try {
-      const input = createPatchRequestSchema.parse(req.body);
-      const now = new Date().toISOString();
-      const patch = patchSchema.parse({
-        id: createEntityId("patch"),
-        type: "patch",
-        schemaVersion: 1,
-        createdAt: now,
-        updatedAt: now,
-        createdBy: "user",
-        sourceId: input.sourceId,
-        anchorId: input.anchorId,
-        action: input.action,
-        status: "pending",
-        oldText: input.oldText,
-        newContent: input.newContent,
-        summary: input.summary
-      });
-
-      await vault.stores.patches.upsert(patch);
+      const input = patchesService.createPatchRequestSchema.parse(req.body);
+      const patch = await patchesService.createPatch({ vault }, input);
       res.status(201).json({ patch });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
@@ -1453,61 +692,28 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
 
   app.patch("/api/patches/:patchId", async (req, res, next) => {
     try {
-      const input = updatePatchRequestSchema.parse(req.body);
-      const existing = await vault.stores.patches.get(req.params.patchId);
-      if (!existing) {
-        res.status(404).json({ error: "Patch not found" });
-        return;
-      }
-
-      if (input.status !== existing.status && !patchTransitions[existing.status].includes(input.status)) {
-        res.status(409).json({ error: `Invalid patch transition: ${existing.status} → ${input.status}` });
-        return;
-      }
-
-      if (input.status === "applied") {
-        const conflict = await detectPatchConflict(vault, existing);
-        if (conflict) {
-          const patch = {
-            ...existing,
-            status: "conflict" as const,
-            updatedAt: new Date().toISOString()
-          };
-          await vault.stores.patches.upsert(patch);
-          res.status(409).json({ patch, conflict });
-          return;
-        }
-      }
-
-      const now = new Date().toISOString();
-      const patch = patchSchema.parse({
-        ...existing,
-        status: input.status,
-        updatedAt: now,
-        appliedAt: input.status === "applied" ? now : existing.appliedAt,
-        revertedAt: input.status === "reverted" ? now : existing.revertedAt
-      });
-      await vault.stores.patches.upsert(patch);
+      const input = patchesService.updatePatchRequestSchema.parse(req.body);
+      const patch = await patchesService.updatePatchStatus({ vault }, { patchId: req.params.patchId, ...input });
       res.json({ patch });
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
   app.post("/api/chat", async (req, res, next) => {
     try {
       const input = chatRequestSchema.parse(req.body);
-      const response = await provider.complete(input);
-      res.json({ message: response.message, provider: provider.id });
+      res.json(await aiService.chatComplete({ provider }, input));
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
   // Streaming chat over Server-Sent Events. Emits `chunk` events ({delta}) as the
   // reply is produced, then one `done` event ({message, provider}). Providers
-  // without `stream()` fall back to a single chunk from `complete()`. Validation
-  // errors happen before any byte is written, so they still surface as a 400.
+  // without `stream()` fall back to a single chunk from `complete()` (inside the
+  // service). Validation errors happen before any byte is written, so they still
+  // surface as a 400. The SSE framing/accumulation is transport — it stays here.
   app.post("/api/chat/stream", async (req, res, next) => {
     let input: ReturnType<typeof chatRequestSchema.parse>;
     try {
@@ -1523,14 +729,9 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
       res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     try {
       let full = "";
-      if (provider.stream) {
-        for await (const delta of provider.stream(input)) {
-          full += delta;
-          send("chunk", { delta });
-        }
-      } else {
-        full = (await provider.complete(input)).message.content;
-        send("chunk", { delta: full });
+      for await (const delta of aiService.streamChatDeltas({ provider }, input)) {
+        full += delta;
+        send("chunk", { delta });
       }
       send("done", { message: { role: "assistant", content: full }, provider: provider.id });
       res.end();
@@ -1547,112 +748,36 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
   // not a server fault).
   app.post("/api/kits/generate", async (req, res, next) => {
     try {
-      const input = kitGenerateSchema.parse(req.body);
-      // Server-side built-in placeholder fill: merge the per-vault params for this
-      // promptId UNDER the runtime input (so runtime values like anchorText always
-      // win) BEFORE the prompt's build() runs. Custom op_ ids simply have no params.
-      const prefsText = await vault.storage.readText(operationPrefsPath);
-      const prefs = prefsText ? operationPrefsSchema.parse(JSON.parse(prefsText)) : emptyOperationPrefs;
-      const params = prefs.params[input.promptId] ?? {};
-      const merged = { ...input, input: { ...params, ...(input.input ?? {}) } };
-      const content = await generateStructuredContent(provider, merged, 3, vault.stores.operations);
-      res.json({ content, provider: provider.id });
+      const input = aiService.kitGenerateSchema.parse(req.body);
+      res.json(await aiService.generateKitContent({ vault, provider }, input));
     } catch (error) {
       if (error instanceof StructuredGenerationError) {
         res.status(400).json({ error: error.message });
         return;
       }
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
   // —— Adaptive note forms · Phase 4 ——————————————————————————————————————————
-  // Run the FORM ROUTER (item 1): one structured call where the MODEL picks the form
-  // AND fills it. We generate against `formRouterSchema` (a discriminated union), then
-  // unwrap the chosen member into a real { contentType, content } shaped for that
-  // type's NoteContentSpec — so the result flows through the normal preview/save/render
-  // path (§0.5: a registered contentType, no bypass). The mock is deterministic for
-  // this schema (echoes `sample`, else synthesizes the first union member).
-  async function runFormRouter(text: string, context: unknown, sample: unknown): Promise<FormRouterOutput> {
-    try {
-      const output = (await generateStructured(provider, {
-        messages: [
-          {
-            role: "user",
-            content:
-              "Choose the BEST note form for the following content and return it as the router " +
-              "JSON (pick the single most appropriate `form`).\n" +
-              // Inline-HTML guard (FIX 1, best-effort half): if the model picks the html
-              // form it must inline the markup, never write a file / return a path. The
-              // RELIABLE half is the schema's looksLikeHtml refine + the degrade below.
-              INLINE_HTML_INSTRUCTION +
-              "\n\n" +
-              text
-          }
-        ],
-        schema: formRouterSchema,
-        contentType: FORM_ROUTER_CONTENT_TYPE,
-        sample,
-        context: chatContextSchema.optional().parse(context) ?? undefined
-      })) as FormRouterOutput;
-      return output;
-    } catch (error) {
-      // DEGRADE GRACEFULLY (FIX 1, reliable half): generation failed to produce a valid
-      // union member after the re-prompt loop. The dominant cause with the agentic
-      // claude-cli provider is an html arm whose `html` was a FILE PATH (rejected by the
-      // looksLikeHtml refine on every attempt). Rather than surface a hard error — or,
-      // worse, persist a path as html — fall back to a MARKDOWN note carrying the original
-      // text. The robust long-term fix is a content-returning API provider (DeepSeek), not
-      // an agent that writes files; this keeps the offline/path case from corrupting a note.
-      if (error instanceof StructuredGenerationError) {
-        return { form: "markdown", markdown: text };
-      }
-      throw error;
-    }
-  }
-
+  // Form-router generation (model picks the form AND fills it) — see services/ai.ts.
   app.post("/api/notes/generate-block", async (req, res, next) => {
     try {
-      const input = generateBlockSchema.parse(req.body);
-      const output = await runFormRouter(input.text, input.context, input.sample);
-      const routed = routerOutputToNote(output);
-      // Validate the unwrapped content against the target type's core schema before it
-      // leaves the server — the routed form must be a real, persistable note.
-      const spec = getNoteContentSpec(routed.contentType);
-      const content = spec ? spec.schema.parse(routed.content) : routed.content;
-      res.json({ contentType: routed.contentType, content, provider: provider.id });
+      const input = aiService.generateBlockSchema.parse(req.body);
+      res.json(await aiService.generateBlock({ provider }, input));
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
-  // AI-assisted classification (item 2) — the low-confidence FALLBACK behind the
-  // client's resolveFormAsync. It reuses the SAME form-router to decide the form for
-  // ambiguous prose, returning a ClassifiedForm. The client only calls this when its
-  // pure heuristic was low-confidence (heuristic stays primary; this is gated on the
-  // client by provider availability), so offline/deterministic flows are unaffected.
+  // AI-assisted classification — the low-confidence fallback behind the client's
+  // resolveFormAsync (heuristic stays primary) — see services/ai.ts.
   app.post("/api/notes/classify", async (req, res, next) => {
     try {
-      const input = generateBlockSchema.parse(req.body);
-      const output = await runFormRouter(input.text, input.context, input.sample);
-      const routed = routerOutputToNote(output);
-      // A MARKDOWN verdict means "this is prose, keep it as-is" — so PRESERVE the
-      // original text rather than the router's (possibly regenerated/empty) markdown.
-      // This makes the AI pass a no-op on content for the markdown case (it only changes
-      // the FORM when it picks a richer one), so the heuristic's safe markdown fallback
-      // is honored verbatim and deterministic offline flows keep the original text.
-      if (routed.contentType === "markdown") {
-        res.json({ contentType: "markdown", content: input.text, confidence: "low", provider: provider.id });
-        return;
-      }
-      const spec = getNoteContentSpec(routed.contentType);
-      const content = spec ? spec.schema.parse(routed.content) : routed.content;
-      // The model picked a RICHER form → high confidence (an explicit, non-fallback
-      // choice). The client only reaches here on a low heuristic, so this never
-      // overrides a confident heuristic.
-      res.json({ contentType: routed.contentType, content, confidence: "high", provider: provider.id });
+      const input = aiService.generateBlockSchema.parse(req.body);
+      res.json(await aiService.classifyText({ provider }, input));
     } catch (error) {
-      next(error);
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 
@@ -1682,75 +807,4 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now }:
   return app;
 }
 
-// Build the OR-over-enabled-layers note-visibility predicate. A note is visible iff
-// its layerIds intersects the enabled set (OR across its layers). A note with EMPTY
-// layerIds is always visible (never orphan it to invisibility). The enabled set comes
-// from an explicit `enabledLayerIds` csv query param when supplied (the client's
-// multi-select filter), else from every layer whose `enabled` flag is on (the stored
-// toggle — reused as the filter source of truth).
-async function layerVisibilityFilter(
-  vault: StudyVault,
-  enabledLayerIdsParam: unknown,
-  // Sealed layers live outside the entity stores (svpack §7.1), so the default
-  // enabled set must union them in — otherwise sealed notes could never be visible.
-  // An EXPLICIT enabledLayerIds param stays authoritative (the client's filter can
-  // include or exclude a sealed layer id like any other).
-  sealedEnabledLayerIds: ReadonlySet<string> = new Set()
-): Promise<(note: { layerIds: string[] }) => boolean> {
-  let enabled: Set<string>;
-  if (typeof enabledLayerIdsParam === "string") {
-    enabled = new Set(enabledLayerIdsParam.split(",").map((id) => id.trim()).filter(Boolean));
-  } else {
-    enabled = new Set((await vault.stores.layers.list()).filter((layer) => layer.enabled).map((layer) => layer.id));
-    for (const id of sealedEnabledLayerIds) enabled.add(id);
-  }
-  return (note) => note.layerIds.length === 0 || note.layerIds.some((id) => enabled.has(id));
-}
-
-// Consistency between a custom Operation's template and its declared variables.
-// Orphan placeholders (in the template but not declared) are SOFT-allowed — they
-// simply render "" at run time, so the engine stays total. The one hard error: a
-// `literal` variable marked required with no default can never produce a value
-// (literals always use their default), so block it. Returns null when consistent.
-function operationConsistencyError(
-  promptTemplate: string,
-  declaredVariables: z.infer<typeof operationVariableSchema>[]
-): string | null {
-  // Orphan placeholders (referenced but not declared) are soft-allowed: they render
-  // "" at run time. A REQUIRED variable that the template never references, however,
-  // can never be injected — flag that as an authoring mistake.
-  const referenced = new Set(extractVariables(promptTemplate));
-  for (const variable of declaredVariables) {
-    if (variable.required && variable.source === "literal" && !(variable.default && variable.default.trim())) {
-      return `Required literal variable "${variable.name}" needs a default value`;
-    }
-    if (variable.required && !referenced.has(variable.name)) {
-      return `Required variable "${variable.name}" is not used in the template`;
-    }
-  }
-  return null;
-}
-
-async function getHtmlAnchorsForSource(vault: StudyVault, sourceId: string) {
-  return (await vault.stores.anchors.list()).filter(
-    (anchor): anchor is HtmlSelectionAnchor => anchor.sourceId === sourceId && anchor.anchorKind === "html_selection"
-  );
-}
-
-async function detectPatchConflict(vault: StudyVault, patch: PatchRecord) {
-  const source = await vault.stores.sources.get(patch.sourceId);
-  if (!source) return { reason: "source_not_found" };
-
-  const anchor = (await vault.stores.anchors.get(patch.anchorId)) as AnchorRecord | null;
-  if (!anchor || anchor.anchorKind !== "html_selection") return { reason: "anchor_not_found" };
-
-  const content = await readSourceContent(vault, source);
-  const result = applyHtmlPatchWithGuard(content, anchor, patch);
-  if (result.ok) return null;
-
-  return {
-    reason: result.reason,
-    message: result.message
-  };
-}
 
