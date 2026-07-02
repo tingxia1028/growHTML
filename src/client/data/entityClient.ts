@@ -1,7 +1,16 @@
-// EntityClient — the single typed seam between the client UI and the HTTP API.
+// EntityClient — the single typed seam between the client UI and the backend API.
 // All data access (sources, anchors, notes, patches, concepts, relations,
 // assets, workspace) goes through here, so workspace nodes never call `fetch`
-// directly and the API shape lives in one place.
+// directly and the API shape lives in one place. Every JSON call flows through a
+// pluggable VaultTransport (X0b, docs/design/multi-platform.md §1-X0): HTTP by
+// default, swappable for the in-process direct adapter on mobile via
+// `configureVaultTransport`. Only chatStream (SSE) and assetUrl (binary bytes)
+// stay HTTP-only — see ./transport for the rationale.
+
+import { createHttpTransport, type VaultTransport } from "./transport";
+
+export { ApiError } from "./transport";
+export type { VaultTransport } from "./transport";
 
 export type SourceRecord = {
   id: string;
@@ -416,64 +425,49 @@ export type CreateNoteInput = {
   layerIds?: string[];
 };
 
-async function getJson<T>(url: string): Promise<T> {
-  const response = await fetch(url);
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.error ?? `Request failed: ${url}`);
-  return body as T;
-}
-
-async function sendJson<T>(method: string, url: string, input: unknown): Promise<T> {
-  const response = await fetch(url, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input)
-  });
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.error ?? `Request failed: ${url}`);
-  return body as T;
-}
+// —— Backend transport (X0b) — module default is HTTP; a direct-call host swaps it ——
+const httpTransport = createHttpTransport();
+let activeTransport: VaultTransport = httpTransport;
 
 /**
- * Failure carrying the HTTP status + the server's machine error `code`. The svpack
- * flows branch on these ("wrong-code" vs "expired" vs "stale-revision" need different
- * honest messages), so a bare message string is not enough.
+ * Swap the backend the entityClient talks through (multi-platform §1-X0): the mobile
+ * shell installs the in-process direct adapter here at startup; nothing else about
+ * the client changes. chatStream/assetUrl are HTTP-only and unaffected.
  */
-export class ApiError extends Error {
-  readonly status: number;
-  readonly code?: string;
-
-  constructor(message: string, status: number, code?: string) {
-    super(message);
-    this.name = "ApiError";
-    this.status = status;
-    this.code = code;
-  }
+export function configureVaultTransport(transport: VaultTransport): void {
+  activeTransport = transport;
 }
 
-/** Like getJson/sendJson but throws `ApiError` (status + machine code) on failure. */
-async function fetchCoded<T>(method: string, url: string, input?: unknown): Promise<T> {
-  const response = await fetch(
-    url,
-    input === undefined
-      ? { method }
-      : { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }
-  );
-  const body = (await response.json().catch(() => ({}))) as { error?: string; code?: string };
-  if (!response.ok) {
-    throw new ApiError(
-      body.error ?? `Request failed: ${url}`,
-      response.status,
-      typeof body.code === "string" ? body.code : undefined
-    );
-  }
-  return body as T;
+/** Test seam: restore the default HTTP transport (undo configureVaultTransport). */
+export function resetVaultTransport(): void {
+  activeTransport = httpTransport;
+}
+
+function getJson<T>(url: string): Promise<T> {
+  return activeTransport.request<T>("GET", url);
+}
+
+function sendJson<T>(method: string, url: string, input: unknown): Promise<T> {
+  return activeTransport.request<T>(method, url, input);
+}
+
+/** Kept as a named alias: these call sites rely on ApiError's machine `code`. */
+function fetchCoded<T>(method: string, url: string, input?: unknown): Promise<T> {
+  return activeTransport.request<T>(method, url, input);
 }
 
 export const entityClient = {
   // —— Sources ——
   sources() {
     return getJson<{ sources: SourceRecord[] }>("/api/sources");
+  },
+  /** Ingest pasted/authored HTML as a source (stable study-ids injected server-side). */
+  ingestHtml(title: string, content: string) {
+    return sendJson<{ source: SourceRecord; injected: { added: number; ids: string[] } }>(
+      "POST",
+      "/api/sources/html",
+      { title, content }
+    );
   },
   ingestUrl(url: string) {
     return sendJson<{ source: SourceRecord }>("POST", "/api/sources/url", { url });
@@ -678,16 +672,12 @@ export const entityClient = {
   // —— Learner memory (MEM-1) ——
   /**
    * Append a batch (≤100) of captured behavior events. Fire-and-forget semantics:
-   * capture-off answers 204 WITH NO BODY, so nothing is parsed — callers (the
-   * capture queue) treat any 2xx as success and swallow rejections.
+   * capture-off answers 204 WITH NO BODY — the transport resolves that to
+   * `undefined` — and callers (the capture queue) treat any 2xx as success and
+   * swallow rejections.
    */
   async postMemoryEvents(events: MemoryEventInput[]): Promise<void> {
-    const response = await fetch("/api/memory/events", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ events })
-    });
-    if (!response.ok) throw new Error(`Request failed: /api/memory/events (${response.status})`);
+    await sendJson<{ appended: number } | undefined>("POST", "/api/memory/events", { events });
   },
   /** The vault-level capture switch (the user owns capture — learner-memory §6). */
   memorySettings() {
@@ -704,7 +694,11 @@ export const entityClient = {
   assetMeta(assetId: string) {
     return getJson<{ asset: AssetRecord }>(`/api/assets/${assetId}/meta`);
   },
-  /** URL for the raw asset bytes (use directly as an <img>/<audio>/<video> src). */
+  /**
+   * URL for the raw asset bytes (use directly as an <img>/<audio>/<video> src).
+   * HTTP-only by design: binary bytes ride the platform URL loader, never the
+   * JSON VaultTransport (see ./transport).
+   */
   assetUrl(assetId: string) {
     return `/api/assets/${assetId}`;
   },
@@ -716,7 +710,9 @@ export const entityClient = {
   // Streaming chat over SSE. Invokes `onDelta` for each incremental chunk and
   // resolves with the full assistant message + provider once the `done` event
   // arrives. Falls back to the non-streaming `chat()` when the stream endpoint
-  // is unavailable (no body / non-OK response).
+  // is unavailable (no body / non-OK response). HTTP-only by design: SSE needs an
+  // incremental byte stream, so this keeps its own fetch instead of riding the
+  // JSON VaultTransport (the chat() fallback IS transport-routed).
   async chatStream(
     input: { messages: ChatMessage[]; context?: ChatContext },
     onDelta: (delta: string) => void
