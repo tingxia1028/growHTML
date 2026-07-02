@@ -20,7 +20,9 @@ Grounded 2026-07-02.
 
 ## 2. The seam (A5 — provider track extension)
 - `ChatMessage.content: string | ContentPart[]` where `ContentPart = {type:"text"|"image", ...}`
-  (image = bytes ref via the asset store, never base64 in vault JSONL).
+  (image = bytes ref via the asset store, never base64 in vault JSONL). The union RESERVES
+  `{type:"audio"}` now — SPEECH-2's STT-via-audio-model lane rides the same seam
+  (speech-and-young-learners.md §2); design the part shape once.
 - `ProviderCapabilities.vision: boolean`; providers translate parts (aiSdk/cliAgent/managed);
   non-vision provider + image → typed `VisionUnsupportedError` BEFORE any call.
 - Managed: vision rides the EXISTING modality×vendor×model pricing table (the gateway was
