@@ -14,6 +14,7 @@ import type { NoteContentSpec } from "../core/notes/contentTypes";
 import type { NoteEditInput, NoteRenderInput } from "../client/notes/noteTypeRegistry";
 import type { Command } from "../client/commands/registry";
 import type { KitLayerPolicy } from "./policy";
+import type { KitDetectionTable } from "../core/subject/detectSubject";
 
 // The React half of a kit note type (the core half is its NoteContentSpec). Same
 // shape as a NoteTypePlugin minus `contentType`, which is taken from the spec.
@@ -150,6 +151,12 @@ export type ProductKit = {
   // React-free layer-propagation policy — registered by the SERVER so the export
   // filter can strip private-by-default content types (user spec §11).
   layerPolicy?: KitLayerPolicy;
+  // React-free subject-detection table (subject-kits.md M-A) — the keyword/pattern
+  // matchers the Auto-Switch engine scores to auto-FOREGROUND this kit per document.
+  // Registered by BOTH installServerKits and installClientKits (the layerPolicy
+  // precedent) so client and server resolve the same foreground. The F7 lesson: the
+  // table lives on the kit; core owns only the scorer (src/core/subject/detectSubject).
+  detection?: KitDetectionTable;
   // The client-side install: registers note-type plugins, language, commands, and
   // (later) views/layouts/surfaces. Runs only where React is available.
   install(ctx: KitInstallContext): void;

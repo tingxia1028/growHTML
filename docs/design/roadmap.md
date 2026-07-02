@@ -91,12 +91,12 @@ Concept P-C1 (aggregation page, additive to existing API) ──> P-C2 (graph vi
 
 **P1 — in flight / next slots:**
 - **SC-0** (slash engine+palette) + **X0b** (transport seam + direct adapter) — agents running.
-- Then per slot: **SRC-1 create half** · **N6 board (+F7b)** · **W1** (chat sessions ≡ first F1 slice) · **Subject M-A** (auto-switch engine, feeds the loop's subject dimension).
+- Then per slot: **SRC-1 create half** · **N6 board (+F7b)** · **W1** (chat sessions ≡ first F1 slice) · **Subject M-A ✅** (auto-switch engine + chip landed post-F4 — subject-kits.md §7; per-kit `detection` tables, pin = `activeKitIds`; only the chip's topbar mount rides the reader-gated batch).
 
 **P2 — surfaces & market (behind P0, beside it when parallel-safe):**
 - **Market M1 (+F4+F5)** — unblocks subjects; **carries MH-0**: the manager lists through the `CatalogSource` interface (local now, remote later — marketplace-hosted.md §5, the one hosted-market hook V1 pays for). Then **M-B** (KaTeX decision first — the flagged hole).
 - **N3 (D6)** auto-materialize.
-- **Reader-gated batch** (when the concurrent reader session settles, as ONE coordinated window): **F3 (D1 adapter) → N1 (D2+D5 — fixes "AI note 丢右栏") → N5 (D10+D11 note 钉住+导出) → N2 (D4+D3, F6 rides D4b)** · SC-1/SC-2 · A3b/A4b · G-A3b · SRC-2 · MEM 的 source-open capture.
+- **Reader-gated batch** (when the concurrent reader session settles, as ONE coordinated window): **F3 (D1 adapter) → N1 (D2+D5 — fixes "AI note 丢右栏") → N5 (D10+D11 note 钉住+导出) → N2 (D4+D3, F6 rides D4b)** · SC-1/SC-2 · **M-A chip mount** (`KitForegroundChipHost` one-liner in the reader toolbar — subject-kits.md §7) · A3b/A4b · G-A3b · SRC-2 · MEM 的 source-open capture.
 
 **P3 — platform & business (necessary; never ahead of the loop):**
 - **X1** desktop packaging (needs the user's Apple Developer account) → **X2** mobile shell → **X3** distribution (软著/ICP ride the license track) → **X4** release train.

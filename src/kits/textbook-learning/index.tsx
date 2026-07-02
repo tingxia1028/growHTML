@@ -22,6 +22,7 @@ import {
 import { textbookSelectionToolbar, textbookSourceActions } from "./surfaces";
 import { textbookPrompts } from "./prompts";
 import { textbookLayerPolicy } from "./policy";
+import { textbookDetection } from "./detection";
 import { textbookLearningLayout } from "./layout";
 
 // One member = one Study Block loop step: its note type + its command + its surface.
@@ -92,6 +93,7 @@ export const textbookLearningKit: ProductKit = {
   contentSpecs: textbookContentSpecs,
   prompts: textbookPrompts,
   layerPolicy: textbookLayerPolicy,
+  detection: textbookDetection,
   members: [explanationMember, practiceMember, mistakeMember, reviewPackMember, languageMember],
   // Kit-level config only (capability lives in the members above).
   install(ctx) {

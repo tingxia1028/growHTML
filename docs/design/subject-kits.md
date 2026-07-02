@@ -402,6 +402,12 @@ via the existing generic endpoint:
 that already runs `loadSourceWorkspace(activeSourceId)` (`WorkspaceContext.tsx` L903–907) — resolve
 `activeSource` (L562) → `resolveSubject(...)` → publish the foreground + chip. No detection is stored.
 
+> **[M-A update, post-F4]** The dedicated `metadata.subject` key is **superseded** — see §7. Once F4
+> demoted per-source activation from filter to foreground, the manual kit pick and the subject pin
+> became the *same decision*, so the pin landed as the existing `metadata.activeKitIds` array itself
+> (same endpoint, same merge-patch, justification 1 above taken to its conclusion). `null` clears the
+> pin (non-array = "inherit" → redetect). No second per-source key, no competing precedence.
+
 ### 3.8 Integration + reuse map
 
 | Hook | File / symbol |
@@ -531,3 +537,51 @@ one `mode` switch, per `builtinNoteTypes.tsx`.
 5. **`metadata` travels with the source; the subject pin is per-vault by intent.** The `.svpack`/`.studypack`
    share path summarizes contentTypes (§8.7) and MAY hint a subject, but the pin itself is not part of the
    shared layer payload — detection re-runs in the recipient vault. Consistent with "advisory + reversible."
+
+---
+
+## 7. M-A implementation note (landed 2026-07-02, post-F4 / post-M1)
+
+M-A shipped **after** marketplace M1, so it builds on the F4 model directly: availability =
+effective-installed (`src/kits/installState.ts`), per-source activation = **foreground ordering only**.
+Auto-switch is therefore *literally* the activation resolver growing a detection layer — no new state
+model, no publisher module needed (§3.4's `recentCategories.ts`-style publisher became unnecessary:
+`kitSurfaceItems(slot, activeKitIds)` already takes the foreground set, and `activeKitIdsForSource` is
+the one function that computes it for every caller).
+
+**What adapted from the design above:**
+
+| Design (§3.1–§3.7, pre-M1) | Landed (post-F4) |
+|---|---|
+| `SubjectProfile{subjectId, kitId, matchers, weight}` | `KitDetectionTable{kitId, titleKeywords, titlePatterns, sourceTypes?, contentSignals?, weight?}` — the kit id IS the subject handle; `subjectId` dropped (kit-centric since F4) |
+| profiles bundled in core | **tables registered PER KIT** (the F7 lesson): React-free `ProductKit.detection` field, registered by `installServerKits` + `installClientKits` — the KitLayerPolicy precedent. Core owns only the scorer. |
+| pin = `metadata.subject` (SubjectId) | pin = the existing `metadata.activeKitIds` array (see the §3.7 update note); clear = `activeKitIds: null` via the same merge-patch |
+| `resolveSubject` beside the scorer | split: **engine** `src/core/subject/detectSubject.ts` (pure `scoreKitDetection`/`detectKit`, threshold 0.35, order = score↓ weight↓ kitId↑, explainable `{kitId, confidence, signals[]}`) + **resolver** `resolveForegroundKits` in `src/kits/activation.ts` (pin > detected∧installed > workspace default) |
+| §3.2 "× weight normalized" | weight is a **pure tie-breaker**, never multiplied into the score — keeps `signals[].points` summing to `confidence` (explainability wins) |
+| chip mounted in the reader topbar | component + host delivered (`src/client/workspace/KitForegroundChip.tsx`, jsdom-tested); **mount reader-gated**, below |
+
+Seeded table: only `textbook-learning` (`src/kits/textbook-learning/detection.ts`), per PART 5 — M-B
+adds the five subject kits' tables (§3.3) the same way (one `detection` field per kit). An uninstalled
+winner still foregrounds nothing (§3.5's suggestion UI stays future; the engine's `candidates` carry
+what it needs). Server + client register identical tables, so the stage-axis seeding
+(`services/layers.ts` → `activeKitIdsForSource`) and the client foreground agree.
+
+**The gated one-line mount (SC-1 pattern — `views.tsx` is reader-session-contended).** When the reader
+batch opens, drop this into `SourceViewerView`'s `.reader-toolbar` (beside `<BookmarkIndex/>`), adding
+`loadSources` to the existing ctx destructure:
+
+```tsx
+<KitForegroundChipHost ctx={{ activeSource, installedKits, setActiveKit, loadSources }} />
+```
+
+`KitForegroundChipHost` binds the chip to the existing seams: manual pick → `setActiveKit` (the same
+`metadata.activeKitIds` write the Product Kit `<select>` uses — that select can then be retired from
+the ⋯ menu), 自动 → `activeKitIds: null` PATCH + `loadSources()`. Styles are already in
+`styles.css` (`.kit-foreground-chip`). Until the mount lands, the auto-switch itself is **already
+live** everywhere `activeKitIdsForSource` is consumed (toolbar foregrounding, stage seeding) — the
+chip only adds the visibility + pin affordance.
+
+**Files:** `src/core/subject/detectSubject.ts`(+test) · `src/kits/textbook-learning/detection.ts`(+test)
+· `src/kits/activation.ts`(+tests) · `src/kits/types.ts`/`index.ts`/`server.ts`/`clientContext.tsx`
+(registration seam) · `src/client/workspace/KitForegroundChip.tsx`(+jsdom test) ·
+`src/server/subjectAutoSwitch.test.ts` (pin persistence roundtrip over the real API) · `styles.css`.

@@ -19,6 +19,7 @@
 // still isn't — getNoteType() stays global (the adaptive-note contract).
 
 import { registerNoteContentSpec } from "../core/notes/contentTypes";
+import { registerKitDetection } from "../core/subject/detectSubject";
 import { listNoteTypes, registerNoteType } from "../client/notes/noteTypeRegistry";
 import { registerCommand } from "../client/commands/registry";
 import { registerKitLanguage } from "./language";
@@ -230,6 +231,10 @@ export function installClientKits(kits: ProductKit[]): void {
       kitId: isKitUnit ? kit.id : undefined
     });
     kit.install(createKitInstallContext(kit.id));
+    // Kit-level, React-free subject-detection table (subject-kits M-A) — registered the
+    // way installServerKits registers it (the KitLayerPolicy precedent), so the client
+    // auto-foreground resolves identically to the server's stage-axis seeding.
+    if (kit.detection) registerKitDetection(kit.detection);
   }
   seedBuiltinPlugins();
 }

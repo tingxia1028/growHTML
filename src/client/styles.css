@@ -4324,6 +4324,33 @@ textarea {
   color: var(--sv-accent-text);
 }
 
+/* Subject Auto-Switch chip (subject-kits.md §3.6, M-A) — the document-level
+   "识别为 · 更改" foreground chip. Styled here so the reader-gated one-line mount
+   (KitForegroundChipHost in the reader toolbar) needs no style pass. */
+.kit-foreground-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--sv-text-muted);
+  white-space: nowrap;
+}
+.kit-foreground-chip .kit-chip-label strong {
+  color: var(--sv-accent-text);
+  font-weight: 600;
+}
+.kit-foreground-chip[data-mode="pin"] .kit-chip-label strong {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.kit-foreground-chip .link-button {
+  margin-top: 0;
+}
+.kit-foreground-chip .kit-chip-select {
+  font-size: 12px;
+  max-width: 180px;
+}
+
 /* ============================================================================
    整体 IA 重建 (Growte structural rebuild) — Library / Reader chrome / Right panel.
    Token-only color; both themes inherit from the --sv-* vocabulary above.
