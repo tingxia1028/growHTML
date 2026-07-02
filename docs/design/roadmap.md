@@ -5,7 +5,7 @@ One dependency-ordered plan over the six design docs written this cycle. Purpose
 ## The design docs (all committed)
 | Doc | Scope | Impl phases |
 |---|---|---|
-| `studypack-sharing.md` | Offline `.svpack` protected sharing v2 | A✅ · B✅ · C🔧 (watermark✅, dialogs left) · D |
+| `studypack-sharing.md` | Offline `.svpack` protected sharing v2 | **A✅ B✅ C✅ D✅ — shipped.** Follow-ups: renew UI (needs a publisher pack-LIST endpoint), e2e identity-dir override (shared server pins into real `~/.growte`), publish-ledger delete API, sealed-layer DOM marker |
 | `plugin-viewer-model.md` §8 | Plugin/Kit **marketplace** | M1 · M2 · M3 |
 | `note-presentation-unified.md` | In-reader note surface D1–D12 | N1 · N2 · N3 · N4 · N5 · N6 |
 | `subject-kits.md` | 11 subject types × 5 kits + auto-switch | M-A · M-B · M-C |
