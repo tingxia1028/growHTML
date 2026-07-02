@@ -1,5 +1,7 @@
 import { ClaudeCliProvider } from "./claudeCliProvider";
 import { ClaudePtyProvider } from "./claudePtyProvider";
+import { claudeAgentSpec } from "./cliAgent/claude";
+import { codexAgentSpec } from "./cliAgent/codex";
 import { MockModelProvider } from "./mockProvider";
 import { createClaudePtySession } from "./pty/nodePtySession";
 import type { ModelProvider } from "./provider";
@@ -38,6 +40,20 @@ registerProvider(
 registerProvider(
   { id: "claude-pty", kind: "cli-agent", label: "Claude PTY (subscription)" },
   () => new ClaudePtyProvider({ createSession: () => createClaudePtySession() })
+);
+
+// cli-agent kind, Phase 0.5 (§9.2/§9.5): thin adapters over the two OFFICIAL
+// vendor SDKs, with both §9.3 invariants (metered-key strip + pinned
+// non-destructive mode) enforced inside the adapters. The hand-spawned
+// claude-cli / claude-pty entries above stay registered as legacy fallbacks
+// until these prove out in daily use.
+registerProvider(
+  { id: "claude-agent", kind: "cli-agent", label: "Claude (subscription, Agent SDK)" },
+  ({ env }) => claudeAgentSpec.makeProvider({ env })
+);
+registerProvider(
+  { id: "codex", kind: "cli-agent", label: "Codex (ChatGPT subscription)" },
+  ({ env }) => codexAgentSpec.makeProvider({ env })
 );
 
 // Selects the active provider. Defaults to the deterministic mock so the app
