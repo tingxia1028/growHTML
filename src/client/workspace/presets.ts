@@ -64,7 +64,9 @@ export const studyVaultLayout: WorkspaceLayout = {
     // operation-as-data builder + manager — reached via the IconRail.
     { id: "operations", kind: "operation.manager" },
     // Kit & Plugin manager — reached via the IconRail (left-slot swap resolves the kind).
-    { id: "plugin-manager", kind: "plugin.manager" }
+    { id: "plugin-manager", kind: "plugin.manager" },
+    // Review runner (REV-1 复习环) — reached via the IconRail.
+    { id: "review", kind: "review.panel" }
   ],
   layout: studyVaultDock
 };

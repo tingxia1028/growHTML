@@ -8213,3 +8213,300 @@ select {
   color: var(--sv-accent-text);
   white-space: nowrap;
 }
+
+/* ————————————————————————————————————————————————————————————————————————
+   Review runner (REV-1) — ReviewPanel.tsx. The 复习 left-slot panel: scope
+   toggle, queue header, per-item runner (card→reveal, AI check flow), tally.
+   Token-only; reuses the shared .panel-title / .empty-state chrome. */
+.review-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  min-height: 0;
+  padding: 12px;
+  overflow-y: auto;
+  background: var(--sv-surface);
+  color: var(--sv-text);
+}
+
+.review-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.review-scope {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--sv-border);
+  border-radius: 8px;
+  background: var(--sv-surface-muted);
+}
+
+.review-scope-btn {
+  border: none;
+  background: transparent;
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--sv-text-muted);
+  cursor: pointer;
+}
+
+.review-scope-btn.active {
+  background: var(--sv-surface-card);
+  color: var(--sv-accent-text-strong);
+  box-shadow: 0 0 0 1px var(--sv-border);
+}
+
+.review-scope-btn:disabled {
+  color: var(--sv-text-faint);
+  cursor: default;
+}
+
+.review-count {
+  font-size: 12px;
+  color: var(--sv-text-muted);
+  white-space: nowrap;
+}
+
+.review-error {
+  font-size: 12px;
+  color: var(--sv-danger-strong);
+  background: var(--sv-danger-bg);
+  border: 1px solid var(--sv-danger-bg-strong);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.review-empty {
+  padding: 16px 4px;
+}
+
+.review-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--sv-border);
+  border-radius: 10px;
+  background: var(--sv-surface-card);
+  padding: 10px;
+}
+
+.review-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--sv-text-muted);
+}
+
+.review-progress {
+  font-weight: 600;
+  color: var(--sv-text-heading);
+}
+
+.review-reason {
+  padding: 0 7px;
+  line-height: 1.7;
+  border-radius: 999px;
+  background: var(--sv-accent-weak);
+  border: 1px solid var(--sv-accent-border);
+  color: var(--sv-accent-text);
+  white-space: nowrap;
+}
+
+.review-reason[data-reason="mistake-failed"] {
+  background: var(--sv-danger-bg);
+  border-color: var(--sv-danger-bg-strong);
+  color: var(--sv-danger-2);
+}
+
+.review-type {
+  margin-left: auto;
+  color: var(--sv-text-muted-soft);
+  white-space: nowrap;
+}
+
+.review-item-content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.review-btn {
+  border: 1px solid var(--sv-border);
+  border-radius: 8px;
+  background: var(--sv-surface-card);
+  color: var(--sv-text-strong);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.review-btn:hover:not(:disabled) {
+  background: var(--sv-surface-muted);
+}
+
+.review-btn:disabled {
+  color: var(--sv-text-faint);
+  cursor: default;
+}
+
+.review-btn.review-primary {
+  background: var(--sv-accent);
+  border-color: var(--sv-accent);
+  color: var(--sv-on-accent);
+}
+
+.review-btn.review-primary:hover:not(:disabled) {
+  background: var(--sv-accent-strong);
+}
+
+.review-btn.review-primary:disabled {
+  background: var(--sv-accent-weak);
+  border-color: var(--sv-accent-border);
+  color: var(--sv-accent-text);
+}
+
+.review-pass-btn {
+  border-color: var(--sv-success-bg);
+  background: var(--sv-success-bg);
+  color: var(--sv-success-strong);
+}
+
+.review-fail-btn {
+  border-color: var(--sv-danger-bg-strong);
+  background: var(--sv-danger-bg);
+  color: var(--sv-danger-2);
+}
+
+.review-outcome {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 8px;
+  line-height: 1.8;
+  border-radius: 999px;
+}
+
+.review-outcome-pass {
+  background: var(--sv-success-bg);
+  color: var(--sv-success-strong);
+}
+
+.review-outcome-fail {
+  background: var(--sv-danger-bg);
+  color: var(--sv-danger-2);
+}
+
+.review-outcome-skip {
+  background: var(--sv-surface-tag);
+  color: var(--sv-text-muted);
+}
+
+.review-check {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px dashed var(--sv-border);
+  padding-top: 8px;
+}
+
+.review-answer-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--sv-border);
+  border-radius: 8px;
+  background: var(--sv-surface-card);
+  color: var(--sv-text);
+  font-size: 13px;
+  padding: 6px 8px;
+}
+
+.review-answer-input:focus {
+  outline: none;
+  border-color: var(--sv-accent-border);
+}
+
+.review-check-revealed {
+  border: 1px solid var(--sv-border-soft);
+  border-radius: 8px;
+  padding: 8px;
+  background: var(--sv-surface-muted);
+}
+
+.review-explanation {
+  border-left: 3px solid var(--sv-accent-border);
+  background: var(--sv-accent-weak);
+  border-radius: 0 8px 8px 0;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+/* The hidden review.grade verdict (rendered through its registered type). */
+.review-grade {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.review-grade-pass {
+  background: var(--sv-success-bg);
+  color: var(--sv-success-strong);
+}
+
+.review-grade-fail {
+  background: var(--sv-danger-bg);
+  color: var(--sv-danger-2);
+}
+
+.review-grade-verdict {
+  font-weight: 700;
+}
+
+.review-grade-explanation {
+  margin: 0;
+  color: var(--sv-text-quote);
+}
+
+.review-grade-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.review-inert {
+  font-size: 12px;
+  color: var(--sv-text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.review-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--sv-border);
+  border-radius: 10px;
+  background: var(--sv-surface-card);
+  padding: 14px;
+}
+
+.review-summary-line {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sv-text-heading);
+}

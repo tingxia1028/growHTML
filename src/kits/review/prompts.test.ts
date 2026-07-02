@@ -1,0 +1,176 @@
+// Review operations (REV-1) — the three kit-prompt records through the REAL
+// structured-generation engine + MockModelProvider: declared-form check generation
+// (outputType quiz), the grade schema roundtrip incl. the re-prompt path, explain as
+// markdown, the review.grade spec validation, and the server registration threading
+// (kitPrompts/kitContentSpecs aggregation installServerKits consumes).
+
+import { describe, expect, it } from "vitest";
+import { MockModelProvider } from "../../ai/mockProvider";
+import type { ChatResponse, ModelProvider } from "../../ai/provider";
+import { getNoteContentSpec } from "../../core/notes/contentTypes";
+import { generateStructuredContent, StructuredGenerationError } from "../structured";
+import { installServerKits } from "../server";
+import { kitContentSpecs, kitPrompts } from "../index";
+import { REVIEW_GRADE_CONTENT_TYPE, reviewGradeSpec, type ReviewGradeContent } from "./contentTypes";
+import { explainPrompt, generateCheckPrompt, gradeAnswerPrompt, reviewPrompts } from "./prompts";
+
+// Register specs + prompts exactly as the server composition root does.
+installServerKits();
+
+const NOTE_TEXT = "浮力等于排开液体的重力 (阿基米德原理)。";
+
+describe("registration threading (server half)", () => {
+  it("the three operations ride the kit aggregation installServerKits registers", () => {
+    const ids = kitPrompts.map((prompt) => prompt.id);
+    expect(ids).toEqual(
+      expect.arrayContaining(["review.generate-check", "review.grade-answer", "review.explain"])
+    );
+    expect(kitContentSpecs.map((spec) => spec.contentType)).toContain(REVIEW_GRADE_CONTENT_TYPE);
+    // And the core registry actually has the grade spec after install.
+    expect(getNoteContentSpec(REVIEW_GRADE_CONTENT_TYPE)).toBeTruthy();
+  });
+
+  it("every review prompt's outputType matches a REGISTERED content spec", () => {
+    for (const prompt of reviewPrompts) {
+      expect(getNoteContentSpec(prompt.outputType), `${prompt.id} → ${prompt.outputType}`).toBeTruthy();
+    }
+    expect(generateCheckPrompt.outputType).toBe("quiz"); // the EXISTING built-in type
+    expect(gradeAnswerPrompt.outputType).toBe(reviewGradeSpec.contentType);
+    expect(explainPrompt.outputType).toBe("markdown"); // the EXISTING built-in type
+  });
+});
+
+describe("review.generate-check — declared-form quiz generation", () => {
+  it("builds a prompt carrying the note text and generates quiz-schema-valid content", async () => {
+    const built = generateCheckPrompt.build({ noteText: NOTE_TEXT, contentType: "textbook.mistake" });
+    expect(built).toContain(NOTE_TEXT);
+    expect(built.toLowerCase()).toContain("json");
+    expect(built).toContain("textbook.mistake");
+
+    const content = await generateStructuredContent(new MockModelProvider(), {
+      promptId: "review.generate-check",
+      contentType: "quiz",
+      input: { noteText: NOTE_TEXT, contentType: "textbook.mistake" }
+    });
+    const quiz = getNoteContentSpec("quiz")!.schema.parse(content) as {
+      question: string;
+      options: string[];
+      answerIndex: number;
+    };
+    expect(quiz.question).toContain(NOTE_TEXT.slice(0, 10));
+    expect(quiz.options.length).toBeGreaterThanOrEqual(2);
+    expect(quiz.options[quiz.answerIndex]).toBeTruthy(); // a gradable expected answer exists
+  });
+
+  it("declared-form guard: asking the check prompt for another contentType is a 400-shaped error", async () => {
+    await expect(
+      generateStructuredContent(new MockModelProvider(), {
+        promptId: "review.generate-check",
+        contentType: "markdown"
+      })
+    ).rejects.toBeInstanceOf(StructuredGenerationError);
+  });
+});
+
+describe("review.grade-answer — grade schema roundtrip", () => {
+  it("mock grading is deterministic: matching answer → correct, mismatch → incorrect", async () => {
+    const provider = new MockModelProvider();
+    const pass = (await generateStructuredContent(provider, {
+      promptId: "review.grade-answer",
+      contentType: REVIEW_GRADE_CONTENT_TYPE,
+      input: { question: "浮力等于什么?", expected: "排开液体的重力", userAnswer: " 排开液体的重力 " }
+    })) as ReviewGradeContent;
+    expect(pass).toMatchObject({ correct: true });
+    expect(reviewGradeSpec.schema.parse(pass)).toEqual(pass);
+
+    const fail = (await generateStructuredContent(provider, {
+      promptId: "review.grade-answer",
+      contentType: REVIEW_GRADE_CONTENT_TYPE,
+      input: { question: "浮力等于什么?", expected: "排开液体的重力", userAnswer: "物体的重力" }
+    })) as ReviewGradeContent;
+    expect(fail.correct).toBe(false);
+    expect(fail.explanation).toContain("排开液体的重力"); // the explanation teaches the expected answer
+  });
+
+  it("re-prompt path: an invalid first reply is corrected on retry and validates", async () => {
+    let calls = 0;
+    const flaky: ModelProvider = {
+      id: "flaky",
+      capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, kind: "mock" },
+      async complete(): Promise<ChatResponse> {
+        calls += 1;
+        const content =
+          calls === 1
+            ? '{"correct":"yes","explanation":42}' // wrong types → schema error → re-prompt
+            : '{"correct":false,"explanation":"再想想"}';
+        return { message: { role: "assistant", content } };
+      }
+    };
+    const graded = (await generateStructuredContent(flaky, {
+      promptId: "review.grade-answer",
+      contentType: REVIEW_GRADE_CONTENT_TYPE,
+      input: { question: "q", expected: "a", userAnswer: "b" }
+    })) as ReviewGradeContent;
+    expect(calls).toBe(2);
+    expect(graded).toEqual({ correct: false, explanation: "再想想" });
+  });
+
+  it("persistently invalid grade output exhausts attempts and throws", async () => {
+    const bad: ModelProvider = {
+      id: "bad",
+      capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, kind: "mock" },
+      async complete(): Promise<ChatResponse> {
+        return { message: { role: "assistant", content: '{"correct":"nope"}' } };
+      }
+    };
+    await expect(
+      generateStructuredContent(
+        bad,
+        { promptId: "review.grade-answer", contentType: REVIEW_GRADE_CONTENT_TYPE, input: {} },
+        2
+      )
+    ).rejects.toBeInstanceOf(StructuredGenerationError);
+  });
+});
+
+describe("review.explain — markdown explanation", () => {
+  it("builds with the item + wrong answer and yields a markdown STRING", async () => {
+    const built = explainPrompt.build({ question: "浮力等于什么?", expected: "排开液体的重力", userAnswer: "物体的重力" });
+    expect(built).toContain("物体的重力");
+    expect(built).toContain("排开液体的重力");
+
+    const content = await generateStructuredContent(new MockModelProvider(), {
+      promptId: "review.explain",
+      contentType: "markdown",
+      input: { question: "浮力等于什么?", expected: "排开液体的重力", userAnswer: "物体的重力" }
+    });
+    expect(typeof content).toBe("string");
+    expect(getNoteContentSpec("markdown")!.schema.parse(content)).toBe(content);
+    expect(content as string).toContain("为什么错了");
+    expect(content as string).toContain("排开液体的重力");
+  });
+});
+
+describe("review.grade content spec", () => {
+  it("validates the {correct, explanation} shape and rejects malformed grades", () => {
+    expect(reviewGradeSpec.schema.parse({ correct: true, explanation: "对" })).toEqual({
+      correct: true,
+      explanation: "对"
+    });
+    expect(() => reviewGradeSpec.schema.parse({ explanation: "missing correct" })).toThrow();
+    expect(() => reviewGradeSpec.schema.parse({ correct: "yes", explanation: "" })).toThrow();
+    expect(() => reviewGradeSpec.schema.parse({ correct: false, explanation: 42 })).toThrow();
+  });
+
+  it("createDefault parses against its own schema; toSearchText is the explanation", () => {
+    const blank = reviewGradeSpec.createDefault();
+    expect(reviewGradeSpec.schema.parse(blank)).toEqual(blank);
+    expect(reviewGradeSpec.toSearchText({ correct: false, explanation: "why" })).toBe("why");
+  });
+
+  it("grades are a hidden transport shape: the spec exists, no textbook-style label leaks", () => {
+    // The spec registers for validation only; the CLIENT half is hidden (asserted in
+    // the plugin install test) — here we just pin the id so the wire stays stable.
+    expect(reviewGradeSpec.contentType).toBe("review.grade");
+  });
+});

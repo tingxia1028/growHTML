@@ -51,6 +51,8 @@ import "./BottomBar";
 import "./RightSidebarTabs";
 //   ./pluginManagerViews → plugin.manager (the Kit & Plugin manager panel)
 import "./pluginManagerViews";
+//   ../review/ReviewPanel → review.panel (the REV-1 复习 runner — reached via the IconRail)
+import "../review/ReviewPanel";
 import { TopBar } from "./TopBar";
 import { IconRail } from "./IconRail";
 import { SelectionFloatingToolbar } from "./SelectionFloatingToolbar";

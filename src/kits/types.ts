@@ -30,6 +30,12 @@ export type KitNoteTypePlugin = {
   aliases?: string[];
   /** Optional glyph string for palette rows (defaults to the central noteTypeIcon map). */
   icon?: string;
+  /** Hide this type from the composer's generic type picker AND the slash palette
+      (same semantics as NoteTypePlugin.hidden — SC-0 adapters skip hidden types).
+      For kit types that are machine-produced/consumed only (e.g. the review plugin's
+      `review.grade` verdict shape), never authored from a generic composer entry.
+      Rendering/editing through the registry is unaffected. */
+  hidden?: boolean;
   /** Dup-registration precedence for the exclusive `contentType` slot (plugin-viewer-model
       §4/§6.1): higher wins, default 0. A kit sets this to OVERRIDE a built-in renderer for
       the same contentType. Optional — omitting it keeps last-wins-at-equal-priority. */

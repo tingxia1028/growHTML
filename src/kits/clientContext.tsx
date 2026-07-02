@@ -106,6 +106,7 @@ export function createKitInstallContext(kitId: string): KitInstallContext {
           title: plugin.title,
           aliases: plugin.aliases,
           icon: plugin.icon,
+          hidden: plugin.hidden,
           priority: plugin.priority,
           pluginId: kitId
         });

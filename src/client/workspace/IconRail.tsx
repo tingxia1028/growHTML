@@ -16,6 +16,7 @@
 import {
   Anchor,
   Blocks,
+  BookOpenCheck,
   Code2,
   Folder,
   Layers,
@@ -42,7 +43,8 @@ export const RAIL_ENTRIES: RailEntry[] = [
   { kind: "concept.list", label: "Concepts", Icon: Network },
   { kind: "operation.manager", label: "Operations", Icon: Code2 },
   { kind: "layer.switcher", label: "Layers", Icon: Layers },
-  { kind: "plugin.manager", label: "Kit & Plugin", Icon: Blocks }
+  { kind: "plugin.manager", label: "Kit & Plugin", Icon: Blocks },
+  { kind: "review.panel", label: "复习 (Review)", Icon: BookOpenCheck }
 ];
 
 // Neutral app-derived identity for the bottom avatar. This app has no user/account model

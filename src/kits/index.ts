@@ -8,9 +8,11 @@ import type { KitLayerPolicy } from "./policy";
 import { textbookContentSpecs } from "./textbook-learning/contentTypes";
 import { textbookPrompts } from "./textbook-learning/prompts";
 import { textbookLayerPolicy } from "./textbook-learning/policy";
+import { reviewContentSpecs } from "./review/contentTypes";
+import { reviewPrompts } from "./review/prompts";
 
-export const kitContentSpecs: NoteContentSpec[] = [...textbookContentSpecs];
-export const kitPrompts: KitPrompt[] = [...textbookPrompts];
+export const kitContentSpecs: NoteContentSpec[] = [...textbookContentSpecs, ...reviewContentSpecs];
+export const kitPrompts: KitPrompt[] = [...textbookPrompts, ...reviewPrompts];
 export const kitLayerPolicies: KitLayerPolicy[] = [textbookLayerPolicy];
 
 export type { ProductKit, KitInstallContext, KitLanguage } from "./types";

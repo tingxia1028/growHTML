@@ -4,7 +4,8 @@
 
 import { installClientKits } from "./clientContext";
 import { textbookLearningKit } from "./textbook-learning";
+import { reviewPlugin } from "./review";
 
-export const productKits = [textbookLearningKit];
+export const productKits = [textbookLearningKit, reviewPlugin];
 
 installClientKits(productKits);
