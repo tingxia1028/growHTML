@@ -95,9 +95,16 @@ function TextEditor({ content, onChange, placeholder }: NoteEditInput & { placeh
   );
 }
 
+// Slash-palette display meta (slash-composer §2 / SC-0): every registration carries a
+// natural 中文 `title` + `aliases` (中文 synonyms + English shorthands) so `/文本`,
+// `/判断题`, `/md` … all resolve. The contentType id itself always matches (engine
+// rank 0), so aliases never repeat it. Hidden types keep meta too (other surfaces may
+// use it) but the slash adapter skips them — they aren't authored from a composer.
 registerNoteType({
   contentType: "markdown",
   label: "markdown",
+  title: "文本",
+  aliases: ["笔记", "md", "text"],
   render: (input) => <MarkdownRender {...input} />,
   edit: (input) => <TextEditor {...input} placeholder="Write markdown…" />
 });
@@ -108,6 +115,8 @@ registerNoteType({
 registerNoteType({
   contentType: "plain-text",
   label: "plain text",
+  title: "纯文本",
+  aliases: ["plain"],
   hidden: true,
   render: (input) => <PlainTextRender {...input} />,
   edit: (input) => <TextEditor {...input} placeholder="Write plain text…" />
@@ -145,10 +154,17 @@ function DiagramCard({ contentType, content }: { contentType: string; content: s
     </div>
   );
 }
-function diagramPlugin(contentType: string, label: string, placeholder: string) {
+function diagramPlugin(
+  contentType: string,
+  label: string,
+  display: { title: string; aliases: string[] },
+  placeholder: string
+) {
   registerNoteType({
     contentType,
     label,
+    title: display.title,
+    aliases: display.aliases,
     render: ({ content, mode }) => {
       const source = typeof content === "string" ? content : "";
       // "card" → a light static preview (no live diagram mount); "full" (default) →
@@ -162,8 +178,10 @@ function diagramPlugin(contentType: string, label: string, placeholder: string) 
     edit: (input) => <TextEditor {...input} placeholder={placeholder} />
   });
 }
-diagramPlugin("mermaid", "mermaid", "graph TD; A --> B;");
-diagramPlugin("markmap", "markmap", "# Root\n## Child");
+diagramPlugin("mermaid", "mermaid", { title: "图表", aliases: ["流程图", "diagram"] }, "graph TD; A --> B;");
+// "mindmap" is an ALIAS here on purpose: the static `mindmap` type is retired as a new
+// choice (§2.5 below), so `/mindmap` should land the user on the interactive markmap.
+diagramPlugin("markmap", "markmap", { title: "脑图", aliases: ["思维导图", "导图", "mindmap"] }, "# Root\n## Child");
 
 // —— mindmap ——————————————————————————————————————————————————————————————
 // content is a { title?/text?, children? } tree. Render reuses the sanitized tree
@@ -202,6 +220,8 @@ function StructuredJsonEditor({ content, onChange, contentType }: NoteEditInput 
 registerNoteType({
   contentType: "mindmap",
   label: "mindmap",
+  title: "思维导图",
+  aliases: ["静态导图"],
   hidden: true,
   render: (input) => <MindmapRender {...input} />,
   edit: (input) => <StructuredJsonEditor {...input} contentType="mindmap" />
@@ -263,6 +283,8 @@ function FlashcardEditor({ content, onChange }: NoteEditInput) {
 registerNoteType({
   contentType: "flashcard",
   label: "flashcard",
+  title: "闪卡",
+  aliases: ["卡片", "记忆卡", "card"],
   render: (input) => <FlashcardRender {...input} />,
   edit: (input) => <FlashcardEditor {...input} />
 });
@@ -367,6 +389,10 @@ function QuizEditor({ content, onChange }: NoteEditInput) {
 registerNoteType({
   contentType: "quiz",
   label: "quiz",
+  // Reality check vs the design sketch: this quiz IS a options+answerIndex 选择题, so
+  // "小测" titles it; "判断题" stays an alias (the design doc's example query must hit).
+  title: "小测",
+  aliases: ["选择题", "判断题", "测验", "判断"],
   render: (input) => <QuizRender {...input} />,
   edit: (input) => <QuizEditor {...input} />
 });
@@ -443,6 +469,8 @@ function CodeEditor({ content, onChange }: NoteEditInput) {
 registerNoteType({
   contentType: "code-snippet",
   label: "code snippet",
+  title: "代码",
+  aliases: ["代码片段", "code", "snippet"],
   render: (input) => <CodeRender {...input} />,
   edit: (input) => <CodeEditor {...input} />
 });
@@ -548,12 +576,16 @@ function MediaEditor({ content, onChange, accept }: NoteEditInput & { accept: st
 registerNoteType({
   contentType: "image",
   label: "image",
+  title: "图片",
+  aliases: ["插图", "照片", "img"],
   render: (input) => <MediaRender {...input} kind="image" />,
   edit: (input) => <MediaEditor {...input} accept="image/*" />
 });
 registerNoteType({
   contentType: "audio",
   label: "audio",
+  title: "音频",
+  aliases: ["录音", "声音"],
   render: (input) => <MediaRender {...input} kind="audio" />,
   edit: (input) => <MediaEditor {...input} accept="audio/*" />
 });
@@ -634,6 +666,8 @@ function VideoRender({ content, mode }: NoteRenderInput) {
 registerNoteType({
   contentType: "video",
   label: "video",
+  title: "视频",
+  aliases: ["影片", "录像"],
   render: (input) => <VideoRender {...input} />,
   edit: (input) => <MediaEditor {...input} accept="video/*" />
 });
@@ -756,6 +790,10 @@ function HtmlSandboxEditor({ content, onChange }: NoteEditInput) {
 registerNoteType({
   contentType: "html-sandbox",
   label: "html",
+  // "html" is an alias (not just an id-prefix hit) so the natural `/html` query lands
+  // in the exact-alias tier — the persisted id stays "html-sandbox" (stable, unrenamed).
+  title: "HTML",
+  aliases: ["html", "网页", "互动", "游戏"],
   // Rich, self-contained interactive content → focusable into the shared overlay (where
   // the live allow-scripts frame mounts). A registry capability flag, NOT a host branch.
   focusable: true,
@@ -844,6 +882,8 @@ function BookmarkEditor({ content, onChange }: NoteEditInput) {
 registerNoteType({
   contentType: "bookmark",
   label: "bookmark",
+  title: "书签",
+  aliases: ["收藏", "mark"],
   // Hidden from the composer's generic type picker — a bookmark is created via the
   // bookmark.add command (which materializes the focused anchor), never authored
   // anchor-less from the composer. Render/edit through the registry still work (the

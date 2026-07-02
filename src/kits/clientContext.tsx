@@ -103,6 +103,9 @@ export function createKitInstallContext(kitId: string): KitInstallContext {
           render: plugin.render,
           edit: plugin.edit,
           label: plugin.label,
+          title: plugin.title,
+          aliases: plugin.aliases,
+          icon: plugin.icon,
           priority: plugin.priority,
           pluginId: kitId
         });

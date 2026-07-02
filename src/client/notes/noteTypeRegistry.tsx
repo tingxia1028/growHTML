@@ -63,6 +63,17 @@ export type NoteTypePlugin = {
   edit(input: NoteEditInput): ReactNode;
   /** Optional friendly label for the composer's type picker (defaults to contentType). */
   label?: string;
+  /** Natural display name for the slash palette / list surfaces — 中文 for the
+      built-ins (e.g. quiz → "小测"). ADDITIVE + optional (slash-composer §2): the
+      adapter falls back to `contentType` when absent, so nothing existing changes. */
+  title?: string;
+  /** Extra slash-palette match keys: 中文 synonyms + English shorthands (e.g.
+      quiz → ["判断题", "选择题"]). The contentType itself always matches — never
+      repeat it here. Optional; absent = the id/title alone match. */
+  aliases?: string[];
+  /** Optional glyph STRING for palette rows. Absent (all built-ins) → surfaces fall
+      back to the central noteTypeIcon map, so the type keeps ONE icon everywhere. */
+  icon?: string;
   /** Hide this type from the composer's generic type picker. Used by types that are
       created only through a dedicated affordance (e.g. `bookmark` via the bookmark.add
       command, which materializes the anchor) — so they aren't authored anchor-less from

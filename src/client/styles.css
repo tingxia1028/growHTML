@@ -8121,3 +8121,95 @@ select {
   margin-top: 0;
   color: var(--sv-accent);
 }
+
+/* ============================================================================
+   Slash palette (SC-0, docs/design/slash-composer.md §4) — the one `/类型` list
+   shared by the chat composer / selection toolbar / anchor bar mounts. The mount
+   positions it (dropdown above the composer input, popover on a toolbar); the
+   palette itself is just the bordered list. Token-only.
+   ========================================================================== */
+.slash-palette {
+  min-width: 240px;
+  max-width: 340px;
+  max-height: 264px;
+  overflow-y: auto;
+  background: var(--sv-surface);
+  border: 1px solid var(--sv-border);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+}
+
+.slash-palette-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--sv-text-faint);
+}
+
+.slash-palette-empty code {
+  background: var(--sv-surface-tag);
+  border-radius: 4px;
+  padding: 0 4px;
+  color: var(--sv-text-muted);
+}
+
+.slash-palette-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.slash-palette-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--sv-text);
+  cursor: pointer;
+}
+
+.slash-palette-row.active {
+  background: var(--sv-active-bg);
+  color: var(--sv-accent-text-strong);
+}
+
+.slash-palette-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--sv-icon-muted);
+}
+
+.slash-palette-row.active .slash-palette-icon {
+  color: var(--sv-accent-text);
+}
+
+.slash-palette-title {
+  font-weight: 500;
+  color: inherit;
+  white-space: nowrap;
+}
+
+.slash-palette-id {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--sv-text-muted-soft);
+}
+
+.slash-palette-kit {
+  flex: none;
+  font-size: 10px;
+  line-height: 1.6;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--sv-accent-weak);
+  border: 1px solid var(--sv-accent-border);
+  color: var(--sv-accent-text);
+  white-space: nowrap;
+}

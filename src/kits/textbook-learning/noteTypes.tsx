@@ -388,23 +388,34 @@ function ReviewPackEditor({ content, onChange }: NoteEditInput) {
   );
 }
 
+// `title`/`aliases` = the slash-palette display meta (slash-composer §2 / SC-0):
+// `/讲解`, `/练习题`, `/错题`, `/复习包` (+ English shorthands) all resolve. The full
+// `textbook.*` id matches by itself, so aliases carry only the natural names.
 export const explanationPlugin: KitNoteTypePlugin = {
   label: "Explanation",
+  title: "讲解",
+  aliases: ["解释", "讲解卡", "explanation", "explain"],
   render: (input) => <ExplanationRender {...input} />,
   edit: (input) => <ExplanationEditor {...input} />
 };
 export const reviewPackPlugin: KitNoteTypePlugin = {
   label: "Review Pack",
+  title: "复习包",
+  aliases: ["复习", "review"],
   render: (input) => <ReviewPackRender {...input} />,
   edit: (input) => <ReviewPackEditor {...input} />
 };
 export const exercisePlugin: KitNoteTypePlugin = {
   label: "Practice",
+  title: "练习",
+  aliases: ["练习题", "习题", "practice", "exercise"],
   render: (input) => <ExerciseRender {...input} />,
   edit: (input) => <ExerciseEditor {...input} />
 };
 export const mistakePlugin: KitNoteTypePlugin = {
   label: "Mistake",
+  title: "错题",
+  aliases: ["错题本", "订正", "mistake"],
   render: (input) => <MistakeRender {...input} />,
   edit: (input) => <MistakeEditor {...input} />
 };

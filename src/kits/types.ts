@@ -22,6 +22,14 @@ export type KitNoteTypePlugin = {
   edit(input: NoteEditInput): ReactNode;
   /** Friendly label for the composer type picker (defaults to the domain name). */
   label?: string;
+  /** Natural display name for the slash palette (slash-composer §2), e.g.
+      `textbook.exercise` → "练习". Optional; adapters fall back to the contentType. */
+  title?: string;
+  /** Slash-palette match keys: 中文 synonyms + English shorthands. Never repeats the
+      contentType (the id always matches on its own). */
+  aliases?: string[];
+  /** Optional glyph string for palette rows (defaults to the central noteTypeIcon map). */
+  icon?: string;
   /** Dup-registration precedence for the exclusive `contentType` slot (plugin-viewer-model
       §4/§6.1): higher wins, default 0. A kit sets this to OVERRIDE a built-in renderer for
       the same contentType. Optional — omitting it keeps last-wins-at-equal-priority. */
