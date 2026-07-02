@@ -2,6 +2,7 @@ import { ClaudeCliProvider } from "./claudeCliProvider";
 import { ClaudePtyProvider } from "./claudePtyProvider";
 import { claudeAgentSpec } from "./cliAgent/claude";
 import { codexAgentSpec } from "./cliAgent/codex";
+import { ManagedProvider } from "./managed";
 import { MockModelProvider } from "./mockProvider";
 import { createClaudePtySession } from "./pty/nodePtySession";
 import type { ModelProvider } from "./provider";
@@ -54,6 +55,21 @@ registerProvider(
 registerProvider(
   { id: "codex", kind: "cli-agent", label: "Codex (ChatGPT subscription)" },
   ({ env }) => codexAgentSpec.makeProvider({ env })
+);
+
+// managed kind, G-A3a (docs/design/managed-ai-credits.md §4.1): the thin client
+// of the hosted credits gateway (src/gateway). Registered ALWAYS so pickers can
+// list it; USE is gated — an unconfigured instance throws
+// ManagedNotConfiguredError before any fetch. Config is env-based for now;
+// G-A3b replaces the env token with the stored phone-login session
+// (getSessionToken then reads live auth state instead of a frozen env value).
+registerProvider(
+  { id: "managed", kind: "managed", label: "Managed (托管积分)" },
+  ({ env }) =>
+    new ManagedProvider({
+      gatewayBaseUrl: env.STUDY_VAULT_MANAGED_GATEWAY_URL ?? "",
+      getSessionToken: () => env.STUDY_VAULT_MANAGED_TOKEN ?? null
+    })
 );
 
 // Selects the active provider. Defaults to the deterministic mock so the app
