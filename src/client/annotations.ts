@@ -201,6 +201,10 @@ export function groupForRenderer(
   anchorById: Map<string, AnnotationAnchor>
 ): AnchorNotes[] {
   const byAnchor = new Map<string, AnchorNotes>();
+  for (const anchor of anchorById.values()) {
+    if (!renderer.anchorKinds.includes(anchor.anchorKind)) continue;
+    byAnchor.set(anchor.id, { anchor, notes: [] });
+  }
   for (const note of notes) {
     for (const anchorId of note.anchorIds ?? []) {
       const anchor = anchorById.get(anchorId);

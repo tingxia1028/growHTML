@@ -43,6 +43,8 @@ export type ReaderArgs = {
   revealAnchors?: PaintAnchor[];
   /** The host's single draft sink (`focus.setDraft`). */
   onSelect: (draft: AnchorDraft) => void;
+  /** Marker click bridge: anchor icon focuses anchor; note icon opens card + focuses anchor. */
+  onMarkerAction?: (anchorId: string, role: "anchor" | "note") => void;
   /** REVEAL: the focused anchor id the reader should scroll into view (`focus.anchor?.id`). */
   activeAnchorId?: string;
   /** REVEAL: the reveal nonce (`focus.revealSeq`); a change re-fires the scroll, even for the same id. */
@@ -61,6 +63,7 @@ export function readerForSource({
   anchors,
   revealAnchors,
   onSelect,
+  onMarkerAction,
   activeAnchorId,
   revealSeq,
   renderedHtml,
@@ -82,6 +85,7 @@ export function readerForSource({
         anchors={anchors}
         revealAnchors={revealAnchors}
         onSelect={onSelect}
+        onMarkerAction={onMarkerAction}
         activeAnchorId={activeAnchorId}
         revealSeq={revealSeq}
       />
@@ -103,6 +107,7 @@ export function readerForSource({
         anchors={anchors}
         revealAnchors={revealAnchors}
         onSelect={onSelect}
+        onMarkerAction={onMarkerAction}
         activeAnchorId={activeAnchorId}
         revealSeq={revealSeq}
       />
@@ -116,6 +121,7 @@ export function readerForSource({
         anchors={anchors}
         revealAnchors={revealAnchors}
         onSelect={onSelect}
+        onMarkerAction={onMarkerAction}
         activeAnchorId={activeAnchorId}
         revealSeq={revealSeq}
       />
@@ -129,6 +135,7 @@ export function readerForSource({
         anchors={anchors}
         revealAnchors={revealAnchors}
         onSelect={onSelect}
+        onMarkerAction={onMarkerAction}
         activeAnchorId={activeAnchorId}
         revealSeq={revealSeq}
       />
@@ -145,6 +152,7 @@ export function readerForSource({
         anchors={anchors}
         revealAnchors={revealAnchors}
         onSelect={onSelect}
+        onMarkerAction={onMarkerAction}
         activeAnchorId={activeAnchorId}
         revealSeq={revealSeq}
       />
@@ -158,6 +166,7 @@ export function readerForSource({
         anchors={anchors}
         revealAnchors={revealAnchors}
         onSelect={onSelect}
+        onMarkerAction={onMarkerAction}
         activeAnchorId={activeAnchorId}
         revealSeq={revealSeq}
         mode={annotationMode}

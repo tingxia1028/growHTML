@@ -32,13 +32,15 @@ function annotationPayload(anchor: PaintAnchor): HighlightPayload {
 // drawn on top of it. Stored image_region anchors from the `anchors` prop are drawn
 // back as boxes that share the same floating note card as every other surface
 // (WRITE). It uses the shared overlay rubber-band helpers.
-export function ImageReader({ src, sourceId, anchors, onSelect, activeAnchorId, revealSeq }: ImageReaderProps) {
+export function ImageReader({ src, sourceId, anchors, onSelect, onMarkerAction, activeAnchorId, revealSeq }: ImageReaderProps) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   // The view-layer marker overlay, mounted on the (position:relative) stage so each
   // region's chip sits in stage coordinate space, uniform with the PDF reader.
   const markerOverlayRef = useRef<MarkerOverlay | null>(null);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const onMarkerActionRef = useRef(onMarkerAction);
+  onMarkerActionRef.current = onMarkerAction;
   const sourceIdRef = useRef(sourceId);
   sourceIdRef.current = sourceId;
   const [drag, setDrag] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -53,7 +55,9 @@ export function ImageReader({ src, sourceId, anchors, onSelect, activeAnchorId, 
   useEffect(() => {
     const stage = frameRef.current;
     if (!stage) return;
-    const overlay = new MarkerOverlay(stage);
+    const overlay = new MarkerOverlay(stage, {
+      onAction: ({ anchorId, role }) => onMarkerActionRef.current?.(anchorId, role)
+    });
     markerOverlayRef.current = overlay;
     return () => {
       overlay.destroy();

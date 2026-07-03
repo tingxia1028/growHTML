@@ -76,6 +76,10 @@ export type SurfaceReaderProps = {
   revealAnchors?: PaintAnchor[];
   // READ: emit a normalized AnchorDraft (the quote|region union from FocusContext).
   onSelect: (draft: AnchorDraft) => void;
+  // MARKER ACTION: emitted when the user clicks a view-layer annotation marker.
+  // `anchor` focuses/reveals the passage; `note` also lets the reader show the
+  // shared note card for every visible note on that anchor.
+  onMarkerAction?: (anchorId: string, role: "anchor" | "note") => void;
   // REVEAL: the id of the anchor the host wants brought into view (the focused
   // anchor), or undefined when nothing is focused.
   activeAnchorId?: string;

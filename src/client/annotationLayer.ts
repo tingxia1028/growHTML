@@ -59,29 +59,49 @@ export const ANNOTATION_CSS = `
   position: absolute;
   pointer-events: auto;
   display: inline-flex;
-  gap: 2px;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 3px;
+  border: 1px solid #c9dcff;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
   color: #3474e6;
+  box-shadow: 0 3px 10px rgba(52, 116, 230, 0.18);
   line-height: 1;
   user-select: none;
+  transform: translate(5px, -4px);
 }
 .sv-anchor-marker {
   position: relative;
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  width: 14px;
-  height: 14px;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.sv-anchor-marker:hover,
+.sv-anchor-marker:focus-visible {
+  background: #eef5ff;
+  outline: none;
 }
 .sv-anchor-marker svg {
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
   stroke: currentColor;
 }
 .sv-anchor-marker-count {
   font: 700 9px/1 Inter, "Segoe UI", Arial, sans-serif;
   vertical-align: super;
-  margin-left: 1px;
+  margin-left: -1px;
   color: #3474e6;
+  pointer-events: none;
 }
 #sv-note-card {
   position: fixed;
@@ -535,9 +555,12 @@ function wireNoteCard(doc: Document): void {
   });
 }
 
-function markerHtml(inner: string, count?: number): string {
+export type MarkerRole = "anchor" | "note";
+
+function markerHtml(inner: string, count: number | undefined, role: MarkerRole): string {
   const badge = count && count > 1 ? `<sup class="sv-anchor-marker-count">${count}</sup>` : "";
-  return `<span class="sv-anchor-marker">${inner}${badge}</span>`;
+  const title = role === "anchor" ? "Focus anchor" : "Show linked notes";
+  return `<button type="button" class="sv-anchor-marker" data-sv-marker-role="${role}" title="${title}" aria-label="${title}">${inner}${badge}</button>`;
 }
 
 // PURE glyph builder for an anchor's overlay chip: a leading anchor glyph plus one
@@ -558,12 +581,12 @@ export function buildMarkerHtml(payload?: HighlightPayload): string {
 
   let glyphs = "";
   if (counts.size) {
-    for (const [type, n] of counts) glyphs += markerHtml(markerGlyph(type), n);
-  } else {
+    for (const [type, n] of counts) glyphs += markerHtml(markerGlyph(type), n, "note");
+  } else if (noteCount > 0) {
     // No type info: fall back to the markdown glyph, carrying the note count.
-    glyphs += markerHtml(markerGlyph("markdown"), noteCount > 1 ? noteCount : undefined);
+    glyphs += markerHtml(markerGlyph("markdown"), noteCount > 1 ? noteCount : undefined, "note");
   }
-  return markerHtml(ANCHOR_GLYPH) + glyphs;
+  return markerHtml(ANCHOR_GLYPH, undefined, "anchor") + glyphs;
 }
 
 // A resolved anchor's overlay-local rect: the chip's target box (x,y,w,h) already

@@ -140,6 +140,7 @@ export function DomReader({
   anchors,
   revealAnchors,
   onSelect,
+  onMarkerAction,
   activeAnchorId,
   revealSeq,
   mode = "floating",
@@ -159,6 +160,8 @@ export function DomReader({
   // (bound on load) always see current values.
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const onMarkerActionRef = useRef(onMarkerAction);
+  onMarkerActionRef.current = onMarkerAction;
   const sourceIdRef = useRef(sourceId);
   sourceIdRef.current = sourceId;
   const modeRef = useRef(mode);
@@ -212,7 +215,9 @@ export function DomReader({
       }
       if (pos === "static" || pos === "") body.style.position = "relative";
     }
-    const overlay = new MarkerOverlay(body ?? doc.documentElement);
+    const overlay = new MarkerOverlay(body ?? doc.documentElement, {
+      onAction: ({ anchorId, role }) => onMarkerActionRef.current?.(anchorId, role)
+    });
     markerOverlayRef.current = overlay;
     markerOverlayDocRef.current = doc;
     return overlay;

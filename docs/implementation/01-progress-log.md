@@ -4,10 +4,24 @@ Use this file as the live status board for implementation work.
 
 ## Current Status
 
-- Date: 2026-07-01
-- Phase: Annotation pinned-note positioning
-- Active task: ANNOT-PIN-001
-- Overall status: Complete. Pinned annotation cards now stay bound to the highlighted source text instead of stale viewport coordinates.
+- Date: 2026-07-02
+- Phase: Source Viewer annotation markers
+- Active task: None
+- Overall status: Complete. Newly materialized focused anchors now enter the client paint/reveal projection and show immediately.
+
+## 2026-07-02 - ANNOT-FOCUS-001 Newly focused anchor visibility
+
+- Goal: a newly added/materialized anchor should immediately show its Source Viewer anchor marker, even when it does not yet have a visible note.
+- Active plan: merge the current `focus.anchor` into the workspace anchor list for the active source before deriving `paintAnchors` and `revealAnchors`, without changing the server's historical note-less anchor cleanup.
+- Result: `WorkspaceContext` now merges the current focused anchor into the client-visible anchor projection, and the DOM annotation dispatcher paints claimed anchors even when their note list is empty so the marker overlay has a positioning key. No-note markers now render only the anchor glyph, not a fake markdown note glyph.
+- Verification: `npx vitest run src/client/workspace/anchorProjection.test.ts src/client/markerOverlay.test.ts src/client/annotationMarkers.test.ts src/client/annotations.test.ts src/client/annotationDom.test.ts src/client/surfaces/DomReader.test.ts`; `npm run check`; `npm run build`; `npm run electron:build:webview-preload`; desktop client restarted.
+
+## 2026-07-02 - ANNOT-MARKER-001 Interactive annotation markers
+
+- Goal: Source Viewer passages with notes should show clear anchor/note marker icons; clicking the anchor marker should focus/reveal the anchor, and clicking the note marker should open the shared note card with every note attached to that anchor.
+- Active plan: make `buildMarkerHtml` emit role-marked controls, have `MarkerOverlay` handle marker clicks and dispatch note-card clicks to the live annotated element, and thread an anchor-focus callback from `WorkspaceContext` through the reader contract.
+- Result: marker chips now render explicit anchor/note buttons; PDF/image/DOM snapshot readers route marker actions through `MarkerOverlay`, while live/local webview readers forward marker clicks from the guest preload. Note marker clicks reuse the shared annotation card so multi-note anchors show all note previews instead of a single raw note window.
+- Verification: `npx vitest run src/client/markerOverlay.test.ts src/client/annotationMarkers.test.ts src/client/annotationDom.test.ts src/client/surfaces/DomReader.test.ts src/client/selection/webviewSelection.test.ts`; `npm run check`; `npm run build`; `npm run electron:build:webview-preload`; desktop client restarted.
 
 ## 2026-07-01 - ANNOT-PIN-001 Pinned annotation card follows anchor
 
@@ -176,7 +190,7 @@ Use this file as the live status board for implementation work.
 
 ## Next Action
 
-Current UI task: ANNOT-PIN-001 is complete; desktop client restarted for review.
+Current UI task: ANNOT-FOCUS-001 is complete; next action is user visual review in the restarted desktop client.
 
 ## 2026-06-30 - Library Open Folder + Recent Read
 

@@ -60,8 +60,8 @@ describe("buildMarkerHtml", () => {
     expect(body.querySelector(".sv-anchor-marker-count")?.textContent).toBe("2");
   });
 
-  it("falls back to the anchor + markdown glyph when no note types are given", () => {
-    expect(slots(buildMarkerHtml({ noteTypes: [], noteCount: 0 }))).toBe(2);
+  it("renders only the anchor glyph when there are no visible notes", () => {
+    expect(slots(buildMarkerHtml({ noteTypes: [], noteCount: 0 }))).toBe(1);
   });
 
   it("carries the note count on the markdown fallback when >1", () => {
@@ -71,6 +71,14 @@ describe("buildMarkerHtml", () => {
 
   it("uses the markdown glyph (stroke=currentColor) for the fallback", () => {
     expect(MARKER_GLYPHS.markdown).toContain('stroke="currentColor"');
+  });
+
+  it("marks the leading glyph as anchor and note glyphs as note actions", () => {
+    const body = el(buildMarkerHtml({ noteTypes: ["markdown", "quiz"], noteCount: 2 }));
+    const roles = Array.from(body.querySelectorAll("[data-sv-marker-role]")).map((item) =>
+      item.getAttribute("data-sv-marker-role")
+    );
+    expect(roles).toEqual(["anchor", "note", "note"]);
   });
 });
 
@@ -155,6 +163,48 @@ describe("MarkerOverlay", () => {
     await flushFrame();
     const chip = host.querySelector('[data-sv-marker-for="a1"]') as HTMLElement;
     expect(chip.style.display).toBe("none");
+    overlay.destroy();
+  });
+
+  it("clicking the note marker dispatches a click to the live anchor and emits a note action", () => {
+    const host = makeHost();
+    const anchor = stubAnchor(host, "a1", { left: 200, top: 120, right: 260, width: 60, height: 18 });
+    let anchorClicks = 0;
+    const actions: string[] = [];
+    anchor.addEventListener("click", () => {
+      anchorClicks += 1;
+    });
+    const overlay = new MarkerOverlay(host, {
+      onAction: ({ anchorId, role }) => actions.push(`${role}:${anchorId}`)
+    });
+    overlay.setMarkers([{ anchorId: "a1", glyphHtml: buildMarkerHtml({ noteTypes: ["markdown"], noteCount: 1 }) }]);
+
+    const noteButton = host.querySelector('[data-sv-marker-role="note"]') as HTMLElement;
+    noteButton.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+    expect(anchorClicks).toBe(1);
+    expect(actions).toEqual(["note:a1"]);
+    overlay.destroy();
+  });
+
+  it("clicking the anchor marker emits an anchor action without opening the note card", () => {
+    const host = makeHost();
+    const anchor = stubAnchor(host, "a1", { left: 200, top: 120, right: 260, width: 60, height: 18 });
+    let anchorClicks = 0;
+    const actions: string[] = [];
+    anchor.addEventListener("click", () => {
+      anchorClicks += 1;
+    });
+    const overlay = new MarkerOverlay(host, {
+      onAction: ({ anchorId, role }) => actions.push(`${role}:${anchorId}`)
+    });
+    overlay.setMarkers([{ anchorId: "a1", glyphHtml: buildMarkerHtml({ noteTypes: ["markdown"], noteCount: 1 }) }]);
+
+    const anchorButton = host.querySelector('[data-sv-marker-role="anchor"]') as HTMLElement;
+    anchorButton.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+    expect(anchorClicks).toBe(0);
+    expect(actions).toEqual(["anchor:a1"]);
     overlay.destroy();
   });
 

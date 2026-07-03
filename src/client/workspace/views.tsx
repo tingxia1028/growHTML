@@ -215,6 +215,7 @@ function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
 function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
   const {
     activeSource,
+    anchors,
     status,
     error,
     paintAnchors,
@@ -300,6 +301,10 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
         anchors: paintAnchors,
         revealAnchors,
         onSelect: focus.setDraft,
+        onMarkerAction: (anchorId) => {
+          const anchor = anchors.find((item) => item.id === anchorId);
+          if (anchor) focus.setAnchor(anchor);
+        },
         activeAnchorId: focus.anchor?.id,
         revealSeq: focus.revealSeq,
         renderedHtml,

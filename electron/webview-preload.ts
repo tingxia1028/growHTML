@@ -92,6 +92,21 @@ document.addEventListener(
   true
 );
 
+document.addEventListener("click", (event) => {
+  const target = event.target as Element | null;
+  const roleEl = target && typeof target.closest === "function" ? target.closest("[data-sv-marker-role]") : null;
+  if (!roleEl) return;
+  const chip = roleEl.closest(".sv-anchor-markers") as HTMLElement | null;
+  const anchorId = chip?.getAttribute("data-sv-marker-for") ?? roleEl.closest("[data-sv-key]")?.getAttribute("data-sv-key");
+  const role = roleEl.getAttribute("data-sv-marker-role");
+  if (!anchorId || (role !== "anchor" && role !== "note")) return;
+  ipcRenderer.sendToHost("sv:marker-action", { anchorId, role });
+  if (role === "anchor") {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+});
+
 // The host's currently focused anchor id, so a repaint (sv:anchors) can re-apply the
 // persistent blue "selected" highlight that clearAnnotations would otherwise wipe.
 let selectedAnchorId: string | undefined;
@@ -117,6 +132,7 @@ ipcRenderer.on("sv:anchors", (_event, anchors: WebAnchorMsg[]) => {
         const chip = document.createElement("span");
         chip.className = "sv-anchor-markers";
         chip.setAttribute("data-sv", "1");
+        chip.setAttribute("data-sv-marker-for", anchor.id);
         chip.style.position = "static"; // inline flow, not overlay-positioned
         chip.style.marginLeft = "4px";
         chip.innerHTML = buildMarkerHtml({

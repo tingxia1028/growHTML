@@ -98,6 +98,7 @@ export function WebviewReader({
   anchors,
   revealAnchors,
   onSelect,
+  onMarkerAction,
   activeAnchorId,
   revealSeq
 }: WebviewReaderProps) {
@@ -114,6 +115,8 @@ export function WebviewReader({
   // Keep latest values in refs so per-webview listeners (bound once) stay correct.
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const onMarkerActionRef = useRef(onMarkerAction);
+  onMarkerActionRef.current = onMarkerAction;
   const sourceIdRef = useRef(sourceId);
   sourceIdRef.current = sourceId;
   // The web_text_quote subset as guest paint messages (the only kind a webview can
@@ -199,6 +202,11 @@ export function WebviewReader({
         (message: WebviewIpcMessage) => {
           if (message.channel === "sv:open-tab") {
             openLive(String(message.args[0] ?? ""));
+          } else if (message.channel === "sv:marker-action") {
+            const payload = message.args[0] as { anchorId?: string; role?: "anchor" | "note" } | undefined;
+            if (payload?.anchorId && (payload.role === "anchor" || payload.role === "note")) {
+              onMarkerActionRef.current?.(payload.anchorId, payload.role);
+            }
           }
         }
       );
@@ -442,6 +450,7 @@ export function WebviewReader({
                 anchors={anchors}
                 revealAnchors={revealAnchors}
                 onSelect={onSelect}
+                onMarkerAction={onMarkerAction}
                 activeAnchorId={activeAnchorId}
                 revealSeq={revealSeq}
                 onOpenUrl={openLive}

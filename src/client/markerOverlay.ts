@@ -15,12 +15,21 @@
 // finds its live anchor via `[data-sv-key="…"]`; if the anchor is virtualized out
 // (e.g. a PDF page not rendered), the chip hides itself.
 
-import { rectToOverlayLocal } from "./annotationLayer";
+import { rectToOverlayLocal, type MarkerRole } from "./annotationLayer";
 
 export interface MarkerItem {
   anchorId: string;
   glyphHtml: string;
 }
+
+export type MarkerAction = {
+  anchorId: string;
+  role: MarkerRole;
+};
+
+export type MarkerOverlayOptions = {
+  onAction?: (action: MarkerAction) => void;
+};
 
 // Escape a double-quote in an anchor id the same way annotationLayer/DomReader do,
 // so an exotic id can't break the attribute selector.
@@ -28,8 +37,14 @@ function escapeId(id: string): string {
   return id.replace(/"/g, '\\"');
 }
 
+function closestMarkerRole(node: EventTarget | null): HTMLElement | null {
+  const el = node as (HTMLElement & { closest?: HTMLElement["closest"] }) | null;
+  return el?.closest?.("[data-sv-marker-role]") as HTMLElement | null;
+}
+
 export class MarkerOverlay {
   private readonly hostEl: HTMLElement;
+  private readonly onAction?: (action: MarkerAction) => void;
   private overlay: HTMLElement | null = null;
   private readonly chips = new Map<string, HTMLElement>();
   private rafId: number | null = null;
@@ -37,8 +52,9 @@ export class MarkerOverlay {
   private view: (Window & typeof globalThis) | null = null;
   private readonly onScroll = () => this.reposition();
 
-  constructor(hostEl: HTMLElement) {
+  constructor(hostEl: HTMLElement, options: MarkerOverlayOptions = {}) {
     this.hostEl = hostEl;
+    this.onAction = options.onAction;
     // Own our reflow signals: a ResizeObserver on the host (content reflow / image
     // resize) and scroll listeners. The reader additionally calls reposition() on
     // reader-specific signals (PDF zoom, page render). All go through the
@@ -87,10 +103,30 @@ export class MarkerOverlay {
       chip.setAttribute("data-sv", "1");
       chip.setAttribute("data-sv-marker-for", item.anchorId);
       chip.innerHTML = item.glyphHtml;
+      chip.addEventListener("click", (event) => this.handleChipClick(item.anchorId, event));
       overlay.appendChild(chip);
       this.chips.set(item.anchorId, chip);
     }
     this.reposition();
+  }
+
+  private anchorFor(anchorId: string): HTMLElement | null {
+    return this.hostEl.querySelector(`[data-sv-key="${escapeId(anchorId)}"]`) as HTMLElement | null;
+  }
+
+  private handleChipClick(anchorId: string, event: MouseEvent): void {
+    const roleEl = closestMarkerRole(event.target);
+    const role = roleEl?.getAttribute("data-sv-marker-role") as MarkerRole | null;
+    if (role !== "anchor" && role !== "note") return;
+    event.preventDefault();
+    event.stopPropagation();
+    const anchor = this.anchorFor(anchorId);
+    if (role === "note" && anchor) {
+      const view = this.hostEl.ownerDocument.defaultView;
+      const EventCtor = view?.MouseEvent ?? MouseEvent;
+      anchor.dispatchEvent(new EventCtor("click", { bubbles: true, cancelable: true }));
+    }
+    this.onAction?.({ anchorId, role });
   }
 
   // rAF-throttled: read the host rect once, then place each chip at its live anchor's
@@ -121,7 +157,7 @@ export class MarkerOverlay {
     // since overlay + anchors scroll together, chips track scroll even between repaints.
     const overlayRect = this.overlay.getBoundingClientRect();
     for (const [anchorId, chip] of this.chips) {
-      const anchor = this.hostEl.querySelector(`[data-sv-key="${escapeId(anchorId)}"]`) as HTMLElement | null;
+      const anchor = this.anchorFor(anchorId);
       if (!anchor || typeof anchor.getBoundingClientRect !== "function") {
         chip.style.display = "none";
         continue;

@@ -52,7 +52,7 @@ function absolute(src: string): string {
   return (typeof window !== "undefined" ? window.location.origin : "") + src;
 }
 
-export function LocalHtmlReader({ src, sourceId, anchors, onSelect, activeAnchorId, revealSeq }: LocalHtmlReaderProps) {
+export function LocalHtmlReader({ src, sourceId, anchors, onSelect, onMarkerAction, activeAnchorId, revealSeq }: LocalHtmlReaderProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<WebviewEl | null>(null);
   const readyRef = useRef(false);
@@ -60,6 +60,8 @@ export function LocalHtmlReader({ src, sourceId, anchors, onSelect, activeAnchor
   // Keep the latest props in refs so the once-bound listeners stay current.
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const onMarkerActionRef = useRef(onMarkerAction);
+  onMarkerActionRef.current = onMarkerAction;
   const srcRef = useRef(src);
   srcRef.current = src;
   const sourceIdRef = useRef(sourceId);
@@ -84,10 +86,20 @@ export function LocalHtmlReader({ src, sourceId, anchors, onSelect, activeAnchor
     view.setAttribute("src", absolute(srcRef.current));
     // Shared webview selection capture: attaches the guest preload and reports text
     // selections; we bridge each one to a web quote draft keyed by this file's url.
-    const disposeSelection = bindWebviewSelection(view, (selection) => {
-      const draft = webSelectionToDraft(sourceIdRef.current, selection, srcRef.current);
-      if (draft) onSelectRef.current(draft);
-    });
+    const disposeSelection = bindWebviewSelection(
+      view,
+      (selection) => {
+        const draft = webSelectionToDraft(sourceIdRef.current, selection, srcRef.current);
+        if (draft) onSelectRef.current(draft);
+      },
+      (message) => {
+        if (message.channel !== "sv:marker-action") return;
+        const payload = message.args[0] as { anchorId?: string; role?: "anchor" | "note" } | undefined;
+        if (payload?.anchorId && (payload.role === "anchor" || payload.role === "note")) {
+          onMarkerActionRef.current?.(payload.anchorId, payload.role);
+        }
+      }
+    );
     // Shared paint-back wiring: push stored anchors into the guest so it highlights
     // them + shows hover note-cards. Sends on sv:ready and dom-ready; the effect
     // below re-pushes whenever the anchor set changes.

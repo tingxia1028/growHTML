@@ -55,6 +55,7 @@ export function PdfReader({
   anchors,
   revealAnchors,
   onSelect,
+  onMarkerAction,
   activeAnchorId,
   revealSeq
 }: PdfReaderProps) {
@@ -73,6 +74,8 @@ export function PdfReader({
 
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const onMarkerActionRef = useRef(onMarkerAction);
+  onMarkerActionRef.current = onMarkerAction;
   const sourceIdRef = useRef(sourceId);
   sourceIdRef.current = sourceId;
   // Only the pdf_selection anchors are ours to paint; keep the live subset in a ref
@@ -201,7 +204,9 @@ export function PdfReader({
     // Mount the view-layer marker overlay on the (absolutely-positioned) canvas so
     // its chips sit in page/overlay coordinate space, not inside a transformed
     // text-layer span. highlightAnchors drives its chips via setMarkers.
-    const markerOverlay = new MarkerOverlay(container);
+    const markerOverlay = new MarkerOverlay(container, {
+      onAction: ({ anchorId, role }) => onMarkerActionRef.current?.(anchorId, role)
+    });
     markerOverlayRef.current = markerOverlay;
 
     // Fit each page to the container width; 'page-width' is a dynamic value, so

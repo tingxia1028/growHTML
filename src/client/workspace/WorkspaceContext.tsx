@@ -234,6 +234,16 @@ export function noteText(content: unknown): string {
   return typeof content === "string" ? content : JSON.stringify(content, null, 2);
 }
 
+export function mergeFocusedAnchor(
+  anchors: AnyAnchor[],
+  focusedAnchor: AnyAnchor | null | undefined,
+  activeSourceId: string
+): AnyAnchor[] {
+  if (!focusedAnchor || !activeSourceId || focusedAnchor.sourceId !== activeSourceId) return anchors;
+  if (anchors.some((anchor) => anchor.id === focusedAnchor.id)) return anchors;
+  return [...anchors, focusedAnchor];
+}
+
 // Empty input → empty string (the terminal then uses the app's default cwd).
 function parentDir(filePath: string): string {
   const normalized = filePath.replace(/[\\/]+$/, "");
@@ -559,6 +569,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const activeViewer = getSourceViewer(activeSource?.sourceType);
   const selectedAnchorId = focus.anchor?.id ?? "";
   const activeFileDir = parentDir((activeSource?.metadata?.originalPath as string | undefined) ?? "");
+  // Server anchor lists are intentionally note-backed so historical no-note anchors
+  // do not repaint. The current focused anchor is different: it may have just been
+  // materialized and not yet returned by the note-backed refresh. Merge it in so the
+  // reader can immediately show/reveal the marker for the active passage.
+  const visibleAnchors = useMemo(
+    () => mergeFocusedAnchor(anchors, focus.anchor, activeSourceId),
+    [anchors, focus.anchor, activeSourceId]
+  );
 
   // The enabled-layer set — the multi-select filter's "on" set. Driven off each
   // layer's stored `enabled` flag (the same source of truth the server filters by, so
@@ -623,7 +641,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // reader filters it to the anchorKinds it understands and paints those.
   const paintAnchors = useMemo<PaintAnchor[]>(
     () =>
-      anchors
+      visibleAnchors
         .filter((anchor) => !bookmarkOnlyAnchorIds.has(anchor.id))
         .map((anchor) => {
           const anchorNotes = notesByAnchorId.get(anchor.id) ?? [];
@@ -645,11 +663,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             }))
           };
         }),
-    [anchors, notesByAnchorId, sourceLayers, bookmarkOnlyAnchorIds]
+    [visibleAnchors, notesByAnchorId, sourceLayers, bookmarkOnlyAnchorIds]
   );
   const revealAnchors = useMemo<PaintAnchor[]>(
     () =>
-      anchors.map((anchor) => {
+      visibleAnchors.map((anchor) => {
         const anchorNotes = notesByAnchorId.get(anchor.id) ?? [];
         return {
         id: anchor.id,
@@ -669,7 +687,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           }))
         };
       }),
-    [anchors, notesByAnchorId, sourceLayers]
+    [visibleAnchors, notesByAnchorId, sourceLayers]
   );
   const activePatches = useMemo(
     () => patches.filter((patch) => !selectedAnchorId || patch.anchorId === selectedAnchorId),
@@ -1537,7 +1555,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       loadSources,
       deleteSourceItem,
       renderedHtml,
-      anchors,
+      anchors: visibleAnchors,
       notes,
       patches,
       paintAnchors,
@@ -1635,7 +1653,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       loadSources,
       deleteSourceItem,
       renderedHtml,
-      anchors,
+      visibleAnchors,
       notes,
       patches,
       paintAnchors,

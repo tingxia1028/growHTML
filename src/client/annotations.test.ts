@@ -67,6 +67,15 @@ describe("groupForRenderer", () => {
     expect(groups).toHaveLength(1);
     expect(groups[0].notes).toHaveLength(1);
   });
+
+  it("keeps claimed anchors even when they do not have notes yet", () => {
+    const a1 = htmlAnchor("a1", "s1");
+    const groups = groupForRenderer(claimHtml, [], anchorMap(a1));
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].anchor.id).toBe("a1");
+    expect(groups[0].notes).toEqual([]);
+  });
 });
 
 describe("decorateAnnotations", () => {
