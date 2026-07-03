@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildMarkerHtml, rectToOverlayLocal, MARKER_GLYPHS } from "./annotationLayer";
-import { MarkerOverlay } from "./markerOverlay";
+import { MarkerOverlay, mountRealmMarkerOverlay } from "./markerOverlay";
+import type { AnchorRects } from "./surfaces/readerAnnotationAdapter";
 
 // reposition() is rAF-throttled; jsdom provides requestAnimationFrame on a timer.
 // Flush a frame so the layout runs before we assert.
@@ -214,5 +215,129 @@ describe("MarkerOverlay", () => {
     overlay.setMarkers([{ anchorId: "a1", glyphHtml: "<span></span>" }]);
     overlay.destroy();
     expect(host.querySelector(".sv-marker-overlay")).toBeNull();
+  });
+
+  // —— D1 adapter-driven positioning ——
+
+  function stubOverlayRect(host: HTMLElement): void {
+    const overlayDiv = host.querySelector(".sv-marker-overlay") as HTMLElement;
+    Object.defineProperty(overlayDiv, "getBoundingClientRect", {
+      value: () => ({ left: 100, top: 50, right: 900, bottom: 650, width: 800, height: 600 }),
+      configurable: true
+    });
+  }
+
+  const rect = (left: number, top: number, right: number, height = 18): AnchorRects["first"] => ({
+    left,
+    top,
+    right,
+    bottom: top + height,
+    width: right - left,
+    height
+  });
+
+  it("routes measurement through the adapter's rectsFor and places the chip at `.first`", async () => {
+    const host = makeHost();
+    // No [data-sv-key] element exists in the host — the adapter alone measures.
+    const rects: AnchorRects = { first: rect(200, 120, 260), last: rect(180, 180, 220), all: [rect(200, 120, 260), rect(180, 180, 220)] };
+    const rectsFor = vi.fn((anchorId: string) => (anchorId === "a1" ? rects : null));
+    const overlay = new MarkerOverlay(host, { adapter: { rectsFor } });
+    overlay.setMarkers([{ anchorId: "a1", glyphHtml: "<span></span>" }]);
+    stubOverlayRect(host);
+    overlay.reposition();
+    await flushFrame();
+    const chip = host.querySelector('[data-sv-marker-for="a1"]') as HTMLElement;
+    // first.right(260) - overlayLeft(100) = 160 ; first.top(120) - overlayTop(50) = 70
+    // — the FIRST rect drives today's single chip, NOT the last.
+    expect(chip.style.left).toBe("160px");
+    expect(chip.style.top).toBe("70px");
+    expect(chip.style.display).not.toBe("none");
+    expect(rectsFor).toHaveBeenCalledWith("a1");
+    overlay.destroy();
+  });
+
+  it("hides the chip when the adapter reports the anchor unpainted (rectsFor → null)", async () => {
+    const host = makeHost();
+    const overlay = new MarkerOverlay(host, { adapter: { rectsFor: () => null } });
+    overlay.setMarkers([{ anchorId: "a1", glyphHtml: "<span></span>" }]);
+    overlay.reposition();
+    await flushFrame();
+    const chip = host.querySelector('[data-sv-marker-for="a1"]') as HTMLElement;
+    expect(chip.style.display).toBe("none");
+    overlay.destroy();
+  });
+
+  it("default (adapter-less) path measures the FIRST of several elements sharing the key", async () => {
+    const host = makeHost();
+    // A multi-span anchor (the PDF text-layer shape): both spans carry a1's key.
+    stubAnchor(host, "a1", { left: 200, top: 120, right: 260, width: 60, height: 18 });
+    stubAnchor(host, "a1", { left: 150, top: 160, right: 400, width: 250, height: 18 });
+    const overlay = new MarkerOverlay(host);
+    overlay.setMarkers([{ anchorId: "a1", glyphHtml: "<span></span>" }]);
+    stubOverlayRect(host);
+    overlay.reposition();
+    await flushFrame();
+    const chip = host.querySelector('[data-sv-marker-for="a1"]') as HTMLElement;
+    expect(chip.style.left).toBe("160px");
+    expect(chip.style.top).toBe("70px");
+    overlay.destroy();
+  });
+
+  it("repositions on the adapter's onLayoutChange signal and unsubscribes on destroy", async () => {
+    const host = makeHost();
+    let current = rect(200, 120, 260);
+    const listeners = new Set<() => void>();
+    const unsubscribe = vi.fn();
+    const overlay = new MarkerOverlay(host, {
+      adapter: {
+        rectsFor: () => ({ first: current, last: current, all: [current] }),
+        onLayoutChange: (cb) => {
+          listeners.add(cb);
+          return () => {
+            listeners.delete(cb);
+            unsubscribe();
+          };
+        }
+      }
+    });
+    expect(listeners.size).toBe(1);
+    overlay.setMarkers([{ anchorId: "a1", glyphHtml: "<span></span>" }]);
+    stubOverlayRect(host);
+    overlay.reposition();
+    await flushFrame();
+
+    // The realm re-laid-out (e.g. PDF zoom): the adapter's signal must reposition.
+    current = rect(300, 220, 380);
+    for (const cb of listeners) cb();
+    await flushFrame();
+    const chip = host.querySelector('[data-sv-marker-for="a1"]') as HTMLElement;
+    expect(chip.style.left).toBe("280px"); // 380 - 100
+    expect(chip.style.top).toBe("170px"); // 220 - 50
+
+    overlay.destroy();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    expect(listeners.size).toBe(0);
+  });
+});
+
+describe("mountRealmMarkerOverlay", () => {
+  it("mounts the overlay on the realm body and forces a positioning context", () => {
+    const doc = document.implementation.createHTMLDocument("realm");
+    const overlay = mountRealmMarkerOverlay(doc);
+    // createHTMLDocument has no defaultView/getComputedStyle → the static-body
+    // fallback promotes the body to relative.
+    expect(doc.body.style.position).toBe("relative");
+    overlay.setMarkers([{ anchorId: "a1", glyphHtml: "<span></span>" }]);
+    expect(doc.body.querySelector(".sv-marker-overlay")).not.toBeNull();
+    overlay.destroy();
+    expect(doc.body.querySelector(".sv-marker-overlay")).toBeNull();
+  });
+
+  it("keeps an already-positioned body untouched", () => {
+    document.body.style.position = "absolute";
+    const overlay = mountRealmMarkerOverlay(document);
+    expect(document.body.style.position).toBe("absolute");
+    overlay.destroy();
+    document.body.style.position = "";
   });
 });

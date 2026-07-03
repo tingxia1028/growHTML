@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import {
   applyHighlight,
   buildMarkerHtml,
+  ensureAnnotationLayer,
   type HighlightPayload,
   revealAnchorInDoc,
   setSelectedAnchorInDoc
 } from "./annotationLayer";
 import { MarkerOverlay } from "./markerOverlay";
 import type { AnchorDraft } from "./focus/FocusContext";
+import { createDomRealmAdapter, type ReaderAnnotationAdapter } from "./surfaces/readerAnnotationAdapter";
 import { anchorsOfKind, type PaintAnchor, type SurfaceReaderProps } from "./surfaces/types";
 import { isRealRegion, normalizeDragRect, type NormalizedRect } from "./surfaces/overlay";
 
@@ -35,8 +37,10 @@ function annotationPayload(anchor: PaintAnchor): HighlightPayload {
 export function ImageReader({ src, sourceId, anchors, onSelect, onMarkerAction, activeAnchorId, revealSeq }: ImageReaderProps) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   // The view-layer marker overlay, mounted on the (position:relative) stage so each
-  // region's chip sits in stage coordinate space, uniform with the PDF reader.
+  // region's chip sits in stage coordinate space, uniform with the PDF reader; plus
+  // this reader's D1 ReaderAnnotationAdapter (a region is one box, so first=last).
   const markerOverlayRef = useRef<MarkerOverlay | null>(null);
+  const adapterRef = useRef<ReaderAnnotationAdapter | null>(null);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
   const onMarkerActionRef = useRef(onMarkerAction);
@@ -50,28 +54,47 @@ export function ImageReader({ src, sourceId, anchors, onSelect, onMarkerAction, 
     return frameRef.current?.getBoundingClientRect() ?? null;
   }
 
-  // Mount one MarkerOverlay on the stage for this reader's lifetime. Its own
-  // ResizeObserver handles image reflow; we just push the current chips into it.
+  // Mount this reader's D1 surface — adapter + MarkerOverlay — on the stage for the
+  // reader's lifetime. The adapter's default onLayoutChange (ResizeObserver +
+  // capture scroll) handles image reflow; region boxes are React-rendered, so the
+  // adapter's paint duty is driving the overlay chips (boxes get their data-sv-key
+  // via applyHighlight on mount). The card lives in the HOST document — ensure the
+  // shared annotation layer (CSS + #sv-note-card) is wired there, like PDF does.
   useEffect(() => {
     const stage = frameRef.current;
     if (!stage) return;
+    ensureAnnotationLayer(document);
+    const adapter = createDomRealmAdapter({
+      root: () => frameRef.current,
+      paint: (paintList) => {
+        markerOverlayRef.current?.setMarkers(
+          anchorsOfKind(paintList, "image_region").map((anchor) => ({
+            anchorId: anchor.id,
+            glyphHtml: buildMarkerHtml(annotationPayload(anchor))
+          }))
+        );
+      }
+    });
+    adapterRef.current = adapter;
     const overlay = new MarkerOverlay(stage, {
-      onAction: ({ anchorId, role }) => onMarkerActionRef.current?.(anchorId, role)
+      onAction: ({ anchorId, role }) => onMarkerActionRef.current?.(anchorId, role),
+      adapter
     });
     markerOverlayRef.current = overlay;
     return () => {
       overlay.destroy();
       if (markerOverlayRef.current === overlay) markerOverlayRef.current = null;
+      if (adapterRef.current === adapter) adapterRef.current = null;
     };
   }, []);
 
-  // Drive the overlay chips from the current regions. ImageRegionBox paints the
-  // highlight (data-sv-key) on mount; the chip then finds it by that key.
+  // Drive the overlay chips from the current regions through the adapter's paint.
+  // ImageRegionBox paints the highlight (data-sv-key) on mount; the chip then finds
+  // it by that key.
   useEffect(() => {
-    markerOverlayRef.current?.setMarkers(
-      regions.map((anchor) => ({ anchorId: anchor.id, glyphHtml: buildMarkerHtml(annotationPayload(anchor)) }))
-    );
-  }, [regions]);
+    adapterRef.current?.paint(anchors);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchors]);
 
   // REVEAL: scroll the focused region box into view (+ flash) via the one shared
   // helper — each ImageRegionBox carries data-sv-key (applyHighlight). Keyed on

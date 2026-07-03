@@ -11,11 +11,19 @@
 //
 // The overlay div is appended to the reader's positioned scroll/content container
 // (`hostEl`); each chip is an absolutely-positioned `.sv-anchor-markers` whose
-// left/top is computed from `rectToOverlayLocal(anchorRect, overlayRect)`. The chip
-// finds its live anchor via `[data-sv-key="…"]`; if the anchor is virtualized out
-// (e.g. a PDF page not rendered), the chip hides itself.
+// left/top is computed from `rectToOverlayLocal(rects.first, overlayRect)`. The
+// anchor's live rects come from the reader's D1 ReaderAnnotationAdapter
+// (`adapter.rectsFor` — first/last/all; see surfaces/readerAnnotationAdapter.ts),
+// falling back to the shared `[data-sv-key="…"]` collector. If the anchor is
+// virtualized out (e.g. a PDF page not rendered), the chip hides itself.
 
 import { rectToOverlayLocal, type MarkerRole } from "./annotationLayer";
+import {
+  collectAnchorRects,
+  observeDomLayout,
+  type AnchorRects,
+  type AnnotationRectSource
+} from "./surfaces/readerAnnotationAdapter";
 
 export interface MarkerItem {
   anchorId: string;
@@ -29,6 +37,13 @@ export type MarkerAction = {
 
 export type MarkerOverlayOptions = {
   onAction?: (action: MarkerAction) => void;
+  // The reader's D1 ReaderAnnotationAdapter (or just its measurement slice):
+  // chip placement routes through adapter.rectsFor (the chip sits at `.first`,
+  // preserving today's top-right visual), and the overlay also repositions on
+  // the adapter's reader-specific layout signals (PDF zoom / textlayerrendered).
+  // Omitted (legacy/tests): measurement falls back to collectAnchorRects over
+  // the host element — same first-rect semantics.
+  adapter?: AnnotationRectSource;
 };
 
 // Escape a double-quote in an anchor id the same way annotationLayer/DomReader do,
@@ -45,36 +60,24 @@ function closestMarkerRole(node: EventTarget | null): HTMLElement | null {
 export class MarkerOverlay {
   private readonly hostEl: HTMLElement;
   private readonly onAction?: (action: MarkerAction) => void;
+  private readonly adapter: AnnotationRectSource | null;
   private overlay: HTMLElement | null = null;
   private readonly chips = new Map<string, HTMLElement>();
   private rafId: number | null = null;
-  private resizeObserver: ResizeObserver | null = null;
-  private view: (Window & typeof globalThis) | null = null;
-  private readonly onScroll = () => this.reposition();
+  private readonly unsubscribes: (() => void)[] = [];
 
   constructor(hostEl: HTMLElement, options: MarkerOverlayOptions = {}) {
     this.hostEl = hostEl;
     this.onAction = options.onAction;
-    // Own our reflow signals: a ResizeObserver on the host (content reflow / image
-    // resize) and scroll listeners. The reader additionally calls reposition() on
-    // reader-specific signals (PDF zoom, page render). All go through the
-    // rAF-throttled reposition().
-    const view = hostEl.ownerDocument?.defaultView as
-      | (Window & typeof globalThis & { ResizeObserver?: typeof ResizeObserver })
-      | null
-      | undefined;
-    this.view = view ?? null;
-    if (view && typeof view.ResizeObserver === "function") {
-      this.resizeObserver = new view.ResizeObserver(() => this.reposition());
-      this.resizeObserver.observe(hostEl);
+    this.adapter = options.adapter ?? null;
+    // Own the ambient reflow signals (shared DOM idiom: ResizeObserver on the host +
+    // capture-phase scroll — see observeDomLayout). The adapter additionally feeds
+    // reader-specific signals (PDF zoom / page render) through onLayoutChange. All
+    // go through the rAF-throttled reposition().
+    this.unsubscribes.push(observeDomLayout(hostEl, () => this.reposition()));
+    if (this.adapter?.onLayoutChange) {
+      this.unsubscribes.push(this.adapter.onLayoutChange(() => this.reposition()));
     }
-    // Scroll events don't bubble, so a listener on `hostEl` only catches scrolls of
-    // that exact element — fragile when the real scroller is an ancestor/descendant or
-    // the container is re-created on re-render. A CAPTURE-phase listener on the window
-    // catches scrolls from ANY element on the way down, so the chips always track the
-    // anchor. Cheap: reposition is rAF-throttled and no-ops when there are no chips.
-    hostEl.addEventListener("scroll", this.onScroll, { passive: true });
-    view?.addEventListener("scroll", this.onScroll, { passive: true, capture: true });
   }
 
   // Lazily create the overlay div (appended to the host, which must be a positioning
@@ -112,6 +115,15 @@ export class MarkerOverlay {
 
   private anchorFor(anchorId: string): HTMLElement | null {
     return this.hostEl.querySelector(`[data-sv-key="${escapeId(anchorId)}"]`) as HTMLElement | null;
+  }
+
+  // Measurement goes through the D1 adapter contract: first/last/all rects of every
+  // element carrying the anchor's data-sv-key (a multi-span PDF anchor reports ALL
+  // its spans, not just the first the old querySelector saw). Without an adapter,
+  // fall back to the same shared collector over the host element.
+  private rectsFor(anchorId: string): AnchorRects | null {
+    if (this.adapter) return this.adapter.rectsFor(anchorId);
+    return collectAnchorRects(this.hostEl, anchorId);
   }
 
   private handleChipClick(anchorId: string, event: MouseEvent): void {
@@ -157,13 +169,14 @@ export class MarkerOverlay {
     // since overlay + anchors scroll together, chips track scroll even between repaints.
     const overlayRect = this.overlay.getBoundingClientRect();
     for (const [anchorId, chip] of this.chips) {
-      const anchor = this.anchorFor(anchorId);
-      if (!anchor || typeof anchor.getBoundingClientRect !== "function") {
+      const rects = this.rectsFor(anchorId);
+      if (!rects) {
         chip.style.display = "none";
         continue;
       }
-      const anchorRect = anchor.getBoundingClientRect();
-      const local = rectToOverlayLocal(anchorRect, { left: overlayRect.left, top: overlayRect.top });
+      // The single chip hangs at the FIRST rect's top-right (today's visual). D2's
+      // two-slot markers will consume `.first`/`.last` from the same adapter call.
+      const local = rectToOverlayLocal(rects.first, { left: overlayRect.left, top: overlayRect.top });
       chip.style.left = `${local.x}px`;
       chip.style.top = `${local.y}px`;
       chip.style.display = "";
@@ -176,20 +189,39 @@ export class MarkerOverlay {
     this.chips.clear();
   }
 
-  // Tear down: remove the overlay div and disconnect the observers/listeners.
+  // Tear down: remove the overlay div and disconnect the observers/listeners
+  // (including the adapter's onLayoutChange subscription).
   destroy(): void {
     if (this.rafId != null) {
       const view = this.hostEl.ownerDocument?.defaultView;
       view?.cancelAnimationFrame?.(this.rafId);
       this.rafId = null;
     }
-    this.resizeObserver?.disconnect();
-    this.resizeObserver = null;
-    this.hostEl.removeEventListener("scroll", this.onScroll);
-    this.view?.removeEventListener("scroll", this.onScroll, { capture: true } as EventListenerOptions);
-    this.view = null;
+    for (const unsubscribe of this.unsubscribes.splice(0)) unsubscribe();
     this.clear();
     this.overlay?.remove();
     this.overlay = null;
   }
+}
+
+// Mount a MarkerOverlay on a realm DOCUMENT's body — the shared mounting idiom for
+// document-realm readers (the DomReader iframe and the Electron webview GUEST page;
+// snapshot web inherits the DomReader path). The inset:0 overlay needs the body to
+// be a positioning context so chips scroll with the content, so a static body is
+// promoted to position:relative first (cross-realm-safe: getComputedStyle guarded).
+export function mountRealmMarkerOverlay(doc: Document, options: MarkerOverlayOptions = {}): MarkerOverlay {
+  const body = doc.body as HTMLElement | null;
+  if (body) {
+    const view = doc.defaultView;
+    let pos = "";
+    if (view && typeof view.getComputedStyle === "function") {
+      try {
+        pos = view.getComputedStyle(body).position;
+      } catch {
+        pos = "";
+      }
+    }
+    if (pos === "static" || pos === "") body.style.position = "relative";
+  }
+  return new MarkerOverlay(body ?? doc.documentElement, options);
 }

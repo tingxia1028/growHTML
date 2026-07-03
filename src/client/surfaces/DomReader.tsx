@@ -1,9 +1,10 @@
 import { useEffect, useRef } from "react";
 import { decorateAnnotations, type HtmlAnnotationMode } from "../annotations";
-import { buildMarkerHtml, revealAnchorInDoc, setSelectedAnchorInDoc, type HighlightPayload } from "../annotationLayer";
-import { MarkerOverlay } from "../markerOverlay";
+import { buildMarkerHtml, setSelectedAnchorInDoc, type HighlightPayload } from "../annotationLayer";
+import { MarkerOverlay, mountRealmMarkerOverlay } from "../markerOverlay";
 import type { AnchorDraft } from "../focus/FocusContext";
 import { publishSelectionRect, rectFromDomRect } from "../selection/selectionRect";
+import { createDomRealmAdapter, type ReaderAnnotationAdapter } from "./readerAnnotationAdapter";
 import { anchorsOfKind, type PaintAnchor, type SurfaceReaderProps } from "./types";
 
 // DOM surface adapter — the imported-HTML / markdown reader.
@@ -147,9 +148,10 @@ export function DomReader({
   onOpenUrl
 }: DomReaderProps) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
-  // The view-layer marker overlay, mounted on the iframe body. Re-created per
-  // document (a srcDoc reload replaces contentDocument), so it's keyed on the doc it
-  // was built for.
+  // The iframe realm's D1 ReaderAnnotationAdapter + its view-layer marker overlay
+  // (mounted on the iframe body). Re-created per document (a srcDoc reload replaces
+  // contentDocument), so both are keyed on the doc they were built for.
+  const adapterRef = useRef<ReaderAnnotationAdapter | null>(null);
   const markerOverlayRef = useRef<MarkerOverlay | null>(null);
   const markerOverlayDocRef = useRef<Document | null>(null);
   // Latest reveal target in a ref so bindFrame (run on iframe load, possibly AFTER
@@ -173,7 +175,8 @@ export function DomReader({
 
   function revealDomAnchor(doc: Document | null | undefined, anchorId: string | undefined): boolean {
     if (!doc || !anchorId) return false;
-    if (revealAnchorInDoc(doc, anchorId)) return true;
+    // Fast path: the adapter's reveal (the shared revealAnchorInDoc over this realm).
+    if (surfaceForDoc(doc).adapter.reveal(anchorId)) return true;
     const target = anchorsOfKind(revealAnchorsRef.current, "html_selection").find((anchor) => anchor.id === anchorId);
     if (!target) return false;
 
@@ -196,31 +199,30 @@ export function DomReader({
     return true;
   }
 
-  // Get (or lazily build) the marker overlay for the CURRENT iframe document. A
-  // srcDoc reload swaps contentDocument, so a stale overlay is torn down and a new
-  // one mounted on the fresh body. The body must be a positioning context.
-  function overlayForDoc(doc: Document): MarkerOverlay {
-    if (markerOverlayDocRef.current === doc && markerOverlayRef.current) return markerOverlayRef.current;
-    markerOverlayRef.current?.destroy();
-    const body = doc.body as HTMLElement | null;
-    if (body) {
-      const view = doc.defaultView;
-      let pos = "";
-      if (view && typeof view.getComputedStyle === "function") {
-        try {
-          pos = view.getComputedStyle(body).position;
-        } catch {
-          pos = "";
-        }
-      }
-      if (pos === "static" || pos === "") body.style.position = "relative";
+  // Get (or lazily build) the D1 annotation surface — adapter + marker overlay —
+  // for the CURRENT iframe document. A srcDoc reload swaps contentDocument, so a
+  // stale surface is torn down and a fresh one mounted on the new body
+  // (mountRealmMarkerOverlay forces the positioning context).
+  function surfaceForDoc(doc: Document): { adapter: ReaderAnnotationAdapter; overlay: MarkerOverlay } {
+    if (markerOverlayDocRef.current === doc && markerOverlayRef.current && adapterRef.current) {
+      return { adapter: adapterRef.current, overlay: markerOverlayRef.current };
     }
-    const overlay = new MarkerOverlay(body ?? doc.documentElement, {
-      onAction: ({ anchorId, role }) => onMarkerActionRef.current?.(anchorId, role)
+    markerOverlayRef.current?.destroy();
+    const adapter = createDomRealmAdapter({
+      root: () => doc,
+      // Paint = the shared DOM paint path (decorateAnnotations highlight + note
+      // card) plus this realm's overlay chips; the overlay ref is read lazily so
+      // the closure always drives the CURRENT overlay.
+      paint: (paintList) => paintDomAnchors(doc, paintList, modeRef.current, markerOverlayRef.current)
     });
+    const overlay = mountRealmMarkerOverlay(doc, {
+      onAction: ({ anchorId, role }) => onMarkerActionRef.current?.(anchorId, role),
+      adapter
+    });
+    adapterRef.current = adapter;
     markerOverlayRef.current = overlay;
     markerOverlayDocRef.current = doc;
-    return overlay;
+    return { adapter, overlay };
   }
 
   // Bind selection capture + paint when the iframe document is ready. Called from
@@ -228,7 +230,7 @@ export function DomReader({
   function bindFrame() {
     const doc = frameRef.current?.contentDocument;
     if (!doc) return;
-    paintDomAnchors(doc, anchors, modeRef.current, overlayForDoc(doc));
+    surfaceForDoc(doc).adapter.paint(anchors);
     // A reveal may have been requested before this fresh document painted (effect
     // ran first) — now that the data-sv-key elements exist, honor the pending one.
     if (activeAnchorIdRef.current) revealDomAnchor(doc, activeAnchorIdRef.current);
@@ -288,16 +290,17 @@ export function DomReader({
   // changes — so toggling Floating ↔ Margin re-decorates this surface immediately.
   useEffect(() => {
     const doc = frameRef.current?.contentDocument;
-    if (doc) paintDomAnchors(doc, anchors, mode, overlayForDoc(doc));
+    if (doc) surfaceForDoc(doc).adapter.paint(anchors);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anchors, srcDoc, mode]);
 
-  // Tear the overlay down when the reader unmounts.
+  // Tear the surface down when the reader unmounts.
   useEffect(() => {
     return () => {
       markerOverlayRef.current?.destroy();
       markerOverlayRef.current = null;
       markerOverlayDocRef.current = null;
+      adapterRef.current = null;
     };
   }, []);
 

@@ -4,10 +4,17 @@ Use this file as the live status board for implementation work.
 
 ## Current Status
 
-- Date: 2026-07-02
-- Phase: Source Viewer annotation markers
+- Date: 2026-07-04
+- Phase: Reader annotation surface unification (F3 / D1)
 - Active task: None
-- Overall status: Complete. Newly materialized focused anchors now enter the client paint/reveal projection and show immediately.
+- Overall status: Complete. Every reader realm now hosts the one D1 `ReaderAnnotationAdapter`; the webview guest's divergent inline marker chip is replaced by a real body-mounted `MarkerOverlay`.
+
+## 2026-07-04 - F3-D1-001 ReaderAnnotationAdapter contract (D1)
+
+- Goal: land the D1 Reader Annotation Surface contract (`docs/design/note-presentation-unified.md` §1) — one adapter per reader realm (`rectsFor` first/last/all, `onLayoutChange`, `injectRealmCss`, `paint`, `reveal`) driving the same framework-free paint + `MarkerOverlay` + `#sv-note-card`, killing per-reader overlay/reposition duplication and the divergent webview-guest inline chip. Strictly NO D2 two-slot markers/clustering/suppression (that is N1); single-chip visuals unchanged.
+- Active plan: new framework-free `src/client/surfaces/readerAnnotationAdapter.ts` (contract type + `collectAnchorRects` measuring EVERY `[data-sv-key]` element → first/last/all rects + `observeDomLayout` + `injectCssIntoRealm` + `createDomRealmAdapter` factory); route `MarkerOverlay` measurement through `adapter.rectsFor` (chip stays at `.first`) and subscribe it to `adapter.onLayoutChange`; each reader constructs its adapter (DomReader iframe via the shared factory — snapshot web inherits it; PDF wires `textlayerrendered` + `scalechanging` into `onLayoutChange` and fixes multi-span anchors measuring only their first span; image = single box so first=last); the guest preload mounts a real `MarkerOverlay` on `document.body` via the new shared `mountRealmMarkerOverlay` and bridges clicks over the existing `sv:marker-action` channel.
+- Result: `MarkerOverlay` consumes the adapter instead of a single `querySelector` element; DomReader/PdfReader/ImageReader each paint through their adapter; the guest's `position:static` inline chip inside the `<mark>` (and its duplicate document-level marker click listener) is gone — the overlay chip renders identically to every other reader and `MarkerOverlay` itself bridges `sv:marker-action`. ImageReader now also ensures the shared annotation layer (CSS + note card) in the host document, matching the D1 per-reader duties. Host contract (`SurfaceReaderProps`, `paintAnchors` from `WorkspaceContext`) unchanged; ANNOT-MARKER-001/ANNOT-FOCUS-001 behavior preserved.
+- Verification: `npx vitest run` (157 files, 1494 tests — includes new `src/client/surfaces/readerAnnotationAdapter.test.ts`, adapter-driven `MarkerOverlay` cases in `src/client/markerOverlay.test.ts`, and the new guest test `electron/webview-preload.test.ts` driving the preload against a mocked `ipcRenderer`); `npm run check`; `npm run build`; `npm run electron:build:webview-preload` (guest bundle rebuilt, still React-free).
 
 ## 2026-07-02 - ANNOT-FOCUS-001 Newly focused anchor visibility
 

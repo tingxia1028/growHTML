@@ -2,15 +2,22 @@
 // text selections (as W3C TextQuoteSelectors) and reports them to the host, and
 // highlights stored anchors the host sends back. Reuses the unit-tested
 // textQuote helpers so the selector logic is trustworthy.
+//
+// The guest realm is a full D1 ReaderAnnotationAdapter host (docs/design/
+// note-presentation-unified.md §1): it paints via highlightQuote, mounts the SAME
+// framework-free MarkerOverlay every other reader uses (on the guest body — the
+// old divergent inline chip inside the <mark> is gone), and bridges marker clicks
+// to the host over the existing sv:marker-action channel.
 import { ipcRenderer } from "electron";
 import {
   buildMarkerHtml,
   clearAnnotations,
   ensureAnnotationLayer,
   highlightQuote,
-  revealAnchorInDoc,
   setSelectedAnchorInDoc
 } from "../src/client/annotationLayer";
+import { mountRealmMarkerOverlay, type MarkerOverlay } from "../src/client/markerOverlay";
+import { createDomRealmAdapter, type ReaderAnnotationAdapter } from "../src/client/surfaces/readerAnnotationAdapter";
 
 type WebAnchorMsg = {
   id?: string;
@@ -92,28 +99,37 @@ document.addEventListener(
   true
 );
 
-document.addEventListener("click", (event) => {
-  const target = event.target as Element | null;
-  const roleEl = target && typeof target.closest === "function" ? target.closest("[data-sv-marker-role]") : null;
-  if (!roleEl) return;
-  const chip = roleEl.closest(".sv-anchor-markers") as HTMLElement | null;
-  const anchorId = chip?.getAttribute("data-sv-marker-for") ?? roleEl.closest("[data-sv-key]")?.getAttribute("data-sv-key");
-  const role = roleEl.getAttribute("data-sv-marker-role");
-  if (!anchorId || (role !== "anchor" && role !== "note")) return;
-  ipcRenderer.sendToHost("sv:marker-action", { anchorId, role });
-  if (role === "anchor") {
-    event.preventDefault();
-    event.stopPropagation();
-  }
-});
-
 // The host's currently focused anchor id, so a repaint (sv:anchors) can re-apply the
 // persistent blue "selected" highlight that clearAnnotations would otherwise wipe.
 let selectedAnchorId: string | undefined;
 
-ipcRenderer.on("sv:anchors", (_event, anchors: WebAnchorMsg[]) => {
+// The guest realm's D1 annotation surface: the shared DOM-realm adapter over this
+// document plus a REAL MarkerOverlay mounted on the guest body (the same
+// framework-free module the DomReader iframe / PDF / image readers host). Built
+// lazily on the first host message so document.body exists. Marker clicks are
+// handled by the overlay itself and bridged to the host over the existing
+// sv:marker-action channel; role "note" also synthesizes the anchor click that
+// opens the shared in-guest note card (MarkerOverlay does both).
+let guestSurface: { adapter: ReaderAnnotationAdapter<WebAnchorMsg>; overlay: MarkerOverlay } | null = null;
+
+function ensureGuestSurface(): { adapter: ReaderAnnotationAdapter<WebAnchorMsg>; overlay: MarkerOverlay } {
+  if (guestSurface) return guestSurface;
+  const adapter = createDomRealmAdapter<WebAnchorMsg>({
+    root: () => document,
+    paint: paintGuestAnchors
+  });
+  const overlay = mountRealmMarkerOverlay(document, {
+    adapter,
+    onAction: ({ anchorId, role }) => ipcRenderer.sendToHost("sv:marker-action", { anchorId, role })
+  });
+  guestSurface = { adapter, overlay };
+  return guestSurface;
+}
+
+function paintGuestAnchors(anchors: WebAnchorMsg[]): void {
   ensureAnnotationLayer(document);
   clearAnnotations(document.body);
+  const markers: { anchorId: string; glyphHtml: string }[] = [];
   for (const anchor of anchors) {
     const painted = highlightQuote(
       document,
@@ -122,37 +138,33 @@ ipcRenderer.on("sv:anchors", (_event, anchors: WebAnchorMsg[]) => {
       anchor.id,
       { noteHtml: anchor.noteHtml, noteCount: anchor.noteCount, noteTypes: anchor.noteTypes }
     );
-    // Markers no longer paint into the content via applyHighlight. The guest is
-    // flowing web text (no PDF text-layer transform), so we append the marker glyph
-    // INLINE as a trailing child of the freshly-created <mark>. A dedicated guest
-    // overlay (mirroring the PDF/image/HTML readers) is deferred.
+    // One overlay chip per painted anchor — the SAME buildMarkerHtml glyphs, hosted
+    // by the overlay instead of the old inline <span> appended inside the <mark>.
     if (painted && anchor.id) {
-      const mark = document.querySelector(`mark[data-sv="1"][data-sv-key="${anchor.id.replace(/"/g, '\\"')}"]`);
-      if (mark) {
-        const chip = document.createElement("span");
-        chip.className = "sv-anchor-markers";
-        chip.setAttribute("data-sv", "1");
-        chip.setAttribute("data-sv-marker-for", anchor.id);
-        chip.style.position = "static"; // inline flow, not overlay-positioned
-        chip.style.marginLeft = "4px";
-        chip.innerHTML = buildMarkerHtml({
+      markers.push({
+        anchorId: anchor.id,
+        glyphHtml: buildMarkerHtml({
           noteHtml: anchor.noteHtml,
           noteCount: anchor.noteCount,
           noteTypes: anchor.noteTypes
-        });
-        mark.appendChild(chip);
-      }
+        })
+      });
     }
   }
+  ensureGuestSurface().overlay.setMarkers(markers);
   // Re-apply the selection after the repaint (the marks were just re-created).
   setSelectedAnchorInDoc(document, selectedAnchorId);
+}
+
+ipcRenderer.on("sv:anchors", (_event, anchors: WebAnchorMsg[]) => {
+  ensureGuestSurface().adapter.paint(anchors ?? []);
 });
 
 // The host asks us to scroll a painted anchor into view (a bookmark row / a
 // multi-anchor jump button on a web or local-HTML source). We paint data-sv-key
-// marks via highlightQuote above, so this delegates to the SAME shared helper —
-// no scroll logic duplicated in the guest.
-ipcRenderer.on("sv:reveal", (_event, anchorId: string) => revealAnchorInDoc(document, anchorId));
+// marks via highlightQuote above, so this delegates to the adapter's reveal —
+// the SAME shared revealAnchorInDoc helper, no scroll logic duplicated here.
+ipcRenderer.on("sv:reveal", (_event, anchorId: string) => ensureGuestSurface().adapter.reveal(anchorId));
 
 // The host's focused anchor changed: paint the persistent blue "selected" highlight
 // on it (clearing the previous one) — the SAME shared helper the iframe/PDF/image

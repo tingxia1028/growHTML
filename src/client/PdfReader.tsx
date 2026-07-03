@@ -15,6 +15,11 @@ import {
 } from "./annotationLayer";
 import { MarkerOverlay } from "./markerOverlay";
 import type { AnchorDraft } from "./focus/FocusContext";
+import {
+  collectAnchorRects,
+  injectCssIntoRealm,
+  type ReaderAnnotationAdapter
+} from "./surfaces/readerAnnotationAdapter";
 import { anchorsOfKind, type PaintAnchor, type SurfaceReaderProps } from "./surfaces/types";
 import { isRealRegion, normalizeDragRect, placeRegionBox } from "./surfaces/overlay";
 import { formatZoomPct, nextZoom } from "./surfaces/pdfZoom";
@@ -71,6 +76,9 @@ export function PdfReader({
   // The view-layer marker overlay, mounted on the (absolutely-positioned) canvas so
   // its chips escape the PDF.js text-layer transform. One per reader instance.
   const markerOverlayRef = useRef<MarkerOverlay | null>(null);
+  // This reader's D1 ReaderAnnotationAdapter (built with the viewer in the mount
+  // effect); the anchors-changed repaint routes through adapter.paint.
+  const adapterRef = useRef<ReaderAnnotationAdapter | null>(null);
 
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
@@ -201,11 +209,36 @@ export function PdfReader({
     pdfViewerRef.current = pdfViewer;
     linkService.setViewer(pdfViewer);
 
+    // This realm's D1 ReaderAnnotationAdapter: rects come from every data-sv-key
+    // element in the viewer (a multi-span quote reports ALL its spans), layout
+    // changes are the pdf.js signals (textlayerrendered + zoom, emitted below), and
+    // paint/reveal delegate to the existing highlightAnchors/revealPdfAnchor.
+    const layoutListeners = new Set<() => void>();
+    const emitLayoutChange = () => {
+      for (const listener of [...layoutListeners]) listener();
+    };
+    const adapter: ReaderAnnotationAdapter = {
+      rectsFor: (anchorId) => collectAnchorRects(viewerRef.current, anchorId),
+      onLayoutChange: (cb) => {
+        layoutListeners.add(cb);
+        return () => layoutListeners.delete(cb);
+      },
+      injectRealmCss: (css) => injectCssIntoRealm(document, css),
+      paint: (paintList) => {
+        anchorsRef.current = anchorsOfKind(paintList, "pdf_selection");
+        highlightAnchors();
+      },
+      reveal: (anchorId) => revealPdfAnchor(anchorId)
+    };
+    adapterRef.current = adapter;
+
     // Mount the view-layer marker overlay on the (absolutely-positioned) canvas so
     // its chips sit in page/overlay coordinate space, not inside a transformed
-    // text-layer span. highlightAnchors drives its chips via setMarkers.
+    // text-layer span. highlightAnchors drives its chips via setMarkers; the
+    // adapter's onLayoutChange feeds it the pdf.js reposition signals.
     const markerOverlay = new MarkerOverlay(container, {
-      onAction: ({ anchorId, role }) => onMarkerActionRef.current?.(anchorId, role)
+      onAction: ({ anchorId, role }) => onMarkerActionRef.current?.(anchorId, role),
+      adapter
     });
     markerOverlayRef.current = markerOverlay;
 
@@ -221,15 +254,21 @@ export function PdfReader({
     // sized so they track the page box regardless; text highlights re-match the
     // freshly-rebuilt text-layer spans). No zoom-specific repaint path needed.
     eventBus.on("pagerendered", () => highlightAnchors());
-    eventBus.on("textlayerrendered", () => highlightAnchors());
+    eventBus.on("textlayerrendered", () => {
+      highlightAnchors();
+      // A freshly rendered text layer changes anchor geometry — the adapter's
+      // layout signal repositions the overlay chips.
+      emitLayoutChange();
+    });
     // Keep the % indicator in sync with whatever scale pdf.js settles on — explicit
     // zoom, the initial page-width fit, AND automatic re-fits when the pane resizes
     // (page-width is dynamic, so resizing re-dispatches scalechanging).
     eventBus.on("scalechanging", (evt: { scale: number }) => {
       setScale(evt.scale);
-      // Zoom re-lays out the pages; nudge the marker chips to the new geometry (the
-      // subsequent page re-render also repaints, but this keeps them tight meanwhile).
-      markerOverlay.reposition();
+      // Zoom re-lays out the pages; the adapter's layout signal nudges the marker
+      // chips to the new geometry (the subsequent page re-render also repaints,
+      // but this keeps them tight meanwhile).
+      emitLayoutChange();
     });
 
     // Keep the PDF fitted when the Source Viewer pane or desktop window is resized.
@@ -248,7 +287,7 @@ export function PdfReader({
         pdfViewer.currentScaleValue = "page-width";
         queueFrame(() => {
           pdfViewer.currentScaleValue = "page-width";
-          markerOverlay.reposition();
+          emitLayoutChange();
         });
       });
     };
@@ -389,7 +428,9 @@ export function PdfReader({
       resizeFrames.forEach((id) => cancelAnimationFrame(id));
       resizeFrames.clear();
       markerOverlay.destroy();
+      layoutListeners.clear();
       if (markerOverlayRef.current === markerOverlay) markerOverlayRef.current = null;
+      if (adapterRef.current === adapter) adapterRef.current = null;
       loadingTask.destroy().catch(() => {});
       try {
         pdfViewer.setDocument(null as never);
@@ -401,9 +442,11 @@ export function PdfReader({
     };
   }, [fileUrl]);
 
-  // Repaint when the anchors prop changes.
+  // Repaint when the anchors prop changes — through the adapter (the D1 paint
+  // duty); before the viewer mounts there is no adapter and nothing to paint onto.
   useEffect(() => {
-    highlightAnchors();
+    if (adapterRef.current) adapterRef.current.paint(anchors);
+    else highlightAnchors();
     // Re-apply the persistent blue "selected" highlight after a repaint clears it.
     setSelectedAnchorInDoc(viewerRef.current, activeAnchorId);
     // eslint-disable-next-line react-hooks/exhaustive-deps

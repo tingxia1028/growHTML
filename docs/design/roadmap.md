@@ -36,7 +36,7 @@ The extension seams (registries / content-as-data / entity stores / render contr
 |---|---|---|---|
 | **F1** | Decompose the `WorkspaceContext` god object (1753 lines / ~79 fields / single `activeSourceId`) into per-domain stores + selectors | multi-doc, cross-doc paint, re-render/contention on every feature | **P-A1** (it *is* the multi-doc enabler) |
 | **F2** | Extract `app.ts` (1737 lines / 59 inline routes) into `registerXRoutes` modules (svpack already shows the pattern) | nothing hard-blocked; friction + contention grow | incremental, any server work |
-| **F3** | Land the D1 `ReaderAnnotationAdapter` — kill per-reader paint duplication + the divergent webview guest | reader-consistency, mobile, N1/P-A2 | **before N1** (it's the N1/P-A2 keystone) |
+| **F3** | ✅ **shipped** (F3-D1-001, 2026-07-04) — the D1 `ReaderAnnotationAdapter` landed: `src/client/surfaces/readerAnnotationAdapter.ts` (contract + `collectAnchorRects` first/last/all + shared DOM-realm factory), `MarkerOverlay` measures through `rectsFor` (chip at `.first`), every reader (DomReader iframe / PDF / image / webview guest) hosts an adapter, and the guest's divergent inline chip is now a real body-mounted `MarkerOverlay` bridging `sv:marker-action` | ~~reader-consistency, mobile, N1/P-A2~~ unblocked | **N1** builds directly on it (D2 two slots = `rectsFor.first/.last`) |
 | **F4** | Replace the single-active-kit gate (`activation.ts` `FALLBACK_DEFAULT_KIT`) with marketplace **effective-installed** | market, subject kits "foreground not filter" | **Market M1** |
 | **F5** | Split `plugin==kit` 1:1 + fix `seedCorePlugin` over-claim (real `pluginId` per type) | marketplace `members[]` resolution | **Market M1** |
 | **F6** | Additive rect on `html_selection`/`web_text_quote` anchors | unified region selection over HTML (D4) | **D4b** |
@@ -45,7 +45,7 @@ The extension seams (registries / content-as-data / entity stores / render contr
 ## Two keystones everything leans on
 Most work funnels through two load-bearing pieces. Build order is mostly "who unblocks whom":
 
-1. **D1 — the ReaderAnnotationAdapter** (`note-presentation-unified.md`). One paint/marker/card contract per reader. Unblocks **D2 markers (N1)** AND **per-pane paint (P-A2)**. It lives in the reader/marker files a **concurrent session currently owns** → coordinate before touching.
+1. **D1 — the ReaderAnnotationAdapter** (`note-presentation-unified.md`). One paint/marker/card contract per reader. ✅ **shipped as F3** (F3-D1-001): `src/client/surfaces/readerAnnotationAdapter.ts`. Unblocks **D2 markers (N1)** AND **per-pane paint (P-A2)** — both still pending, now sitting on the landed adapter.
 2. **Market M1 — effective-installed selector** (`plugin-viewer-model.md` §8.3/§8.5). The composer/toolbar must source its type list from marketplace *effective-installed*, not the single-active-kit gate in `src/kits/activation.ts`. Unblocks **subject-kit "foreground not filter" (M-B)** and **N4 types-as-catalog**.
 
 ## Dependency graph
@@ -109,7 +109,7 @@ Concept P-C1 (aggregation page, additive to existing API) ──> P-C2 (graph vi
 **P2 — surfaces & market (behind P0, beside it when parallel-safe):**
 - **Market M1 (+F4+F5)** — unblocks subjects; **carries MH-0**: the manager lists through the `CatalogSource` interface (local now, remote later — marketplace-hosted.md §5, the one hosted-market hook V1 pays for). Then **M-B** (KaTeX decision first — the flagged hole).
 - **N3 (D6)** auto-materialize.
-- **Reader-gated batch** (when the concurrent reader session settles, as ONE coordinated window): **F3 (D1 adapter) → N1 (D2+D5 — fixes "AI note 丢右栏") → N5 (D10+D11 note 钉住+导出) → N2 (D4+D3, F6 rides D4b)** · SC-1/SC-2 · **M-A chip mount** (`KitForegroundChipHost` one-liner in the reader toolbar — subject-kits.md §7) · A3b/A4b · G-A3b · SRC-2 · MEM 的 source-open capture.
+- **Reader-gated batch** (when the concurrent reader session settles, as ONE coordinated window): **F3 (D1 adapter) ✅ shipped (F3-D1-001) → N1 (D2+D5 — fixes "AI note 丢右栏"; still pending, now sits directly on the landed adapter's `rectsFor.first/.last`) → N5 (D10+D11 note 钉住+导出) → N2 (D4+D3, F6 rides D4b)** · SC-1/SC-2 · **M-A chip mount** (`KitForegroundChipHost` one-liner in the reader toolbar — subject-kits.md §7) · A3b/A4b · G-A3b · SRC-2 · MEM 的 source-open capture.
 
 **P3 — platform & business (necessary; never ahead of the loop):**
 - **X1** desktop packaging (needs the user's Apple Developer account) → **X2** mobile shell → **X3** distribution (软著/ICP ride the license track) → **X4** release train.
