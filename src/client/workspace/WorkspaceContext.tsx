@@ -34,6 +34,10 @@ import {
   type StudyLayerRecord
 } from "../data/entityClient";
 import { useFocus, draftQuoteText, type FocusContextValue } from "../focus/FocusContext";
+// A4b: the agent-loop transcript — a render-only turn state accumulated from the agent
+// SSE (entityClient.agentStream). Distinct from the persisted chat log; only done.message
+// becomes a real assistant turn (via the existing persistAssistant seam).
+import { initialAgentTurn, reduceAgentEvent, type AgentTurnState } from "./agentTurnReducer";
 import { BOOKMARK_CONTENT_TYPE } from "../../core/notes/contentTypes";
 import { resolveFormAsync, type AiClassify } from "../../core/notes/resolveForm";
 import { classifyContent } from "../../core/notes/classifyContent";
@@ -507,6 +511,15 @@ export type WorkspaceContextValue = {
    * the last user prompt through `anchor.ask-ai`, appending a fresh assistant reply.
    */
   regenerateChatReply(): void;
+  // —— A4b agent loop (tool-calling) ——
+  /** The in-flight/last agent turn's render-only transcript (tool cards + streamed text),
+      null when no agent turn is active. Distinct from the persisted chat log. */
+  agentTurn: AgentTurnState | null;
+  /** Whether the ACTIVE provider advertises app-defined tool calling — gates the 🛠 button. */
+  agentAvailable: boolean;
+  /** Run ONE agent turn on `text` (records the user turn once, streams tool cards, then
+      persists the final answer as a normal assistant reply). */
+  runAgentTurn(text: string): Promise<void>;
   /**
    * Import a local .xmind file → a `markmap` note (Phase 4 item 3). Opens the native
    * file dialog, has the server unzip+parse the .xmind into a markmap outline, and
@@ -743,6 +756,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const chatDomain = useChatSessionDomain({ activeSourceId });
   const chatMessages = chatDomain.messages;
   const [chatInput, setChatInput] = useState("");
+  // A4b: the in-flight/last agent turn's render-only transcript (tool cards + streamed
+  // text), null when no agent turn has run this session. `agentAvailable` is a mount
+  // read of the ACTIVE provider's `tools` capability — the gated 🛠 button shows only
+  // when true (a provider that lacks runAgent would 501).
+  const [agentTurn, setAgentTurn] = useState<AgentTurnState | null>(null);
+  const [agentAvailable, setAgentAvailable] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);
   const [patchHtml, setPatchHtml] = useState("");
   const [importUrl, setImportUrl] = useState("");
@@ -1230,6 +1249,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     void loadSources();
   }, [loadSources]);
 
+  // A4b: read the ACTIVE provider's tool capability once on mount so the gated 🛠 button
+  // knows whether the agent loop is available. The GET returns the descriptor list with
+  // capabilities; match the active id and read `tools`. Best-effort — any failure leaves
+  // the button hidden (plain chat still works).
+  useEffect(() => {
+    // Feature-detect the readout (tests stub a partial entityClient without it) so a
+    // missing method never throws inside the effect — the button just stays hidden.
+    if (typeof entityClient.aiProviders !== "function") return;
+    let cancelled = false;
+    void Promise.resolve()
+      .then(() => entityClient.aiProviders())
+      .then((info) => {
+        if (cancelled) return;
+        const active = info.providers.find((provider) => provider.id === info.active.id);
+        setAgentAvailable(active?.capabilities?.tools === true);
+      })
+      .catch(() => {
+        if (!cancelled) setAgentAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     rememberSourceId(activeSourceId);
   }, [activeSourceId, rememberSourceId]);
@@ -1643,6 +1686,58 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (!lastUser) return;
     void dispatch("anchor.ask-ai", { text: lastUser.content });
   }, [chatMessages, dispatch]);
+
+  // A4b: run ONE agent turn (the 🛠 用工具 button). Invoked DIRECTLY here — not through
+  // the command registry — because the tool cards are render-only state with no
+  // persistence contract until `done` (DELTA 4). Mirrors askAi's context assembly:
+  //   • record the user turn EXACTLY ONCE via the existing recordHistory seam (DELTA 5);
+  //     the SSE `done` must NOT re-append it.
+  //   • reuse buildChatContext() + resolveAttachmentBundles() exactly as askAi does.
+  //   • fold each SSE event into agentTurn via the pure reducer; on `done` persist the
+  //     final message as the ONE real assistant turn (persistAssistant), then clear the
+  //     transcript; on reject keep the accumulated items in an error state.
+  const runAgentTurn = useCallback(
+    async (rawText: string) => {
+      const text = rawText.trim();
+      if (!text) return;
+      const history: ChatMessage[] = [...chatMessages, { role: "user", content: text }];
+      // Record the user turn ONCE (the visible transcript + persistence seam).
+      chatDomain.recordHistory(history);
+      setStatus("saving");
+      setError("");
+      setAgentTurn(initialAgentTurn());
+      try {
+        const sources = await resolveAttachmentBundles();
+        const context: ChatContext | undefined =
+          sources && sources.length > 0 ? { ...buildChatContext(), sources } : buildChatContext();
+        const { message } = await entityClient.agentStream(
+          { messages: history, context },
+          {
+            onStep: () => setAgentTurn((turn) => reduceAgentEvent(turn ?? initialAgentTurn(), { type: "step", index: 0 })),
+            onTextDelta: (delta) =>
+              setAgentTurn((turn) => reduceAgentEvent(turn ?? initialAgentTurn(), { type: "text-delta", delta })),
+            onToolCall: (call) =>
+              setAgentTurn((turn) => reduceAgentEvent(turn ?? initialAgentTurn(), { type: "tool-call", ...call })),
+            onToolResult: (result) =>
+              setAgentTurn((turn) => reduceAgentEvent(turn ?? initialAgentTurn(), { type: "tool-result", ...result }))
+          }
+        );
+        // The final answer is the ONE persisted assistant turn (Add-as-note / regenerate
+        // keep working). Mark the transcript done, then drop the tool cards.
+        setAgentTurn((turn) => reduceAgentEvent(turn ?? initialAgentTurn(), { type: "done", message, provider: "" }));
+        chatDomain.persistAssistant(message);
+        setAgentTurn(null);
+        setStatus("idle");
+      } catch (err) {
+        const messageText = err instanceof Error ? err.message : "工具调用失败";
+        // Keep the accumulated tool cards but flip the turn to error so the user sees why.
+        setAgentTurn((turn) => reduceAgentEvent(turn ?? initialAgentTurn(), { type: "error", error: messageText }));
+        setError(messageText);
+        setStatus("error");
+      }
+    },
+    [chatMessages, chatDomain, buildChatContext, resolveAttachmentBundles]
+  );
 
   // .xmind import (adaptive-note-forms Phase 4 item 3). Open a native file dialog and
   // delegate to importXmindFromPath (defined next to openFileDialog above, which also
@@ -2191,6 +2286,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       previewClassifiedReply,
       addReplyAsNote,
       regenerateChatReply,
+      agentTurn,
+      agentAvailable,
+      runAgentTurn,
       importXmindFile,
       changePatchStatus,
       canForkActiveSource,
@@ -2305,6 +2403,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       previewClassifiedReply,
       addReplyAsNote,
       regenerateChatReply,
+      agentTurn,
+      agentAvailable,
+      runAgentTurn,
       importXmindFile,
       changePatchStatus,
       canForkActiveSource,

@@ -59,6 +59,9 @@ import "../notes/builtinNoteTypes";
 // it so the viewer is registered wherever a card renders; both are idempotent.)
 import "../notes/tableViewer";
 import { ChatMessageBody } from "./ChatMessageBody";
+// A4b: the agent-loop transcript surface + the capability-gated 用工具 button icon.
+import { AgentTranscript } from "./AgentTranscript";
+import { Wrench } from "lucide-react";
 // SC-1 slash composer (`/类型`): parse the chat input, drop the SC-0 palette above
 // it, and route a pick — bare `/type` opens the D5 floating editor in manual mode;
 // `/type + instruction` dispatches the form-router generation whose draft lands in
@@ -474,6 +477,9 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
     composerDisabled,
     addReplyAsNote,
     regenerateChatReply,
+    agentTurn,
+    agentAvailable,
+    runAgentTurn,
     patchHtml,
     setPatchHtml,
     activePatches,
@@ -565,6 +571,23 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
               <FileText size={16} />
               生成文档
             </button>
+            {/* A4b: capability-gated agent-loop trigger — runs ONE tool-calling turn and
+                renders tool cards + the streamed answer. Shown ONLY when the active
+                provider advertises app-defined tool calling (agentAvailable); a provider
+                without runAgent would 501, so the button never appears there. */}
+            {agentAvailable ? (
+              <button
+                type="button"
+                className="icon-button chat-agent-button"
+                title="用工具"
+                aria-label="用工具"
+                onClick={() => void runAgentTurn(chatInput || draftQuote)}
+                disabled={status === "saving" || (!chatInput.trim() && !draftQuote.trim())}
+              >
+                <Wrench size={16} />
+                🛠 用工具
+              </button>
+            ) : null}
             <PanelMenu label="AI Chat actions" align="right">
               {/* Keep non-note utilities out of the main conversation surface. */}
               <details className="patch-fold">
@@ -668,12 +691,18 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
               </div>
             );
           })}
+          {/* A4b: the agent-loop transcript (tool cards + streamed answer). Render-only,
+              below the persisted messages; cleared once the final answer persists as a
+              normal assistant reply. Null when no agent turn is running. */}
+          <AgentTranscript turn={agentTurn} />
           {/* Streaming ask-ai: until the FIRST token arrives, the last message is still
               the user's prompt while a request is in flight (status "saving"). Show a
               working row so the chat doesn't look frozen before progressive text begins.
               Once a delta lands, onAssistantChunk appends an assistant message and this
-              clears. */}
+              clears. The agent turn drives its OWN spinner tail, so suppress this row
+              while an agent turn is in flight. */}
           {status === "saving" &&
+          !agentTurn &&
           chatMessages.length > 0 &&
           chatMessages[chatMessages.length - 1].role === "user" ? (
             <div className="chat-msg chat-assistant chat-pending" role="status" aria-live="polite">
