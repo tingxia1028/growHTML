@@ -71,6 +71,7 @@ import type { SlashEntry } from "../slash/engine";
 // 新对话 + history (select to resume, delete with confirm). State lives in the chat
 // session domain (src/client/chat); StudyView only passes the bundled api through.
 import { ChatSessionSwitcher } from "../chat/ChatSessionSwitcher";
+import { ChatAttachments } from "../chat/ChatAttachments";
 // 语音输入 (SPEECH-2): the mic on the chat composer — which is ALSO the slash
 // composer's main text field ("Type / for commands"), so one mount covers both.
 // The confirmed transcript appends to the SAME chatInput state the keyboard edits.
@@ -462,6 +463,7 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
     focus,
     status,
     draftQuote,
+    sources,
     chatMessages,
     chatSessions,
     dispatch,
@@ -648,6 +650,11 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
         {/* D5: command-driven generation drafts NO LONGER park here — they open in
             the FloatingNoteEditor next to the passage (mounted once in the shell
             chrome). The chat pane keeps only chat + the slash entry below. */}
+
+        {/* W2 (ai-workspace §W2): the attachment strip — chips for the session's attached
+            sources + a "+" picker. Attaching a source feeds the widened ChatContext the
+            next Ask AI resolves. Additive: renders above the untouched composer bar. */}
+        <ChatAttachments api={chatSessions} sources={sources} />
 
         <form
           className="chat-composer-bar"

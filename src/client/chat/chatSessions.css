@@ -73,3 +73,65 @@
   color: var(--sv-text-muted);
   font-size: 12px;
 }
+
+/* —— W2 attachments (ai-workspace §W2): the composer's attachment strip —————————— */
+.chat-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 2px;
+}
+
+.chat-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 180px;
+  padding: 2px 4px 2px 8px;
+  border: 1px solid var(--sv-border, #d1d5db);
+  border-radius: var(--sv-radius-sm, 6px);
+  background: var(--sv-surface-muted);
+  font-size: 12px;
+}
+
+.chat-attachment-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-attachment-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  border-radius: var(--sv-radius-sm, 6px);
+  background: transparent;
+  color: var(--sv-text-muted);
+  cursor: pointer;
+}
+
+.chat-attachment-remove:hover {
+  color: var(--sv-danger, #b91c1c);
+}
+
+.chat-attachment-add.panel-menu-trigger {
+  padding: 2px 6px;
+  color: var(--sv-text-muted);
+}
+
+.chat-attachment-picker {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.chat-attachment-pick {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}

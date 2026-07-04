@@ -14,5 +14,10 @@ export const chatSessionMessages = defineMessages({
   deleteConfirm: {
     zh: "删除这个会话？其消息记录将被永久移除。",
     en: "Delete this conversation? Its messages will be permanently removed."
-  }
+  },
+  // —— W2 attachments ——
+  attachLabel: { zh: "附加来源", en: "Attach source" },
+  attachEmpty: { zh: "没有可附加的来源。", en: "No sources to attach." },
+  detachAction: { zh: "移除附件", en: "Remove attachment" },
+  attachedTitle: { zh: "已附加到本会话", en: "Attached to this conversation" }
 });

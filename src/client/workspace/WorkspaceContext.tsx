@@ -96,6 +96,10 @@ import { conceptMessages } from "./conceptMessages";
 // Transcript + session list/load/save live in src/client/chat; this provider only
 // delegates (chatMessages keeps its exact shape; the switcher gets ONE bundled api).
 import { useChatSessionDomain, type ChatSessionsApi } from "../chat/useChatSessions";
+// W2 (ai-workspace §W2): the PURE assembly of the chat's source-context set (focused
+// source ∪ session attachments, deduped + capped). The bundle fetch lives here (the
+// resolver below); the merge/cap stays pure and unit-tested next door.
+import { assembleContextSources, type ResolvedBundle } from "../chat/chatContextAssembly";
 
 export type Status = "idle" | "loading" | "saving" | "error";
 
@@ -1303,6 +1307,40 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     };
   }, [activeSource, focus.draft, focus.anchor]);
 
+  // W2 (ai-workspace §W2): resolve the chat's source-context set — the FOCUSED source
+  // (passage-level, keyed by activeSourceId) UNION the session's explicit attachments
+  // (source-level), de-duped by sourceId (focused-first). Fetch each source's bundle
+  // (bounded excerpt + sealed-filtered notes) then hand the PURE assembler the union +
+  // the cross-source cap. CHAT-ONLY: awaited by anchor.ask-ai via the feature-detected
+  // resolveAttachmentBundles seam; nothing else calls it. Bundle-fetch failures degrade
+  // to skipping that source (a broken read must not sink the whole ask).
+  const attachments = chatDomain.sessions.attachments;
+  const resolveAttachmentBundles = useCallback(async (): Promise<ChatContext["sources"]> => {
+    const focusedId = activeSourceId || "";
+    // The de-dup KEY set: focused source first, then each attached source not equal to it.
+    const attachedIds = attachments.map((item) => item.sourceId);
+    const orderedIds = [focusedId, ...attachedIds].filter(Boolean);
+    if (orderedIds.length === 0) return undefined;
+    const includeNotesById = new Map(attachments.map((item) => [item.sourceId, item.includeNotes]));
+    const seen = new Set<string>();
+    const resolved: ResolvedBundle[] = [];
+    for (const sourceId of orderedIds) {
+      if (seen.has(sourceId)) continue;
+      seen.add(sourceId);
+      const focused = sourceId === focusedId;
+      // Focused source: always include its notes; an attachment honors its includeNotes flag.
+      const includeNotes = focused ? true : includeNotesById.get(sourceId) ?? true;
+      try {
+        const { bundle } = await entityClient.sourceBundle(sourceId, includeNotes);
+        resolved.push({ sourceId, focused, bundle });
+      } catch {
+        // Skip a source whose bundle can't be read — the rest of the context still helps.
+      }
+    }
+    const sources = assembleContextSources(resolved);
+    return sources.length > 0 ? sources : undefined;
+  }, [activeSourceId, attachments]);
+
   // Assemble the shared CommandContext. Commands collaborate through focus, the
   // entity client, and these action callbacks — never by touching node internals.
   const commandContext = useCallback(
@@ -1313,6 +1351,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       payload,
       chatMessages,
       chatContext: buildChatContext(),
+      // W2: the CHAT-ONLY attachment resolver (anchor.ask-ai feature-detects + awaits it).
+      resolveAttachmentBundles,
       actions: {
         onNoteCreated: () => void refreshAnnotations(),
         // A note was deleted: re-fetch notes + repaint (painting is derived from
@@ -1373,7 +1413,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
       }
     }),
-    [focus, activeSourceId, chatMessages, chatDomain, buildChatContext, refreshAnnotations, parkDraft]
+    [
+      focus,
+      activeSourceId,
+      chatMessages,
+      chatDomain,
+      buildChatContext,
+      resolveAttachmentBundles,
+      refreshAnnotations,
+      parkDraft
+    ]
   );
 
   const dispatch = useCallback(

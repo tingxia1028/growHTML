@@ -79,6 +79,7 @@ function makeCtx(api: ChatSessionsApi): WorkspaceContext {
     focus: { focus: null, draft: null, anchor: null, clear: vi.fn() },
     status: "idle",
     draftQuote: "",
+    sources: [],
     // The transcript as the domain hands it to consumers (ts stripped).
     chatMessages: fixtureSession.messages.map(({ role, content }) => ({ role, content })),
     chatSessions: api,

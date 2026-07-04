@@ -17,7 +17,8 @@ export function PanelMenu({
   label,
   icon,
   children,
-  align = "right"
+  align = "right",
+  buttonClassName
 }: {
   /** Accessible label for the trigger (e.g. "Library actions"). */
   label: string;
@@ -25,6 +26,8 @@ export function PanelMenu({
   icon?: ReactNode;
   children: ReactNode;
   align?: "left" | "right";
+  /** Extra class on the trigger button (stable hook for a specific menu, e.g. W2 "+"). */
+  buttonClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
@@ -110,7 +113,7 @@ export function PanelMenu({
       <button
         type="button"
         ref={triggerRef}
-        className={`panel-menu-trigger${open ? " active" : ""}`}
+        className={`panel-menu-trigger${open ? " active" : ""}${buttonClassName ? ` ${buttonClassName}` : ""}`}
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
