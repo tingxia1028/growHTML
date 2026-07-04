@@ -76,6 +76,9 @@ import { SelectionFloatingToolbar } from "./SelectionFloatingToolbar";
 import { FloatingNoteEditor } from "./FloatingNoteEditor";
 import { ConceptMarkToast } from "./ConceptMarkToast";
 import { DraftNoteToast } from "./DraftNoteToast";
+import { NudgeToast } from "./NudgeToast";
+import { startIdleTracking } from "./idleSignal";
+import { startProactiveTick } from "./proactiveTick";
 import { GlobalSpeakSelection } from "../speech/GlobalSpeakSelection";
 import { GlobalSearch } from "../search/GlobalSearch";
 // N6/§D12: the Anchor Focus board overlay — mounted once here (like the floating editor /
@@ -189,6 +192,19 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
     });
     return () => registerShellNavigator(null);
   }, [layout.id]);
+
+  // PRO-1 主动学习 (proactive-learning.md §1, CLIENT-CENTRIC): while the shell is mounted,
+  // track idle activity + run the proactive tick (every 60s + on focus/visibility). The
+  // tick evaluates the code-registered built-ins ∪ entity triggers against the REAL LOCAL
+  // clock and pushes a pending nudge NudgeToast renders. Started once (no shell reach-in).
+  useEffect(() => {
+    const stopIdle = startIdleTracking();
+    const stopTick = startProactiveTick();
+    return () => {
+      stopTick();
+      stopIdle();
+    };
+  }, []);
 
   useEffect(() => {
     if (!modalKind) return;
@@ -453,6 +469,10 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
           after an anchor-context AI answer materializes a draft note — 撤销 dispatches
           note.delete. Host chrome like the toast above. */}
       <DraftNoteToast />
+      {/* PRO-1 主动学习 nudge (proactive-learning.md §1): the pending-nudge the proactive
+          tick raised — its reason + 去复习 deep-link + 稍后再说/关闭. Host chrome like the
+          toast above; the tick + idle tracking are started by the effect below. */}
+      <NudgeToast />
       {/* SPEECH-1b 朗读通用化: the host-level 朗读 chip for ANY text selection OUTSIDE
           the reader pane (chat replies, note lists, panels — 读=所有文本的可读能力).
           Reader selections keep their own toolbar above; this never double-serves. */}
