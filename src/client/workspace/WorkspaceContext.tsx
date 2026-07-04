@@ -54,6 +54,16 @@ import { activeKitIdsForSource, CORE_KIT_ID } from "../../kits/activation";
 import { installedKits, kitSurfaceItems, setDisabledContributions } from "../../kits/clientContext";
 import { listInstalledPlugins, type PluginRecord } from "../../kits/plugin";
 import { LAYOUT_PRESETS, DEFAULT_LAYOUT_ID } from "./presets";
+// F1 (P-A1): the pure open-panes model — the source-binding shim behind activeSourceId.
+import {
+  closePane,
+  focusPane,
+  focusedPane,
+  openOrFocusPane,
+  paneIdFor,
+  prunePanes,
+  type OpenPane
+} from "./panes";
 // Theme V1 — a workspace-wide visual choice, a strict SIBLING of the layout switcher
 // (it never reads activeLayoutId). The side-effect import populates the theme registry
 // before listThemes() runs at provider mount, mirroring views.tsx's kit import.
@@ -612,7 +622,39 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState("");
   const [sources, setSources] = useState<SourceRecord[]>([]);
-  const [activeSourceId, setActiveSourceId] = useState("");
+  // F1 (P-A1): the open-panes model. `activeSourceId` is no longer a useState — it is
+  // DERIVED from the focused pane (the back-compat shim, below), so every single-pane
+  // caller keeps reading the same string while the workspace grows to multiple panes.
+  const [openPanes, setOpenPanes] = useState<OpenPane[]>([]);
+  const [focusedPaneId, setFocusedPaneId] = useState<string>("");
+  const currentFocusedPane = focusedPane(openPanes, focusedPaneId);
+  const activeSourceId = currentFocusedPane?.sourceId ?? "";
+  // `setActiveSourceId(id)` → open-or-focus a pane for that source (the shim). id==="" is
+  // "no doc" → close the currently focused pane (VERIFIED: the only two "" call sites are
+  // the reader tab-close and deleteSourceItem, both meaning "close the active document").
+  const setActiveSourceId = useCallback((id: string) => {
+    if (!id) {
+      setOpenPanes((panes) => {
+        const closed = closePane({ openPanes: panes, focusedPaneId }, paneIdFor(activeSourceId));
+        setFocusedPaneId(closed.focusedPaneId);
+        return closed.openPanes;
+      });
+      return;
+    }
+    setOpenPanes((panes) => {
+      const next = openOrFocusPane({ openPanes: panes, focusedPaneId }, id);
+      setFocusedPaneId(next.focusedPaneId);
+      return next.openPanes;
+    });
+  }, [activeSourceId, focusedPaneId]);
+  // Focus a pane (any pane click / selection routes here first — focus-follows-pane).
+  const focusPaneById = useCallback((paneId: string) => {
+    setOpenPanes((panes) => {
+      const next = focusPane({ openPanes: panes, focusedPaneId }, paneId);
+      setFocusedPaneId(next.focusedPaneId);
+      return next.openPanes;
+    });
+  }, [focusedPaneId]);
   const [renderedHtml, setRenderedHtml] = useState("");
   const [anchors, setAnchors] = useState<AnyAnchor[]>([]);
   const [notes, setNotes] = useState<NoteRecord[]>([]);
@@ -886,7 +928,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     try {
       const response = await entityClient.sources();
       setSources(response.sources);
-      setActiveSourceId((current) => current || response.sources[0]?.id || "");
+      // DELTA 1 (F1 build spec): the first-load default-source auto-open. The old
+      // `setActiveSourceId((current) => current || sources[0]?.id)` functional updater
+      // can't run against the plain-string shim; express the same intent explicitly —
+      // if NO pane is open yet, open one for the first source.
+      const firstSourceId = response.sources[0]?.id;
+      if (firstSourceId) {
+        setOpenPanes((panes) => {
+          if (panes.length > 0) return panes;
+          const next = openOrFocusPane({ openPanes: panes, focusedPaneId: "" }, firstSourceId);
+          setFocusedPaneId(next.focusedPaneId);
+          return next.openPanes;
+        });
+      }
       setStatus("idle");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load sources");
