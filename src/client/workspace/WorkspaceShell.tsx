@@ -38,6 +38,9 @@ import {
 //   ./layerViews     → layer.switcher (the V2 Study Layer pane)
 //   ./practiceViews  → practice (the Textbook Learning layout's bottom panel)
 import "./views";
+//   ./SourceTabs     → source.tabs (F1 P-A1: the multi-document reader host — tab strip
+//                      over the open panes + the focused pane's body)
+import "./SourceTabs";
 import "./conceptViews";
 import "./layerViews";
 //   ./bookmarkViews  → bookmark.list (the Bookmark V1 jump strip)

@@ -50,7 +50,13 @@ export const studyVaultLayout: WorkspaceLayout = {
   name: "Study Vault",
   mode: "dock",
   nodes: [
-    ...threePane.nodes,
+    // The center reader leaf becomes the F1 multi-document host (source.tabs) — a tab strip
+    // over the open panes + the focused pane's body. threePane keeps the plain source.viewer
+    // (single tab). The nodeId stays "source-viewer" so the shell's center-slot swap
+    // (onboarding) + persisted sizes keep resolving.
+    ...threePane.nodes.map((node) =>
+      node.id === "source-viewer" ? { ...node, kind: "source.tabs" } : node
+    ),
     // The tabbed right sidebar (Anchor / Page Anchors / Layers / AI Chat).
     { id: "right-tabs", kind: "right.tabs" },
     // The Anchor excerpt section — now a tab inside right.tabs (still listed so the tab

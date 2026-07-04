@@ -9,7 +9,7 @@
 // Client-backed) — never with each other. Importing the plugins module runs the
 // `registerView` calls below.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -272,7 +272,20 @@ function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
 
 // —— source.viewer → the `.reader-panel` main: header + the active source's reader.
 // The per-surface reader if/else lives in `readerForSource`, not here.
-function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
+//
+// F1 (P-A1): `tabStrip` (default: the built-in single tab) lets the multi-pane host
+// (SourceTabs) supply its OWN per-pane strip, rendered in the SAME `.reader-header >
+// .reader-tabs` slot so the DOM structure is unchanged. When a preset docks `source.viewer`
+// directly (threePane / student), it renders the built-in single `.reader-tab` chrome
+// (byte-identical to before F1).
+function SourceViewerView({
+  ctx,
+  tabStrip
+}: {
+  ctx: WorkspaceContext;
+  /** Multi-pane host override for the `.reader-tabs` strip; omit for the single tab. */
+  tabStrip?: ReactNode;
+}) {
   const {
     activeSource,
     anchors,
@@ -291,31 +304,36 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
     forkActiveSource
   } = ctx;
 
+  // The built-in single-document tab (file icon + title + close) — the pre-F1 chrome.
+  const singleTabStrip = (
+    <div className="reader-tabs" role="tablist">
+      {activeSource ? (
+        <div className="reader-tab active" role="tab" aria-selected="true">
+          <FileText size={14} className="reader-tab-icon" />
+          <span className="reader-tab-title" title={activeSource.title}>{activeSource.title}</span>
+          <button
+            className="reader-tab-close"
+            type="button"
+            aria-label="Close document"
+            title="Close document"
+            onClick={() => setActiveSourceId("")}
+          >
+            <X size={13} />
+          </button>
+        </div>
+      ) : (
+        <div className="reader-tab reader-tab-empty">
+          <span className="reader-tab-title">Open or import a source</span>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <main className="reader-panel">
       <header className="reader-header">
-        {/* Tab strip — a single document tab (file icon + title + close). */}
-        <div className="reader-tabs" role="tablist">
-          {activeSource ? (
-            <div className="reader-tab active" role="tab" aria-selected="true">
-              <FileText size={14} className="reader-tab-icon" />
-              <span className="reader-tab-title" title={activeSource.title}>{activeSource.title}</span>
-              <button
-                className="reader-tab-close"
-                type="button"
-                aria-label="Close document"
-                title="Close document"
-                onClick={() => setActiveSourceId("")}
-              >
-                <X size={13} />
-              </button>
-            </div>
-          ) : (
-            <div className="reader-tab reader-tab-empty">
-              <span className="reader-tab-title">Open or import a source</span>
-            </div>
-          )}
-        </div>
+        {/* Tab strip — the built-in single tab, or the multi-pane host's per-pane strip. */}
+        {tabStrip ?? singleTabStrip}
 
         {/* Toolbar — ghost icon affordances + the ⋯ overflow holding the kit selector
             and status. Page/zoom controls live in the per-reader body toolbar (PdfReader),
@@ -672,6 +690,9 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
 // `node.params` here.
 registerView({ kind: "library", render: (_node, ctx) => <LibraryView ctx={ctx} /> });
 registerView({ kind: "source.viewer", render: (_node, ctx) => <SourceViewerView ctx={ctx} /> });
+// F1 (P-A1): the multi-pane host owns its own tab strip; export the body so SourceTabs
+// renders it without a second strip.
+export { SourceViewerView };
 registerView({ kind: "study", render: (_node, ctx) => <StudyView ctx={ctx} /> });
 // N6/§D12: the Anchor Focus board as a registered view (a preset MAY dock it directly);
 // the primary entry is the TopBar's Anchor Focus tab → AnchorBoardMount shell overlay.

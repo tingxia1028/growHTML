@@ -358,6 +358,17 @@ export type WorkspaceContextValue = {
   activeSource: SourceRecord | null;
   activeViewer: SourceViewer;
   setActiveSourceId(id: string): void;
+  // —— F1 (P-A1): the open-panes model (multi-document workspace) ——
+  /** Every open reader pane (mirrors the dock's source.viewer leaves). */
+  openPanes: OpenPane[];
+  /** The pane that selection / anchor / source actions target (focus-follows-pane). */
+  focusedPaneId: string;
+  /** Focus an already-open pane (any pane click / selection routes here first). */
+  focusPane(paneId: string): void;
+  /** Close an open pane (the tab-strip × / prune). Collapses to the neighbour's focus. */
+  closePane(paneId: string): void;
+  /** The SourceRecord a pane shows (its node.params.sourceId → the sources list). */
+  sourceForPane(paneId: string): SourceRecord | null;
   loadSources(): Promise<void>;
   deleteSourceItem(sourceId: string, title: string): Promise<void>;
   removeRecentSourceId(sourceId: string): void;
@@ -669,6 +680,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return next.openPanes;
     });
   }, [focusedPaneId]);
+  // Close a pane (tab-strip ×). Focus flips to the neighbour that took its slot.
+  const closePaneById = useCallback((paneId: string) => {
+    setOpenPanes((panes) => {
+      const next = closePane({ openPanes: panes, focusedPaneId }, paneId);
+      setFocusedPaneId(next.focusedPaneId);
+      return next.openPanes;
+    });
+  }, [focusedPaneId]);
   const [renderedHtml, setRenderedHtml] = useState("");
   const [anchors, setAnchors] = useState<AnyAnchor[]>([]);
   const [notes, setNotes] = useState<NoteRecord[]>([]);
@@ -763,6 +782,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     (sources.find((source) => source.id === activeSourceId)?.metadata?.originalPath as string | undefined) ?? undefined;
 
   const activeSource = sources.find((source) => source.id === activeSourceId) ?? null;
+  // The SourceRecord a pane shows — resolve the pane's sourceId against the sources list.
+  const sourceForPane = useCallback(
+    (paneId: string): SourceRecord | null => {
+      const pane = openPanes.find((item) => item.paneId === paneId);
+      return pane ? (sources.find((source) => source.id === pane.sourceId) ?? null) : null;
+    },
+    [openPanes, sources]
+  );
   const recentSources = useMemo(() => {
     const byId = new Map(sources.map((source) => [source.id, source]));
     const ordered = recentSourceIds.map((id) => byId.get(id)).filter((source): source is SourceRecord => !!source);
@@ -2045,6 +2072,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       activeSource,
       activeViewer,
       setActiveSourceId,
+      openPanes,
+      focusedPaneId,
+      focusPane: focusPaneById,
+      closePane: closePaneById,
+      sourceForPane,
       loadSources,
       deleteSourceItem,
       removeRecentSourceId: forgetSourceId,
@@ -2157,6 +2189,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       activeSourceId,
       activeSource,
       activeViewer,
+      openPanes,
+      focusedPaneId,
+      focusPaneById,
+      closePaneById,
+      sourceForPane,
       loadSources,
       deleteSourceItem,
       forgetSourceId,
