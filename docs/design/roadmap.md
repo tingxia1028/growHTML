@@ -15,7 +15,7 @@ One dependency-ordered plan over the six design docs written this cycle. Purpose
 | `managed-ai-credits.md` (+§10) | 托管网关 + 积分 + 月费/AI Group 档位 | G-A · G-B · G-C (external-gated) |
 | `multi-platform.md` | macOS/Android/iOS + 打包发布流水线 (Capacitor 共享核心) | X0 · X1 ✅(Win) · X2 · X3 · X4 |
 | `learner-memory.md` | 分级记忆(短/中长/长期+画像): 机制=core, taxonomy=kit 注册 | MEM-1 · MEM-2 · MEM-3 |
-| `slash-composer.md` | `/类型` 通用生成入口(chat+toolbar, AI/手敲双模, 类型注册表驱动) | SC-0 · SC-1 · SC-2 · SC-3 |
+| `slash-composer.md` | `/类型` 通用生成入口(chat+toolbar, AI/手敲双模, 类型注册表驱动) | **SC-0 ✅ · SC-1 ✅**(SC-1-001, chat 接线+定位 CSS+e2e)· SC-2 · SC-3 |
 | `source-authoring.md` | Library "+"新建(md/html/…)+ 源编辑 + 纯编辑模式 + 补丁 apply 引擎 | **SRC-1 ✅ · SRC-2 ✅**(SRC-12-001)· **SRC-2b ✅** · **SRC-3 ✅**(SRC-3-001, apply 引擎+fork)· SRC-4 |
 | `review-loop.md` | **最小复习环**(环闭合头号任务);掌握度=memory 动词,零新实体。**REV-CORE 后复习环是 CORE**(不再是插件,kit-flatten-and-core-review.md §1) | REV-1 ✅ · REV-2 ✅ · **REV-3 ✅**(REV-3-001, SRS 调度)· REV-CORE ✅ |
 | `marketplace-hosted.md` | 托管市场(web 门面+客户端安装):笔记市场=svpack 服务器层、插件市场=**纯数据插件**;`CatalogSource` 接口约定 | MH-0 ✅(骑 M1)· MH-1 · MH-2 · MH-3(P3) |
@@ -134,7 +134,7 @@ Rule: a task is buildable only when its spec (a) lives in a design doc, (b) is *
 |---|---|---|---|
 | svpack **C**(dialogs)/**D**(e2e) | studypack-sharing.md §5–§7 | ✅ server+watermark shipped (`9e38428`,`81992ea`,`1a8d036`) | n/a (crypto = node built-ins, decided) |
 | Market **M1**(+F4/F5)/**M2**/**M3** | plugin-viewer-model.md §8 | ✅ (activation gate, `seedCorePlugin`, registries cited) | n/a |
-| Subject **M-A**/**M-B**/**M-C** | subject-kits.md | ✅ (composer/type-registry paths) | ⚠️ **M-B: KaTeX 选型未调研**(唯一新 UI 依赖 — bundle/SSR/CJK,做 M-B 前先查) |
+| Subject **M-A**/**M-B**/**M-C** | subject-kits.md | **M-A ✅ · M-B ✅** (核实 2026-07-04 — formula/vocab/timeline + KaTeX 懒 chunk 77.46kB gzip + FLAT-1 能力组;M-B-001 验证) · M-C pending | KaTeX 选型 RESOLVED(ADOPTED,懒 chunk 零主包成本);M-C = 剩余 8 类型 + 语文/理化生组 + 导入提示,市场 M3 |
 | **N1**(D2+D5)/**N2**(D4+D3)/**N3**(D6)/**N4** | note-presentation-unified.md §1–§9 | ✅ (e.g. `GenerationPreview`@views.tsx:492, CardGeom) | n/a |
 | **N5**(D10+D11)/**N6**(D12 board) | note-presentation-unified.md §10 | ✅ (localStorage geom, TopBar 3-way, F7 axis) | n/a |
 | **P-A1**(≡F1)/**P-A2**/**P-B**/**P-C1**/**P-C2** | multidoc-and-concepts.md | ✅ (DockNode shape, 46 activeSource refs) | n/a |
@@ -147,7 +147,7 @@ Rule: a task is buildable only when its spec (a) lives in a design doc, (b) is *
 | **G-A/B/C** managed | managed-ai-credits.md (+§10) | ✅ G-A1 shipped `358c126`; G-A2 in flight | ✅ in-doc(dated, re-verify flags): DeepSeek/千帆定价·微信Native/支付宝·合规;✅ 2026-07: one-api/new-api (§10.4);⚠️ **周期扣款(自动续费)个体工商户资质未验** — V2 前必须验 |
 | **X0–X4** multi-platform | multi-platform.md | ✅ (no packager confirmed; StorageAdapter seam; node-dep audit table; entityClient seam) | ✅ approach research'd (Capacitor vs nodejs-mobile vs thin-client); ⚠️ 商店合规细节(软著/ICP流程)到 X3 再展开;Apple Developer 账号 = user to-do |
 | **MEM-1/2/3** learner memory | learner-memory.md | ✅ MEM-1 shipped `44acb3f` (capture+guard); runCommand choke point; export-safety structural | n/a — fully local; V1 deterministic (no LLM); privacy invariants specified |
-| **SC-0/1/2/3** slash composer | slash-composer.md | ✅ ("Type / for commands" placeholder exists UNIMPLEMENTED views.tsx:505; createDefault() = manual seed; declared-form generation + preview loop shipped; SC-1 gated on contended views.tsx) | n/a — pure composition of shipped substrate; pinyin lib decision at SC-3 |
+| **SC-0/1/2/3** slash composer | slash-composer.md | **SC-0 ✅ · SC-1 ✅ shipped (SC-1-001)** — `/` palette in the AI-chat composer, AI/manual dispatch, both route through `getNoteType().render/edit`, e2e green (wiring landed with N1b/02c0476; SC-1-001 finished the `.chat-slash-palette` positioning CSS + e2e); **SC-2** (toolbar surfaces) / **SC-3** (operations in palette, pinyin, kit/memory ranking, marketplace effective-installed source) remain | n/a — pure composition of shipped substrate; pinyin lib now available (SEARCH-2's pinyin-pro) for SC-3 |
 | **SRC-1/2/3/4** source authoring | source-authoring.md | ✅ (create paths + ingestSource(markdown) exist; patch schema FULLY DESIGNED core/schema/patch.ts but apply engine never built — grep-verified; grapesjs a zero-usage dep; matched/fuzzy/unmatched projection exists; X0a services landed `b0913c4` — update-source builds on them) | n/a — conflicts identified in-doc (anchors re-project by quote/context, contentHash→svpack warning via publish ledger); GrapesJS bundle decision at SRC-4 |
 | **REV-1/2/3** review loop | review-loop.md | ✅ (all parts exist: mistake/quiz/flashcard/review-pack types, declared-form gen+preview, note.review verb in MEM-1's enum, view registry; NEW = 1 view + 3 operations + queue policy fn — zero entities/schema changes) | n/a — pure composition; SRS = later policy swap; REV-2 depends on MEM-2 digests |
 | **MH-0/1/2/3** hosted marketplace | marketplace-hosted.md | ✅ substrate inventory (svpack trust chain shipped `1a1bf27`; G-gateway auth/ledger/payments shipped `bf7dcb2`; contentTypes summary in packs; Kit&Plugin manager = M1 territory); `CatalogSource` contract pinned in-doc §5 — **MH-0 ✅ `cfcc48c`** | ⚠️ Apple IAP policy detail + ICP/UGC obligations to re-verify at MH-1 time (P3 — user defers V1); WeChat Pay real adapter rides the G license chain |

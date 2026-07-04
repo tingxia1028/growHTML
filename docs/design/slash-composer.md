@@ -60,9 +60,12 @@ also dissolves the "11 subject types would need 11 buttons" problem (M-B synergy
 - **SC-0 — engine + component (parallel-safe NOW, new files only):** parse/resolve/rank engine
   (pure, unit-tested) + `<SlashPalette>` component + additive `title/aliases` on the client type
   registry + Chinese aliases for the built-in types. No contended files.
-- **SC-1 — chat wiring:** hook into the composer (`views.tsx` — **reader-session-contended**,
-  same gate as A3b/G-A3b) + AI/manual dispatch + e2e (`/quiz` → draft previews → save renders
-  via adaptive contract).
+- **SC-1 — chat wiring:** ✅ SHIPPED (2026-07-04, SC-1-001). Palette mounted in the AI-chat
+  composer, AI/manual dispatch live, e2e green (`/` → pick type → generate → preview → save;
+  bare `/quiz` → manual editor; both route only through `getNoteType().render/edit`). NOTE: the
+  `views.tsx` wiring + `openManualEditor` actually landed with N1b (02c0476, "slash 集成保留");
+  SC-1-001 completed the missing `.chat-slash-palette` positioning CSS (it was rendering inline
+  and shoving the textarea) + the e2e.
 - **SC-2 — toolbar surfaces:** selection toolbar + anchor/bottom bar mounts (+ anchor-context
   materialization).
 - **SC-3 — breadth:** operations in the palette, pinyin matching, kit/memory ranking,

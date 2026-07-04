@@ -525,3 +525,12 @@ In-app multi-tab web reading (B): all link clicks open a new tab; each tab is it
 - **N5-001 笔记钉住+位置持久化+导出(D10)· 全隐藏(D11)(commit 7623b73):** D10:CardGeom 加 open 态;pin/un-pin/dismiss 持久化进 per-anchor localStorage 记录(锚点相对偏移——窄/分屏也不飘);restorePinnedNoteCards 在 DOM + 客座两域重绘时重钉。additive 可选 note.display schema 字段=未来 vault/svpack 携带钩子(零迁移)。导出=客户端 buildNotesExport → 可回灌 JSON + 人读 markdown(📌 标钉住),经 svpack blob 惯用法。D11:realm-local 全隐藏 store 全源遮蔽卡片/笔记芯片而保留锚点符号(N1a 开关的镜像),共享卡片+边栏+MarkerOverlay 机制,客座经 WebAnchorPrefs.notesHidden 对等;per-source 设备本地持久化。与 N1a per-anchor 开关 + N1b 开卡避让正确复合,无回归。
 - **SEARCH-2-001 模糊 + 过滤 + 最近 + 拼音(commit 74d8f13):** 模糊层 RANK_FUZZY=4 additive,严格低于 substring(Latin 有界编辑距离 + 子序列;CJK 仍 substring,§2);SEARCH-1 四层字节稳定。family/type/source/date 过滤经共享 parseSearchFilters(路由 + directTransport 对等;空过滤=SEARCH-1 字节一致)+ 双语 family 芯片条。localStorage recents 领衔空态面板。**拼音零新增依赖**——复用 SPEECH-3 已进的 pinyin-pro;src/core/search/pinyin.ts 罗马化 CJK 标题(全拼 + 首字母),roman 查询在 RANK_FUZZY 落于所有字面层之后。路线图"pinyin lib decision rides SC-3"就此解决。
 - 遗留(follow-up):note.display 随 .svpack 传出需改 pack.ts portableNoteSchema + note create/update 服务(N5 只落了 schema 字段 + 客户端持久化 + 客户端导出);SEARCH-2 contentType/source/date 过滤服务端已就绪、面板 UI V1 只出 family 芯片条(type picker 需笔记类型注册表,留 follow-up)。
+
+## 2026-07-04 - SC-1-001 内联 `/类型` 通用生成作曲器 · chat 接线 (slash-composer.md §5, commit ba19e12)
+
+SC-1 = chat wiring:把 SC-0 已发的 slash 引擎/palette 接进 AI-chat 作曲器。发现 N1b(02c0476)已把 views.tsx 的接线连同 openManualEditor 一起落地("slash 作曲器集成保留"),两处缺口未收尾:(a) `.chat-slash-palette` 定位 CSS 完全缺失——palette 作为 flex 子项内联把 textarea 顶下去;(b) e2e 从未写。本波补齐这两处,SC-1 才真正兑现 "Type / for commands" 历史占位。
+- CSS(scoped, styles.css +20):`.chat-composer-bar` 加 position:relative;`.chat-slash-palette` position:absolute + bottom:calc(100%+6px) 抬出 flex 流、贴作曲器底边向上生长。零新组件、零 views.tsx 改动。
+- 复用而非重造:parseSlashInput/resolveSlashEntries + slashEntriesFromNoteTypes(只读类型注册表)+ SlashPalette/slashPaletteKeyDown,与 FloatingNoteEditor 同一 slash 惯用法——无第二作曲器。
+- 双模一流:bare `/quiz` → openManualEditor(createDefault 种子)进 D5 浮动编辑器手敲;`/type+指令` → note.generate-block 表单路由(模型选型填型)→ GeneratedDraft 停进同一浮动编辑器 → Save。生成与手敲都只经 getNoteType().render/edit(§0.5 无旁路)。
+- 同波 M-B 核实为**早已 ship**(2026-07-02,公式/词汇/时间线学科类型 + KaTeX 懒加载 + FLAT-1 能力组已 commit),代理跑全验证零改动,不重复造轮子。
+- Gates:tsc 0 · vitest 208/2168 · build ✓ · 新 e2e/slash-composer.spec.ts 1 passed。

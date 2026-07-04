@@ -689,3 +689,8 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 | SEARCH-2-001 | 过滤+最近 | npx vitest run src/client/search/searchFilters.test.ts src/client/search/searchRecents.test.ts src/client/search/globalSearch.test.tsx | 过滤收窄+空过滤=SEARCH-1 对等;recents 往返;面板 family 芯片 | passed | Passed |
 | SEARCH-2-001 | e2e | npx playwright test e2e/search-filters.spec.ts | 过滤收窄 family、拼音命中 CJK 源、recents 一键重搜 | 1 passed | Passed |
 | SRC-3+N5+SEARCH-2 | 合并树 | npm run check · npx vitest run · npm run build · electron:build:webview-preload | 全绿 | tsc 0 · 208 文件/2168 用例 · build ✓ · preload 51.2kb | Passed |
+| 2026-07-04 | SC-1-001 | npm run check | tsc 0 errors | Passed |
+| 2026-07-04 | SC-1-001 | npx vitest run(全量) | 208 文件 / 2168 用例(基线) | Passed |
+| 2026-07-04 | SC-1-001 | slash 域(slash/ + slashComposer.test.tsx) | 4 文件 / 45 用例 | Passed |
+| 2026-07-04 | SC-1-001 | npx playwright test e2e/slash-composer.spec.ts | `/`→palette(markdown/quiz 在、hidden bookmark 不在)→ bare /quiz manual → /markdown 生成预览 → Save 落库 | 1 passed |
+| 2026-07-04 | M-B(核实) | npm run check · npx vitest run · npm run build | M-B 早已 ship;全验证 tsc 0 · 208/2168 · katex 懒 chunk 77.46kB gzip 主包零静态引用 | Passed(零改动) |
