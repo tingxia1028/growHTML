@@ -186,6 +186,52 @@ describe("chat sessions — rename / delete", () => {
     await request(app).patch(`/api/chat/sessions/chat_${ULID}`).send({ title: "x" }).expect(404);
   });
 
+  it("W2: PATCH sets the FULL attachment set, independent of the title", async () => {
+    const { app } = await makeApp("attach");
+    const created = (
+      await request(app)
+        .post("/api/chat/sessions")
+        .send({ messages: [{ role: "user", content: "q" }], attachments: [{ sourceId: `src_${ULID}` }] })
+    ).body.session;
+    expect(created.attachments).toEqual([{ sourceId: `src_${ULID}`, includeNotes: true }]);
+
+    // Add a second source (full-replace) without touching the title.
+    const other = "01ARZ3NDEKTSV4RRFFQ69G5FAX";
+    const patched = (
+      await request(app)
+        .patch(`/api/chat/sessions/${created.id}`)
+        .send({ attachments: [{ sourceId: `src_${ULID}` }, { sourceId: `src_${other}`, includeNotes: false }] })
+        .expect(200)
+    ).body.session;
+    expect(patched.title).toBe(created.title); // untouched
+    expect(patched.attachments).toEqual([
+      { sourceId: `src_${ULID}`, includeNotes: true },
+      { sourceId: `src_${other}`, includeNotes: false }
+    ]);
+
+    // Remove all (empty set) is a legit write.
+    const cleared = (
+      await request(app).patch(`/api/chat/sessions/${created.id}`).send({ attachments: [] }).expect(200)
+    ).body.session;
+    expect(cleared.attachments).toEqual([]);
+
+    // A bare {} (neither title nor attachments) is rejected 400.
+    await request(app).patch(`/api/chat/sessions/${created.id}`).send({}).expect(400);
+  });
+
+  it("W2: lazy-create — POST with attachments and NO messages creates an empty session carrying them", async () => {
+    const { app } = await makeApp("lazy");
+    const created = (
+      await request(app)
+        .post("/api/chat/sessions")
+        .send({ attachments: [{ sourceId: `src_${ULID}` }] })
+        .expect(201)
+    ).body.session;
+    expect(created.messages).toEqual([]);
+    expect(created.title).toBe(""); // no user turn yet → empty auto title
+    expect(created.attachments).toEqual([{ sourceId: `src_${ULID}`, includeNotes: true }]);
+  });
+
   it("DELETE removes the session; a second delete is 404", async () => {
     const { app } = await makeApp("delete");
     const created = (

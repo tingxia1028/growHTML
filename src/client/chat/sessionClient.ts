@@ -52,6 +52,8 @@ export type ChatSessionIo = {
   append(sessionId: string, messages: ChatMessage[]): Promise<{ session: ChatSessionRecord }>;
   /** PATCH /api/chat/sessions/:id — rename. */
   rename(sessionId: string, title: string): Promise<{ session: ChatSessionRecord }>;
+  /** PATCH /api/chat/sessions/:id — set the FULL attachment set (W2 write path). */
+  setAttachments(sessionId: string, attachments: ChatSessionAttachment[]): Promise<{ session: ChatSessionRecord }>;
   /** DELETE /api/chat/sessions/:id. */
   remove(sessionId: string): Promise<{ ok: true }>;
 };
@@ -65,6 +67,8 @@ const defaultIo: ChatSessionIo = {
   append: (sessionId, messages) =>
     transport.request("POST", `/api/chat/sessions/${sessionId}/messages`, { messages }),
   rename: (sessionId, title) => transport.request("PATCH", `/api/chat/sessions/${sessionId}`, { title }),
+  setAttachments: (sessionId, attachments) =>
+    transport.request("PATCH", `/api/chat/sessions/${sessionId}`, { attachments }),
   remove: (sessionId) => transport.request("DELETE", `/api/chat/sessions/${sessionId}`)
 };
 

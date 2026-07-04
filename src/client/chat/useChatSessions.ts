@@ -26,9 +26,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getChatSessionIo,
   type ChatMessage,
+  type ChatSessionAttachment,
   type ChatSessionRecord,
   type ChatSessionSummary
 } from "./sessionClient";
+
+export type { ChatSessionAttachment } from "./sessionClient";
 
 export type { ChatSessionSummary } from "./sessionClient";
 
@@ -48,6 +51,14 @@ export type ChatSessionsApi = {
   select(sessionId: string): Promise<void>;
   /** Delete a session (the caller confirms); deleting the active one starts fresh. */
   remove(sessionId: string): Promise<void>;
+  // —— W2 attachments (ai-workspace §W2): the session's explicit context set ——
+  /** The active conversation's attachments (the chips the composer renders). */
+  attachments: ChatSessionAttachment[];
+  /** Attach a source (idempotent by sourceId); persists through the FIFO queue,
+      lazily creating the session when attaching BEFORE the first turn. */
+  addAttachment(sourceId: string, includeNotes?: boolean): void;
+  /** Detach a source; persists the remaining set. */
+  removeAttachment(sourceId: string): void;
 };
 
 export type ChatSessionDomain = {
@@ -101,6 +112,12 @@ export function useChatSessionDomain({ activeSourceId }: { activeSourceId?: stri
   const [sessionList, setSessionList] = useState<ChatSessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // W2: the active conversation's attachments (source refs). Loaded on resume/select,
+  // mutated by add/remove, persisted through the same FIFO queue as the turns.
+  const [attachments, setAttachments] = useState<ChatSessionAttachment[]>([]);
+  /** Always-current attachments for the enqueued persist op (avoids stale closures). */
+  const attachmentsRef = useRef<ChatSessionAttachment[]>([]);
+  attachmentsRef.current = attachments;
 
   const tokenRef = useRef<ConversationToken>({ sessionId: null });
   /** How many of `messages` are (queued to be) persisted — the append diff base. */
@@ -132,30 +149,69 @@ export function useChatSessionDomain({ activeSourceId }: { activeSourceId?: stri
     });
   }, []);
 
+  // Attachments to seed a lazily-created session: the EXPLICIT set (chips the user
+  // attached) wins; when none, fall back to the focused source as the §2.1 auto ref.
+  const seedAttachments = useCallback((): ChatSessionAttachment[] => {
+    if (attachmentsRef.current.length > 0) return attachmentsRef.current;
+    return sourceIdRef.current ? [{ sourceId: sourceIdRef.current, includeNotes: true }] : [];
+  }, []);
+
+  // Reflect a just-created session into the panel when it's still the active token.
+  const adoptCreated = useCallback(
+    (token: ConversationToken, session: ChatSessionRecord) => {
+      token.sessionId = session.id;
+      if (tokenRef.current === token) {
+        setActiveSessionId(session.id);
+        setAttachments(session.attachments);
+        storeActiveSession(session.id);
+      }
+      upsertSummary(session);
+    },
+    [upsertSummary]
+  );
+
   /** Persist turns into the token's conversation, creating the session lazily. */
   const persistTurns = useCallback(
     (token: ConversationToken, turns: ChatMessage[]) => {
       if (turns.length === 0) return;
-      const attachments = sourceIdRef.current ? [{ sourceId: sourceIdRef.current, includeNotes: true }] : [];
+      const attachments = seedAttachments();
       enqueue(async () => {
         const io = getChatSessionIo();
         if (!token.sessionId) {
           // First turn of a fresh conversation → create (title auto-derives; the
-          // active source rides along as the §2.1 attachment context ref).
+          // explicit attachments — else the active source — ride along as the §2.1
+          // context set).
           const { session } = await io.create({ messages: turns, attachments });
-          token.sessionId = session.id;
-          if (tokenRef.current === token) {
-            setActiveSessionId(session.id);
-            storeActiveSession(session.id);
-          }
-          upsertSummary(session);
+          adoptCreated(token, session);
           return;
         }
         const { session } = await io.append(token.sessionId, turns);
         upsertSummary(session);
       });
     },
-    [enqueue, upsertSummary]
+    [enqueue, upsertSummary, seedAttachments, adoptCreated]
+  );
+
+  /**
+   * Persist the session's attachment set. LAZY-CREATE: attaching BEFORE the first turn
+   * (no session yet) CREATES an empty session carrying the attachments — the queue only
+   * created in persistTurns before, so this is the create-or-patch trigger W2 adds.
+   * Otherwise it PATCHes the full set (full-replace, like note layerIds).
+   */
+  const persistAttachments = useCallback(
+    (token: ConversationToken, next: ChatSessionAttachment[]) => {
+      enqueue(async () => {
+        const io = getChatSessionIo();
+        if (!token.sessionId) {
+          const { session } = await io.create({ attachments: next });
+          adoptCreated(token, session);
+          return;
+        }
+        const { session } = await io.setAttachments(token.sessionId, next);
+        upsertSummary(session);
+      });
+    },
+    [enqueue, upsertSummary, adoptCreated]
   );
 
   // —— resume-on-mount: the stored last session, else the most recent ——
@@ -185,6 +241,7 @@ export function useChatSessionDomain({ activeSourceId }: { activeSourceId?: stri
         persistedCountRef.current = session.messages.length;
         setActiveSessionId(session.id);
         setMessages(toChatMessages(session));
+        setAttachments(session.attachments);
         storeActiveSession(session.id);
       } catch (error) {
         console.warn("[chat-sessions] resume failed:", error instanceof Error ? error.message : error);
@@ -248,6 +305,7 @@ export function useChatSessionDomain({ activeSourceId }: { activeSourceId?: stri
     persistedCountRef.current = 0;
     setActiveSessionId(null);
     setMessages([]);
+    setAttachments([]);
     storeActiveSession(null);
   }, []);
 
@@ -260,6 +318,7 @@ export function useChatSessionDomain({ activeSourceId }: { activeSourceId?: stri
         persistedCountRef.current = session.messages.length;
         setActiveSessionId(session.id);
         setMessages(toChatMessages(session));
+        setAttachments(session.attachments);
         storeActiveSession(session.id);
         upsertSummary(session);
       } catch (error) {
@@ -267,6 +326,31 @@ export function useChatSessionDomain({ activeSourceId }: { activeSourceId?: stri
       }
     },
     [upsertSummary]
+  );
+
+  // —— W2 attachment ops (optimistic local state + FIFO-queued persistence) ——
+  const addAttachment = useCallback(
+    (sourceId: string, includeNotes = true) => {
+      const token = tokenRef.current;
+      // Idempotent by sourceId: a re-attach updates includeNotes but never duplicates.
+      const next = [
+        ...attachmentsRef.current.filter((item) => item.sourceId !== sourceId),
+        { sourceId, includeNotes }
+      ];
+      setAttachments(next);
+      persistAttachments(token, next);
+    },
+    [persistAttachments]
+  );
+
+  const removeAttachment = useCallback(
+    (sourceId: string) => {
+      const token = tokenRef.current;
+      const next = attachmentsRef.current.filter((item) => item.sourceId !== sourceId);
+      setAttachments(next);
+      persistAttachments(token, next);
+    },
+    [persistAttachments]
   );
 
   const remove = useCallback(
@@ -284,8 +368,17 @@ export function useChatSessionDomain({ activeSourceId }: { activeSourceId?: stri
   );
 
   const sessions = useMemo<ChatSessionsApi>(
-    () => ({ list: sessionList, activeId: activeSessionId, startNew, select, remove }),
-    [sessionList, activeSessionId, startNew, select, remove]
+    () => ({
+      list: sessionList,
+      activeId: activeSessionId,
+      startNew,
+      select,
+      remove,
+      attachments,
+      addAttachment,
+      removeAttachment
+    }),
+    [sessionList, activeSessionId, startNew, select, remove, attachments, addAttachment, removeAttachment]
   );
 
   return useMemo<ChatSessionDomain>(

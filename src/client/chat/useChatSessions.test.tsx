@@ -100,6 +100,20 @@ function stubSessionApi(seed: ChatSessionRecord[] = []) {
       if (single && method === "DELETE") {
         return sessions.delete(single[1]) ? json({ ok: true }) : json({ error: "not found" }, 404);
       }
+      if (single && method === "PATCH") {
+        const session = sessions.get(single[1]);
+        if (!session) return json({ error: "Chat session not found" }, 404);
+        const next = {
+          ...session,
+          ...(body.title !== undefined ? { title: body.title as string } : {}),
+          ...(body.attachments !== undefined
+            ? { attachments: body.attachments as ChatSessionRecord["attachments"] }
+            : {}),
+          updatedAt: T2
+        };
+        sessions.set(next.id, next);
+        return json({ session: next });
+      }
       const append = /^\/api\/chat\/sessions\/([^/]+)\/messages$/.exec(url);
       if (append && method === "POST") {
         const session = sessions.get(append[1]);
@@ -320,5 +334,91 @@ describe("useChatSessionDomain — switch and delete", () => {
     expect(calls.filter((call) => call === "POST /api/chat/sessions")).toHaveLength(1);
     expect(domain.sessions.activeId).toBe("chat_created_1");
     expect(domain.sessions.list.map((s) => s.id)).toEqual(["chat_created_1", "chat_a"]);
+  });
+});
+
+// —— W2 attachments ————————————————————————————————————————————————————————————
+
+describe("useChatSessionDomain — attachments (W2)", () => {
+  it("loads a resumed session's attachments into state", async () => {
+    stubSessionApi([
+      {
+        ...makeSession("chat_a", "a", T2, [{ role: "user", content: "x", ts: T1 }]),
+        attachments: [{ sourceId: "src_1", includeNotes: true }]
+      }
+    ]);
+    cleanup = mount(<Probe />).cleanup;
+    await flush();
+    expect(domain.sessions.attachments).toEqual([{ sourceId: "src_1", includeNotes: true }]);
+  });
+
+  it("addAttachment on a LIVE session updates state and PATCHes the full set", async () => {
+    const { calls, sessions } = stubSessionApi([
+      makeSession("chat_a", "a", T2, [{ role: "user", content: "x", ts: T1 }])
+    ]);
+    cleanup = mount(<Probe />).cleanup;
+    await flush(); // active = chat_a (no attachments)
+    act(() => domain.sessions.addAttachment("src_1"));
+    // Optimistic local state updates immediately.
+    expect(domain.sessions.attachments).toEqual([{ sourceId: "src_1", includeNotes: true }]);
+    await flush();
+    expect(calls).toContain("PATCH /api/chat/sessions/chat_a");
+    expect(sessions.get("chat_a")!.attachments).toEqual([{ sourceId: "src_1", includeNotes: true }]);
+  });
+
+  it("addAttachment is idempotent by sourceId; removeAttachment persists the remainder", async () => {
+    const { sessions } = stubSessionApi([makeSession("chat_a", "a", T2, [{ role: "user", content: "x", ts: T1 }])]);
+    cleanup = mount(<Probe />).cleanup;
+    await flush();
+    act(() => domain.sessions.addAttachment("src_1"));
+    act(() => domain.sessions.addAttachment("src_2"));
+    act(() => domain.sessions.addAttachment("src_1", false)); // re-attach updates flag, no dup
+    await flush();
+    expect(domain.sessions.attachments).toEqual([
+      { sourceId: "src_2", includeNotes: true },
+      { sourceId: "src_1", includeNotes: false }
+    ]);
+    act(() => domain.sessions.removeAttachment("src_2"));
+    await flush();
+    expect(domain.sessions.attachments).toEqual([{ sourceId: "src_1", includeNotes: false }]);
+    expect(sessions.get("chat_a")!.attachments).toEqual([{ sourceId: "src_1", includeNotes: false }]);
+  });
+
+  it("LAZY-CREATE: attaching BEFORE the first turn creates an empty session carrying the attachment", async () => {
+    const { calls, sessions } = stubSessionApi([]);
+    cleanup = mount(<Probe />).cleanup;
+    await flush();
+    expect(domain.sessions.activeId).toBeNull(); // no session yet
+    act(() => domain.sessions.addAttachment("src_1"));
+    await flush();
+    // The queue CREATED an empty session carrying the attachment (create-or-patch trigger).
+    expect(calls.filter((call) => call === "POST /api/chat/sessions")).toHaveLength(1);
+    expect(domain.sessions.activeId).toBe("chat_created_1");
+    const created = sessions.get("chat_created_1")!;
+    expect(created.messages).toEqual([]);
+    expect(created.attachments).toEqual([{ sourceId: "src_1", includeNotes: true }]);
+
+    // A subsequent turn APPENDS to the lazily-created session (no duplicate create).
+    act(() => domain.recordHistory([{ role: "user", content: "now ask" }]));
+    await flush();
+    expect(calls.filter((call) => call === "POST /api/chat/sessions")).toHaveLength(1);
+    expect(calls[calls.length - 1]).toBe("POST /api/chat/sessions/chat_created_1/messages");
+  });
+
+  it("attach-then-first-turn: the turn's lazy create carries the EXPLICIT attachment (wins over the focused source)", async () => {
+    const { sessions } = stubSessionApi([]);
+    // The focused source is src_focus, but the user explicitly attached src_explicit.
+    cleanup = mount(<Probe sourceId="src_focus" />).cleanup;
+    await flush();
+    act(() => domain.sessions.addAttachment("src_explicit"));
+    // First turn races with the attachment persist; both bind the same token, only one creates.
+    act(() => domain.recordHistory([{ role: "user", content: "q" }]));
+    await flush();
+    const created = sessions.get("chat_created_1")!;
+    // The created session carries the EXPLICIT attachment set — not the focused-source auto ref.
+    expect(created.attachments.map((a) => a.sourceId)).toEqual(["src_explicit"]);
+    expect(created.messages.map((m) => m.content)).toEqual(["q"]);
+    // Exactly ONE session was created (no double-create despite two queued ops).
+    expect([...sessions.keys()]).toEqual(["chat_created_1"]);
   });
 });

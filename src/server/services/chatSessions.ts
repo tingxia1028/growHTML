@@ -39,9 +39,18 @@ export const createChatSessionRequestSchema = z.object({
 });
 export type CreateChatSessionInput = z.infer<typeof createChatSessionRequestSchema>;
 
-export const updateChatSessionRequestSchema = z.object({
-  title: z.string().min(1)
-});
+// PATCH body: W1 accepted only `title`; W2 (ai-workspace §W2) adds the REAL attachments
+// write path — either/both fields may be present, at least one must be (a bare {} is a
+// no-op the caller never sends). `attachments` REPLACES the session's set (the client
+// sends the resulting array after add/remove — same full-replace idiom as note layerIds).
+export const updateChatSessionRequestSchema = z
+  .object({
+    title: z.string().min(1).optional(),
+    attachments: z.array(chatSessionAttachmentSchema).optional()
+  })
+  .refine((input) => input.title !== undefined || input.attachments !== undefined, {
+    message: "chat session update requires title or attachments"
+  });
 export type UpdateChatSessionInput = z.infer<typeof updateChatSessionRequestSchema>;
 
 export const appendChatMessagesRequestSchema = z.object({
@@ -111,7 +120,14 @@ export async function updateChatSession(
   input: { sessionId: string } & UpdateChatSessionInput
 ): Promise<ChatSessionRecord> {
   const session = await getChatSession(deps, input);
-  const next = chatSessionSchema.parse({ ...session, title: input.title.trim(), updatedAt: nowIso(deps) });
+  const next = chatSessionSchema.parse({
+    ...session,
+    // Each field patches only when present (W2: attachments write path rides beside the
+    // W1 rename); at least one is present (the schema refine).
+    ...(input.title !== undefined ? { title: input.title.trim() } : {}),
+    ...(input.attachments !== undefined ? { attachments: input.attachments } : {}),
+    updatedAt: nowIso(deps)
+  });
   await deps.vault.stores.chatSessions.upsert(next);
   return next;
 }

@@ -36,7 +36,7 @@ export function registerChatRoutes(app: Express, deps: ChatSessionsDeps): void {
     }
   });
 
-  // Rename (title) — the only PATCHable field in W1.
+  // PATCH: rename (title, W1) and/or set attachments (W2) — the merge is field-wise.
   app.patch("/api/chat/sessions/:sessionId", async (req, res, next) => {
     try {
       const input = chatSessionsService.updateChatSessionRequestSchema.parse(req.body);

@@ -67,6 +67,9 @@ function makeApi(overrides: Partial<ChatSessionsApi> = {}): ChatSessionsApi {
     startNew: vi.fn(),
     select: vi.fn().mockResolvedValue(undefined),
     remove: vi.fn().mockResolvedValue(undefined),
+    attachments: [],
+    addAttachment: vi.fn(),
+    removeAttachment: vi.fn(),
     ...overrides
   };
 }
