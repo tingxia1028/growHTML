@@ -229,7 +229,10 @@ export function DomReader({
   // onLoad (fresh document) and re-runnable for the initial paint.
   function bindFrame() {
     const doc = frameRef.current?.contentDocument;
-    if (!doc) return;
+    // A srcDoc swap can transiently expose a replacement document with no body yet;
+    // mounting the annotation surface on it would hand MarkerOverlay a null host
+    // (observeDomLayout crash). The loaded document re-enters through onLoad.
+    if (!doc || !doc.body) return;
     surfaceForDoc(doc).adapter.paint(anchors);
     // A reveal may have been requested before this fresh document painted (effect
     // ran first) — now that the data-sv-key elements exist, honor the pending one.
@@ -290,7 +293,9 @@ export function DomReader({
   // changes — so toggling Floating ↔ Margin re-decorates this surface immediately.
   useEffect(() => {
     const doc = frameRef.current?.contentDocument;
-    if (doc) surfaceForDoc(doc).adapter.paint(anchors);
+    // Same transitional-document guard as bindFrame: a mid-swap document with no
+    // body must not get a surface (null overlay host); onLoad paints the real one.
+    if (doc && doc.body) surfaceForDoc(doc).adapter.paint(anchors);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anchors, srcDoc, mode]);
 

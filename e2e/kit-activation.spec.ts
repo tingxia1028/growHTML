@@ -8,7 +8,7 @@ import { openReaderMenu } from "./helpers";
 // previously created Study Block STILL renders (rendering is never gated). Switching
 // back restores the toolbar. Proves activation gates creation only, per-source.
 
-const SERVER = "http://127.0.0.1:4177";
+import { SERVER } from "./harness";
 const READER = 'iframe[title="Source reader"]';
 
 async function seedHtmlSource(request: APIRequestContext, title: string, body: string) {
@@ -19,7 +19,7 @@ async function seedHtmlSource(request: APIRequestContext, title: string, body: s
 
 async function openSource(page: Page, title: string) {
   await page.goto("/");
-  await page.locator(".source-item-open", { hasText: title }).click();
+  await page.locator(".source-item-open", { hasText: title }).first().click();
   await expect(page.locator(".reader-tab-title")).toHaveText(title);
 }
 

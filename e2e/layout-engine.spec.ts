@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
-const SERVER = "http://127.0.0.1:4177";
+import { SERVER } from "./harness";
 
 async function seedHtmlSource(request: APIRequestContext, title: string, body: string) {
   const res = await request.post(`${SERVER}/api/sources/html`, { data: { title, content: body } });

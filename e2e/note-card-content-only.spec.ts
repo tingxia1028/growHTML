@@ -7,9 +7,9 @@ import { expect, test, type APIRequestContext } from "@playwright/test";
 // coming back). Also asserts the anchor+type MARKER chip paints in the view-layer
 // overlay for the HTML reader (a sibling of the iframe body, not injected into content).
 //
-// Run: npm run e2e  (Playwright boots dev:server 4177 + dev:client 5173.)
+// Run: npm run e2e  (Playwright boots its own server+client on dedicated e2e ports — e2e/harness.ts.)
 
-const SERVER = "http://127.0.0.1:4177";
+import { SERVER } from "./harness";
 const READER = 'iframe[title="Source reader"]';
 
 async function seedHtmlSource(request: APIRequestContext, title: string, body: string) {
@@ -40,13 +40,15 @@ test("HTML note card is content-only (no chrome) and paints a view-layer marker"
   await seedAnchoredNote(request, source.id, passage, noteText);
 
   await page.goto("/");
-  await page.locator(".source-item-open", { hasText: title }).click();
+  await page.locator(".source-item-open", { hasText: title }).first().click();
   await expect(page.locator(".reader-tab-title")).toHaveText(title);
 
   const reader = page.frameLocator(READER);
 
-  // Ensure floating (Document) mode so the hover card is the one under test.
-  await page.locator(".topbar-tab", { hasText: "Document" }).click();
+  // Old→new: the floating ("Document") mode is gone — the TopBar tab was removed and
+  // annotationMode is pinned to "margin" (the overlay IS the document, 2026-07-04).
+  // The in-reader presentation under test is therefore the persistent GUTTER card,
+  // which renders the same sanctioned content-only note body the hover card did.
 
   // The seeded note paints as a highlight on the passage.
   const annotated = reader.locator(".sv-annotated", { hasText: "anchored passage" }).first();
@@ -57,19 +59,18 @@ test("HTML note card is content-only (no chrome) and paints a view-layer marker"
   await expect(reader.locator(".sv-marker-overlay")).toHaveCount(1);
   await expect(reader.locator(".sv-marker-overlay .sv-anchor-markers").first()).toBeAttached();
 
-  // Hover the passage → the floating note card shows.
-  await annotated.hover();
-  const card = reader.locator("#sv-note-card.sv-note-card-show");
+  // The margin (gutter) card for the seeded note is laid out by default.
+  const card = reader.locator("#sv-margin-layer .sv-margin-note").first();
   await expect(card).toBeVisible();
 
   // CONTENT-ONLY: the sanctioned note body renders (the note text is present)...
   await expect(card).toContainText("ReLAX keeps the raw hit distance");
-  await expect(reader.locator("#sv-note-card .sv-note-content")).toHaveCount(1);
+  await expect(card.locator(".sv-note-content")).toHaveCount(1);
 
   // ...and NONE of the old chrome (title bar / grip / close / type badge / footer) is present.
   await expect(
-    reader.locator(
-      "#sv-note-card .sv-note-card-bar, #sv-note-card .sv-note-card-grip, #sv-note-card .sv-note-card-close, #sv-note-card .sv-card-type, #sv-note-card .sv-card-more, #sv-note-card .sv-card-footer"
+    card.locator(
+      ".sv-note-card-bar, .sv-note-card-grip, .sv-note-card-close, .sv-card-type, .sv-card-more, .sv-card-footer"
     )
   ).toHaveCount(0);
 

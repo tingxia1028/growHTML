@@ -16,7 +16,7 @@ import { openConcepts } from "./helpers";
 // library/reader/study panels are untouched, so the 16 existing e2e keep their
 // original selectors.
 
-const SERVER = "http://127.0.0.1:4177";
+import { SERVER } from "./harness";
 
 async function seedHtmlSource(request: APIRequestContext, title: string, body: string) {
   const res = await request.post(`${SERVER}/api/sources/html`, { data: { title, content: body } });

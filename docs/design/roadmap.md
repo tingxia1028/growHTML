@@ -73,6 +73,7 @@ Concept P-C1 (aggregation page, additive to existing API) ──> P-C2 (graph vi
 - **Concept P-C1** — extends the passage-blind `GET /api/concepts/:id` + `ConceptInspector`. Additive.
 
 ## Debts to clear (each doc surfaced these; fold into the phase that touches them)
+- ~~**e2e harness leak** — the suite ran on the dev ports against a repo-side vault (historically `reuseExistingServer` seeded the REAL `data/vault`).~~ **✅ REPAID 2026-07-04 (E2E-DEBT-001)**: dedicated ports 14177/15173 + per-run OS-temp vault (`e2e/harness.ts` + global setup/teardown), `reuseExistingServer:false` kept; full web suite reconciled to today's UI and GREEN (29 passed / 24 pre-existing skips / 0 failed). Remaining: `e2e-electron` still targets the pre-R1 shell (red, separate pass); the 24 `test.skip`s await their product decisions.
 - **`activation.ts` single-active-kit gate** defaults to one kit (`textbook-learning`) and gates *creation* → "other types stay available" is false until the composer sources from effective-installed. **→ M1.**
 - **plugin==kit 1:1** — `clientContext.tsx` registers one PluginRecord per kit; split textbook into real plugins so kit `members[]` resolve. **→ M1.**
 - **`seedCorePlugin()` over-claims** — flashcard/quiz/bookmark/diagrams filed under synthetic `"core"`; each needs its own `pluginId`. **→ M1.**

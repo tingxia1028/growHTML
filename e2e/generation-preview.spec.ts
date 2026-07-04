@@ -8,7 +8,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 // be Regenerated (still pending, nothing new saved) and Discarded (preview gone, count
 // unchanged). Proves nothing crosses into `.note-list` until Save.
 
-const SERVER = "http://127.0.0.1:4177";
+import { SERVER } from "./harness";
 const READER = 'iframe[title="Source reader"]';
 
 async function seedHtmlSource(request: APIRequestContext, title: string, body: string) {
@@ -19,7 +19,7 @@ async function seedHtmlSource(request: APIRequestContext, title: string, body: s
 
 async function openSource(page: Page, title: string) {
   await page.goto("/");
-  await page.locator(".source-item-open", { hasText: title }).click();
+  await page.locator(".source-item-open", { hasText: title }).first().click();
   await expect(page.locator(".reader-tab-title")).toHaveText(title);
 }
 

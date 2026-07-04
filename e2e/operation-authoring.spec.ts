@@ -19,7 +19,7 @@ import { openOperations } from "./helpers";
 //   5. BUILT-IN PARAM: filling a built-in's placeholder param (grade) persists to
 //      operation-prefs.json (verified via the API).
 
-const SERVER = "http://127.0.0.1:4177";
+import { SERVER } from "./harness";
 const READER = 'iframe[title="Source reader"]';
 const PASSAGE = "Osmosis is the diffusion of water across a membrane.";
 
@@ -31,7 +31,7 @@ async function seedHtmlSource(request: APIRequestContext, title: string, body: s
 
 async function openSource(page: Page, title: string) {
   await page.goto("/");
-  await page.locator(".source-item-open", { hasText: title }).click();
+  await page.locator(".source-item-open", { hasText: title }).first().click();
   await expect(page.locator(".reader-tab-title")).toHaveText(title);
 }
 

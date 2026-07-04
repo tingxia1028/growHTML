@@ -20,7 +20,7 @@ import { openLayers, openNotesTab } from "./helpers";
 //   (c) moving a note 预习→复习 (API) makes visibility follow the enabled-layer filter
 //   (d) an anchor STOPS painting (.sv-annotated) when its note's only layer is disabled
 
-const SERVER = "http://127.0.0.1:4177";
+import { SERVER } from "./harness";
 const READER = 'iframe[title="Source reader"]';
 
 async function seedHtmlSource(request: APIRequestContext, title: string, body: string) {
@@ -63,30 +63,40 @@ function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-// Open a source by its globally-unique id, then surface the Layers pane + expand the
-// right-sidebar Notes fold (collapsed by default) so both the filter and the note list
-// are visible.
+// Open a source by its globally-unique id. Layers and Notes are now TABS in the SAME
+// right-sidebar group (RightSidebarTabs) — only one shows at a time, so each step below
+// activates the tab it needs (setLayerFilter → Layers; the note-row expectations → Notes)
+// instead of the old two-always-on-panes assumption.
 async function openSource(page: Page, source: { id: string; title: string }) {
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).click();
+  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
   await expect(page.locator(".reader-tab-title")).toHaveText(source.title);
-  await openLayers(page);
-  await expandNotes(page);
-}
-
-async function expandNotes(page: Page) {
-  await openNotesTab(page);
 }
 
 const noteRow = (page: Page, text: string) => page.locator(".note-list-row", { hasText: text });
 const layerItem = (page: Page, title: string) => page.locator(".layer-panel .layer-item", { hasText: title });
 
-// Set a Layers-pane filter checkbox to `enabled` and wait for it to settle (the toggle is
-// an async PATCH + re-fetch). Idempotent.
+// Assert note-row visibility on the Notes tab (activating it first — a `.note-list-row`
+// count of 0 only means something while the note list is actually mounted).
+async function expectNoteVisible(page: Page, text: string) {
+  await openNotesTab(page);
+  await expect(noteRow(page, text)).toBeVisible();
+}
+async function expectNoteHidden(page: Page, text: string) {
+  await openNotesTab(page);
+  await expect(noteRow(page, text)).toHaveCount(0);
+}
+
+// Set a Layers-tab filter checkbox to `enabled` and wait for it to settle (the toggle is
+// an async PATCH + re-fetch). Idempotent; activates the Layers tab first. The checkbox is
+// the sv-check pattern (hidden input + styled span), so click the LABEL — the span
+// intercepts pointer events aimed at the input itself.
 async function setLayerFilter(page: Page, title: string, enabled: boolean) {
-  const toggle = layerItem(page, title).locator(".layer-toggle");
-  if ((await toggle.isChecked()) !== enabled) await toggle.click();
+  await openLayers(page);
+  const item = layerItem(page, title);
+  const toggle = item.locator(".layer-toggle");
+  if ((await toggle.isChecked()) !== enabled) await item.locator(".layer-toggle-label").click();
   if (enabled) await expect(toggle).toBeChecked();
   else await expect(toggle).not.toBeChecked();
 }
@@ -106,19 +116,19 @@ test("layer-as-lens: a note in TWO layers shows by OR; toggling layers hides/sho
   await openSource(page, source);
 
   // All preset stages start ENABLED, so the note shows.
-  await expect(noteRow(page, noteText)).toBeVisible();
+  await expectNoteVisible(page, noteText);
 
   // Disable 复习 → still in 预习 → OR keeps it visible.
   await setLayerFilter(page, "复习", false);
-  await expect(noteRow(page, noteText)).toBeVisible();
+  await expectNoteVisible(page, noteText);
 
   // Disable 预习 too → BOTH its layers are now off → it hides.
   await setLayerFilter(page, "预习", false);
-  await expect(noteRow(page, noteText)).toHaveCount(0);
+  await expectNoteHidden(page, noteText);
 
   // Re-enable 复习 → OR brings it back.
   await setLayerFilter(page, "复习", true);
-  await expect(noteRow(page, noteText)).toBeVisible();
+  await expectNoteVisible(page, noteText);
 });
 
 test("layer-as-lens: create a CUSTOM layer; it appears in the custom group and filters", async ({ page, request }) => {
@@ -132,12 +142,14 @@ test("layer-as-lens: create a CUSTOM layer; it appears in the custom group and f
 
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).click();
+  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
   await expect(page.locator(".reader-tab-title")).toHaveText(source.title);
   await openLayers(page);
 
-  // The Layers pane shows the four preset stages out of the box.
-  const presets = page.locator('.layer-panel .layer-group[data-group="preset"] .layer-item');
+  // The Layers tab shows the four preset stages out of the box. The pane is now a TREE
+  // (layerTree: parentId is the only organization primitive — presets hang under the
+  // owned root layer), so target rows by data-role instead of the old group wrappers.
+  const presets = page.locator('.layer-panel .layer-item[data-role="preset"]');
   await expect(presets).toHaveCount(4);
   for (const stage of ["预习", "学习", "复习", "拓展"]) {
     await expect(layerItem(page, stage)).toBeVisible();
@@ -147,9 +159,8 @@ test("layer-as-lens: create a CUSTOM layer; it appears in the custom group and f
   const customName = `My Lens ${stamp}`;
   await page.locator(".layer-panel .layer-create-input").fill(customName);
   await page.locator(".layer-panel .layer-create-btn").click();
-  const custom = page.locator('.layer-panel .layer-group[data-group="custom"] .layer-item', { hasText: customName });
+  const custom = page.locator('.layer-panel .layer-item[data-role="custom"]', { hasText: customName });
   await expect(custom).toBeVisible();
-  await expect(custom).toHaveAttribute("data-role", "custom");
   await expect(custom.locator(".layer-delete-btn")).toBeVisible();
 
   // Assign a note EXCLUSIVELY to the custom layer (membership via API — the per-note
@@ -159,13 +170,13 @@ test("layer-as-lens: create a CUSTOM layer; it appears in the custom group and f
   await openSource(page, source);
 
   // Visible while the custom layer is enabled.
-  await expect(noteRow(page, noteText)).toBeVisible();
+  await expectNoteVisible(page, noteText);
   // Disable the custom layer → the note (its only layer) hides.
   await setLayerFilter(page, customName, false);
-  await expect(noteRow(page, noteText)).toHaveCount(0);
+  await expectNoteHidden(page, noteText);
   // Re-enable → it returns.
   await setLayerFilter(page, customName, true);
-  await expect(noteRow(page, noteText)).toBeVisible();
+  await expectNoteVisible(page, noteText);
 });
 
 test("layer-as-lens: move a note from 预习 to 复习; visibility follows the enabled-layer filter", async ({
@@ -186,10 +197,10 @@ test("layer-as-lens: move a note from 预习 to 复习; visibility follows the e
 
   // Disable 复习, leave 预习 on → the note (in 预习) is visible.
   await setLayerFilter(page, "复习", false);
-  await expect(noteRow(page, noteText)).toBeVisible();
+  await expectNoteVisible(page, noteText);
   // Disable 预习 too → it hides (only in 预习).
   await setLayerFilter(page, "预习", false);
-  await expect(noteRow(page, noteText)).toHaveCount(0);
+  await expectNoteHidden(page, noteText);
 
   // MOVE the note 预习 → 复习 via the API (the per-note picker was removed).
   const patch = await request.patch(`${SERVER}/api/notes/${note.id}`, { data: { layerIds: [ids["复习"]] } });
@@ -197,10 +208,10 @@ test("layer-as-lens: move a note from 预习 to 复习; visibility follows the e
 
   // Re-enable 复习 → the moved note shows (its layer is enabled); 预习 stays off.
   await setLayerFilter(page, "复习", true);
-  await expect(noteRow(page, noteText)).toBeVisible();
+  await expectNoteVisible(page, noteText);
   // Disable 复习 → now the note's only layer is off → it hides.
   await setLayerFilter(page, "复习", false);
-  await expect(noteRow(page, noteText)).toHaveCount(0);
+  await expectNoteHidden(page, noteText);
 });
 
 test("layer-as-lens: DERIVED painting — an anchor stops painting when all its notes' layers are disabled", async ({

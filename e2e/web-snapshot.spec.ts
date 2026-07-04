@@ -18,7 +18,7 @@ import { openLibraryMenu } from "./helpers";
 // (The LIVE sub-mode needs a real Electron <webview> and is covered by
 // e2e-electron/web-snapshot.spec.ts, which also drives snapshot → Open Live → live tab.)
 
-const SERVER = "http://127.0.0.1:4177";
+import { SERVER } from "./harness";
 const READER = 'iframe[title="Source reader"]';
 
 const SNAPSHOT_TITLE = "Snapshot Lesson";
@@ -70,7 +70,7 @@ test.skip("webpage snapshot: unified shell + select → chip → note → html_s
   // Refresh moved into the Library ⋯ menu by the IA rebuild.
   await openLibraryMenu(page);
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
-  await page.locator(".source-item-open", { hasText: SNAPSHOT_TITLE }).click();
+  await page.locator(".source-item-open", { hasText: SNAPSHOT_TITLE }).first().click();
 
   // STEP 1 — the UNIFIED Web shell renders for a snapshot: the tab strip with a
   // Snapshot tab, the address bar (reflecting the source url), and the Open Live

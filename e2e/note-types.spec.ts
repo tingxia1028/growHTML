@@ -22,7 +22,7 @@ import { makeGradientPng } from "./fixtures/image";
 // (/api/assets/:id) serves a DECODABLE image — the bytes the §10 image PreviewCard /
 // CenterView point their <img src> at. We drive it directly (web mode; no native dialog).
 
-const SERVER = "http://127.0.0.1:4177";
+import { SERVER } from "./harness";
 
 async function seedHtmlSource(request: APIRequestContext, title: string, body: string) {
   const res = await request.post(`${SERVER}/api/sources/html`, { data: { title, content: body } });

@@ -7,9 +7,9 @@ import { openChatMenu, openNotesTab } from "./helpers";
 // the UI: select → source chip → save note → anchored highlight → patch → apply →
 // revert → reload → persistence.
 //
-// Run: npm run e2e   (Playwright boots dev:server 4177 + dev:client 5173.)
+// Run: npm run e2e   (Playwright boots its own server+client on dedicated e2e ports — e2e/harness.ts.)
 
-const SERVER = "http://127.0.0.1:4177";
+import { SERVER } from "./harness";
 const READER = 'iframe[title="Source reader"]';
 
 async function seedHtmlSource(request: APIRequestContext, title: string, body: string) {
@@ -54,7 +54,7 @@ test.skip("no-AI study loop: select → note → patch → apply → revert → 
   await page.goto("/");
 
   // Open the seeded source from the library list.
-  await page.locator(".source-item-open", { hasText: title }).click();
+  await page.locator(".source-item-open", { hasText: title }).first().click();
   await expect(page.locator(".reader-tab-title")).toHaveText(title);
 
   // Select a passage in the reader iframe → the study panel "source" chip fills in
@@ -91,12 +91,17 @@ test.skip("no-AI study loop: select → note → patch → apply → revert → 
 
   // Reload → re-open → note persisted.
   await page.reload();
-  await page.locator(".source-item-open", { hasText: title }).click();
+  await page.locator(".source-item-open", { hasText: title }).first().click();
   await expect(page.locator(".note-list")).toContainText(noteText);
   await expect(reader.locator(".sv-annotated").first()).toBeVisible();
 });
 
-test("marginalia: toggle Notes Floating ↔ Margin lays the note card in the gutter", async ({ page, request }) => {
+// Old→new: the TopBar "Document" tab (annotationMode "floating") was REMOVED (user
+// decision 2026-07-04 — the overlay IS the document; annotationMode stays "margin").
+// The Floating ↔ Margin toggle is gone, so this now asserts marginalia as the ONE
+// reading presentation: the gutter card + connector lay out by default, the Notes
+// Overlay tab is idempotent, and the removed Document tab never comes back.
+test("marginalia: Notes Overlay (the default, only mode) lays the note card in the gutter", async ({ page, request }) => {
   const title = `E2E Margin ${Date.now()}`;
   const body = "<article><p>A marginalia passage about the render loop and study notes.</p></article>";
   const noteText = "This note lives in the gutter.";
@@ -107,44 +112,32 @@ test("marginalia: toggle Notes Floating ↔ Margin lays the note card in the gut
   await seedAnchoredNote(request, source.id, "marginalia passage about the render loop and study notes", noteText);
 
   await page.goto("/");
-  await page.locator(".source-item-open", { hasText: title }).click();
+  await page.locator(".source-item-open", { hasText: title }).first().click();
   await expect(page.locator(".reader-tab-title")).toHaveText(title);
 
   const reader = page.frameLocator(READER);
   // The seeded note paints as a highlight on the passage.
   await expect(reader.locator(".sv-annotated", { hasText: "marginalia passage" }).first()).toBeVisible();
 
-  // R1: the Floating ↔ Margin toggle moved to the TopBar segmented control —
-  // "Document" = floating (default), "Notes Overlay" = margin/gutter.
-  const documentTab = page.locator(".topbar-tab", { hasText: "Document" });
+  // The TopBar segmented control is exactly Notes Overlay + Anchor Focus — the removed
+  // "Document" (floating) tab must not resurface.
+  await expect(page.locator(".topbar-tab", { hasText: "Document" })).toHaveCount(0);
   const overlayTab = page.locator(".topbar-tab", { hasText: "Notes Overlay" });
-
-  // Establish the Document/Floating baseline (the redesigned default annotation mode is
-  // not guaranteed to be floating): select Document → that tab is active, no gutter.
-  await documentTab.click();
-  await expect(documentTab).toHaveClass(/active/);
-  await expect(reader.locator("#sv-margin-layer")).toHaveCount(0);
-
-  // Switch to Notes Overlay → a persistent card with the note text appears in the gutter,
-  // a dashed leader connects it to the anchor, and the body reserves right padding.
-  await overlayTab.click();
   await expect(overlayTab).toHaveClass(/active/);
+
+  // Margin IS the default: a persistent card with the note text sits in the gutter,
+  // a dashed leader connects it to the anchor, and the body reserves right padding.
   const marginCard = reader.locator("#sv-margin-layer .sv-margin-note").first();
   await expect(marginCard).toBeVisible();
   await expect(marginCard).toContainText("This note lives in the gutter");
   await expect(reader.locator("#sv-margin-connectors path")).toHaveCount(1);
   await expect(reader.locator("body.sv-annot-margin")).toHaveCount(1);
 
-  // Back to Document/Floating → the gutter cards are gone; the inline highlight stays
-  // and the floating hover card still works (hover shows it).
-  await documentTab.click();
-  await expect(documentTab).toHaveClass(/active/);
-  await expect(reader.locator("#sv-margin-layer")).toHaveCount(0);
-  await expect(reader.locator("body.sv-annot-margin")).toHaveCount(0);
-  const annotated = reader.locator(".sv-annotated").first();
-  await expect(annotated).toBeVisible();
-  await annotated.hover();
-  await expect(reader.locator("#sv-note-card.sv-note-card-show")).toBeVisible();
+  // Re-clicking the tab (it self-heals the mode to "margin") keeps the gutter intact.
+  await overlayTab.click();
+  await expect(overlayTab).toHaveClass(/active/);
+  await expect(marginCard).toBeVisible();
+  await expect(reader.locator("body.sv-annot-margin")).toHaveCount(1);
 });
 
 test("AI chat: ask about a passage → reply → save reply as a note", async ({ page, request }) => {
@@ -153,7 +146,7 @@ test("AI chat: ask about a passage → reply → save reply as a note", async ({
 
   await seedHtmlSource(request, title, body);
   await page.goto("/");
-  await page.locator(".source-item-open", { hasText: title }).click();
+  await page.locator(".source-item-open", { hasText: title }).first().click();
   await expect(page.locator(".reader-tab-title")).toHaveText(title);
 
   // Select a passage → focuses it (shown in the Anchor excerpt) so the mock weaves it in.

@@ -17,9 +17,9 @@ import { openBookmarks } from "./helpers";
 //   • the main note list (.note-list) — bookmarks are FILTERED OUT so they read as markers,
 //     not content cards (a co-created markdown note still shows there; the bookmark does not).
 //
-// Modeled on e2e/layer-as-lens.spec.ts (SERVER 4177, READER iframe, select→note flow).
+// Modeled on e2e/layer-as-lens.spec.ts (shared e2e SERVER, READER iframe, select→note flow).
 
-const SERVER = "http://127.0.0.1:4177";
+import { SERVER } from "./harness";
 const READER = 'iframe[title="Source reader"]';
 
 async function seedHtmlSource(request: APIRequestContext, title: string, body: string) {
@@ -32,7 +32,7 @@ async function seedHtmlSource(request: APIRequestContext, title: string, body: s
 // "sourceType · id"), so accumulated vault state can't make the row ambiguous across repeats.
 async function openSource(page: Page, source: { id: string; title: string }) {
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).click();
+  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
   await expect(page.locator(".reader-tab-title")).toHaveText(source.title);
   // R1: the Bookmarks pane is reached via the IconRail (not an always-on column).
   await openBookmarks(page);

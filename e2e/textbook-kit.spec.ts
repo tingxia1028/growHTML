@@ -6,7 +6,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 // author a Study Block via its structured editor, save, and assert it renders as the
 // kit's Explanation card in the note list (proving register-only end to end).
 
-const SERVER = "http://127.0.0.1:4177";
+import { SERVER } from "./harness";
 
 async function seedHtmlSource(request: APIRequestContext, title: string, body: string) {
   const res = await request.post(`${SERVER}/api/sources/html`, { data: { title, content: body } });
@@ -16,7 +16,7 @@ async function seedHtmlSource(request: APIRequestContext, title: string, body: s
 
 async function openSource(page: Page, title: string) {
   await page.goto("/");
-  await page.locator(".source-item-open", { hasText: title }).click();
+  await page.locator(".source-item-open", { hasText: title }).first().click();
   await expect(page.locator(".reader-tab-title")).toHaveText(title);
 }
 

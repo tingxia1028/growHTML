@@ -20,7 +20,7 @@ import { makeTextPdf } from "./fixtures/pdf";
 // this file adds the explicit ANCHOR-creation assertion the mission asks for, for both
 // host-page text-quote surfaces, so every viewer×step is covered by a real test.)
 
-const SERVER = "http://127.0.0.1:4177";
+import { SERVER } from "./harness";
 const READER = 'iframe[title="Source reader"]';
 
 async function seedHtmlSource(request: APIRequestContext, title: string, body: string) {
@@ -57,7 +57,7 @@ test.skip("imported HTML viewer: select → chip → note → html_selection anc
   const source = await seedHtmlSource(request, title, body);
 
   await page.goto("/");
-  await page.locator(".source-item-open", { hasText: title }).click();
+  await page.locator(".source-item-open", { hasText: title }).first().click();
   await expect(page.locator(".reader-tab-title")).toHaveText(title);
 
   // STEP 1 — selecting in the reader iframe fills the host Source chip.
@@ -87,7 +87,7 @@ test.skip("PDF viewer (text quote): select → chip → note → pdf_selection a
   const source = await seedPdf(request, `Flow PDF ${Date.now()}`);
 
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).click();
+  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
 
   // Wait for the text layer to render selectable spans on page 1.
   const textLayer = page.locator('.page[data-page-number="1"] .textLayer');

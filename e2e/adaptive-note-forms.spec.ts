@@ -18,7 +18,7 @@ import { openNotesTab } from "./helpers";
 // never classifies as a pure rich form; the card/overlay capability itself is proven
 // end-to-end here via the note viewer, which shares the SAME components.)
 
-const SERVER = "http://127.0.0.1:4177";
+import { SERVER } from "./harness";
 
 async function seedHtmlSource(request: APIRequestContext, title: string, body: string) {
   const res = await request.post(`${SERVER}/api/sources/html`, { data: { title, content: body } });
@@ -28,7 +28,7 @@ async function seedHtmlSource(request: APIRequestContext, title: string, body: s
 
 async function openSource(page: Page, title: string) {
   await page.goto("/");
-  await page.locator(".source-item-open", { hasText: title }).click();
+  await page.locator(".source-item-open", { hasText: title }).first().click();
   await expect(page.locator(".reader-tab-title")).toHaveText(title);
 }
 
@@ -77,8 +77,10 @@ test("note viewer → centered overlay: a markmap note renders in its form and o
   // live diagram); the live interactive markmap mounts only in the shared CenterView
   // (FocusOverlay), opened by clicking it.
   await openNotesTab(page);
+  // The card badge shows the HUMAN type label ("Mermaid / Mindmap" for markmap —
+  // noteCardMeta TYPE_LABELS), not the raw contentType string.
   const row = page
-    .locator(".note-list-row", { has: page.locator(".sv-artifact-badge", { hasText: "markmap" }) })
+    .locator(".note-list-row", { has: page.locator(".sv-artifact-badge", { hasText: "Mermaid / Mindmap" }) })
     .first();
   await expect(row).toBeVisible();
 
@@ -89,7 +91,8 @@ test("note viewer → centered overlay: a markmap note renders in its form and o
   await expect(overlay.locator('[role="dialog"][aria-modal="true"]')).toBeVisible();
   // The overlay mounts the FULL interactive view — a live markmap SVG, centered.
   await expect(overlay.locator(".note-diagram-markmap svg")).toBeVisible({ timeout: 15_000 });
-  await expect(overlay.locator(".sv-focus-type")).toHaveText("markmap");
+  // .sv-focus-type carries the human type label (same noteCardMeta label as the badge).
+  await expect(overlay.locator(".sv-focus-type")).toHaveText("Mermaid / Mindmap");
 
   // Esc closes the overlay.
   await page.keyboard.press("Escape");
@@ -180,7 +183,7 @@ test("interactive html ESCAPE guard: game runs but cannot reach parent/top, fetc
   };
   // fetch is async; resolve it then publish the full result object.
   (typeof fetch === 'function'
-    ? fetch('http://127.0.0.1:4177/api/health').then(function () { return 'REACHED'; }, function (e) { return 'blocked:' + (e && e.name); })
+    ? fetch('${SERVER}/api/health').then(function () { return 'REACHED'; }, function (e) { return 'blocked:' + (e && e.name); })
     : Promise.resolve('no-fetch')
   ).then(function (f) {
     r.fetch = f;
@@ -200,8 +203,9 @@ test("interactive html ESCAPE guard: game runs but cannot reach parent/top, fetc
   // iframe); the live (allow-scripts) frame mounts ONLY in the shared CenterView, opened by
   // clicking the card.
   await openNotesTab(page);
+  // Badge = the human type label ("HTML / Interactive" for html-sandbox), not the raw id.
   const card = page
-    .locator(".note-list-row", { has: page.locator(".sv-artifact-badge", { hasText: "html-sandbox" }) })
+    .locator(".note-list-row", { has: page.locator(".sv-artifact-badge", { hasText: "HTML / Interactive" }) })
     .first();
   await expect(card).toBeVisible();
 

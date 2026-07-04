@@ -15,7 +15,7 @@ import { openNotesTab } from "./helpers";
 // delete live on each `.note-list-row`. So we seed via the API (deterministic) and drive
 // the new fold — the manual create-a-note-via-composer flow is a separate pending decision.
 
-const SERVER = "http://127.0.0.1:4177";
+import { SERVER } from "./harness";
 const READER = 'iframe[title="Source reader"]';
 
 async function seedHtmlSource(request: APIRequestContext, title: string, body: string) {
@@ -47,7 +47,7 @@ async function seedNote(request: APIRequestContext, sourceId: string, content: s
 async function openSource(page: Page, source: { id: string; title: string }) {
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).click();
+  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
   await expect(page.locator(".reader-tab-title")).toHaveText(source.title);
 }
 

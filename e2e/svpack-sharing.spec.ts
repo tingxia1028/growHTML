@@ -26,12 +26,13 @@ import { openLayers, openNotesTab } from "./helpers";
 //      the sealed note in the notes list (watermarked: CONTAINS the visible text, never
 //      equals it) → DELETE /api/svpack/:packId drops it after reload.
 //
-// DATA HYGIENE — the shared server's vault (.e2e-vault) is left exactly as found:
+// DATA HYGIENE — the shared server's vault (the run's ephemeral temp vault, see
+// e2e/harness.ts) is left exactly as found:
 //   • every seeded source is deleted (deleteSource cascades anchors/notes/patches —
 //     verified via API in spec 1); layer records for a deleted source are the one
 //     API-undeletable residue every existing spec shares (only custom layers have a
-//     delete route), and .e2e-vault is wiped by global-setup on the next run anyway.
-//   • the export's publish ledger (.e2e-vault/publishes/<packId>.json) has no delete
+//     delete route), and the temp vault is deleted by global-teardown anyway.
+//   • the export's publish ledger (<vault>/publishes/<packId>.json) has no delete
 //     API, so it is removed from disk in the finally.
 //   • the sealed import blob is deleted via DELETE /api/svpack/:packId.
 //   • IDENTITY: the shared dev server uses the REAL ~/.growte/identity (createApp
@@ -42,10 +43,9 @@ import { openLayers, openNotesTab } from "./helpers";
 //     the dir pre-existed (real sealed content may be keyed under it).
 //
 // Run: npx playwright test e2e/svpack-sharing.spec.ts
-// (Ports 4177/5173 must be free — reuseExistingServer is false by design.)
+// (Dedicated e2e ports + ephemeral temp vault — see e2e/harness.ts; reuseExistingServer is false by design.)
 
-const SERVER = "http://127.0.0.1:4177";
-const E2E_VAULT_ROOT = path.resolve(process.cwd(), ".e2e-vault");
+import { E2E_VAULT_ROOT, SERVER } from "./harness";
 const GROWTE_ROOT = path.join(os.homedir(), ".growte");
 const IDENTITY_DIR = path.join(GROWTE_ROOT, "identity");
 const PINS_FILE = path.join(IDENTITY_DIR, "pinned-publishers.json");
@@ -191,7 +191,7 @@ async function startPublisherApp(opts: {
 }
 
 async function selectSource(page: Page, title: string) {
-  await page.locator(".source-item-open", { hasText: title }).click();
+  await page.locator(".source-item-open", { hasText: title }).first().click();
   await expect(page.locator(".reader-tab-title")).toHaveText(title);
 }
 
@@ -219,9 +219,10 @@ test("svpack export UI: 分享… → one-time roster (2 codes) → download the
     await openApp(page, title);
     await openLayers(page);
 
-    // The seeded note lives in the OWNED layer (titled after the source); its row in
-    // the Mine group carries the protected-share action.
-    const ownedRow = page.locator('.layer-panel .layer-group[data-group="owned"] .layer-item', {
+    // The seeded note lives in the OWNED root layer (titled after the source; the tree
+    // pane displays it as "Mine" with the source title as subtitle). The old
+    // .layer-group wrappers are gone — the pane is a TREE now; target by data-role.
+    const ownedRow = page.locator('.layer-panel .layer-item[data-role="owned"]', {
       hasText: title
     });
     await expect(ownedRow).toBeVisible();
@@ -399,10 +400,11 @@ test("svpack cross-vault import UI: inspect → code → preview → commit (sea
     await dialog.locator(".svpack-done-btn").click();
     await expect(page.locator(".svpack-dialog")).toHaveCount(0);
 
-    // Sealed layer marker in the Lens: it rides the Imported group, and (sealed) its
-    // row must NOT offer 分享… (re-export is refused; the entry point is suppressed).
+    // Sealed layer marker in the Lens: it rides the imported rows (the tree pane has no
+    // group wrappers anymore — target by import mode), and (sealed) its row must NOT
+    // offer 分享… (re-export is refused; the entry point is suppressed).
     const sealedLayerRow = page.locator(
-      '.layer-panel .layer-group[data-group="shared"] .layer-item',
+      '.layer-panel .layer-item[data-import-mode="imported"]',
       { hasText: pubTitle }
     );
     await expect(sealedLayerRow).toBeVisible();

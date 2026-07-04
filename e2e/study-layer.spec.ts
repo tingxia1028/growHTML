@@ -9,7 +9,7 @@ import { openLayers } from "./helpers";
 //   3. toggling the layer OFF hides its highlight, ON brings it back
 // (The pack matches the local source by FINGERPRINT TITLE — no contentHash needed.)
 
-const SERVER = "http://127.0.0.1:4177";
+import { SERVER } from "./harness";
 const READER = 'iframe[title="Source reader"]';
 
 // A sentence we quote exactly (matched) and case-mangle (fuzzy).
@@ -46,10 +46,10 @@ test("study layer: import a .studypack → 3-state preview → commit paints mat
   const source = await seedHtmlSource(request, title);
 
   await page.goto("/");
-  await page.locator(".source-item-open", { hasText: title }).click();
+  await page.locator(".source-item-open", { hasText: title }).first().click();
   await expect(page.locator(".reader-tab-title")).toHaveText(title);
 
-  // R1: the Layers pane is reached via the IconRail (not an always-on column).
+  // The Layers pane is a right-sidebar TAB now (the rail icon was dropped).
   await openLayers(page);
 
   // The matched passage isn't highlighted yet (no layer imported).
@@ -77,10 +77,11 @@ test("study layer: import a .studypack → 3-state preview → commit paints mat
 
   // STEP 3 — toggle the layer OFF → its highlight disappears; ON → it returns.
   // (The checkbox is controlled by an async patch→re-fetch round-trip, so assert the
-  // real effect — the painted highlight — rather than the checkbox's instant state.)
-  await layerItem.locator(".layer-toggle").click();
+  // real effect — the painted highlight — rather than the checkbox's instant state.
+  // Click the LABEL: the sv-check styled span intercepts clicks aimed at the input.)
+  await layerItem.locator(".layer-toggle-label").click();
   await expect(reader.locator(".sv-annotated")).toHaveCount(0);
-  await layerItem.locator(".layer-toggle").click();
+  await layerItem.locator(".layer-toggle-label").click();
   await expect(reader.locator(".sv-annotated").first()).toBeVisible();
 
   // The imported layer + its anchor are scoped to this source on the server.

@@ -8,7 +8,7 @@ import { makeGradientPng } from "./fixtures/image";
 // a region, save it as a note (which materializes the anchor), then assert the
 // stored anchor carries a rect and a region box paints.
 
-const SERVER = "http://127.0.0.1:4177";
+import { SERVER } from "./harness";
 
 // A 200x150 gradient PNG — large enough to render at a draggable size.
 const IMAGE_BASE64 = makeGradientPng(200, 150).toString("base64");
@@ -65,7 +65,7 @@ test("pdf scroll: the scroll container scrolls and later pages are present", asy
   const source = (await res.json()).source as { id: string };
 
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).click();
+  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
 
   // Page 1 renders first.
   const scroller = page.locator(".pdf-reader-canvas");
@@ -90,7 +90,7 @@ test("pdf scroll: the scroll container scrolls and later pages are present", asy
 test.skip("pdf quote: selecting text in the text layer → quote source chip", async ({ page, request }) => {
   const source = await seedPdf(request, `Quote PDF ${Date.now()}`);
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).click();
+  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
 
   // Wait for the text layer to render some selectable spans on page 1.
   const textLayer = page.locator('.page[data-page-number="1"] .textLayer');
@@ -127,7 +127,7 @@ test.skip("pdf quote: selecting text in the text layer → quote source chip", a
 test("pdf zoom: zoom-in grows the page and Fit width returns it", async ({ page, request }) => {
   const source = await seedPdf(request, `Zoom PDF ${Date.now()}`);
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).click();
+  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
 
   const pageEl = page.locator('.page[data-page-number="1"]').first();
   await expect(pageEl).toBeVisible({ timeout: 20_000 });
@@ -154,7 +154,7 @@ test("pdf zoom: zoom-in grows the page and Fit width returns it", async ({ page,
 test.skip("pdf region: rubber-band a figure → pdf_selection anchor with rect + region box", async ({ page, request }) => {
   const source = await seedPdf(request, `Region PDF ${Date.now()}`);
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).click();
+  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
 
   // Wait for the first page to render in the host canvas.
   const pageEl = page.locator('.page[data-page-number="1"]').first();
@@ -187,7 +187,7 @@ test.skip("pdf region: rubber-band a figure → pdf_selection anchor with rect +
 test.skip("image region: rubber-band an area → image_region anchor + region box", async ({ page, request }) => {
   const source = await seedImage(request, `Region IMG ${Date.now()}`);
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).click();
+  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
 
   const stage = page.locator(".image-reader-stage");
   await expect(stage.locator("img")).toBeVisible({ timeout: 10_000 });
@@ -220,7 +220,7 @@ test("image source uses the host ImageReader, not the native (unselectable) ifra
   expect(res.ok()).toBeTruthy();
   const source = (await res.json()).source as { id: string };
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).click();
+  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
   await expect(page.locator(".image-reader-stage")).toBeVisible();
   await expect(page.locator('iframe[title="PDF reader"]')).toHaveCount(0);
 });

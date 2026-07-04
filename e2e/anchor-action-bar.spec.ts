@@ -11,9 +11,9 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 //   • with NOTHING focused, the buttons are DISABLED (the bar shows but is inert).
 //   • after focusing a passage (its quote fills .anchor-excerpt-quote), the buttons ENABLE.
 //
-// Modeled on e2e/streaming-chat.spec.ts (SERVER 4177, reader iframe, select→focus flow).
+// Modeled on e2e/streaming-chat.spec.ts (shared e2e SERVER, reader iframe, select→focus flow).
 
-const SERVER = "http://127.0.0.1:4177";
+import { SERVER } from "./harness";
 const READER = 'iframe[title="Source reader"]';
 
 async function seedHtmlSource(request: APIRequestContext, title: string, body: string) {
@@ -26,7 +26,7 @@ async function seedHtmlSource(request: APIRequestContext, title: string, body: s
 // vault state can't make the row ambiguous across repeats.
 async function openSource(page: Page, source: { id: string; title: string }) {
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).click();
+  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
   await expect(page.locator(".reader-tab-title")).toHaveText(source.title);
 }
 

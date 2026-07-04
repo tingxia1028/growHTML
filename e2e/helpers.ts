@@ -7,18 +7,20 @@ import { expect, type Page } from "@playwright/test";
 // (assert on the pane's own DOM) while matching the new structure.
 
 // The IconRail button aria-labels (see src/client/workspace/IconRail.tsx RAIL_ENTRIES).
+// The rail is down to 6 icons (commit daf3c57 dropped Anchors/Bookmarks, AI Chat and
+// Layers — they duplicate the right sidebar's tabs); Notes/Layers now live as
+// right-sidebar TABS (openNotesTab / openLayers below).
 export const RAIL_LABELS = {
   library: "Library",
-  bookmarks: "Anchors / Bookmarks",
-  notes: "Notes",
   concepts: "Concepts",
   operations: "Operations",
-  layers: "Layers"
+  pluginManager: "Kit & Plugin",
+  review: "复习 (Review)",
+  profile: "画像 (Profile)"
 } as const;
 
 // Open a pane in the left rail slot via the IconRail, then wait for its panel selector.
-// Scoped to the IconRail nav so labels shared with TopBar buttons (e.g. "Layers") don't
-// match two elements.
+// Scoped to the IconRail nav so labels shared with TopBar buttons don't match two elements.
 export async function openRailPane(page: Page, label: string, paneSelector: string) {
   const rail = page.getByRole("navigation", { name: "Panels" });
   await rail.getByRole("button", { name: label, exact: true }).click();
@@ -26,9 +28,27 @@ export async function openRailPane(page: Page, label: string, paneSelector: stri
 }
 
 export const openConcepts = (page: Page) => openRailPane(page, RAIL_LABELS.concepts, ".concept-panel");
-export const openLayers = (page: Page) => openRailPane(page, RAIL_LABELS.layers, ".layer-panel");
-export const openBookmarks = (page: Page) => openRailPane(page, RAIL_LABELS.bookmarks, ".bookmark-panel");
 export const openOperations = (page: Page) => openRailPane(page, RAIL_LABELS.operations, ".operation-panel");
+
+// Activate a right-sidebar TAB (Anchor / Notes / Layers / AI Chat — RightSidebarTabs)
+// and wait for its panel. The tabs share ONE group: activating a tab hides the previous
+// one, so specs that used to see two always-on panes must now switch back and forth.
+export async function openRightTab(page: Page, label: string, paneSelector: string) {
+  const panel = page.locator(paneSelector);
+  if (await panel.isVisible().catch(() => false)) return;
+  await page.locator(".right-tabs-tab", { hasText: label }).click();
+  await expect(panel).toBeVisible();
+}
+
+// Layers moved from the left rail to the right sidebar's "Layers" tab (layer.switcher).
+export const openLayers = (page: Page) => openRightTab(page, "Layers", ".layer-panel");
+
+// The standalone bookmark.list pane (.bookmark-panel) lost its chrome entry point in the
+// rail slim-down; today's bookmark surface is the reader-toolbar BookmarkIndex popover.
+// Only the (skipped) bookmark.spec.ts still references this pane.
+export const openBookmarks = async (_page: Page) => {
+  throw new Error("bookmark.list pane has no chrome entry point in today's UI (rail icon removed)");
+};
 
 // —— Panel ⋯ overflow menus (整体 IA 重建) ————————————————————————————————————————
 // The structural rebuild relocated several controls behind a panel's ⋯ overflow menu
@@ -37,13 +57,14 @@ export const openOperations = (page: Page) => openRailPane(page, RAIL_LABELS.ope
 // helpers open the right menu by its trigger aria-label so a spec can then click the
 // relocated control, preserving each test's original intent.
 
-// Open the Library panel ⋯ menu (Refresh / Open File / Open Folder / Import .xmind /
-// Import-from-URL / Open Live). Idempotent.
+// LIB-2 replaced the Library kebab (⋯ "Library actions") with ONE unified `+` add menu
+// (trigger aria-label 添加到资料库 under the zh default locale; groups 导入/新建).
+// This opens it; the import/create actions live inside as [data-add-action] items.
 export async function openLibraryMenu(page: Page) {
-  const refresh = page.getByRole("button", { name: "Refresh", exact: true });
-  if (await refresh.isVisible().catch(() => false)) return;
-  await page.getByRole("button", { name: "Library actions", exact: true }).click();
-  await expect(page.locator(".library-panel .panel-menu-popover")).toBeVisible();
+  const popover = page.locator(".library-panel .panel-menu-popover");
+  if (await popover.isVisible().catch(() => false)) return;
+  await page.getByRole("button", { name: "添加到资料库", exact: true }).click();
+  await expect(popover).toBeVisible();
 }
 
 // Open the Reader chrome ⋯ menu (Product Kit select + status). Idempotent.
@@ -69,12 +90,7 @@ export async function openChatMenu(page: Page) {
 // always-open FULL-PANEL variant behind the "Notes" tab (the old collapsible
 // `.note-list-head` fold is no longer mounted). This helper activates the Notes tab and
 // waits for the always-open panel, replacing the obsolete expand-the-fold step.
-export async function openNotesTab(page: Page) {
-  const panel = page.locator(".note-list-panel-tab");
-  if (await panel.isVisible().catch(() => false)) return;
-  await page.locator(".right-tabs-tab", { hasText: "Notes" }).click();
-  await expect(panel).toBeVisible();
-}
+export const openNotesTab = (page: Page) => openRightTab(page, "Notes", ".note-list-panel-tab");
 
 // Open the TopBar Settings gear menu (hosts the relocated theme + layout selects).
 // Idempotent: the gear toggles, so only click when the menu isn't already showing.
