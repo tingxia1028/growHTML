@@ -11,7 +11,7 @@ One dependency-ordered plan over the six design docs written this cycle. Purpose
 | `subject-kits.md` | 11 subject types × 5 kits + auto-switch | **M-A ✅ · M-B ✅ · M-C ✅**(M-C-001 — 全 11 类型 + 5 kit) |
 | `multidoc-and-concepts.md` | Multi-pane docs + cross-doc notes + concept graph | **P-A1 ✅ · P-A2 ✅**(F1-001 — 多文档并排,方案+实现双审)· P-B · P-C1 · **P-C2 ✅**(关联图 CG-1/2/3) |
 | `ai-workspace.md` | AI chat sessions + file/note attachments + doc synthesis | **W1 ✅ · W2 ✅ · W3 ✅**(W3-001, chat→合成 authored markdown 新源+TOC+新面板打开)— AI workspace 全线完成(工作区页/剪贴板挂载 defer) |
-| `multi-provider-ai-agent.md` (+§9) | BYOK 多厂商 + `cli-agent` kind (claude/codex 官方 SDK) + agent loop | A1 · A2 · A3 · A4 |
+| `multi-provider-ai-agent.md` (+§9) | BYOK 多厂商 + `cli-agent` kind (claude/codex 官方 SDK) + agent loop | **A1 ✅ · A2 ✅ · A3 ✅ · A4a ✅**(server runAgent + /api/agent/stream + tools)· **A4b ✅**(A4b-001, 客户端 transcript + 🛠 用工具 + mock-agent offline provider;write 工具 defer) |
 | `managed-ai-credits.md` (+§10) | 托管网关 + 积分 + 月费/AI Group 档位 | G-A · G-B · G-C (external-gated) |
 | `multi-platform.md` | macOS/Android/iOS + 打包发布流水线 (Capacitor 共享核心) | X0 · X1 ✅(Win) · X2 · X3 · X4 |
 | `learner-memory.md` | 分级记忆(短/中长/长期+画像): 机制=core, taxonomy=kit 注册 | **MEM-1 ✅ · MEM-2 ✅ · MEM-3 ✅ 吸收式完成**(AI 接线半 = profileContext→prompt + managed 硬剥离,已由 REV-2/ACTION-2a 落地;仅剩 registerBehaviorTaxonomy 行为分类学,无当前消费者→按需再建) |

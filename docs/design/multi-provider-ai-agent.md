@@ -548,9 +548,8 @@ selection still works. **Ships invisibly; pure groundwork. All tests stay green.
   free Claude-subscription CLI. Chat + structured generation work on all.
 
 ### Phase 2 — Tool calling + agent loop
-- `ToolDefinition` registry + `toSdkTools`; `runAgent` on `AiSdkProvider` via
-  `ToolLoopAgent`; `AgentStepEvent` + `POST /api/agent/stream`.
-- A small read-mostly tool set + `createNote` gated by the preview loop.
+- **A4a ✅ (server)** + **A4b ✅ (client, A4b-001 2026-07-05).** `ToolDefinition` registry + `toSdkTools`; `runAgent` on `AiSdkProvider` via `ToolLoopAgent`; `AgentStepEvent` + `POST /api/agent/stream`. **Client (A4b):** capability-gated 🛠 用工具 button → `entityClient.agentStream` (SSE 6-event dispatch) → render-only `agentTurn` transcript (collapsible tool-call/result cards + streamed answer), final message persists as one assistant turn; `MockAgentProvider` (offline tools provider, byte-identical mock delegation) for deterministic e2e. Plan + impl adversarially reviewed.
+- A small read-mostly tool set (`search_notes`/`get_source`/`list_anchors`) shipped; `createNote` (write tool) gated by the preview loop — **still deferred**.
 - Client agent transcript UI (tool-call/result cards), capability-gated.
 - **Outcome:** the AI can *do* things (search the vault, draft a note) with
   confirmation, on any tool-capable HTTP provider.

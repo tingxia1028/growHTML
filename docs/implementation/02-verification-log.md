@@ -742,3 +742,9 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 | 2026-07-05 | W3-001 | app.ts route + registry chat.synthesize | POST 返回新源 id;命令转发 transcript+context+fires onSourceSynthesized;availability false@空 | Passed(2+3) |
 | 2026-07-05 | W3-001 | e2e/chat-synthesize.spec.ts | 挂源→点生成文档→新 markdown 源出现+开面板+渲染带标题 | Passed |
 | 2026-07-05 | W3-001 | npx vitest run(全量) | 226 文件 / 2406 用例(基线 224/2386 + 20) | Passed |
+| 2026-07-05 | A4b-001 | agentTurnReducer.test.ts | 6 事件 fold(text 合并/tool call→result by id/截断 JSON 不抛留 raw+badge/error 态/interleave) | Passed(13) |
+| 2026-07-05 | A4b-001 | entityClient agentStream + mockAgentProvider + route | SSE 六事件派发+501/400/mid-error;组合委托 byte-identical;createModelProvider id;POST /api/agent/stream 发 tool-call+result+done | Passed(7+7+1) |
+| 2026-07-05 | A4b-001 | AgentTranscript RTL + studyViewAgent RTL | 卡片折叠/展开/error/截断 badge/running spinner;按钮 tools:false 隐/true 显+点选出卡片再最终答;末条持久化 | Passed(8+5) |
+| 2026-07-05 | A4b-001 | e2e/agent-tools.spec.ts | mock-agent:挂源→🛠 用工具→search_notes 卡片+tool-result+确定性最终答 | Passed |
+| 2026-07-05 | A4b-001 | DELTA-2 全 e2e 套件@mock-agent 全局 pin | 50 passed / 2 failed(loop.spec:144 + slash-composer:30)——两者为**既有全套件排序 flake**(旧 mock pin 重跑同样 2 个失败,单跑皆过),mock-agent 不扰动 | 非 A4b 引入 |
+| 2026-07-05 | A4b-001 | npx vitest run(全量) | 231 文件 / 2447 用例(基线 226/2406 + 41) | Passed |
