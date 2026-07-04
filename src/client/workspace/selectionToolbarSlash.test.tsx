@@ -13,7 +13,7 @@ import type { WorkspaceContextValue } from "./WorkspaceContext";
 import type { AnchorDraft } from "../focus/FocusContext";
 
 let mockCtx: WorkspaceContextValue;
-vi.mock("./WorkspaceContext", () => ({ useWorkspace: () => mockCtx }));
+vi.mock("./WorkspaceContext", () => ({ useWorkspace: () => mockCtx, useWorkspaceOptional: () => mockCtx }));
 // Keep the toolbar's speech affordances jsdom-safe (they own their own effects).
 vi.mock("../speech/SpeakButton", () => ({ SpeakButton: () => null }));
 vi.mock("../speech/usePinyinPopover", () => ({

@@ -26,7 +26,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import { useWorkspace } from "../workspace/WorkspaceContext";
+import { useWorkspaceOptional } from "../workspace/WorkspaceContext";
 import { slashEntries as buildSlashEntries } from "./adapters";
 import { resolveSlashEntries } from "./engine";
 import { dispatchSlashEntry } from "./dispatchSlashEntry";
@@ -48,7 +48,13 @@ function isPrintable(event: ReactKeyboardEvent | KeyboardEvent): boolean {
 }
 
 export function ToolbarSlashButton({ surface, disabled }: ToolbarSlashButtonProps) {
-  const { operations, operationPrefs, activeKitIds, dispatch, openManualEditor } = useWorkspace();
+  // Read through the null-safe hook so the button degrades to nothing OUTSIDE a
+  // WorkspaceProvider (standalone view renders / tests) instead of throwing — the mounts
+  // (floating toolbar / anchor bar) always run inside the provider in the real app.
+  const ctx = useWorkspaceOptional();
+  const operations = ctx?.operations ?? [];
+  const operationPrefs = ctx?.operationPrefs ?? { order: [], disabled: [] };
+  const activeKitIds = ctx?.activeKitIds ?? [];
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
@@ -98,9 +104,10 @@ export function ToolbarSlashButton({ surface, disabled }: ToolbarSlashButtonProp
   };
 
   const pick = (entry: (typeof entries)[number]) => {
+    if (!ctx) return;
     // Toolbar picks carry NO instruction (no mini-composer): bare noteType → manual
     // editor; operation → operation.run. The instruction path stays chat-only.
-    dispatchSlashEntry(entry, "", { dispatch, openManualEditor });
+    dispatchSlashEntry(entry, "", { dispatch: ctx.dispatch, openManualEditor: ctx.openManualEditor });
     close();
   };
 
@@ -133,6 +140,10 @@ export function ToolbarSlashButton({ surface, disabled }: ToolbarSlashButtonProp
       setQuery((q) => q + event.key);
     }
   };
+
+  // Outside a WorkspaceProvider there is nothing to dispatch to — render nothing (a
+  // standalone view render / test that doesn't wrap a provider still mounts cleanly).
+  if (!ctx) return null;
 
   return (
     <div

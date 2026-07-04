@@ -16,7 +16,8 @@ import type { WorkspaceContextValue } from "../workspace/WorkspaceContext";
 
 let mockCtx: WorkspaceContextValue;
 vi.mock("../workspace/WorkspaceContext", () => ({
-  useWorkspace: () => mockCtx
+  useWorkspace: () => mockCtx,
+  useWorkspaceOptional: () => mockCtx
 }));
 
 // Register the built-in note types so the palette has rows (markdown/quiz), same as the

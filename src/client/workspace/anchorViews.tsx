@@ -13,6 +13,7 @@ import { draftQuoteText } from "../focus/FocusContext";
 import { noteTypeIcon } from "../notes/noteTypeIcon";
 import { getNoteType } from "../notes/noteTypeRegistry";
 import { ActionGrid } from "./ActionGrid";
+import { ToolbarSlashButton } from "../slash/ToolbarSlashButton";
 import { SpeakButton } from "../speech/SpeakButton";
 import { persistAnchorGlyphVisibility, readStoredAnchorGlyphVisibility } from "../annotations";
 import { setAnchorGlyphVisibility } from "../markerOverlay";
@@ -145,6 +146,11 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
               busy={generating}
               density="grid"
             />
+            {/* SC-2: the `/类型` palette bound to THIS anchor. Gated on
+                focus.anchor || focus.draft (mirrors the ActionGrid disabled above): a
+                pick materializes short-circuits to the existing anchor when one is
+                focused, else to the live draft. No instruction from a toolbar. */}
+            <ToolbarSlashButton surface="anchor" disabled={!anchor && !focus.draft} />
           </div>
 
           {/* —— Linked notes (visible layers) —— note-type icons focus the Notes viewer
@@ -196,6 +202,9 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
             {/* Same 朗读 slot, disabled (no text) — the capability stays discoverable. */}
             <SpeakButton text="" />
             <ActionGrid items={anchorBarActions} onRun={runAction} disabled busy={generating} density="grid" />
+            {/* SC-2: the `/` affordance stays discoverable but disabled (no focused
+                anchor/draft to bind a pick to) — same empty-state contract as the grid. */}
+            <ToolbarSlashButton surface="anchor" disabled />
           </div>
         </>
       )}
