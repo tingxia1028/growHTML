@@ -210,6 +210,38 @@ describe("vault server API", () => {
     expect(response.body.message.content).toContain("Render Thread");
   });
 
+  it("synthesizes a chat transcript into a new markdown source (POST /api/chat/synthesize)", async () => {
+    // The default mock echoes the `sample` as the {title, markdown} doc → deterministic.
+    const sample = { title: "Synthesized Doc", markdown: "# Overview\n\nBody.\n\n## More\n\nDetails." };
+    const created = await request(app)
+      .post("/api/chat/synthesize")
+      .send({
+        messages: [
+          { role: "user", content: "Explain X." },
+          { role: "assistant", content: "X is Y." },
+          { role: "user", content: "Turn it into a doc." }
+        ],
+        sample
+      })
+      .expect(201);
+
+    expect(created.body.source.id).toMatch(/^src_/);
+    expect(created.body.source.sourceType).toBe("markdown");
+    expect(created.body.source.origin).toBe("authored");
+    expect(created.body.source.title).toBe("Synthesized Doc");
+
+    // The new source LISTS via the normal source route + renders headings.
+    const list = await request(app).get("/api/sources").expect(200);
+    expect(list.body.sources.map((s: { id: string }) => s.id)).toContain(created.body.source.id);
+    const rendered = await request(app).get(`/api/sources/${created.body.source.id}/rendered`).expect(200);
+    expect(rendered.body.content).toContain("<h1");
+    expect(rendered.body.content).toContain("Overview");
+  });
+
+  it("rejects a synthesize request with no messages (400)", async () => {
+    await request(app).post("/api/chat/synthesize").send({ messages: [] }).expect(400);
+  });
+
   it("streams a chat reply over SSE that rejoins to the one-shot answer", async () => {
     const oneShot = await request(app)
       .post("/api/chat")

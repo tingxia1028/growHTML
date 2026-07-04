@@ -36,6 +36,8 @@ import * as workspaceService from "./services/workspace";
 import * as searchService from "./services/search";
 import * as reviewScheduleService from "./services/reviewSchedule";
 import * as aiService from "./services/ai";
+import * as synthesisService from "./services/synthesis";
+import { SynthesisPathResultError } from "./services/synthesis";
 import * as aiProvidersService from "./services/aiProviders";
 import * as speechService from "./services/speech";
 import { KeyNotPersistableError, type KeyStore } from "./keyStore";
@@ -1274,6 +1276,24 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
       const input = chatRequestSchema.parse(req.body);
       res.json(await aiService.chatComplete({ provider: await getProvider() }, input));
     } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  // W3 (ai-workspace §W3): synthesize a chat transcript (+ its W2 attachments) into a
+  // NEW markdown source. HTTP-ONLY like every AI route — the direct transport carries
+  // no provider and excludes AI (DELTA 2), so there is NO parity route here. A
+  // structured-generation failure or a bare-path result → 400 (a client/AI problem).
+  app.post("/api/chat/synthesize", async (req, res, next) => {
+    try {
+      const input = synthesisService.synthesizeRequestSchema.parse(req.body);
+      const result = await synthesisService.synthesizeDocument({ provider: await getProvider(), vault }, input);
+      res.status(201).json(result);
+    } catch (error) {
+      if (error instanceof StructuredGenerationError || error instanceof SynthesisPathResultError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
       if (!handleServiceError(res, error)) next(error);
     }
   });
