@@ -17,6 +17,9 @@ import { SourceViewerView } from "./views";
 
 function SourceTabs({ ctx }: { ctx: WorkspaceContext }) {
   const { openPanes, focusedPaneId, focusPane, closePane, sourceForPane } = ctx;
+  // The pane whose body renders (V1: the focused pane; the split lands in a later commit).
+  const bodyPane =
+    openPanes.find((p) => p.paneId === focusedPaneId) ?? openPanes[0] ?? null;
 
   // One tab per open pane (single pane ⇒ exactly the old chrome). No pane open → the same
   // `.reader-tab-empty` placeholder the built-in strip renders.
@@ -65,8 +68,15 @@ function SourceTabs({ ctx }: { ctx: WorkspaceContext }) {
       </div>
     );
 
-  // The focused pane's reader body, with the multi-pane strip injected into its header.
-  return <SourceViewerView ctx={ctx} tabStrip={tabStrip} />;
+  // The focused pane's reader body, bound to ITS source (P-A2), with the multi-pane strip
+  // injected into the header. No open pane → the focused-pane globals (empty state).
+  return (
+    <SourceViewerView
+      ctx={ctx}
+      tabStrip={tabStrip}
+      pane={bodyPane ? { paneId: bodyPane.paneId, sourceId: bodyPane.sourceId } : undefined}
+    />
+  );
 }
 
 registerView({ kind: "source.tabs", render: (_node, ctx) => <SourceTabs ctx={ctx} /> });

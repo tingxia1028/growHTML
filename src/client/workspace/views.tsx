@@ -280,11 +280,16 @@ function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
 // (byte-identical to before F1).
 function SourceViewerView({
   ctx,
-  tabStrip
+  tabStrip,
+  pane
 }: {
   ctx: WorkspaceContext;
   /** Multi-pane host override for the `.reader-tabs` strip; omit for the single tab. */
   tabStrip?: ReactNode;
+  /** F1 (P-A2): bind this body to a SPECIFIC pane's source (its node.params.sourceId) —
+      it computes THAT source's paint/reveal/renderedHtml + focuses the pane on select.
+      Omit to bind to the focused pane (the shim globals — byte-identical to pre-F1). */
+  pane?: { paneId: string; sourceId: string };
 }) {
   const {
     activeSource,
@@ -301,8 +306,41 @@ function SourceViewerView({
     setActiveKit,
     setActiveSourceId,
     canForkActiveSource,
-    forkActiveSource
+    forkActiveSource,
+    sourceForPane,
+    paintAnchorsForPane,
+    renderedHtmlForPane,
+    focusPane
   } = ctx;
+
+  // P-A2 per-pane binding: when `pane` is given, resolve THAT source's data; otherwise the
+  // focused-pane globals (unchanged single-pane path). A shared cross-source note paints in
+  // each pane because paintAnchorsForPane runs the same builder over each source's notes.
+  const paneSource = pane ? sourceForPane(pane.paneId) : activeSource;
+  const panePaint = pane ? paintAnchorsForPane(pane.sourceId) : { paintAnchors, revealAnchors };
+  const paneRenderedHtml = pane ? renderedHtmlForPane(pane.sourceId) : renderedHtml;
+  // Selection / marker clicks in a pane claim focus FIRST (focus-follows-pane), then the
+  // single global focus pipeline runs. For the focused-pane path (no `pane`) this is a
+  // no-op. Cross-pane reveal into a non-focused pane's DOM stays deferred (delta 5).
+  const bodyPaintAnchors = panePaint.paintAnchors;
+  const bodyRevealAnchors = panePaint.revealAnchors;
+  const onBodySelect = (draft: Parameters<typeof focus.setDraft>[0]) => {
+    if (pane) focusPane(pane.paneId);
+    focus.setDraft(draft);
+  };
+  const onBodyMarkerAction = (anchorId: string) => {
+    if (pane) focusPane(pane.paneId);
+    // Resolve against the pane's own reveal list so a background pane's marker click finds
+    // its anchor (the focused pane still resolves against ctx.anchors as before).
+    const source = pane ? bodyRevealAnchors : anchors;
+    const hit = source.find((item) => item.id === anchorId);
+    if (hit) {
+      // ctx.anchors carries full AnchorRecords (focus.setAnchor needs one); the pane's
+      // reveal list carries PaintAnchors, so re-resolve against ctx.anchors when possible.
+      const full = anchors.find((item) => item.id === anchorId);
+      if (full) focus.setAnchor(full);
+    }
+  };
 
   // The built-in single-document tab (file icon + title + close) — the pre-F1 chrome.
   const singleTabStrip = (
@@ -339,12 +377,12 @@ function SourceViewerView({
             and status. Page/zoom controls live in the per-reader body toolbar (PdfReader),
             left as-is this pass. */}
         <div className="reader-toolbar">
-          {activeSource ? <BookmarkIndex /> : null}
-          {/* D11 hide-all + D10 export (§10) — per-source reader controls. */}
-          {activeSource ? <HideAllNotesToggle sourceId={activeSource.id} /> : null}
-          {activeSource ? <ExportNotesButton ctx={ctx} /> : null}
+          {paneSource ? <BookmarkIndex /> : null}
+          {/* D11 hide-all + D10 export (§10) — per-source reader controls (this pane's source). */}
+          {paneSource ? <HideAllNotesToggle sourceId={paneSource.id} /> : null}
+          {paneSource ? <ExportNotesButton ctx={ctx} /> : null}
           <PanelMenu label="Reader actions">
-            {activeSource ? (
+            {paneSource ? (
               <div className="panel-menu-field">
                 <span className="panel-menu-label">Product Kit</span>
                 <select
@@ -393,17 +431,14 @@ function SourceViewerView({
           Adding a viewer = mapping its surface in readerForSource; no capture/paint
           logic lives in this host. */}
       {readerForSource({
-        source: activeSource,
-        anchors: paintAnchors,
-        revealAnchors,
-        onSelect: focus.setDraft,
-        onMarkerAction: (anchorId) => {
-          const anchor = anchors.find((item) => item.id === anchorId);
-          if (anchor) focus.setAnchor(anchor);
-        },
+        source: paneSource,
+        anchors: bodyPaintAnchors,
+        revealAnchors: bodyRevealAnchors,
+        onSelect: onBodySelect,
+        onMarkerAction: onBodyMarkerAction,
         activeAnchorId: focus.anchor?.id,
         revealSeq: focus.revealSeq,
-        renderedHtml,
+        renderedHtml: paneRenderedHtml,
         annotationMode
       })}
     </main>

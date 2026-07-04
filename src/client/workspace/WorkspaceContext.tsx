@@ -73,6 +73,9 @@ import {
   putBundle,
   type SourceBundle
 } from "./sourceBundles";
+// F1 (P-A2): the pure per-pane paint pipeline (extracted verbatim from the focused memos
+// → byte-identical for the focused pane; run per-source for background panes).
+import { buildPaintPipeline } from "./paneSelectors";
 // Theme V1 — a workspace-wide visual choice, a strict SIBLING of the layout switcher
 // (it never reads activeLayoutId). The side-effect import populates the theme registry
 // before listThemes() runs at provider mount, mirroring views.tsx's kit import.
@@ -369,6 +372,12 @@ export type WorkspaceContextValue = {
   closePane(paneId: string): void;
   /** The SourceRecord a pane shows (its node.params.sourceId → the sources list). */
   sourceForPane(paneId: string): SourceRecord | null;
+  /** P-A2: a pane's own paint + reveal lists (focused pane → the shared memos, else the
+      pane's cached bundle run through the same builder). A shared cross-source note paints
+      in every open pane whose source references it. */
+  paintAnchorsForPane(sourceId: string): { paintAnchors: PaintAnchor[]; revealAnchors: PaintAnchor[] };
+  /** P-A2: a pane's rendered HTML (focused → top-level renderedHtml, else its bundle). */
+  renderedHtmlForPane(sourceId: string): string;
   loadSources(): Promise<void>;
   deleteSourceItem(sourceId: string, title: string): Promise<void>;
   removeRecentSourceId(sourceId: string): void;
@@ -828,96 +837,46 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [notes, enabledLayerIds]
   );
 
-  // Note text per anchor id — a note can hang off several anchors, and several
-  // notes can share an anchor (their text is merged for the one hover card). Built from
-  // the FILTERED notes so a hidden layer's note text doesn't paint. Bookmarks are
-  // EXCLUDED: their content is a structured { label } that would otherwise paint as raw
-  // JSON on the passage; they surface as chips in the Bookmarks pane instead (the anchor
-  // itself still paints its inline marker — every anchor is in `anchors`/paintAnchors).
-  const notesByAnchorId = useMemo(() => {
-    const map = new Map<string, NoteRecord[]>();
-    for (const note of visibleNotes) {
-      if ((note.contentType ?? "markdown") === BOOKMARK_CONTENT_TYPE) continue;
-      for (const anchorId of note.anchorIds) {
-        const existing = map.get(anchorId) ?? [];
-        map.set(anchorId, [...existing, note]);
-      }
-    }
-    return map;
-  }, [visibleNotes]);
-
-  // Anchors that exist ONLY to carry a bookmark (≥1 bookmark note and NO other note)
-  // must NOT paint — a bookmark is a marker/label surfaced in the Bookmarks pane, not a
-  // highlight on the passage. An anchor shared by a bookmark AND a real note still paints
-  // (for the real note). Classified off the full `notes` list so visibility filtering
-  // doesn't accidentally reclassify a bookmark anchor.
-  const bookmarkOnlyAnchorIds = useMemo(() => {
-    const bookmarked = new Set<string>();
-    const hasRealNote = new Set<string>();
-    for (const note of notes) {
-      const isBookmark = (note.contentType ?? "markdown") === BOOKMARK_CONTENT_TYPE;
-      for (const anchorId of note.anchorIds) {
-        (isBookmark ? bookmarked : hasRealNote).add(anchorId);
-      }
-    }
-    const out = new Set<string>();
-    for (const id of bookmarked) if (!hasRealNote.has(id)) out.add(id);
-    return out;
-  }, [notes]);
-
-  // ONE normalized paint list for the active source: every anchor it has (except
-  // bookmark-only ones), mapped to the uniform PaintAnchor shape with its merged note
-  // text. The host hands this SAME list to whichever reader matches the source; each
-  // reader filters it to the anchorKinds it understands and paints those.
-  const paintAnchors = useMemo<PaintAnchor[]>(
-    () =>
-      visibleAnchors
-        .filter((anchor) => !bookmarkOnlyAnchorIds.has(anchor.id))
-        .map((anchor) => {
-          const anchorNotes = notesByAnchorId.get(anchor.id) ?? [];
-          return {
-        id: anchor.id,
-        anchorKind: anchor.anchorKind,
-        quote: "quote" in anchor ? anchor.quote : undefined,
-        contextBefore: "contextBefore" in anchor ? anchor.contextBefore : undefined,
-        contextAfter: "contextAfter" in anchor ? anchor.contextAfter : undefined,
-        studyId: "studyId" in anchor ? anchor.studyId : undefined,
-        page: "page" in anchor ? anchor.page : undefined,
-        rect: "rect" in anchor ? anchor.rect : undefined,
-            note: anchorNotes.map((note) => noteText(note.content)).join("\n\n"),
-            notePreviews: anchorNotes.map((note) => ({
-              id: note.id,
-              contentType: note.contentType ?? "markdown",
-              text: noteText(note.content),
-              html: renderAnnotationNotePreview(note, anchor, sourceLayers)
-            }))
-          };
-        }),
-    [visibleAnchors, notesByAnchorId, sourceLayers, bookmarkOnlyAnchorIds]
+  // The FOCUSED pane's paint + reveal lists. Extracted into the pure `buildPaintPipeline`
+  // (paneSelectors.ts) so this call reproduces the old paintAnchors/revealAnchors
+  // BYTE-FOR-BYTE (the regression lock — same visibleAnchors/notes/sourceLayers/enabled
+  // inputs → same output) AND each open reader pane can run the same builder on ITS OWN
+  // bundle to paint its own source (P-A2). `paintAnchorsForPane` (below) is that per-pane
+  // entry. paintAnchors excludes bookmark-only anchors; revealAnchors keeps all.
+  const focusedPaint = useMemo(
+    () => buildPaintPipeline({ visibleAnchors, notes, sourceLayers, enabledLayerIds }),
+    [visibleAnchors, notes, sourceLayers, enabledLayerIds]
   );
-  const revealAnchors = useMemo<PaintAnchor[]>(
-    () =>
-      visibleAnchors.map((anchor) => {
-        const anchorNotes = notesByAnchorId.get(anchor.id) ?? [];
-        return {
-        id: anchor.id,
-        anchorKind: anchor.anchorKind,
-        quote: "quote" in anchor ? anchor.quote : undefined,
-        contextBefore: "contextBefore" in anchor ? anchor.contextBefore : undefined,
-        contextAfter: "contextAfter" in anchor ? anchor.contextAfter : undefined,
-        studyId: "studyId" in anchor ? anchor.studyId : undefined,
-        page: "page" in anchor ? anchor.page : undefined,
-        rect: "rect" in anchor ? anchor.rect : undefined,
-          note: anchorNotes.map((note) => noteText(note.content)).join("\n\n"),
-          notePreviews: anchorNotes.map((note) => ({
-            id: note.id,
-            contentType: note.contentType ?? "markdown",
-            text: noteText(note.content),
-            html: renderAnnotationNotePreview(note, anchor, sourceLayers)
-          }))
-        };
-      }),
-    [visibleAnchors, notesByAnchorId, sourceLayers]
+  const paintAnchors = focusedPaint.paintAnchors;
+  const revealAnchors = focusedPaint.revealAnchors;
+
+  // P-A2: compute a NON-focused pane's own paint + reveal lists from its cached bundle,
+  // under the single global focused-pane layer lens (delta 2: no per-pane Layer Lens in
+  // V1). The focused pane reads the memos above; a background pane calls this with its
+  // sourceId. A shared cross-source note paints in BOTH panes because it appears in each
+  // source's own `notes` (via its anchors in that source).
+  const paintAnchorsForPane = useCallback(
+    (sourceId: string): { paintAnchors: PaintAnchor[]; revealAnchors: PaintAnchor[] } => {
+      if (sourceId === activeSourceId) return focusedPaint;
+      const bundle = getBundle(sourceBundles, sourceId);
+      if (!bundle) return { paintAnchors: [], revealAnchors: [] };
+      return buildPaintPipeline({
+        visibleAnchors: bundle.anchors,
+        notes: bundle.notes,
+        sourceLayers: bundle.sourceLayers,
+        enabledLayerIds
+      });
+    },
+    [activeSourceId, focusedPaint, sourceBundles, enabledLayerIds]
+  );
+  // A pane's rendered HTML — the focused pane reads the top-level state (already mirrored),
+  // a background pane reads its cached bundle.
+  const renderedHtmlForPane = useCallback(
+    (sourceId: string): string => {
+      if (sourceId === activeSourceId) return renderedHtml;
+      return getBundle(sourceBundles, sourceId)?.renderedHtml ?? "";
+    },
+    [activeSourceId, renderedHtml, sourceBundles]
   );
   const activePatches = useMemo(
     () => patches.filter((patch) => !selectedAnchorId || patch.anchorId === selectedAnchorId),
@@ -2077,6 +2036,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       focusPane: focusPaneById,
       closePane: closePaneById,
       sourceForPane,
+      paintAnchorsForPane,
+      renderedHtmlForPane,
       loadSources,
       deleteSourceItem,
       removeRecentSourceId: forgetSourceId,
@@ -2194,6 +2155,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       focusPaneById,
       closePaneById,
       sourceForPane,
+      paintAnchorsForPane,
+      renderedHtmlForPane,
       loadSources,
       deleteSourceItem,
       forgetSourceId,
