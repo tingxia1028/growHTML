@@ -64,6 +64,15 @@ import {
   prunePanes,
   type OpenPane
 } from "./panes";
+// F1 (P-A1): the pure per-source reader-data cache (renderedHtml/anchors/notes/patches/
+// sourceLayers keyed by sourceId) — the focused pane's bundle mirrors into top-level state.
+import {
+  getBundle,
+  hasBundle,
+  pruneBundles,
+  putBundle,
+  type SourceBundle
+} from "./sourceBundles";
 // Theme V1 — a workspace-wide visual choice, a strict SIBLING of the layout switcher
 // (it never reads activeLayoutId). The side-effect import populates the theme registry
 // before listThemes() runs at provider mount, mirroring views.tsx's kit import.
@@ -627,6 +636,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // caller keeps reading the same string while the workspace grows to multiple panes.
   const [openPanes, setOpenPanes] = useState<OpenPane[]>([]);
   const [focusedPaneId, setFocusedPaneId] = useState<string>("");
+  // F1 (P-A1 §A.1): the per-source reader-data cache — filled when a pane opens, reused
+  // across panes/refocus. The FOCUSED pane's bundle is mirrored into the top-level
+  // anchors/notes/patches/sourceLayers/renderedHtml state so the 8 per-source memos keep
+  // deriving unchanged. Each pane's own bundle feeds its reader in P-A2.
+  const [sourceBundles, setSourceBundles] = useState<Map<string, SourceBundle>>(() => new Map());
   const currentFocusedPane = focusedPane(openPanes, focusedPaneId);
   const activeSourceId = currentFocusedPane?.sourceId ?? "";
   // `setActiveSourceId(id)` → open-or-focus a pane for that source (the shim). id==="" is
@@ -948,26 +962,53 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Fetch a source's full reader data into a SourceBundle. Pure fetch (no state writes)
+  // so both the focused-source load (mirror to top-level) and the background per-pane
+  // load (cache only) share one network path.
+  const fetchSourceBundle = useCallback(
+    async (sourceId: string): Promise<SourceBundle> => {
+      const sourceRecord = sources.find((item) => item.id === sourceId);
+      const viewer = getSourceViewer(sourceRecord?.sourceType);
+      const isLocalHtml = viewer.htmlPipeline && !!sourceRecord?.metadata?.originalPath;
+      const [rendered, anchorsResponse, notesResponse, patchesResponse, layersResponse] = await Promise.all([
+        viewer.htmlPipeline && !isLocalHtml ? entityClient.rendered(sourceId) : Promise.resolve(null),
+        entityClient.anchors(sourceId),
+        entityClient.notes(sourceId),
+        entityClient.patches(sourceId),
+        entityClient.layers(sourceId)
+      ]);
+      return {
+        renderedHtml: rendered?.content ?? "",
+        anchors: anchorsResponse.anchors,
+        notes: notesResponse.notes,
+        patches: patchesResponse.patches,
+        sourceLayers: layersResponse.layers
+      };
+    },
+    [sources]
+  );
+
+  // Mirror a bundle into the top-level anchors/notes/patches/sourceLayers/renderedHtml
+  // state (the focused pane's data — every per-source memo derives from these).
+  const mirrorBundleToTopLevel = useCallback((bundle: SourceBundle) => {
+    setRenderedHtml(bundle.renderedHtml);
+    setAnchors(bundle.anchors);
+    setNotes(bundle.notes);
+    setPatches(bundle.patches);
+    setSourceLayers(bundle.sourceLayers);
+  }, []);
+
+  // Load (or reuse the cached) bundle for the FOCUSED source: fetch → cache → mirror to
+  // top-level, plus the source-switch side effects (clear focus, reset the draft input).
+  // On a re-focus onto an already-cached source the bundle is mirrored WITHOUT a refetch.
   const loadSourceWorkspace = useCallback(
     async (sourceId: string) => {
       setStatus("loading");
       setError("");
       try {
-        const sourceRecord = sources.find((item) => item.id === sourceId);
-        const viewer = getSourceViewer(sourceRecord?.sourceType);
-        const isLocalHtml = viewer.htmlPipeline && !!sourceRecord?.metadata?.originalPath;
-        const [rendered, anchorsResponse, notesResponse, patchesResponse, layersResponse] = await Promise.all([
-          viewer.htmlPipeline && !isLocalHtml ? entityClient.rendered(sourceId) : Promise.resolve(null),
-          entityClient.anchors(sourceId),
-          entityClient.notes(sourceId),
-          entityClient.patches(sourceId),
-          entityClient.layers(sourceId)
-        ]);
-        setRenderedHtml(rendered?.content ?? "");
-        setAnchors(anchorsResponse.anchors);
-        setNotes(notesResponse.notes);
-        setPatches(patchesResponse.patches);
-        setSourceLayers(layersResponse.layers);
+        const bundle = await fetchSourceBundle(sourceId);
+        setSourceBundles((cache) => putBundle(cache, sourceId, bundle));
+        mirrorBundleToTopLevel(bundle);
         focus.clear();
         setPatchHtml("");
         // W1: the chat SESSION survives a source switch (ai-workspace §5 — switch/
@@ -979,7 +1020,23 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setStatus("error");
       }
     },
-    [sources, focus]
+    [fetchSourceBundle, mirrorBundleToTopLevel, focus]
+  );
+
+  // Load a NON-focused pane's bundle into the cache only (no top-level mirror, no focus
+  // reset) — the per-pane load effect calls this so a background pane paints its own
+  // source without disturbing the focused pane's state.
+  const loadPaneBundle = useCallback(
+    async (sourceId: string) => {
+      try {
+        const bundle = await fetchSourceBundle(sourceId);
+        setSourceBundles((cache) => putBundle(cache, sourceId, bundle));
+      } catch {
+        // A background pane's fetch failure is non-fatal — its reader shows empty until
+        // the next refresh; the focused pane's load surfaces errors.
+      }
+    },
+    [fetchSourceBundle]
   );
 
   // SRC-2: the authored editor's post-save refresh — a full workspace reload of the
@@ -988,26 +1045,39 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (activeSourceId) await loadSourceWorkspace(activeSourceId);
   }, [activeSourceId, loadSourceWorkspace]);
 
-  // Re-fetch anchors/notes/patches after a mutation that may have created a new
-  // anchor (note/patch save), so the painted highlights and lists stay in sync —
-  // without resetting the chat the way a full workspace reload would.
-  const refreshAnnotations = useCallback(async () => {
-    if (!activeSourceId) return;
-    try {
-      const [anchorsResponse, notesResponse, patchesResponse, layersResponse] = await Promise.all([
-        entityClient.anchors(activeSourceId),
-        entityClient.notes(activeSourceId),
-        entityClient.patches(activeSourceId),
-        entityClient.layers(activeSourceId)
-      ]);
-      setAnchors(anchorsResponse.anchors);
-      setNotes(notesResponse.notes);
-      setPatches(patchesResponse.patches);
-      setSourceLayers(layersResponse.layers);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to refresh");
-    }
-  }, [activeSourceId]);
+  // Re-fetch anchors/notes/patches after a mutation that may have created a new anchor
+  // (note/patch save), so the painted highlights and lists stay in sync — without
+  // resetting the chat the way a full workspace reload would. Takes an explicit sourceId
+  // (default: the focused/active source) so a mutation on ANY open pane's source refreshes
+  // THAT pane's bundle; the top-level state only mirrors when the refreshed source is the
+  // focused one (the per-source memos derive from it).
+  const refreshAnnotations = useCallback(
+    async (sourceId?: string) => {
+      const targetId = sourceId ?? activeSourceId;
+      if (!targetId) return;
+      try {
+        const [anchorsResponse, notesResponse, patchesResponse, layersResponse] = await Promise.all([
+          entityClient.anchors(targetId),
+          entityClient.notes(targetId),
+          entityClient.patches(targetId),
+          entityClient.layers(targetId)
+        ]);
+        const bundle: SourceBundle = {
+          // Keep the cached renderedHtml — this refresh only re-reads annotations.
+          renderedHtml: getBundle(sourceBundles, targetId)?.renderedHtml ?? renderedHtml,
+          anchors: anchorsResponse.anchors,
+          notes: notesResponse.notes,
+          patches: patchesResponse.patches,
+          sourceLayers: layersResponse.layers
+        };
+        setSourceBundles((cache) => putBundle(cache, targetId, bundle));
+        if (targetId === activeSourceId) mirrorBundleToTopLevel(bundle);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to refresh");
+      }
+    },
+    [activeSourceId, sourceBundles, renderedHtml, mirrorBundleToTopLevel]
+  );
 
   const importFromUrl = useCallback(async () => {
     if (!importUrl.trim()) return;
@@ -1140,12 +1210,36 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     rememberSourceId(activeSourceId);
   }, [activeSourceId, rememberSourceId]);
 
+  // The FOCUSED source's load: on an id change (a focus flip or a switch), reuse the
+  // cached bundle without a refetch when present (mirror it to top-level + run the
+  // source-switch side effects), else fetch it. This is the "no-refetch on refocus" path.
   useEffect(() => {
-    if (activeSourceId) {
-      void loadSourceWorkspace(activeSourceId);
+    if (!activeSourceId) return;
+    if (hasBundle(sourceBundles, activeSourceId)) {
+      const cached = getBundle(sourceBundles, activeSourceId);
+      if (cached) {
+        mirrorBundleToTopLevel(cached);
+        focus.clear();
+        setPatchHtml("");
+        setChatInput("");
+      }
+      return;
     }
+    void loadSourceWorkspace(activeSourceId);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mirror App: load on id change only
   }, [activeSourceId]);
+
+  // Per-pane bundle load: every OPEN pane's source needs its bundle cached so its reader
+  // can paint (P-A2 feeds each pane its own list). The focused effect above only loads the
+  // focused source; this loads any pane's source that isn't cached yet (no top-level mirror).
+  useEffect(() => {
+    for (const pane of openPanes) {
+      if (pane.sourceId && pane.sourceId !== activeSourceId && !hasBundle(sourceBundles, pane.sourceId)) {
+        void loadPaneBundle(pane.sourceId);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load a pane's bundle on open
+  }, [openPanes]);
 
   // Pre-fill the "Edit source (patch)" textarea from an HTML-surface selection (the
   // only surface whose patches replace study-id elements). All selection/paint logic
