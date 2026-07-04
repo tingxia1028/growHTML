@@ -753,3 +753,10 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 | 2026-07-05 | SC-2-001 | selectionToolbarSlash + anchorBarSlash RTL | pick 时 focus.draft/focus.anchor 仍在场→分派正确命令;anchor 空态按钮禁用 | Passed(mount×2) |
 | 2026-07-05 | SC-2-001 | e2e/slash-toolbar.spec.ts(隔离) | 选区→浮动工具栏→点`/`→面板列类型→`/markdown`→floating editor 存到新锚点@选中段 | Passed |
 | 2026-07-05 | SC-2-001 | npx vitest run(全量) | 235 文件 / 2464 用例(基线 231/2447 + 17) | Passed |
+| 2026-07-05 | N2-001 | overlay.test.ts isRegionGesture | alt→region / off-text→region / on-text→text | Passed |
+| 2026-07-05 | N2-001 | pdfSelectionRect.test.ts | selectionRectToPageRect: center-half→[.25,.25,.5,.5]/full→[0,0,1,1]/far-edge clamp | Passed |
+| 2026-07-05 | N2-001 | paneSelectors.test.ts resolveAnchorPaintStyle | style.color/layer.color/undefined/disabled/order(手写期望)+ 带样式 PaintAnchor 形状 + omit-key;既有字节锁仍绿 | Passed |
+| 2026-07-05 | N2-001 | annotationDom.test.ts applyPaintStyle | `--sv-anchor-color`+`sv-deco-*` set/清除;clearAnnotations 剥离 | Passed |
+| 2026-07-05 | N2-001 | directTransport.test.ts | layer style-only PATCH 不 400 + 持久 | Passed |
+| 2026-07-05 | N2-001 | e2e/regions.spec.ts(隔离,重写) | Alt+drag / 转为区域 / image region → `/markdown` floating-editor Save → 带 rect 锚点 + region box;D3a 上色重染 | Passed(7/7,稳定 3×) |
+| 2026-07-05 | N2-001 | npx vitest run(全量) | 236 文件 / 2483 用例(基线 235/2464 + 19) | Passed |

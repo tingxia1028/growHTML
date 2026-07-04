@@ -138,3 +138,7 @@ Record durable implementation decisions here. Keep entries short and dated.
 | 2026-07-05 | reducer 文件 agentTranscript.ts→agentTurnReducer.ts | 与 AgentTranscript.tsx 仅大小写之差,Windows 大小写不敏感 FS 会解析错模块(RTL import 失败抓到) | 保留同名 | — |
 | 2026-07-05 | SC-2 `/` 面板用 **keydown 驱动、无可聚焦输入框**;ToolbarSlashButton 经 `useWorkspaceOptional` 读 context(provider 外渲染空,不抛) | 可聚焦输入框会抢焦点+塌陷 reader DOM 选区→丢 focus.draft;keydown 从根消除失焦类;optional 保护无 provider 的视图测试 | 面板内放 filter input / useWorkspace 硬依赖 | 工具栏带指令的 AI 生成(chat-only,defer) |
 | 2026-07-05 | SC-2 挂 `SelectionFloatingToolbar.tsx`(非 spec 说的 dumb `SelectionToolbar.tsx`) | SelectionToolbar 是底栏/锚点共用的哑渲染器,挂那会把 `/` 泄漏到非浮动表面;浮动 host 才是表面隔离的正确家且已读 useWorkspace | 挂 dumb 渲染器 | — |
+| 2026-07-05 | D4a 区域选择 MODELESS:Alt+drag 主显式触发,off-text 尽力而为(isRealRegion 守卫) | pdf.js 文本层稀疏,纯非文本启发会误判;Alt 是无歧义显式路径 | 保留 mode-tab / 纯 off-text 判定 | D4b HTML/web rect(defer) |
+| 2026-07-05 | 转为区域 非 registry 命令——经 runAction 特判到 `convertSelectionToRegion` 回调 | 需活选区几何(DOM/pageEl.getBoundingClientRect),命令层拿不到 | 走命令 | — |
+| 2026-07-05 | D3a 解析按 anchor 的 NOTES' layerIds(非弃用 anchor.layerId)∩ enabled,按 order 排序;precedence style.color>layer.color>#3474e6;paint 加 var 无 !important | note.layerIds 是现行绘制过滤源;order 排序保确定;无 !important 让 focus-blue(.sv-selected/.sv-active)仍胜 | 用 anchor.layerId / 硬编码色 | — |
+| 2026-07-05 | **已知 D3 债 → D3b:** buildStudyPack(studyLayer.ts:147-152)只写 {title,description,author,visibility},丢 style.color/decoration(同 N5 display 缺口)——违反 D3 §3"到处渲染一致",N2 范围外 | .svpack 便携层色需 D3b 补 | 本期做 style 导出 | D3b |

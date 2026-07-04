@@ -148,6 +148,8 @@ filters `BOOKMARK_CONTENT_TYPE`; `GLYPH_BOOKMARK` chip styling stays as-is per D
 
 ## 3. D3 — Anchor paint style config (decoration + palette)
 
+> **STATUS: D3a ✅ SHIPPED (N2-001, 2026-07-05)** — per-layer `style {decoration,color}`, hex via the Layer Lens paint control, precedence `layer.style.color > layer.color > global #3474e6` (CSS `var(--sv-anchor-color,#3474e6)` + `.sv-deco-*`), applied on PDF text spans + PDF/image region boxes. **DEFERRED (D3b):** anchor `styleOverride` envelope + per-anchor swatch, named-token palette, global-default Settings, `.svpack` style export (buildStudyPack currently STRIPS style — known D3 debt), and the DOM/webview `decorateAnnotations` paint path. Also: the Lens paint control ships in `LayerLensManage` but that manager isn't pill-mounted in the shell yet (R7).
+
 Today the paint is ONE hardcoded look: `.sv-annotated { background: rgba(52,116,230,.18);
 box-shadow: inset 0 -2px 0 #3474e6 }` in `ANNOTATION_CSS`, literal-colored because "this
 stylesheet is injected into the reader realm, which has no `--sv-*` tokens"
@@ -185,6 +187,8 @@ stylesheet is injected into the reader realm, which has no `--sv-*` tokens"
 ---
 
 ## 4. D4 — Unified selection: kill the "Text | Region" tab
+
+> **STATUS: D4a ✅ SHIPPED (N2-001, 2026-07-05)** — region selection is MODELESS on PDF (image already was): Alt+drag (primary/explicit) or a drag off the `.textLayer` (best-effort, `isRealRegion`/`MIN_DRAG`-guarded) → region; the Text|Region mode-tab + `region-mode` class are gone; 转为区域 (an append-only `selectionActions` entry → `convertSelectionToRegion` callback) converts a PDF text selection's bbox → a region draft through the shipped draft→request map (zero schema change). **DEFERRED (D4b):** HTML/web region anchors (need a rect on those envelopes).
 
 Today ONLY `PdfReader.tsx` has the mode toggle — two `.mode-tab` buttons ("Text" / "Region",
 L461–478) flipping `regionMode`; region mode makes the text layer click-through
