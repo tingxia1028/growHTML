@@ -11,10 +11,11 @@
 // provider (core primitives, test types) are always available.
 
 import { listNoteTypes } from "../notes/noteTypeRegistry";
-import { providerOf } from "../../kits/catalog";
+import { providerOf, catalogKitMembers } from "../../kits/catalog";
 import { isPluginEffectiveInstalled } from "../../kits/installState";
 import { resolveText } from "../i18n";
 import type { SlashEntry } from "./engine";
+import { slashEntriesFromOperations, type SlashOperationSources } from "./operationAdapter";
 
 /**
  * Every REGISTERED, non-hidden, EFFECTIVE-INSTALLED client note type as a palette entry.
@@ -46,4 +47,54 @@ export function slashEntriesFromNoteTypes(): SlashEntry[] {
       icon: plugin.icon,
       kitId: plugin.pluginId
     }));
+}
+
+// The plugin ids an active kit set FOREGROUNDS: the kits themselves + their catalog
+// members (a member-owned note type floats when its enclosing kit is active). Mirrors
+// clientContext.foregroundPluginIds (not exported) so the note-type ranking agrees with
+// the surface-item foregrounding kitSurfaceItems already does for operations.
+function foregroundIds(kitIds: readonly string[]): Set<string> {
+  const ids = new Set<string>(kitIds);
+  for (const kitId of kitIds) for (const member of catalogKitMembers(kitId)) ids.add(member);
+  return ids;
+}
+
+/**
+ * SC-3 ranking (slash-composer.md §2 "active kit's types first"): STABLE-partition a
+ * palette list so entries owned by an active/foreground kit come first, everything else
+ * after — each group keeping its incoming relative order (the secondary "stable order"
+ * the engine's tie-break then preserves through resolution). A no-op when no kit is
+ * foregrounded (empty set → the whole list stays in the group-2 order = unchanged).
+ *
+ * MEMORY-RECENCY (design §2 "then memory recency, later") is intentionally SCOPED OUT
+ * of SC-3: no cheap client-side per-entry usage signal exists (searchRecents is recent
+ * QUERIES, not entry usage), and a real recency rank would need new MEM plumbing into
+ * src/client/memory — out of this build's blast radius. Ranking here = active-kit-first
+ * + stable; recency lands when a MEM digest signal is available.
+ */
+export function rankByActiveKit(
+  entries: readonly SlashEntry[],
+  foregroundKitIds: readonly string[] | undefined
+): SlashEntry[] {
+  if (!foregroundKitIds || foregroundKitIds.length === 0) return [...entries];
+  const fg = foregroundIds(foregroundKitIds);
+  const active: SlashEntry[] = [];
+  const rest: SlashEntry[] = [];
+  for (const entry of entries) {
+    (entry.kitId && fg.has(entry.kitId) ? active : rest).push(entry);
+  }
+  return [...active, ...rest];
+}
+
+/**
+ * The FULL slash palette: note types + operations, active-kit-first (SC-3). One
+ * derivation the mount injects into the pure engine — a newly installed kit's types AND
+ * its actions both appear with zero palette code. `operations`/`disabled`/
+ * `foregroundKitIds` come from WorkspaceContext (custom ops are per-vault state); omit
+ * them for the note-types-only list SC-1 shipped.
+ */
+export function slashEntries(sources: SlashOperationSources = {}): SlashEntry[] {
+  const noteTypes = slashEntriesFromNoteTypes();
+  const operations = slashEntriesFromOperations(sources);
+  return rankByActiveKit([...noteTypes, ...operations], sources.foregroundKitIds);
 }

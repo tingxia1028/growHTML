@@ -8,9 +8,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseSlashInput, resolveSlashEntries } from "./engine";
 import { registerNoteType } from "../notes/noteTypeRegistry";
-import { slashEntriesFromNoteTypes } from "./adapters";
+import { slashEntriesFromNoteTypes, slashEntries, rankByActiveKit } from "./adapters";
 import { registerCatalogEntry } from "../../kits/catalog";
 import { resetInstallState, syncInstallState } from "../../kits/installState";
+import type { SlashEntry } from "./engine";
 
 // Stub DiagramNote so importing the built-ins doesn't pull mermaid/markmap-view
 // (they need a real browser) into jsdom — same stub the registry test uses.
@@ -160,5 +161,61 @@ describe("engine × adapter integration — the real table resolves", () => {
     const all = resolveSlashEntries(parsed.query, slashEntriesFromNoteTypes());
     expect(all.length).toBe(slashEntriesFromNoteTypes().length);
     expect(all.length).toBeGreaterThanOrEqual(14); // 10 visible built-ins + 4 textbook types
+  });
+});
+
+describe("rankByActiveKit — active-kit-first, stable (SC-3)", () => {
+  const nt = (id: string, kitId?: string): SlashEntry => ({ kind: "noteType", id, title: id, aliases: [], kitId });
+
+  it("floats an active kit's entries to the front, keeping each group's order", () => {
+    const list = [nt("a"), nt("kitA-1", "kitA"), nt("b"), nt("kitA-2", "kitA"), nt("kitB-1", "kitB")];
+    const ranked = rankByActiveKit(list, ["kitA"]);
+    expect(ranked.map((e) => e.id)).toEqual(["kitA-1", "kitA-2", "a", "b", "kitB-1"]);
+  });
+
+  it("is a no-op (fresh array, unchanged order) when no kit is foregrounded", () => {
+    const list = [nt("a", "kitA"), nt("b")];
+    const ranked = rankByActiveKit(list, []);
+    expect(ranked.map((e) => e.id)).toEqual(["a", "b"]);
+    expect(ranked).not.toBe(list);
+    expect(rankByActiveKit(list, undefined).map((e) => e.id)).toEqual(["a", "b"]);
+  });
+
+  it("foregrounds a kit's MEMBER-owned entries too (member id ∈ the active kit)", () => {
+    // textbook-learning's members own textbook.* types; activating the kit floats them.
+    const nts = slashEntriesFromNoteTypes();
+    const ranked = rankByActiveKit(nts, ["textbook-learning"]);
+    const firstNonTextbook = ranked.findIndex((e) => !e.id.startsWith("textbook."));
+    const lastTextbook = ranked.map((e) => e.id.startsWith("textbook.")).lastIndexOf(true);
+    // Every textbook.* entry precedes the first non-textbook entry (they were floated).
+    expect(lastTextbook).toBeLessThan(firstNonTextbook);
+  });
+});
+
+describe("slashEntries — note types + operations, active-kit-first (SC-3)", () => {
+  it("still produces the note-type entries unchanged (regression) when no ops are passed", () => {
+    const combined = slashEntries();
+    const noteTypeIds = combined.filter((e) => e.kind === "noteType").map((e) => e.id);
+    // The note-type slice is byte-identical to the SC-1 note-types-only adapter output.
+    expect(noteTypeIds).toEqual(slashEntriesFromNoteTypes().map((e) => e.id));
+    // Even with no custom-op argument, the STATIC built-in kit actions (textbook
+    // prompts) still surface as operation entries — that's the SC-3 breadth.
+    expect(combined.some((e) => e.kind === "operation")).toBe(true);
+    expect(combined.some((e) => e.id === "textbook.explain-concept")).toBe(true);
+  });
+
+  it("merges custom operations after note types and both resolve", () => {
+    const combined = slashEntries({ operations: [{ id: "op_S", name: "我的总结", scope: "anchor" }] });
+    expect(combined.some((e) => e.kind === "operation" && e.id === "op_S")).toBe(true);
+    // The op resolves by its 中文 name…
+    expect(resolveSlashEntries("我的总结", combined)[0]?.id).toBe("op_S");
+    // …and the note types still resolve (quiz by 中文 alias).
+    expect(resolveSlashEntries("判断题", combined)[0]?.id).toBe("quiz");
+  });
+
+  it("active-kit-first: an active kit's note types AND its built-in operations lead", () => {
+    const combined = slashEntries({ foregroundKitIds: ["textbook-learning"] });
+    const firstId = combined[0]?.id ?? "";
+    expect(firstId.startsWith("textbook.")).toBe(true);
   });
 });
