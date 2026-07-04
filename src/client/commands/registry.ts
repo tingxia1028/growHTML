@@ -13,7 +13,8 @@ import type {
   NoteRecord,
   OperationVariable,
   PatchRecord,
-  RelationRecord
+  RelationRecord,
+  SourceRecord
 } from "../data/entityClient";
 import type { FocusContextValue } from "../focus/FocusContext";
 import { draftQuoteText } from "../focus/FocusContext";
@@ -93,6 +94,11 @@ export type CommandActions = {
    * to PERSIST the finished turn (chat-session W1), not to append it again.
    */
   onAssistantDone?(message: ChatMessage): void;
+  /**
+   * W3 (ai-workspace §W3): a chat transcript was synthesized into a NEW markdown
+   * source. The host reloads the source list and opens the new doc in a pane.
+   */
+  onSourceSynthesized?(source: SourceRecord): void;
   /** A concept was created or a note↔concept link changed. */
   onConceptChanged?(concept?: ConceptRecord): void;
   /**
@@ -125,6 +131,8 @@ export type CommandContext = {
     | "createNote"
     | "createPatch"
     | "chat"
+    // W3 (DELTA 1): chat.synthesize reaches the backend via ctx.client.synthesize.
+    | "synthesize"
     | "createConcept"
     | "updateNote"
     | "createRelation"
@@ -287,6 +295,38 @@ const askAi: Command = {
     }
     const { message } = await ctx.client.chat({ messages: history, context });
     ctx.actions.onAssistantMessage?.(message);
+  }
+};
+
+// —— W3 chat.synthesize (ai-workspace §W3) ————————————————————————————————————
+// "生成文档": turn the current conversation (+ its W2 attachments) into a NEW markdown
+// source with a heading-TOC. It rides the SAME plain chat lane ask-ai uses — resolve
+// the session's attachments via the feature-detected resolveAttachmentBundles (the
+// askAi idiom), fold them into the chat context, and call the HTTP-only
+// ctx.client.synthesize. `payload.content` flows as the deterministic `sample` (the
+// e2e forces a {title, markdown} against the offline mock). On success the host opens
+// the new doc (onSourceSynthesized). Available only with a non-empty transcript.
+const synthesizeDoc: Command = {
+  id: "chat.synthesize",
+  title: "Synthesize Document",
+  group: "chat",
+  isAvailable: (ctx) => (ctx.chatMessages?.length ?? 0) > 0,
+  run: async (ctx) => {
+    const messages = ctx.chatMessages ?? [];
+    if (messages.length === 0) return;
+    // Resolve the session's source attachments into the widened context BEFORE the
+    // call (feature-detected, exactly like ask-ai). Zero attachments → the flat
+    // context rides unchanged (the `sources` key is only added when non-empty).
+    const sources = ctx.resolveAttachmentBundles ? await ctx.resolveAttachmentBundles() : undefined;
+    const context: ChatContext | undefined =
+      sources && sources.length > 0 ? { ...(ctx.chatContext ?? {}), sources } : ctx.chatContext;
+    const { source } = await ctx.client.synthesize({
+      messages,
+      context,
+      // An explicit deterministic {title, markdown} sample (the e2e) flows through.
+      sample: ctx.payload.content
+    });
+    ctx.actions.onSourceSynthesized?.(source);
   }
 };
 
@@ -864,6 +904,7 @@ export async function runCommand(id: string, ctx: CommandContext): Promise<boole
 
 for (const command of [
   askAi,
+  synthesizeDoc,
   addNote,
   addBookmark,
   createPatch,

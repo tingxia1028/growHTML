@@ -43,6 +43,7 @@ function baseCtx(over: Partial<CommandContext> = {}): CommandContext {
       createNote: vi.fn(async () => ({ note: { id: "note_1" } as never })),
       createPatch: vi.fn(async () => ({ patch: { id: "patch_1" } as never })),
       chat: vi.fn(async () => ({ message: { role: "assistant" as const, content: "hi" }, provider: "mock" })),
+      synthesize: vi.fn(async () => ({ source: { id: "src_new" } as never })),
       createConcept: vi.fn(async () => ({ concept: { id: "concept_1" } as never })),
       updateNote: vi.fn(async () => ({ note: { id: "note_1" } as never })),
       createRelation: vi.fn(async () => ({ relation: { id: "rel_1" } as never })),

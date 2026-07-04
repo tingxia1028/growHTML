@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { getCommand, runCommand, type CommandContext } from "./registry";
-import type { AnyAnchor } from "../data/entityClient";
+import type { AnyAnchor, ChatMessage } from "../data/entityClient";
 import type { FocusContextValue } from "../focus/FocusContext";
 
 const anchor: AnyAnchor = {
@@ -34,6 +34,7 @@ function baseCtx(over: Partial<CommandContext> = {}): CommandContext {
       createNote: vi.fn(async () => ({ note: { id: "note_1" } as never })),
       createPatch: vi.fn(async () => ({ patch: { id: "patch_1" } as never })),
       chat: vi.fn(async () => ({ message: { role: "assistant" as const, content: "hi" }, provider: "mock" })),
+      synthesize: vi.fn(async () => ({ source: { id: "src_new" } as never })),
       createConcept: vi.fn(async () => ({ concept: { id: "concept_1" } as never })),
       updateNote: vi.fn(async () => ({ note: { id: "note_1" } as never })),
       createRelation: vi.fn(async () => ({ relation: { id: "rel_1" } as never })),
@@ -777,5 +778,61 @@ describe("command: note.generate-block (form router)", () => {
   it("is unavailable with empty text", () => {
     expect(getCommand("note.generate-block")!.isAvailable(baseCtx({ payload: { text: "  " } }))).toBe(false);
     expect(getCommand("note.generate-block")!.isAvailable(baseCtx({ payload: { text: "go" } }))).toBe(true);
+  });
+});
+
+// W3 (ai-workspace §W3): "生成文档" turns the conversation (+ W2 attachments) into a NEW
+// markdown source. It forwards the transcript + the resolved widened context to
+// ctx.client.synthesize and fires onSourceSynthesized with the created source. Availability
+// tracks a non-empty transcript.
+describe("command: chat.synthesize", () => {
+  const transcript: ChatMessage[] = [
+    { role: "user", content: "Explain X." },
+    { role: "assistant", content: "X is Y." },
+    { role: "user", content: "Make it a doc." }
+  ];
+
+  it("forwards the transcript + resolved context and fires onSourceSynthesized", async () => {
+    const onSourceSynthesized = vi.fn();
+    const resolveAttachmentBundles = vi.fn(async () => [
+      { title: "Attached Doc", type: "html", excerpt: "body" }
+    ]);
+    const ctx = baseCtx({
+      chatMessages: transcript,
+      chatContext: { sourceTitle: "Focused" },
+      resolveAttachmentBundles,
+      payload: { content: { title: "Doc", markdown: "# H" } },
+      actions: { onSourceSynthesized }
+    });
+
+    const ran = await runCommand("chat.synthesize", ctx);
+
+    expect(ran).toBe(true);
+    expect(resolveAttachmentBundles).toHaveBeenCalledOnce();
+    expect(ctx.client.synthesize).toHaveBeenCalledWith({
+      messages: transcript,
+      context: { sourceTitle: "Focused", sources: [{ title: "Attached Doc", type: "html", excerpt: "body" }] },
+      sample: { title: "Doc", markdown: "# H" }
+    });
+    expect(onSourceSynthesized).toHaveBeenCalledWith({ id: "src_new" });
+  });
+
+  it("with no attachments sends the flat context unchanged (no sources key)", async () => {
+    const ctx = baseCtx({
+      chatMessages: transcript,
+      chatContext: { sourceTitle: "Focused" },
+      resolveAttachmentBundles: vi.fn(async () => []),
+      actions: { onSourceSynthesized: vi.fn() }
+    });
+    await runCommand("chat.synthesize", ctx);
+    const sent = (ctx.client.synthesize as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(sent.context).toEqual({ sourceTitle: "Focused" });
+    expect("sources" in sent.context).toBe(false);
+  });
+
+  it("is unavailable with an empty transcript, available with one turn", () => {
+    expect(getCommand("chat.synthesize")!.isAvailable(baseCtx({ chatMessages: [] }))).toBe(false);
+    expect(getCommand("chat.synthesize")!.isAvailable(baseCtx({ chatMessages: undefined }))).toBe(false);
+    expect(getCommand("chat.synthesize")!.isAvailable(baseCtx({ chatMessages: transcript }))).toBe(true);
   });
 });
