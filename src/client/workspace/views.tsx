@@ -64,7 +64,8 @@ import { ChatMessageBody } from "./ChatMessageBody";
 // `/type + instruction` dispatches the form-router generation whose draft lands in
 // the same floating editor. The engine/palette are the shipped SC-0 modules.
 import { parseSlashInput, resolveSlashEntries } from "../slash/engine";
-import { slashEntriesFromNoteTypes } from "../slash/adapters";
+import { slashEntries as buildSlashEntries } from "../slash/adapters";
+import { operationRunPayload } from "../slash/operationAdapter";
 import { SlashPalette, slashPaletteKeyDown } from "../slash/SlashPalette";
 import type { SlashEntry } from "../slash/engine";
 // W1 (ai-workspace §2.1): the compact session switcher in the chat panel title row —
@@ -480,7 +481,10 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
     showTerminal,
     setShowTerminal,
     activeFileDir,
-    openManualEditor
+    openManualEditor,
+    operations,
+    operationPrefs,
+    activeKitIds
   } = ctx;
 
   // —— SC-1 slash composer state ——————————————————————————————————————————
@@ -491,10 +495,22 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
   const slashParsed = parseSlashInput(chatInput);
   const [slashIndex, setSlashIndex] = useState(0);
   const [slashDismissedFor, setSlashDismissedFor] = useState<string | null>(null);
+  // SC-3: the palette now spans note types AND operations (built-in kit actions +
+  // custom ops), floated active-kit-first and pinyin-matchable. Rebuilt only when the
+  // operation set / prefs / active kit change; the per-keystroke work stays the resolve.
+  const allSlashEntries = useMemo(
+    () =>
+      buildSlashEntries({
+        operations,
+        disabled: operationPrefs.disabled,
+        foregroundKitIds: activeKitIds
+      }),
+    [operations, operationPrefs, activeKitIds]
+  );
   const slashEntries = useMemo(
-    () => (slashParsed ? resolveSlashEntries(slashParsed.query, slashEntriesFromNoteTypes()) : []),
+    () => (slashParsed ? resolveSlashEntries(slashParsed.query, allSlashEntries) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- entries follow the raw input
-    [chatInput]
+    [chatInput, allSlashEntries]
   );
   useEffect(() => setSlashIndex(0), [chatInput]);
   const slashOpen = !!slashParsed && slashDismissedFor !== chatInput;
@@ -507,6 +523,13 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
     const instruction = slashParsed?.instruction ?? "";
     setChatInput("");
     setSlashDismissedFor(null);
+    // SC-3: an operation row runs the shipped operation.run (built-in prompt id or op_
+    // id both resolve server-side); scope rides on the entry, output stays AUTO.
+    if (entry.kind === "operation") {
+      const { commandId, payload } = operationRunPayload(entry);
+      void dispatch(commandId, payload);
+      return;
+    }
     if (entry.kind !== "noteType") return;
     if (!instruction) {
       openManualEditor(entry.id);

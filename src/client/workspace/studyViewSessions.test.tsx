@@ -96,7 +96,11 @@ function makeCtx(api: ChatSessionsApi): WorkspaceContext {
     changePatchStatus: vi.fn().mockResolvedValue(undefined),
     showTerminal: false,
     setShowTerminal: vi.fn(),
-    activeFileDir: ""
+    activeFileDir: "",
+    // SC-3: StudyView's slash palette reads the operation set + prefs off ctx.
+    operations: [],
+    operationPrefs: { order: [], disabled: [] },
+    activeKitIds: []
   } as unknown as WorkspaceContext;
 }
 

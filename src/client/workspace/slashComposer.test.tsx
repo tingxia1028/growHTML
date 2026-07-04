@@ -57,6 +57,10 @@ function makeCtx(overrides: Record<string, unknown> = {}): WorkspaceContext {
     setShowTerminal: vi.fn(),
     activeFileDir: "",
     openManualEditor: vi.fn(),
+    // SC-3: the palette now spans operations too — the mount reads these off ctx.
+    operations: [],
+    operationPrefs: { order: [], disabled: [] },
+    activeKitIds: [],
     ...overrides
   } as unknown as WorkspaceContext;
 }
@@ -151,6 +155,31 @@ describe("StudyView — slash composer (SC-1 over the SC-0 palette)", () => {
       rowsAfter[0].dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
     });
     expect(ctx.openManualEditor).toHaveBeenCalledWith(rowsAfter[0].getAttribute("data-entry-id"));
+  });
+
+  it("SC-3: a custom operation shows in the palette; picking it runs the shipped operation.run", async () => {
+    const ctx = makeCtx({
+      chatInput: "/",
+      operations: [{ id: "op_test", name: "我的操作", scope: "anchor" }]
+    });
+    const host = await mountStudy(ctx);
+    const opRow = Array.from(palette(host)!.querySelectorAll(".slash-palette-row")).find(
+      (row) => row.getAttribute("data-entry-id") === "op_test"
+    );
+    expect(opRow).toBeTruthy();
+
+    await act(async () => {
+      opRow!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+    });
+    expect(ctx.dispatch).toHaveBeenCalledTimes(1);
+    const [commandId, payload] = vi.mocked(ctx.dispatch).mock.calls[0] as [
+      string,
+      { operationId?: string; scope?: string }
+    ];
+    expect(commandId).toBe("operation.run");
+    expect(payload.operationId).toBe("op_test");
+    expect(payload.scope).toBe("anchor");
+    expect(ctx.openManualEditor).not.toHaveBeenCalled(); // an operation is not a manual note-type pick
   });
 
   it("Escape dismisses the palette for the CURRENT input; Enter then submits the chat normally", async () => {
