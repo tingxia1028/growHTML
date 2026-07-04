@@ -304,6 +304,17 @@
   color: var(--sv-accent, #2456c9);
 }
 
+/* Pressed state — the format under the selection is active (pressing un-clicks it). */
+.source-editor-stylebar-btn.active {
+  background: var(--sv-accent, #2456c9);
+  color: #fff;
+}
+
+.source-editor-swatch.active {
+  outline: 2px solid var(--sv-accent, #2456c9);
+  outline-offset: 1px;
+}
+
 .source-editor-stylebar-divider {
   width: 1px;
   height: 18px;

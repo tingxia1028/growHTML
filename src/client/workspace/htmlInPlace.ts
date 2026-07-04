@@ -164,6 +164,47 @@ export function applyInPlaceStyle(doc: Document, action: InPlaceStyleAction): bo
   }
 }
 
+/** Which style-bar formats are ACTIVE at the current selection — drives the
+    toolbar's pressed state. Pure read (no DOM mutation); mirrors the exact
+    detection applyInPlaceStyle uses so "pressed" always predicts "un-clicks". */
+export type InPlaceFormatState = {
+  bold: boolean;
+  italic: boolean;
+  block: "h1" | "h2" | null;
+  fontSize: "large" | "small" | null;
+  color: string | null;
+  align: "left" | "center" | "right" | null;
+};
+
+const EMPTY_FORMAT_STATE: InPlaceFormatState = {
+  bold: false,
+  italic: false,
+  block: null,
+  fontSize: null,
+  color: null,
+  align: null
+};
+
+export function queryFormatState(doc: Document): InPlaceFormatState {
+  const range = selectionRange(doc);
+  if (!range) return EMPTY_FORMAT_STATE;
+  const at = range.startContainer;
+  const block = closestBlock(at, doc);
+  const blockTag = block?.tagName.toLowerCase();
+  const sizeEl = inlineAncestor(at, doc, (el) => el.tagName === "SPAN" && !!el.style.fontSize);
+  const size = sizeEl?.style.fontSize;
+  const colorEl = inlineAncestor(at, doc, (el) => el.tagName === "SPAN" && !!el.style.color);
+  const align = block?.style.textAlign;
+  return {
+    bold: !!inlineAncestor(at, doc, (el) => el.tagName === "B" || el.tagName === "STRONG"),
+    italic: !!inlineAncestor(at, doc, (el) => el.tagName === "I" || el.tagName === "EM"),
+    block: blockTag === "h1" || blockTag === "h2" ? blockTag : null,
+    fontSize: size === FONT_SIZE_CSS.large ? "large" : size === FONT_SIZE_CSS.small ? "small" : null,
+    color: colorEl ? colorEl.style.color : null,
+    align: align === "left" || align === "center" || align === "right" ? align : null
+  };
+}
+
 /** The current selection's range inside the editable body, else null. */
 function selectionRange(doc: Document): Range | null {
   const selection = doc.getSelection?.();

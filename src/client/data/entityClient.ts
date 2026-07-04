@@ -146,7 +146,9 @@ export type OperationInput = {
   description?: string;
   mode?: "simple" | "template";
   instruction?: string;
-  outputContentType?: string;
+  // `null` (update only) = explicit UN-PIN back to AUTO output. On create, only a
+  // string or absence is valid (the server's create schema rejects null).
+  outputContentType?: string | null;
   promptTemplate?: string;
   declaredVariables?: OperationVariable[];
   source?: "custom" | "fork";

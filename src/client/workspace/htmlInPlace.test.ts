@@ -10,6 +10,7 @@ import {
   detectHtmlShape,
   EDITING_MARKER_ATTR,
   prepareEditingDocument,
+  queryFormatState,
   sanitizeEditedDom,
   serializeEditingDocument,
   type InPlaceStyleAction
@@ -184,6 +185,46 @@ describe("applyInPlaceStyle — bold/italic", () => {
     setCaret(document.querySelector("p")!.firstChild!, 1);
     expect(apply({ kind: "bold" })).toBe(false);
     expect(document.querySelector("p")!.innerHTML).toBe("纯文本");
+  });
+});
+
+describe("queryFormatState — active-format detection for the style bar", () => {
+  it("is empty when nothing is selected", () => {
+    document.body.innerHTML = "<p>纯文本</p>";
+    expect(queryFormatState(document)).toEqual({
+      bold: false,
+      italic: false,
+      block: null,
+      fontSize: null,
+      color: null,
+      align: null
+    });
+  });
+
+  it("detects bold + italic when the caret sits inside them", () => {
+    document.body.innerHTML = "<p><b><i>强调</i></b></p>";
+    const inner = document.querySelector("i")!.firstChild!;
+    setCaret(inner, 1);
+    const state = queryFormatState(document);
+    expect(state.bold).toBe(true);
+    expect(state.italic).toBe(true);
+  });
+
+  it("reports the block heading and mirrors applyInPlaceStyle's toggle", () => {
+    document.body.innerHTML = "<h1>标题</h1>";
+    setCaret(document.querySelector("h1")!.firstChild!, 1);
+    expect(queryFormatState(document).block).toBe("h1");
+    apply({ kind: "block", tag: "h1" }); // toggles back to <p>
+    setCaret(document.querySelector("p")!.firstChild!, 1);
+    expect(queryFormatState(document).block).toBeNull();
+  });
+
+  it("reports font size and alignment", () => {
+    document.body.innerHTML = '<p style="text-align: center;"><span style="font-size: 1.25em;">大字</span></p>';
+    setCaret(document.querySelector("span")!.firstChild!, 1);
+    const state = queryFormatState(document);
+    expect(state.fontSize).toBe("large");
+    expect(state.align).toBe("center");
   });
 });
 

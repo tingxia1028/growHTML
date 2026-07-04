@@ -26,6 +26,12 @@ export const renderMarkmap: DiagramRenderer = async (container, content) => {
   const { root } = new Transformer().transform(content);
   container.innerHTML = "";
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  // Absolute width/height ATTRIBUTES (not just the % CSS) so d3-zoom can resolve the
+  // SVGLength — a percentage-only width throws "Could not resolve relative length"
+  // (NotSupportedError) inside Markmap's interactive zoom setup. CSS keeps it responsive.
+  const width = (typeof container.clientWidth === "number" && container.clientWidth) || 640;
+  svg.setAttribute("width", String(width));
+  svg.setAttribute("height", "260");
   svg.style.width = "100%";
   svg.style.height = "260px";
   container.appendChild(svg);

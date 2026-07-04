@@ -172,6 +172,39 @@ describe("useChatSessionDomain — resume on mount", () => {
     expect(domain.messages).toEqual([]);
     expect(domain.sessions.list).toHaveLength(1);
   });
+
+  it("a 新对话 clicked while the resume GET is in flight is NOT clobbered by the late resume", async () => {
+    // Gate the single-session GET (the resume's transcript load) so we can click
+    // 新对话 while it's pending — the exact race the userActedRef latch guards.
+    let releaseGet: (() => void) | null = null;
+    const gate = new Promise<void>((resolve) => {
+      releaseGet = resolve;
+    });
+    const seed = makeSession("chat_a", "a", T1, [{ role: "user", content: "old", ts: T1 }]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+        const json = (body: unknown, status = 200) => ({ ok: status < 400, status, json: async () => body });
+        if (method === "GET" && url === "/api/chat/sessions") {
+          return json({ sessions: [{ id: seed.id, title: seed.title, createdAt: seed.createdAt, updatedAt: seed.updatedAt, messageCount: seed.messages.length }] });
+        }
+        if (/^\/api\/chat\/sessions\/chat_a$/.test(url) && method === "GET") {
+          await gate; // resume's transcript load blocks here
+          return json({ session: seed });
+        }
+        return json({ error: `unhandled ${method} ${url}` }, 500);
+      })
+    );
+    cleanup = mount(<Probe />).cleanup;
+    await flush(); // list() resolves; the resume get() is parked on the gate
+    act(() => domain.sessions.startNew()); // user explicitly starts fresh mid-flight
+    act(() => releaseGet?.()); // the late resume get() now resolves
+    await flush();
+    // The fresh conversation must survive — the stale "old" transcript must NOT load.
+    expect(domain.sessions.activeId).toBeNull();
+    expect(domain.messages).toEqual([]);
+  });
 });
 
 // —— persistence seams ————————————————————————————————————————————————————————

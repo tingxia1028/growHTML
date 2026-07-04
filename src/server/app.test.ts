@@ -953,6 +953,44 @@ describe("vault server API", () => {
     await request(app).patch(`/api/operations/${created.id}`).send({ name: "x" }).expect(404);
   });
 
+  it("un-pins a simple op's output type via PATCH null (revert to AUTO)", async () => {
+    const created = (
+      await request(app)
+        .post("/api/operations")
+        .send({ name: "Explain", mode: "simple", instruction: "解释这段", outputContentType: "markdown" })
+        .expect(201)
+    ).body.operation;
+    expect(created.outputContentType).toBe("markdown");
+
+    // null = explicit un-pin → the stored record drops the type (AUTO).
+    const unpinned = (
+      await request(app).patch(`/api/operations/${created.id}`).send({ outputContentType: null }).expect(200)
+    ).body.operation;
+    expect(unpinned.outputContentType).toBeUndefined();
+
+    // The un-pin is durable, not just in the response.
+    const reloaded = (await request(app).get("/api/operations").expect(200)).body.operations.find(
+      (o: { id: string }) => o.id === created.id
+    );
+    expect(reloaded.outputContentType).toBeUndefined();
+
+    // Re-pin still works (string overwrites).
+    const repinned = (
+      await request(app).patch(`/api/operations/${created.id}`).send({ outputContentType: "flashcard" }).expect(200)
+    ).body.operation;
+    expect(repinned.outputContentType).toBe("flashcard");
+  });
+
+  it("rejects un-pinning a TEMPLATE op's output type (template mode requires a pin)", async () => {
+    const created = (
+      await request(app)
+        .post("/api/operations")
+        .send({ name: "T", outputContentType: "markdown", promptTemplate: "Do {{anchorText}}", declaredVariables: [{ name: "anchorText", source: "anchorText" }] })
+        .expect(201)
+    ).body.operation;
+    await request(app).patch(`/api/operations/${created.id}`).send({ outputContentType: null }).expect(400);
+  });
+
   it("rejects an operation whose required literal variable has no default", async () => {
     await request(app)
       .post("/api/operations")

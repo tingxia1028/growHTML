@@ -508,3 +508,11 @@ In-app multi-tab web reading (B): all link clicks open a new tab; each tab is it
 - **N1b(D2 补完 + D5 浮动编辑器):** 同行聚簇 + 卡片打开时芯片避让,全走共享 MarkerOverlay(无 per-reader 分叉,含 webview 客座),与 N1a 的 per-anchor 开关 + 全局锚点开关正确复合。D5:底部大作曲器(GenerationPreview.tsx,已删)换成 FloatingNoteEditor.tsx 就地锚定段落;slash 作曲器(/类型)集成保留;scoped floatingEditor.css。
 - 落地方式:两个 V1.1 特性的并行代理在 WorkspaceContext.tsx + commands/registry.ts 里交错改动,拆分会造出各自不编译的假 commit,故作一个联合波次提交。两代理都完成了代码,在写报告一步撞账号用量墙而死——绿树即完成证明。
 - 验证:tsc 0 · vitest 202 文件/2097 用例全绿 · build ✓ · guest preload bundle ✓。
+
+## 2026-07-04 - SMALLFIX-001 小修包(chat 竞态 / PATCH un-pin / markmap 噪音 / 样式条激活态)
+
+- ① chat 会话竞态(useChatSessions.ts):resume-on-mount 的 get() 在飞时点"新对话",startNew() 把 tokenRef/persistedCountRef 重置成"全新"态,骗过 line176 防覆盖守卫,迟到 resume 覆盖新会话。修:新增 userActedRef 闩锁(startNew/select 置位),resume 见 latch 即让路。回归测试:门控 get() + 中途 startNew,断言新会话不被覆盖。
+- ② PATCH 无法取消输出锁定(operations.ts + entityClient + operationViews):update schema 的 outputContentType 改 .nullable();updateOperation 见 null 删键回退 AUTO(模板模式仍被 refine 挡);客户端简单 action 编辑时选"自动"发显式 null(undefined 会被 JSON.stringify 丢弃留旧锁)。测试:锁定→PATCH null→AUTO 持久;模板 op un-pin→400。
+- ③ markmap 控制台噪音(diagrams.ts):SVG 仅 % 宽度导致 d3-zoom 解析 SVGLength 抛 NotSupportedError。修:加绝对 width/height 属性(CSS % 保留响应式)让长度可解析。
+- ④ 样式条激活态(htmlInPlace.ts + HtmlInPlaceEditor + sourceEditor.css):新增纯函数 queryFormatState(doc) 复用 inlineAncestor/closestBlock 检测当前选区的 bold/italic/heading/size/color/align;编辑器 selectionchange 时更新,按钮上 aria-pressed + .active(色板 host-probe 归一化比对)。测试:queryFormatState 空态/粗斜体/标题 toggle/字号对齐。
+- 全树 tsc 0 · vitest 202 文件/2104 用例 · build ✓。原为委派 Codex CLI,后台 codex exec 卡 stdin,改由主循环(Opus)自做。

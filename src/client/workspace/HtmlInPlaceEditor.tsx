@@ -31,6 +31,8 @@ import { t } from "../i18n";
 import { sourceAuthoringMessages as m } from "./sourceAuthoringMessages";
 import {
   applyInPlaceStyle,
+  queryFormatState,
+  type InPlaceFormatState,
   detectHtmlShape,
   prepareEditingDocument,
   selectionRectInDoc,
@@ -74,6 +76,7 @@ export const HtmlInPlaceEditor = forwardRef<HtmlInPlaceHandle, Props>(function H
   const barRef = useRef<HTMLDivElement | null>(null);
   const shapeRef = useRef<HtmlDocShape>({ kind: "fragment", hasDoctype: false });
   const [barPos, setBarPos] = useState<{ top: number; left: number } | null>(null);
+  const [format, setFormat] = useState<InPlaceFormatState | null>(null);
   // Latest callback in a ref — the doc listeners are bound once per mount.
   const onInputRef = useRef(onInput);
   onInputRef.current = onInput;
@@ -101,6 +104,7 @@ export const HtmlInPlaceEditor = forwardRef<HtmlInPlaceHandle, Props>(function H
     if (!selection || selection.rangeCount === 0) return setBarPos(null);
     const rect = selectionRectInDoc(doc);
     if (!rect) return setBarPos(null);
+    setFormat(queryFormatState(doc)); // reflect the selection's active formats on the bar
     const wrapW = wrap?.clientWidth ?? 0;
     const wrapH = wrap?.clientHeight ?? 0;
     const barH = barRef.current?.offsetHeight || BAR_ESTIMATED_HEIGHT;
@@ -154,6 +158,35 @@ export const HtmlInPlaceEditor = forwardRef<HtmlInPlaceHandle, Props>(function H
     }
   };
 
+  // Is a tool's action the currently-active format at the selection? (drives pressed
+  // state — pressing an active tool un-clicks it, so "pressed" always predicts the toggle.)
+  const isActive = (action: InPlaceStyleAction): boolean => {
+    if (!format) return false;
+    switch (action.kind) {
+      case "bold":
+        return format.bold;
+      case "italic":
+        return format.italic;
+      case "block":
+        return format.block === action.tag;
+      case "fontSize":
+        return format.fontSize === action.value;
+      case "align":
+        return format.align === action.value;
+      case "color":
+        return false; // handled per-swatch below
+    }
+  };
+
+  // A swatch is active when the selection's color normalizes to the swatch's value.
+  // Normalize via a HOST-document probe — browsers store both as the same rgb(...).
+  const isColorActive = (value: string): boolean => {
+    if (!format?.color) return false;
+    const probe = document.createElement("span");
+    probe.style.color = value;
+    return probe.style.color === format.color;
+  };
+
   const tools: Array<{ id: string; icon: ReactNode; label: string; action: InPlaceStyleAction }> = [
     { id: "bold", icon: <Bold size={15} />, label: t(m.styleBold), action: { kind: "bold" } },
     { id: "italic", icon: <Italic size={15} />, label: t(m.styleItalic), action: { kind: "italic" } },
@@ -187,32 +220,40 @@ export const HtmlInPlaceEditor = forwardRef<HtmlInPlaceHandle, Props>(function H
           // range before its onClick runs (SelectionFloatingToolbar idiom).
           onMouseDown={(event) => event.preventDefault()}
         >
-          {tools.map((tool) => (
-            <button
-              key={tool.id}
-              type="button"
-              className="source-editor-stylebar-btn"
-              data-style-action={tool.id}
-              title={tool.label}
-              aria-label={tool.label}
-              onClick={() => run(tool.action)}
-            >
-              {tool.icon}
-            </button>
-          ))}
+          {tools.map((tool) => {
+            const active = isActive(tool.action);
+            return (
+              <button
+                key={tool.id}
+                type="button"
+                className={`source-editor-stylebar-btn${active ? " active" : ""}`}
+                data-style-action={tool.id}
+                title={tool.label}
+                aria-label={tool.label}
+                aria-pressed={active}
+                onClick={() => run(tool.action)}
+              >
+                {tool.icon}
+              </button>
+            );
+          })}
           <span className="source-editor-stylebar-divider" aria-hidden="true" />
-          {SWATCHES.map((swatch) => (
-            <button
-              key={swatch.id}
-              type="button"
-              className="source-editor-swatch"
-              data-style-action={`color-${swatch.id}`}
-              style={{ background: swatch.value }}
-              title={swatch.label()}
-              aria-label={swatch.label()}
-              onClick={() => run({ kind: "color", value: swatch.value })}
-            />
-          ))}
+          {SWATCHES.map((swatch) => {
+            const active = isColorActive(swatch.value);
+            return (
+              <button
+                key={swatch.id}
+                type="button"
+                className={`source-editor-swatch${active ? " active" : ""}`}
+                data-style-action={`color-${swatch.id}`}
+                style={{ background: swatch.value }}
+                title={swatch.label()}
+                aria-label={swatch.label()}
+                aria-pressed={active}
+                onClick={() => run({ kind: "color", value: swatch.value })}
+              />
+            );
+          })}
           <button
             type="button"
             className="source-editor-swatch source-editor-swatch-default"

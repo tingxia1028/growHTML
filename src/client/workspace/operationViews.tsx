@@ -360,8 +360,10 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
             description: description.trim() || undefined,
             mode: "simple",
             instruction: instruction.trim(),
-            // "" = AUTO — omit so the server stores no pin and the form router decides.
-            outputContentType: outputContentType || undefined,
+            // "" = AUTO. On CREATE, omit (absent = no pin). On UPDATE, send explicit
+            // null to UN-PIN a previously stored type — undefined would be dropped by
+            // JSON.stringify and leave the old pin in place.
+            outputContentType: outputContentType ? outputContentType : editId ? null : undefined,
             source,
             forkedFrom,
             scope

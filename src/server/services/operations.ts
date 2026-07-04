@@ -37,7 +37,9 @@ export const updateOperationRequestSchema = z
     description: z.string().optional(),
     mode: z.enum(["simple", "template"]).optional(),
     instruction: z.string().optional(),
-    outputContentType: z.string().min(1).optional(),
+    // `null` = explicit UN-PIN (revert to AUTO output — the form router decides at
+    // run time); a string = pin; omitted = leave the existing pin untouched.
+    outputContentType: z.string().min(1).nullable().optional(),
     promptTemplate: z.string().min(1).optional(),
     declaredVariables: z.array(operationVariableSchema).optional(),
     source: z.enum(["custom", "fork"]).optional(),
@@ -78,6 +80,13 @@ export async function updateOperation(
   const existing = await vault.stores.operations.get(operationId);
   if (!existing) throw new NotFoundError("Operation not found");
   const merged = { ...existing, ...patch, updatedAt: new Date().toISOString() };
+  // `outputContentType: null` is the un-pin signal — drop the key so the record
+  // reverts to AUTO (operationSchema's field is optional-non-null; leaving null in
+  // would fail parse). A template-mode op still can't un-pin: the schema refinement
+  // then rejects the missing type, which is the correct guard.
+  if (patch.outputContentType === null) {
+    delete (merged as { outputContentType?: string }).outputContentType;
+  }
   const consistency =
     merged.mode === "template" ? operationConsistencyError(merged.promptTemplate ?? "", merged.declaredVariables) : null;
   if (consistency) throw new ValidationError(consistency);

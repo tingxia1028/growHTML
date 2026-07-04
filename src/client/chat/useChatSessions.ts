@@ -105,6 +105,11 @@ export function useChatSessionDomain({ activeSourceId }: { activeSourceId?: stri
   const tokenRef = useRef<ConversationToken>({ sessionId: null });
   /** How many of `messages` are (queued to be) persisted — the append diff base. */
   const persistedCountRef = useRef(0);
+  /** Latches once the user takes an explicit session action (新对话 / open) — after
+      which the resume-on-mount effect must NOT apply its late `get()`, even though
+      startNew() resets tokenRef/persistedCountRef to the "fresh" shape (which would
+      otherwise pass the clobber guard and overwrite the just-opened conversation). */
+  const userActedRef = useRef(false);
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const sourceIdRef = useRef<string | undefined>(activeSourceId || undefined);
   useEffect(() => {
@@ -172,8 +177,10 @@ export function useChatSessionDomain({ activeSourceId }: { activeSourceId?: stri
       try {
         const { session } = await getChatSessionIo().get(resume.id);
         if (!alive) return;
-        // Don't clobber a conversation the user already started while loading.
-        if (tokenRef.current.sessionId !== null || persistedCountRef.current > 0) return;
+        // Don't clobber a conversation the user already started while loading — either
+        // by typing (sessionId/persistedCount grew) or by an explicit 新对话/open that
+        // reset those refs to the fresh shape (userActedRef is the only durable witness).
+        if (userActedRef.current || tokenRef.current.sessionId !== null || persistedCountRef.current > 0) return;
         tokenRef.current = { sessionId: session.id };
         persistedCountRef.current = session.messages.length;
         setActiveSessionId(session.id);
@@ -236,6 +243,7 @@ export function useChatSessionDomain({ activeSourceId }: { activeSourceId?: stri
   // —— the switcher surface ——————————————————————————————————————————————————
 
   const startNew = useCallback(() => {
+    userActedRef.current = true;
     tokenRef.current = { sessionId: null };
     persistedCountRef.current = 0;
     setActiveSessionId(null);
@@ -245,6 +253,7 @@ export function useChatSessionDomain({ activeSourceId }: { activeSourceId?: stri
 
   const select = useCallback(
     async (sessionId: string) => {
+      userActedRef.current = true;
       try {
         const { session } = await getChatSessionIo().get(sessionId);
         tokenRef.current = { sessionId: session.id };
