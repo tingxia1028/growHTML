@@ -1,0 +1,179 @@
+/* CONCEPT-UX-1 概念交互轻量化 — scoped styles for the new lightweight concept
+   surfaces (styles.css is untouched): the concept chips row (FocusOverlay), the
+   shared concept autocomplete (chips ＋ / 关联到…), the 标为概念 feedback toast,
+   and the concept list's filter input + count badge. Uses the shared --sv-* tokens
+   so every theme skins these for free. */
+
+/* —— concept chips (FocusOverlay note 大窗口) —— */
+.concept-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.concept-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 220px;
+  padding: 2px 10px;
+  border: 1px solid var(--sv-border);
+  border-radius: 999px;
+  background: var(--sv-surface-muted);
+  color: var(--sv-text-muted);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.concept-chip:hover:not(:disabled) {
+  border-color: var(--sv-accent-border);
+  color: var(--sv-accent);
+}
+
+.concept-chip-add {
+  padding: 2px 8px;
+}
+
+.concept-chips-error {
+  flex-basis: 100%;
+  color: var(--sv-danger, #b91c1c);
+  font-size: 12px;
+}
+
+/* The chips row inside the Center View header area. */
+.sv-center-concepts {
+  display: flex;
+  align-items: center;
+  padding: 6px 16px 0;
+}
+
+/* —— the ONE shared concept autocomplete (chips ＋ and 关联到…) —— */
+.concept-autocomplete {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  min-width: 160px;
+}
+
+.concept-autocomplete-input {
+  padding: 3px 8px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-sm, 6px);
+  background: var(--sv-surface-card);
+  color: inherit;
+  font-size: 12px;
+}
+
+.concept-autocomplete-list {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-sm, 6px);
+  background: var(--sv-surface-card);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+}
+
+.concept-autocomplete-item {
+  padding: 5px 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.concept-autocomplete-item:hover {
+  background: var(--sv-surface-muted);
+  color: var(--sv-accent);
+}
+
+.concept-autocomplete-hint {
+  margin-top: 2px;
+  color: var(--sv-text-muted);
+  font-size: 11px;
+}
+
+/* —— 标为概念 feedback toast (bottom-center, portaled to <body>) —— */
+.concept-mark-toast {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(480px, calc(100vw - 32px));
+  padding: 8px 14px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius, 8px);
+  background: var(--sv-surface-card);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font-size: 13px;
+}
+
+.concept-mark-toast-name {
+  margin-left: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.concept-mark-undo,
+.concept-mark-dismiss {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 0;
+  background: transparent;
+  color: var(--sv-accent);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.concept-mark-dismiss {
+  color: var(--sv-text-muted);
+}
+
+/* —— concept list usability (conceptViews) —— */
+.concept-filter-input {
+  width: 100%;
+  margin: 6px 0;
+  padding: 4px 8px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-sm, 6px);
+  background: var(--sv-surface-card);
+  color: inherit;
+  font-size: 12px;
+}
+
+.concept-count-badge {
+  margin-left: auto;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--sv-surface-muted);
+  color: var(--sv-text-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.concept-item-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}

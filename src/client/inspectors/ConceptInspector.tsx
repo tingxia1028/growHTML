@@ -3,8 +3,16 @@
 // pane when a concept is focused. It shows the concept's fields, the notes that link
 // it (back-refs), and the relations touching it; and it offers the MANUAL actions:
 //   • link an existing note to this concept   → concept.link-note
-//   • create a relation to another concept     → relation.create
+//   • 关联到… (one autocomplete pick)          → relation.create with kind "related"
 //   • delete a relation                        → entityClient.deleteRelation
+//
+// CONCEPT-UX-1 §3: the 10-kind relation form is GONE from this surface — relating two
+// concepts is one autocomplete pick that immediately creates a `related` relation. The
+// full relationKind enum still exists in the schema and is DISPLAYED read-only in
+// RelationInspector (the advanced path); no kind-editing UI is added there by design.
+// §2: clicking a linked note reveals its passage in the reader (when its anchor is on
+// the active source) and focuses the note — the same setAnchor/setFocus contract the
+// anchor pane and note list use.
 //
 // All reads go through the entity client (the shared seam) and all writes go through
 // commands / the client; the inspector never touches a sibling view. It re-fetches
@@ -19,21 +27,10 @@ import {
   type RelationRecord
 } from "../data/entityClient";
 import { noteText } from "../workspace/WorkspaceContext";
+import { ConceptAutocomplete } from "../workspace/ConceptChips";
+import { conceptMessages } from "../workspace/conceptMessages";
+import { t } from "../i18n";
 import type { InspectorContext } from "./registry";
-
-// The relation kinds the manual UI offers (the core relationKind enum).
-const RELATION_KINDS = [
-  "related",
-  "explains",
-  "extends",
-  "contradicts",
-  "depends_on",
-  "same_topic",
-  "derived_from",
-  "references",
-  "modifies",
-  "summarizes"
-] as const;
 
 type Detail = { concept: ConceptRecord; notes: NoteRecord[]; relations: RelationRecord[] };
 
@@ -43,16 +40,14 @@ function shortNote(note: NoteRecord): string {
 }
 
 export function ConceptInspector({ conceptId, ctx }: { conceptId: string; ctx: InspectorContext }) {
-  const { focus, dispatch, conceptsVersion, refreshConcepts } = ctx;
+  const { focus, dispatch, conceptsVersion, refreshConcepts, anchors } = ctx;
   const [detail, setDetail] = useState<Detail | null>(null);
   const [allConcepts, setAllConcepts] = useState<ConceptRecord[]>([]);
   const [allNotes, setAllNotes] = useState<NoteRecord[]>([]);
   const [error, setError] = useState("");
 
-  // Inputs for the two manual actions.
+  // Input for the manual note-link action.
   const [linkNoteId, setLinkNoteId] = useState("");
-  const [relationTargetId, setRelationTargetId] = useState("");
-  const [relationKind, setRelationKind] = useState<(typeof RELATION_KINDS)[number]>("related");
 
   const load = useCallback(async () => {
     setError("");
@@ -99,15 +94,32 @@ export function ConceptInspector({ conceptId, ctx }: { conceptId: string; ctx: I
     setLinkNoteId("");
   }, [linkNoteId, allNotes, dispatch, conceptId]);
 
-  const createRelation = useCallback(async () => {
-    if (!relationTargetId) return;
-    await dispatch("relation.create", {
-      fromConceptId: conceptId,
-      toConceptId: relationTargetId,
-      relationKind
-    });
-    setRelationTargetId("");
-  }, [relationTargetId, dispatch, conceptId, relationKind]);
+  // 关联到… (CONCEPT-UX-1 §3): picking a concept in the autocomplete creates the
+  // relation IMMEDIATELY with the default kind "related" — no kind picker, no form.
+  const relateTo = useCallback(
+    async (target: ConceptRecord) => {
+      await dispatch("relation.create", {
+        fromConceptId: conceptId,
+        toConceptId: target.id,
+        relationKind: "related"
+      });
+    },
+    [dispatch, conceptId]
+  );
+
+  // Jump for a linked-note row (§2): reveal the note's passage in the reader when its
+  // anchor belongs to the ACTIVE source (setAnchor bumps revealSeq → the reader
+  // scrolls), then focus the note itself — mirrors the anchor pane's linked-note jump.
+  const jumpToNote = useCallback(
+    (note: NoteRecord) => {
+      const anchorRecord = note.anchorIds
+        .map((anchorId) => anchors.find((anchor) => anchor.id === anchorId))
+        .find(Boolean);
+      if (anchorRecord) focus.setAnchor(anchorRecord);
+      focus.setFocus({ type: "note", noteId: note.id });
+    },
+    [anchors, focus]
+  );
 
   const deleteRelation = useCallback(
     async (relationId: string) => {
@@ -153,7 +165,7 @@ export function ConceptInspector({ conceptId, ctx }: { conceptId: string; ctx: I
               key={note.id}
               type="button"
               className={`concept-note-item${focus.focus?.type === "note" && focus.focus.noteId === note.id ? " active" : ""}`}
-              onClick={() => focus.setFocus({ type: "note", noteId: note.id })}
+              onClick={() => jumpToNote(note)}
             >
               <strong>{note.contentType ?? "markdown"}</strong>
               <span>{shortNote(note)}</span>
@@ -217,42 +229,16 @@ export function ConceptInspector({ conceptId, ctx }: { conceptId: string; ctx: I
           {relations.length === 0 ? <div className="empty-state">No relations yet.</div> : null}
         </div>
 
-        {/* Create a relation: this concept —kind→ another concept (manual). */}
+        {/* 关联到… (CONCEPT-UX-1 §3): ONE autocomplete — picking a concept creates a
+            `related` relation immediately. The full 10-kind enum stays schema-side and
+            renders read-only in RelationInspector (the advanced path). */}
         <div className="concept-create-relation">
-          <select
-            className="relation-kind-select"
-            aria-label="Relation kind"
-            value={relationKind}
-            onChange={(event) => setRelationKind(event.target.value as (typeof RELATION_KINDS)[number])}
-          >
-            {RELATION_KINDS.map((kind) => (
-              <option key={kind} value={kind}>
-                {kind}
-              </option>
-            ))}
-          </select>
-          <select
-            className="relation-target-select"
-            aria-label="Relation target concept"
-            value={relationTargetId}
-            onChange={(event) => setRelationTargetId(event.target.value)}
-          >
-            <option value="">To concept…</option>
-            {relationTargets.map((target) => (
-              <option key={target.id} value={target.id}>
-                {target.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            className="icon-button concept-create-relation-btn"
-            disabled={!relationTargetId}
-            onClick={() => void createRelation()}
-          >
-            <Link2 size={15} />
-            Add relation
-          </button>
+          <ConceptAutocomplete
+            className="concept-relate-input"
+            concepts={relationTargets}
+            placeholder={t(conceptMessages.relateToPlaceholder)}
+            onPick={(target) => void relateTo(target)}
+          />
         </div>
       </section>
     </div>

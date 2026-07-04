@@ -32,6 +32,9 @@ import { InertNote } from "../notes/builtinNoteTypes";
 import { noteCardMeta } from "../notes/noteCardMeta";
 import { useWorkspaceOptional } from "./WorkspaceContext";
 import { resolveViewer, NOTETYPE_SENTINEL } from "../notes/viewerRegistry";
+// CONCEPT-UX-1 §2: a saved note's linked concepts as clickable chips (+ the ＋
+// autocomplete to link one) directly on the 大窗口 — no dialog, no form.
+import { NoteConceptChips } from "./ConceptChips";
 
 export type FocusOverlayBlock = {
   /** The registered contentType deciding which plugin renders (the discriminator). */
@@ -259,6 +262,14 @@ export function FocusOverlay({ block, onClose }: { block: FocusOverlayBlock; onC
             </button>
           </span>
         </div>
+        {/* Concept chips (CONCEPT-UX-1 §2) — SAVED notes only (a draft block has no
+            note id to link). Clicking a chip focuses the concept (the existing focus
+            contract) and closes the overlay so the Concepts pane/inspector is visible. */}
+        {block.note ? (
+          <div className="sv-center-concepts">
+            <NoteConceptChips note={block.note} onNavigated={onClose} />
+          </div>
+        ) : null}
         <div className="sv-focus-body sv-center-body">{body}</div>
       </div>
     </div>,

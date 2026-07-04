@@ -16,8 +16,14 @@ import type {
   RelationRecord
 } from "../data/entityClient";
 import type { FocusContextValue } from "../focus/FocusContext";
+import { draftQuoteText } from "../focus/FocusContext";
 import { BOOKMARK_CONTENT_TYPE } from "../../core/notes/contentTypes";
 import { recordCommandMemory } from "../memory/commandCapture";
+import {
+  collapseConceptText,
+  conceptNameFromSelection,
+  matchConceptByName
+} from "../workspace/conceptName";
 
 // A unit of AI output BEFORE it is persisted: the prompt/contentType it came from,
 // the input that produced it, the generated `content`, and the anchor/source it
@@ -50,6 +56,12 @@ export type CommandActions = {
   onAssistantChunk?(delta: string): void;
   /** A concept was created or a note↔concept link changed. */
   onConceptChanged?(concept?: ConceptRecord): void;
+  /**
+   * 选中即建概念 (concept.mark-selection): a concept was created from the selection
+   * (or an existing same-named one matched) and linked at the passage via a marker
+   * note. The host uses it for the feedback toast + the cheap undo (delete `note`).
+   */
+  onConceptMarked?(result: { concept: ConceptRecord; note: NoteRecord; linkedExisting: boolean }): void;
   /** A relation was created or deleted. */
   onRelationChanged?(relation?: RelationRecord): void;
   /** A study layer changed (toggled / imported) — reload the list + repaint anchors. */
@@ -86,8 +98,10 @@ export type CommandContext = {
     | "deleteNote"
   > &
     // Streaming chat is optional so hosts/tests that only wire `chat` still satisfy
-    // the context; `askAi` feature-detects it and falls back to `chat`.
-    Partial<Pick<EntityClient, "chatStream">>;
+    // the context; `askAi` feature-detects it and falls back to `chat`. `concepts` is
+    // optional for the same reason: concept.mark-selection uses it to DEDUPE by name
+    // and simply skips deduping when a host/test doesn't wire the list read.
+    Partial<Pick<EntityClient, "chatStream" | "concepts">>;
   /** The source the user is currently reading, if any. */
   sourceId?: string;
   /** Per-invocation inputs (composer text, patch body, concept/relation fields…). */
@@ -326,6 +340,56 @@ const linkNote: Command = {
     const next = current.includes(conceptId) ? current : [...current, conceptId];
     await ctx.client.updateNote(noteId, { conceptIds: next });
     ctx.actions.onConceptChanged?.();
+  }
+};
+
+// —— 选中即建概念 (CONCEPT-UX-1) ————————————————————————————————————————————
+// ONE click on the selection toolbar turns the selected text into a concept and links
+// the passage to it — no form. The concept name is the collapsed selection capped at
+// ~40 chars; an existing concept with the same normalized name (case/whitespace-
+// insensitive) is LINKED instead of duplicated. The link itself rides the EXISTING
+// storage path: concept↔note links live on `note.conceptIds` (there is no
+// anchor.conceptIds, and concept detail back-refs join over notes), so we materialize
+// the focused passage into an anchor — the same path bookmark.add uses — and create
+// ONE marker note carrying BOTH `anchorIds:[anchor]` and `conceptIds:[concept]`. That
+// closes the loop everywhere today: the anchor paints in the reader (painting is
+// note-derived), the concept's inspector lists the note as a back-ref, and undo is
+// simply deleting the marker note (onConceptMarked hands the host everything needed).
+const markConceptFromSelection: Command = {
+  id: "concept.mark-selection",
+  title: "Mark Selection as Concept",
+  group: "concept",
+  // Needs a passage WITH text: a region draft has no quote, so there is no name to build.
+  isAvailable: (ctx) =>
+    (!!ctx.focus.anchor || !!ctx.focus.draft) &&
+    !!collapseConceptText(ctx.payload.text || draftQuoteText(ctx.focus.draft) || ctx.focus.anchor?.quote || ""),
+  run: async (ctx) => {
+    const quote = collapseConceptText(
+      ctx.payload.text || draftQuoteText(ctx.focus.draft) || ctx.focus.anchor?.quote || ""
+    );
+    const name = conceptNameFromSelection(quote);
+    if (!name) return;
+    const anchor = await ctx.focus.materializeAnchor();
+    // Dedupe by normalized name when the host wired the list read (the real client
+    // always does); a bare test context without `concepts` just creates.
+    let concept: ConceptRecord | undefined;
+    if (ctx.client.concepts) {
+      const { concepts } = await ctx.client.concepts();
+      concept = matchConceptByName(concepts, name);
+    }
+    const linkedExisting = !!concept;
+    if (!concept) concept = (await ctx.client.createConcept({ name })).concept;
+    // The link artifact: one marker note at the passage, carrying the concept link.
+    const { note } = await ctx.client.createNote({
+      sourceId: ctx.sourceId,
+      anchorIds: anchor ? [anchor.id] : [],
+      conceptIds: [concept.id],
+      contentType: "markdown",
+      content: quote
+    });
+    ctx.actions.onConceptMarked?.({ concept, note, linkedExisting });
+    ctx.actions.onConceptChanged?.(concept);
+    ctx.actions.onNoteCreated?.(note);
   }
 };
 
@@ -642,6 +706,7 @@ for (const command of [
   createPatch,
   createConcept,
   linkNote,
+  markConceptFromSelection,
   linkAnchor,
   createRelation,
   toggleLayer,

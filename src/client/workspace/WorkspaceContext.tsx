@@ -15,6 +15,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode
 } from "react";
@@ -57,6 +58,8 @@ import { DEFAULT_THEME_ID } from "../theme/builtins";
 import { listThemes } from "../theme/registry";
 import { setActiveTheme as applyActiveTheme, THEME_STORAGE_KEY } from "../theme/applyTheme";
 import { renderAnnotationNotePreview } from "./annotationNotePreview";
+import { t } from "../i18n";
+import { conceptMessages } from "./conceptMessages";
 
 export type Status = "idle" | "loading" | "saving" | "error";
 
@@ -125,6 +128,23 @@ const BOOKMARK_ACTION: ToolbarAction = {
   description: "Bookmark the focused passage",
   kind: "builtin",
   scope: "anchor"
+};
+
+// 标为概念 (CONCEPT-UX-1): the core "mark selection as concept" action — a sibling of
+// Bookmark (core, not kit-gated). Its command creates/links a concept from the selected
+// text in one click; feedback flows back through onConceptMarked → the toast below.
+const CONCEPT_MARK_COMMAND_ID = "concept.mark-selection";
+
+/** 选中即建概念 feedback: what ConceptMarkToast shows + what its undo needs. */
+export type ConceptMarkFeedback = {
+  conceptId: string;
+  conceptName: string;
+  /** The marker note carrying the anchor↔concept link — undo deletes it. */
+  noteId: string;
+  /** True when an existing same-named concept was linked instead of created. */
+  linkedExisting: boolean;
+  /** Monotonic token so a NEW mark re-arms the toast's auto-dismiss timer. */
+  seq: number;
 };
 
 // Filter + sort an action list by an (order, excluded) pair: excluded ids are dropped,
@@ -387,6 +407,12 @@ export type WorkspaceContextValue = {
   conceptsVersion: number;
   /** Bump `conceptsVersion` after a direct entity mutation (e.g. delete relation). */
   refreshConcepts(): void;
+  /** 标为概念 feedback (CONCEPT-UX-1): the pending toast payload, null when none. */
+  conceptMark: ConceptMarkFeedback | null;
+  /** Undo the last 标为概念: delete its marker note (the anchor↔concept link). */
+  undoConceptMark(): Promise<void>;
+  /** Dismiss the 标为概念 toast without undoing. */
+  dismissConceptMark(): void;
 
   // —— study layers (a per-source lens axis: the multi-select filter) ——
   // Same refresh-token pattern as concepts: the layer switcher watches this to
@@ -521,6 +547,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [folderRoots, setFolderRoots] = useState<string[]>(readStoredFolderRoots);
   const [recentSourceIds, setRecentSourceIds] = useState<string[]>(readStoredRecentSourceIds);
   const [conceptsVersion, setConceptsVersion] = useState(0);
+  // 标为概念 feedback (CONCEPT-UX-1): the pending toast payload + a monotonic counter
+  // so a rapid second mark re-arms the toast timer (seq changes even on equal names).
+  const [conceptMark, setConceptMark] = useState<ConceptMarkFeedback | null>(null);
+  const conceptMarkSeqRef = useRef(0);
   const [activeLayoutId, setActiveLayoutId] = useState<string>(loadActiveLayout);
   const [activeThemeId, setActiveThemeId] = useState<string>(loadActiveTheme);
   // Note-presentation mode for the DOM HTML reader. Seeded from localStorage so the
@@ -1017,6 +1047,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           setConceptsVersion((value) => value + 1);
           void refreshAnnotations();
         },
+        // 标为概念 (CONCEPT-UX-1): park the feedback so ConceptMarkToast shows the
+        // concept name + the 撤销 affordance (undo = delete the marker note).
+        onConceptMarked: ({ concept, note, linkedExisting }) => {
+          conceptMarkSeqRef.current += 1;
+          setConceptMark({
+            conceptId: concept.id,
+            conceptName: concept.name,
+            noteId: note.id,
+            linkedExisting,
+            seq: conceptMarkSeqRef.current
+          });
+        },
         onRelationChanged: () => setConceptsVersion((value) => value + 1),
         // A layer was toggled/imported: bump the token (switcher re-fetches) AND
         // refresh annotations (the painted highlights follow enabled layers).
@@ -1219,6 +1261,25 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   );
 
   const refreshConcepts = useCallback(() => setConceptsVersion((value) => value + 1), []);
+
+  // Cheap undo for 标为概念: delete the just-created marker note — that removes the
+  // anchor↔concept link (and the paint, since painting is note-derived). The concept
+  // RECORD itself stays: the entity client has no concept-delete API, and a reusable
+  // empty concept is harmless (documented CONCEPT-UX-1 decision).
+  const undoConceptMark = useCallback(async () => {
+    const mark = conceptMark;
+    if (!mark) return;
+    setConceptMark(null);
+    try {
+      await entityClient.deleteNote(mark.noteId);
+      setConceptsVersion((value) => value + 1);
+      await refreshAnnotations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to undo concept mark");
+    }
+  }, [conceptMark, refreshAnnotations]);
+
+  const dismissConceptMark = useCallback(() => setConceptMark(null), []);
 
   // Flip the note-presentation mode and persist the choice (so it survives reload).
   const setAnnotationMode = useCallback((mode: HtmlAnnotationMode) => {
@@ -1474,11 +1535,23 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         variables: op.declaredVariables
       }));
     const bookmark: ToolbarAction = { ...BOOKMARK_ACTION, icon: operationPrefs.icons?.[BOOKMARK_ACTION.id] ?? BOOKMARK_ACTION.icon };
-    // The core Bookmark action leads, then kit selection items, then custom ops. Ordered
-    // for the shared "passage" surface — the SINGLE config the inline selection toolbar AND
-    // the Anchor bar both render, so the two surfaces always show the identical ordered list
-    // + show/hide (its own per-surface prefs, else global).
-    return orderActionsForSurface([bookmark, ...builtin, ...custom], operationPrefs, "passage");
+    // 标为概念 (CONCEPT-UX-1): the second core passage action — built inside the memo
+    // (not a module const) so its title/description resolve through t() at render
+    // assembly time. Icon overridable like every action.
+    const conceptAction: ToolbarAction = {
+      id: CONCEPT_MARK_COMMAND_ID,
+      title: t(conceptMessages.markAction),
+      icon: operationPrefs.icons?.[CONCEPT_MARK_COMMAND_ID] ?? "hash",
+      group: "Create Note",
+      description: t(conceptMessages.markActionHint),
+      kind: "builtin",
+      scope: "anchor"
+    };
+    // The core Bookmark + 标为概念 actions lead, then kit selection items, then custom
+    // ops. Ordered for the shared "passage" surface — the SINGLE config the inline
+    // selection toolbar AND the Anchor bar both render, so the two surfaces always show
+    // the identical ordered list + show/hide (its own per-surface prefs, else global).
+    return orderActionsForSurface([bookmark, conceptAction, ...builtin, ...custom], operationPrefs, "passage");
   }, [activeKitIds, operations, operationPrefs]);
 
   // The Anchor Action Bar renders the SAME ordered "passage" list as the inline selection
@@ -1622,6 +1695,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       changePatchStatus,
       conceptsVersion,
       refreshConcepts,
+      conceptMark,
+      undoConceptMark,
+      dismissConceptMark,
       layersVersion,
       refreshLayers,
       sourceLayers,
@@ -1714,6 +1790,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       changePatchStatus,
       conceptsVersion,
       refreshConcepts,
+      conceptMark,
+      undoConceptMark,
+      dismissConceptMark,
       layersVersion,
       refreshLayers,
       sourceLayers,

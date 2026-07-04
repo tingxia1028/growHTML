@@ -65,6 +65,7 @@ import { registerShellNavigator } from "./shellNav";
 import { TopBar } from "./TopBar";
 import { IconRail } from "./IconRail";
 import { SelectionFloatingToolbar } from "./SelectionFloatingToolbar";
+import { ConceptMarkToast } from "./ConceptMarkToast";
 import { GlobalSpeakSelection } from "../speech/GlobalSpeakSelection";
 
 // px size overrides keyed by dock child key (leaf nodeId, else its tree path).
@@ -359,6 +360,9 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
           BookmarkIndex chrome — it reads only from useWorkspace and only triggers
           runAction (no new render path). */}
       <SelectionFloatingToolbar />
+      {/* 标为概念 feedback (CONCEPT-UX-1): the brief toast + 撤销 after
+          concept.mark-selection — host chrome like the floating toolbar above. */}
+      <ConceptMarkToast />
       {/* SPEECH-1b 朗读通用化: the host-level 朗读 chip for ANY text selection OUTSIDE
           the reader pane (chat replies, note lists, panels — 读=所有文本的可读能力).
           Reader selections keep their own toolbar above; this never double-serves. */}
