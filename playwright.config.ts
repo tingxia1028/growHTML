@@ -40,7 +40,10 @@ export default defineConfig({
       env: {
         STUDY_VAULT_ROOT: e2eVaultRoot,
         STUDY_VAULT_MOCK_STREAM_DELAY_MS: "60",
-        STUDY_VAULT_AI_PROVIDER: "mock"
+        STUDY_VAULT_AI_PROVIDER: "mock",
+        // TRUST-1 kill switch: the ephemeral e2e vault must never seed an
+        // auto-backup into a repo-side backups/ dir on boot.
+        STUDY_VAULT_AUTO_BACKUP: "0"
       }
     },
     {

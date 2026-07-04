@@ -2,6 +2,7 @@ import { createServer, type Server } from "node:http";
 import { openVault } from "../core/vault";
 import { migrateStudyLayers } from "../core/study-layer/layers";
 import { createApp } from "./app";
+import { defaultBackupsDir } from "./dataTrust";
 import { consolidateMemory } from "./memory";
 import { defaultAiConfigDir } from "./services/aiProviders";
 
@@ -23,6 +24,14 @@ export type StartServerOptions = {
    * stored provider config; unit tests build createApp directly and inject.
    */
   aiConfigDir?: string;
+  /**
+   * TRUST-1 backups (docs/design/data-trust.md §1). `dir` defaults to
+   * STUDY_VAULT_BACKUPS_DIR env, else the sibling `backups/` of the resolved
+   * vault root. `auto` (default FALSE — entry points that KNOW they serve a real
+   * user opt in) arms the 24h app-start/idle auto-backup scheduler;
+   * STUDY_VAULT_AUTO_BACKUP=0 force-disables it either way (e2e harnesses).
+   */
+  backups?: { dir?: string; auto?: boolean };
 };
 
 export type StartedServer = {
@@ -52,7 +61,16 @@ export async function startServer(options: StartServerOptions = {}): Promise<Sta
     // A3b: stored provider selection + BYOK config (env vars still override/fallback).
     // Under the packaged desktop app this code runs IN the Electron main process, so
     // the default KeyStore resolves to safeStorage; plain Node (dev/CLI) → env-only.
-    aiConfig: { dir: options.aiConfigDir ?? defaultAiConfigDir() }
+    aiConfig: { dir: options.aiConfigDir ?? defaultAiConfigDir() },
+    // TRUST-1/2: rotating backups beside the vault + the destructive-op guard; the
+    // auto scheduler only when the entry point opted in AND the env kill switch is off.
+    dataTrust: {
+      backupsDir:
+        options.backups?.dir ??
+        process.env.STUDY_VAULT_BACKUPS_DIR ??
+        defaultBackupsDir(vault.paths.rootDir),
+      scheduleAuto: (options.backups?.auto ?? false) && process.env.STUDY_VAULT_AUTO_BACKUP !== "0"
+    }
   });
   const server = createServer(app);
 

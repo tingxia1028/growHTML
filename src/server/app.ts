@@ -8,6 +8,12 @@ import { parseRange } from "./httpRange";
 import { createReadStream } from "node:fs";
 import { defaultIdentityDir } from "../core/identity/paths";
 import { createSealedRuntime, registerSvpackRoutes, type SealedRuntime } from "./svpack";
+import {
+  createBackupScheduler,
+  createDataTrustService,
+  defaultBackupsDir,
+  registerDataTrustRoutes
+} from "./dataTrust";
 import { createMemoryConsolidationScheduler, registerMemoryRoutes } from "./memory";
 import { registerAgentRoutes } from "./agent";
 import type { StudyVault } from "../core/vault";
@@ -88,13 +94,24 @@ export type CreateAppOptions = {
     transcribeStt?: speechService.SttTranscriber;
     sttBaseUrl?: string;
   };
+  /**
+   * Data trust (TRUST-1/2, docs/design/data-trust.md): where the rotating vault
+   * backups live (default: sibling `backups/` of the vault root) + whether to arm
+   * the 24h auto-backup scheduler. Like aiConfig, the AUTOMATIC behaviors (the
+   * pre-清除记忆 safety backup, the scheduler) activate only when the option is
+   * present — bare createApp unit tests stay hermetic; the routes always exist.
+   */
+  dataTrust?: {
+    backupsDir?: string;
+    scheduleAuto?: boolean;
+  };
 };
 
 const ingestUrlRequestSchema = z.object({
   url: z.string().url()
 });
 
-export function createApp({ vault, modelProvider, clientDir, identityDir, now, aiConfig, speech }: CreateAppOptions) {
+export function createApp({ vault, modelProvider, clientDir, identityDir, now, aiConfig, speech, dataTrust }: CreateAppOptions) {
   const app = express();
   // Provider selection (A3b): a small manager replaces the boot-time singleton so
   // the stored config's active pick takes effect per request (memoized by config
@@ -699,6 +716,38 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
   // Protected `.svpack` endpoints (export-svpack / renew / inspect / open / commit /
   // list / delete) — see src/server/svpack.ts and docs/design/studypack-sharing.md.
   registerSvpackRoutes(app, { vault, identityDir: svpackIdentityDir, now: clock, runtime: sealed });
+
+  // Data trust (docs/design/data-trust.md §1–§2, TRUST-1/2): backup rotation +
+  // full-vault export/import — src/server/dataTrust.ts. The service is always
+  // routed (routes only act when called), but the AUTOMATIC behaviors follow the
+  // aiConfig idiom: the pre-清除记忆 safety backup arms only when the `dataTrust`
+  // option is present (real entry points pass it; bare-createApp unit tests stay
+  // hermetic), and the 24h auto scheduler only on `scheduleAuto` (start.ts).
+  const dataTrustService = createDataTrustService({
+    vault,
+    backupsDir: dataTrust?.backupsDir ?? defaultBackupsDir(vault.paths.rootDir),
+    appVersion: packageJson.version,
+    now: clock,
+    onVaultReplaced: () => sealed.refresh()
+  });
+  if (dataTrust) {
+    // 自动备份 before DESTRUCTIVE operations (doc §1): 清除记忆 is DELETE /api/memory.
+    // Registered BEFORE registerMemoryRoutes so it runs first; best-effort (a failed
+    // backup warns but never blocks the user-requested clear).
+    app.delete("/api/memory", async (_req, _res, next) => {
+      try {
+        await dataTrustService.backupNow("pre-clear");
+      } catch (error) {
+        console.warn("[data-trust] pre-clear backup failed:", error instanceof Error ? error.message : error);
+      }
+      next();
+    });
+  }
+  if (dataTrust?.scheduleAuto) {
+    // App-start due-check + hourly re-check (unref'd; the memory-scheduler idiom).
+    void createBackupScheduler(dataTrustService).start();
+  }
+  registerDataTrustRoutes(app, dataTrustService);
 
   // Learner-memory (docs/design/learner-memory.md): MEM-1 event capture/read/prune +
   // the capture switch, MEM-2 tiers (consolidate/digests/profile/clear-all) — see

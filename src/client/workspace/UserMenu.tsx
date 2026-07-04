@@ -6,6 +6,8 @@
 //   画像与记忆    → the existing profile.panel view
 //   分享身份      → the Layers pane (layer.switcher), which hosts the shipped svpack
 //                   分享/导入 dialogs (svpackViews) — the identity/roster surfaces
+//   数据          → 立即备份 / 导出全库… / 导入全库(替换)… (TRUST-1/2, dataTrust.ts;
+//                   the hub 数据 section is deferred while SettingsHub is contended)
 //   账户/积分     → DISABLED with tooltip until G-A3b (managed login + balance)
 //   帮助/新手引导 → reopen the SHELL-2 onboarding checklist (center view)
 //   反馈问题      → GitHub issues via window.open (desktop's window-open handler
@@ -16,6 +18,7 @@
 // mousedown outside closes, focus restores to the trigger on close.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { backupStatusLine, runBackupNow, runExportVault, runImportVault } from "./dataTrust";
 import { navigateShell } from "./shellNav";
 import { getUserMenuIo } from "./userMenuIo";
 
@@ -36,6 +39,7 @@ export function UserMenu() {
   const [identityName, setIdentityName] = useState<string | null>(null);
   const [identityId, setIdentityId] = useState<string | null>(null);
   const [version, setVersion] = useState("");
+  const [backupTitle, setBackupTitle] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const popRef = useRef<HTMLDivElement | null>(null);
@@ -59,6 +63,14 @@ export function UserMenu() {
       })
       .catch(() => {
         // Version unreachable — the 关于 row just shows no number.
+      });
+    // TRUST-1 readout for the 立即备份 tooltip ("上次备份 x 小时前 · 共 N 份").
+    backupStatusLine()
+      .then((line) => {
+        if (!cancelled && line) setBackupTitle(line);
+      })
+      .catch(() => {
+        // Status unreachable — the entry keeps its static tooltip.
       });
     return () => {
       cancelled = true;
@@ -107,6 +119,31 @@ export function UserMenu() {
       label: "分享身份",
       title: "分享/导入 .svpack(层列表里的分享与导入对话框)",
       action: () => navigateShell({ type: "pane", kind: "layer.switcher" })
+    },
+    // 数据 (TRUST-1/2, docs/design/data-trust.md) — the Settings Hub 数据 section
+    // (status line + backup picker/restore) is deferred while SettingsHub is
+    // contended; these entries expose the capability meanwhile (dataTrust.ts).
+    {
+      id: "backup-now",
+      label: "立即备份",
+      title: backupTitle ?? "把当前库打包为一份本地备份(zip,自动轮转保留)",
+      action: () => {
+        void runBackupNow();
+      }
+    },
+    {
+      id: "export-vault",
+      label: "导出全库…",
+      title: "下载 .growte-vault.zip(JSONL+资源+配置+清单)",
+      action: () => {
+        void runExportVault();
+      }
+    },
+    {
+      id: "import-vault",
+      label: "导入全库(替换)…",
+      title: "从 .growte-vault.zip 完整替换当前库(导入前自动备份)",
+      action: () => runImportVault()
     },
     { id: "account", label: "账户/积分", disabled: true, title: "等待托管上线" },
     { id: "onboarding", label: "帮助/新手引导", action: () => navigateShell({ type: "onboarding", open: true }) },

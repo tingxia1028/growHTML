@@ -39,7 +39,15 @@ async function resolveStartUrl(): Promise<string> {
   // before; STUDY_VAULT_ROOT env always wins (resolved inside openVault).
   const vaultRoot =
     resolveVaultRoot(process.env, app.isPackaged, app.getPath("userData"), path.join) ?? getDefaultVaultRoot();
-  started = await startServer({ port: 0, clientDir: path.join(__dirname, "..", "dist"), vaultRoot });
+  // TRUST-1 auto-backup: armed for PACKAGED installs (real users' vaults —
+  // <userData>/backups beside <userData>/vault); unpackaged repo/e2e-electron runs
+  // stay off unless STUDY_VAULT_AUTO_BACKUP=1 opts in (no stray repo-side dirs).
+  started = await startServer({
+    port: 0,
+    clientDir: path.join(__dirname, "..", "dist"),
+    vaultRoot,
+    backups: { auto: app.isPackaged || process.env.STUDY_VAULT_AUTO_BACKUP === "1" }
+  });
   log.info(`[boot] Growte ${app.getVersion()} server ${started.url} vault ${vaultRoot}`);
   return started.url;
 }

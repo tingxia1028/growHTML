@@ -4,10 +4,11 @@
 // dispatching the right shell-nav targets, the disabled 账户/积分 stub with its
 // honest tooltip, 帮助/新手引导 reopening onboarding, Esc + outside-mousedown close.
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { UserMenu } from "./UserMenu";
+import { setDataTrustIoForTests } from "./dataTrust";
 import { setUserMenuIoForTests } from "./userMenuIo";
 import { registerShellNavigator, type ShellNavTarget } from "./shellNav";
 
@@ -22,6 +23,27 @@ beforeEach(() => {
     fetchIdentity: async () => ({ identity: null }),
     fetchAbout: async () => ({ app: "ai-study-vault", version: "0.1.0" })
   });
+  // TRUST-1/2 entries: hermetic IO (the real edges would fetch relative URLs).
+  setDataTrustIoForTests({
+    backupNow: async () => ({
+      backup: { name: "vault-backup-20260704-010203-manual.zip", createdAt: "2026-07-04T01:02:03.000Z", reason: "manual", sizeBytes: 10 }
+    }),
+    fetchBackupStatus: async () => ({
+      backups: [],
+      lastBackupAt: null,
+      nextDueAt: "2026-07-04T01:02:03.000Z",
+      backupsDir: "X:/backups"
+    }),
+    fetchVaultInfo: async () => ({
+      vault: { name: "Vault", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z", schemaVersion: 1 },
+      counts: {},
+      rootDir: "X:/vault"
+    }),
+    exportVault: async () => ({ blob: new Blob(["zip"]), fileName: "vault-x.growte-vault.zip" }),
+    importVault: async () => {
+      throw new Error("not under test");
+    }
+  });
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -31,7 +53,9 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   setUserMenuIoForTests(null);
+  setDataTrustIoForTests(null);
   registerShellNavigator(null);
+  vi.restoreAllMocks();
 });
 
 async function renderMenu() {
@@ -86,7 +110,19 @@ describe("UserMenu", () => {
     await openMenu();
 
     const ids = Array.from(container.querySelectorAll(".shell-menu-item")).map((el) => el.getAttribute("data-entry-id"));
-    expect(ids).toEqual(["settings", "plugins", "profile", "share", "account", "onboarding", "feedback", "about"]);
+    expect(ids).toEqual([
+      "settings",
+      "plugins",
+      "profile",
+      "share",
+      "backup-now",
+      "export-vault",
+      "import-vault",
+      "account",
+      "onboarding",
+      "feedback",
+      "about"
+    ]);
 
     const account = container.querySelector<HTMLButtonElement>('[data-entry-id="account"]')!;
     expect(account.disabled).toBe(true);
@@ -122,6 +158,69 @@ describe("UserMenu", () => {
       { type: "onboarding", open: true },
       { type: "pane", kind: "settings.hub" }
     ]);
+  });
+
+  it("数据 entries (TRUST-1/2) hit the RIGHT endpoints through the dataTrust IO seam", async () => {
+    const backupNow = vi.fn(async () => ({
+      backup: {
+        name: "vault-backup-20260704-010203-manual.zip",
+        createdAt: "2026-07-04T01:02:03.000Z",
+        reason: "manual",
+        sizeBytes: 10
+      }
+    }));
+    const exportVault = vi.fn(async () => ({ blob: new Blob(["zip"]), fileName: "vault-x.growte-vault.zip" }));
+    setDataTrustIoForTests({
+      backupNow,
+      exportVault,
+      fetchBackupStatus: async () => ({
+        backups: [
+          { name: "vault-backup-20260704-010203-manual.zip", createdAt: "2026-07-04T01:02:03.000Z", reason: "manual", sizeBytes: 10 }
+        ],
+        lastBackupAt: "2026-07-04T01:02:03.000Z",
+        nextDueAt: "2026-07-05T01:02:03.000Z",
+        backupsDir: "X:/backups"
+      })
+    });
+    const alerts: string[] = [];
+    vi.spyOn(window, "alert").mockImplementation((message?: unknown) => {
+      alerts.push(String(message));
+    });
+    // jsdom has no createObjectURL — stub the download plumbing for 导出全库.
+    const createUrl = vi.fn(() => "blob:vault");
+    const revokeUrl = vi.fn();
+    (URL as unknown as { createObjectURL: unknown }).createObjectURL = createUrl;
+    (URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = revokeUrl;
+    const anchorClicks = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    try {
+      await renderMenu();
+
+      await openMenu();
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>('[data-entry-id="backup-now"]')!.click();
+      });
+      await act(async () => {}); // flush the chained backup→status→alert microtasks
+      expect(backupNow).toHaveBeenCalledTimes(1);
+      expect(alerts.some((message) => message.includes("已备份") && message.includes("共 1 份"))).toBe(true);
+
+      await openMenu();
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>('[data-entry-id="export-vault"]')!.click();
+      });
+      await act(async () => {}); // flush the export→download microtasks
+      expect(exportVault).toHaveBeenCalledTimes(1);
+      expect(createUrl).toHaveBeenCalledTimes(1);
+      expect(anchorClicks).toHaveBeenCalledTimes(1);
+
+      // 导入全库 exists and opens a picker (the flow itself is dataTrust.test.ts).
+      await openMenu();
+      expect(container.querySelector('[data-entry-id="import-vault"]')).not.toBeNull();
+      expect(targets).toEqual([]); // none of the 数据 entries dispatch shell-nav
+    } finally {
+      delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+      delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+    }
   });
 
   it("反馈问题 opens the GitHub issues URL in a new tab/external browser and closes the menu", async () => {
