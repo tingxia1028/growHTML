@@ -35,6 +35,7 @@ import * as assetsService from "./services/assets";
 import * as workspaceService from "./services/workspace";
 import * as searchService from "./services/search";
 import * as reviewScheduleService from "./services/reviewSchedule";
+import * as triggerFiresService from "./services/triggerFires";
 import * as aiService from "./services/ai";
 import * as synthesisService from "./services/synthesis";
 import { SynthesisPathResultError } from "./services/synthesis";
@@ -1158,6 +1159,47 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
       res.json({ triggers: await vault.stores.triggers.list() });
     } catch (error) {
       next(error);
+    }
+  });
+
+  // Trigger FIRE STATE (raw JSON, trigger-fires.json). The client records a fire when it
+  // SURFACES a nudge (delta #2), bucketed by its CLIENT-computed localDayKey (delta #1);
+  // dismiss/snooze are the nudge-surface controls. The whole document read-back arms the
+  // tick's restraint ctx.
+  app.get("/api/triggers/fires", async (_req, res, next) => {
+    try {
+      res.json({ fires: await triggerFiresService.readTriggerFires({ vault }) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/triggers/:triggerId/fire", async (req, res, next) => {
+    try {
+      const input = triggerFiresService.recordFireSchema.parse(req.body);
+      const state = await triggerFiresService.recordTriggerFire({ vault }, { triggerId: req.params.triggerId, ...input });
+      res.json({ state });
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  app.post("/api/triggers/:triggerId/snooze", async (req, res, next) => {
+    try {
+      const input = triggerFiresService.snoozeSchema.parse(req.body);
+      const state = await triggerFiresService.snoozeTrigger({ vault }, { triggerId: req.params.triggerId, ...input });
+      res.json({ state });
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  app.post("/api/triggers/:triggerId/dismiss", async (req, res, next) => {
+    try {
+      const state = await triggerFiresService.dismissTrigger({ vault }, { triggerId: req.params.triggerId });
+      res.json({ state });
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 

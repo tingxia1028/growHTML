@@ -383,6 +383,31 @@ describe("direct transport acceptance — entityClient with no HTTP", () => {
     expect(direct[0].when).toEqual({ kind: "schedule", atLocalTime: "19:00" });
   });
 
+  it("records + reads trigger FIRE STATE (fire/snooze/dismiss) with HTTP parity", async () => {
+    const ID = "trigger_01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    // Absent ⇒ {} both sides.
+    expect((await entityClient.triggerFires()).fires).toEqual({});
+    expect((await request(app).get("/api/triggers/fires").expect(200)).body.fires).toEqual({});
+
+    // A surfaced fire records lastFiredAt + the per-day count identically both sides.
+    const fired = await entityClient.recordTriggerFire(ID, { localDayKey: "2026-07-05", firedAt: 1000 });
+    const httpFired = (
+      await request(app).post(`/api/triggers/${ID}/fire`).send({ localDayKey: "2026-07-05", firedAt: 1000 }).expect(200)
+    ).body;
+    expect(fired.state).toEqual(httpFired.state);
+    expect(fired.state).toMatchObject({ lastFiredAt: 1000, firedByDay: { "2026-07-05": 1 } });
+
+    // Snooze + read-back parity.
+    const snoozed = await entityClient.snoozeTrigger(ID, 999_000);
+    const httpSnoozed = (await request(app).post(`/api/triggers/${ID}/snooze`).send({ snoozedUntil: 999_000 }).expect(200)).body;
+    expect(snoozed.state.snoozedUntil).toBe(999_000);
+    expect(JSON.stringify(snoozed.state)).toBe(JSON.stringify(httpSnoozed.state));
+
+    // Dismiss lifts the snooze both sides.
+    expect((await entityClient.dismissTrigger(ID)).state.snoozedUntil).toBeUndefined();
+    expect((await request(app).post(`/api/triggers/${ID}/dismiss`).send({}).expect(200)).body.state.snoozedUntil).toBeUndefined();
+  });
+
   it("maps typed service failures to the SAME ApiError(status/message) http produces", async () => {
     // NotFound: identical status AND message, and the client-facing class is ApiError
     // exactly as if the http transport had parsed a 404 response.

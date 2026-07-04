@@ -198,6 +198,17 @@ export type TriggerRecord = {
   constraints: TriggerConstraints;
 };
 
+/** One trigger's FIRE STATE (trigger-fires.json value; mirrors triggerFires.ts). All
+    time values are epoch millis on the CLIENT clock (fire-on-surface, delta #2). */
+export type TriggerFireState = {
+  lastFiredAt?: number;
+  /** localDayKey → nudges surfaced that local day (the per-day cap counter). */
+  firedByDay: Record<string, number>;
+  snoozedUntil?: number;
+};
+/** triggerId → fire state. Absent trigger ⇒ nothing surfaced yet. */
+export type TriggerFiresState = Record<string, TriggerFireState>;
+
 // Workspace-level small prefs (mirrors workspace.json): the action ORDER + DISABLED
 // set (built-in command ids + op_ ids) and per-built-in placeholder PARAMS the
 // server merges into generate input before build().
@@ -989,6 +1000,28 @@ export const entityClient = {
   // tick unions these with the code-registered built-ins and evaluates each locally. ——
   triggers() {
     return getJson<{ triggers: TriggerRecord[] }>("/api/triggers");
+  },
+  /** The whole fire-state document (arms the tick's restraint ctx). Absent ⇒ {}. */
+  triggerFires() {
+    return getJson<{ fires: TriggerFiresState }>("/api/triggers/fires");
+  },
+  /** Record a SURFACED nudge (delta #2): the client passes its localDayKey + surface time. */
+  recordTriggerFire(triggerId: string, input: { localDayKey: string; firedAt: number }) {
+    return sendJson<{ state: TriggerFireState }>("POST", `/api/triggers/${encodeURIComponent(triggerId)}/fire`, input);
+  },
+  /** Snooze a trigger until an epoch-millis instant (nudge 稍后再说 control). */
+  snoozeTrigger(triggerId: string, snoozedUntil: number) {
+    return sendJson<{ state: TriggerFireState }>("POST", `/api/triggers/${encodeURIComponent(triggerId)}/snooze`, {
+      snoozedUntil
+    });
+  },
+  /** Dismiss a trigger's pending nudge (lifts any lingering snooze). Idempotent. */
+  dismissTrigger(triggerId: string) {
+    return sendJson<{ state: TriggerFireState }>(
+      "POST",
+      `/api/triggers/${encodeURIComponent(triggerId)}/dismiss`,
+      {}
+    );
   },
   saveOperationPrefs(prefs: OperationPrefs) {
     return sendJson<{ prefs: OperationPrefs }>("PUT", "/api/operation-prefs", prefs);

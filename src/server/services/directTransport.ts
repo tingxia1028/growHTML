@@ -77,6 +77,7 @@ import * as notesService from "./notes";
 import * as patchesService from "./patches";
 import * as reviewScheduleService from "./reviewSchedule";
 import * as searchService from "./search";
+import * as triggerFiresService from "./triggerFires";
 import * as sourceAuthoringService from "./sourceAuthoring";
 import * as sourceForkService from "./sourceFork";
 import * as sourcesService from "./sources";
@@ -454,6 +455,36 @@ const routes: DirectRoute[] = [
     method: "GET",
     pattern: "/api/triggers",
     call: async ({ deps }) => ({ triggers: await deps.vault.stores.triggers.list() })
+  }),
+  // Trigger FIRE STATE (raw JSON) — parity with the fire/snooze/dismiss + read-back
+  // routes so mobile records surfaces + restraint identically (delta #2/#1).
+  route({
+    method: "GET",
+    pattern: "/api/triggers/fires",
+    call: async ({ deps }) => ({ fires: await triggerFiresService.readTriggerFires(deps) })
+  }),
+  route({
+    method: "POST",
+    pattern: "/api/triggers/:triggerId/fire",
+    schema: triggerFiresService.recordFireSchema,
+    call: async ({ deps, params, input }) => ({
+      state: await triggerFiresService.recordTriggerFire(deps, { triggerId: params.triggerId, ...input })
+    })
+  }),
+  route({
+    method: "POST",
+    pattern: "/api/triggers/:triggerId/snooze",
+    schema: triggerFiresService.snoozeSchema,
+    call: async ({ deps, params, input }) => ({
+      state: await triggerFiresService.snoozeTrigger(deps, { triggerId: params.triggerId, ...input })
+    })
+  }),
+  route({
+    method: "POST",
+    pattern: "/api/triggers/:triggerId/dismiss",
+    call: async ({ deps, params }) => ({
+      state: await triggerFiresService.dismissTrigger(deps, { triggerId: params.triggerId })
+    })
   }),
 
   // —— Concept graph (CG-1) — parity with GET /api/graph so mobile assembles the
