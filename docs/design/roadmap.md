@@ -7,7 +7,7 @@ One dependency-ordered plan over the six design docs written this cycle. Purpose
 |---|---|---|
 | `studypack-sharing.md` | Offline `.svpack` protected sharing v2 | **A✅ B✅ C✅ D✅ — shipped.** Follow-ups: renew UI (needs a publisher pack-LIST endpoint), e2e identity-dir override (shared server pins into real `~/.growte`), publish-ledger delete API, sealed-layer DOM marker |
 | `plugin-viewer-model.md` §8 | Plugin/Kit **marketplace** | M1 · M2 · M3 |
-| `note-presentation-unified.md` | In-reader note surface D1–D12 | N1(D2+D5 待,"AI note 丢右栏")· **N2 ✅**(N2-001, D4a 无模式化区域+转为区域 · D3a 每层上色)· **N3 ✅**(N3-001, D6 草稿芯片)· N4(D7+D8,随 M1)· **N5 ✅** · **N6 ✅**(N6-001, D12 看板) |
+| `note-presentation-unified.md` | In-reader note surface D1–D12 | **N1 ✅**(D2 两槽标记 N1A-D2-001 + D5 浮动编辑器 已 ship;"AI note 丢右栏"经核实非丢失 bug——只剩自动物化时切 Notes 页的装饰 nudge)· **N2 ✅**(N2-001, D4a 无模式化区域+转为区域 · D3a 每层上色,R7min-001 上色控件可达)· **N3 ✅**(N3-001, D6 草稿芯片)· **N4 部分**(N4D7-001 D7 交互全屏 ✅;D8 类型画廊 + M1-gated 建卡组 待)· **N5 ✅** · **N6 ✅**(N6-001, D12 看板) |
 | `subject-kits.md` | 11 subject types × 5 kits + auto-switch | **M-A ✅ · M-B ✅ · M-C ✅**(M-C-001 — 全 11 类型 + 5 kit) |
 | `multidoc-and-concepts.md` | Multi-pane docs + cross-doc notes + concept graph | **P-A1 ✅ · P-A2 ✅**(F1-001 — 多文档并排,方案+实现双审)· P-B · P-C1 · **P-C2 ✅**(关联图 CG-1/2/3) |
 | `ai-workspace.md` | AI chat sessions + file/note attachments + doc synthesis | **W1 ✅ · W2 ✅ · W3 ✅**(W3-001, chat→合成 authored markdown 新源+TOC+新面板打开)— AI workspace 全线完成(工作区页/剪贴板挂载 defer) |

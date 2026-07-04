@@ -763,3 +763,9 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 | 2026-07-05 | R7min-001 | layerViews.test.tsx | `.layer-paint-input`+`.layer-deco-select` 仅 owned 行显示(preset/shared/protected 无);paint-input change→`patchLayer(id,{style:{color}})`(合并既有 style);deco change→`{style:{decoration}}`;两次都调 refreshLayers | Passed(4) |
 | 2026-07-05 | R7min-001 | annotationDom.test.ts | 闭环:持久 style{color,decoration}→resolveAnchorPaintStyle→applyPaintStyle 设 `--sv-anchor-color`+`sv-deco-underline` | Passed(1) |
 | 2026-07-05 | R7min-001 | npx vitest run(全量) | 236 文件 / 2488 用例(基线 236/2483 + 5) | Passed |
+| 2026-07-05 | N4D7-001 | noteInteractive.test.tsx | FlipCard 点击/Enter 翻(隐面 DOM 缺席);Reveal 隐→显;useChoiceQuiz 错→correct=false/对→true/首选锁定 | Passed(7) |
+| 2026-07-05 | N4D7-001 | noteTypeRegistry.test.tsx quiz+flashcard | quiz:选前无答案/分/解释,错选后正确项得 sv-quiz-answer+标错+出分;flashcard:初仅正面,翻后背面 | Passed |
+| 2026-07-05 | N4D7-001 | subject/noteTypes.test.tsx vocab | 初正面 word,背面隐;翻后背面显 | Passed |
+| 2026-07-05 | N4D7-001 | textbook-learning/noteTypes.test.tsx | exercise:`Answer:` 揭前隐/揭后显;review-pack:每条 exercises[] 渲染进 tb-review-exercises(守住修复的丢失) | Passed |
+| 2026-07-05 | N4D7-001 | ReviewPanel.test.tsx | 自评流 mode:full flashcard 是翻卡;显示答案后背面隐、翻后显 | Passed |
+| 2026-07-05 | N4D7-001 | npx vitest run(全量) | 237 文件 / 2496 用例(基线 236/2488 + 8) | Passed |

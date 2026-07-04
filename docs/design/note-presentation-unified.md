@@ -346,6 +346,8 @@ WITHOUT the extra click, and adds draft status + undo as the safety net.
 
 ## 7. D7 — Textbook type UI audit + interactive full-mode spec
 
+> **STATUS: D7 interactive full-mode ✅ SHIPPED (N4D7-001, 2026-07-05)** — quiz answer-check + score, flashcard flip, subject-vocab flip, textbook-exercise answer-reveal, review-pack `exercises[]` render (was dropped). Mechanism = a stateful React sub-component per type (`<QuizFull>`/`<FlipCard>`/`<Reveal>`/`useChoiceQuiz` in NEW `src/client/notes/noteInteractive.tsx`) returned from each type's own `render({mode:"full"})` — NO new render path, NO host branch, NO schema change; V1 state ephemeral useState. **DEFERRED:** persistence/SRS; vocab **deck prev/next** (needs a `ctx` sibling seam — `NoteRenderInput` is one content+one note); per-exercise answer-hide (review-pack `exercises[]` is `z.array(z.string())`, no encoded answer); the M1-gated composer create-deck. **KNOWN UX wrinkle:** the review self-grade "显示答案" now surfaces the flip card front (one extra flip to see the back) — a future `initialFlipped` on FlipCard (passed in the review answer position) removes the double-reveal.
+
 **Audit — what actually renders today** (all via `getNoteType().render`, card vs full):
 
 | type | card mode (today) | full mode (today) | verdict |
