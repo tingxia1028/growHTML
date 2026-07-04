@@ -655,6 +655,18 @@ export type AiDetectResult = { id: string; spec: string; ok: boolean; version?: 
 /** GET /api/svpack/identity — the local Tier-A publisher identity, if one exists. */
 export type SvpackIdentityInfo = { identity: { id: string; displayName: string } | null };
 
+/** One note attached to a chat-context source (ai-workspace §W2), reduced to text. */
+export type ChatContextNote = { contentType?: string; text: string };
+
+/** One SOURCE the chat carries as context (ai-workspace §W2): bounded excerpt + notes. */
+export type ChatContextSource = {
+  title?: string;
+  type?: string;
+  location?: string;
+  excerpt?: string;
+  notes?: ChatContextNote[];
+};
+
 export type ChatContext = {
   sourceTitle?: string;
   sourceType?: string;
@@ -662,6 +674,19 @@ export type ChatContext = {
   quote?: string;
   contextBefore?: string;
   contextAfter?: string;
+  // W2: source-level attachments (the focused source ∪ the session's explicit
+  // attachments, de-duped by sourceId). Omitted when empty (byte-identical prior path).
+  sources?: ChatContextSource[];
+};
+
+/** GET /api/sources/:id/bundle — a source's chat-context bundle (server SourceBundle). */
+export type SourceBundle = {
+  sourceId: string;
+  title: string;
+  type: string;
+  location?: string;
+  excerpt?: string;
+  notes: ChatContextNote[];
 };
 
 export type CreateAnchorInput = {
@@ -763,6 +788,16 @@ export const entityClient = {
   },
   rendered(sourceId: string) {
     return getJson<{ source: SourceRecord; content: string }>(`/api/sources/${sourceId}/rendered`);
+  },
+  /**
+   * Attachment bundle (ai-workspace.md §W2): a source's bounded body excerpt + its
+   * (sealed-filtered) notes — the chat-context payload the widened ChatContext.sources[]
+   * rides. A plain SOURCE read over the VaultTransport (directTransport parity), NOT the
+   * chat lane. `includeNotes:false` skips the note read (source-only attachment).
+   */
+  sourceBundle(sourceId: string, includeNotes = true) {
+    const query = includeNotes ? "" : "?includeNotes=false";
+    return getJson<{ bundle: SourceBundle }>(`/api/sources/${sourceId}/bundle${query}`);
   },
 
   // —— Anchors ——

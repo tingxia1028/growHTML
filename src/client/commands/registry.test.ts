@@ -249,6 +249,59 @@ describe("command: anchor.ask-ai", () => {
     expect(onAssistantMessage).toHaveBeenCalledWith({ role: "assistant", content: "single reply" });
     expect(onAssistantDone).not.toHaveBeenCalled();
   });
+
+  // W2: ask-ai awaits the feature-detected resolver and merges the resolved sources[]
+  // into the sent context — additive over the flat chatContext.
+  it("W2: resolves attachment bundles and sends them in the widened context", async () => {
+    const resolveAttachmentBundles = vi.fn(async () => [
+      { title: "Attached Doc", type: "html", excerpt: "body", notes: [{ text: "n" }] }
+    ]);
+    const ctx = baseCtx({
+      payload: { text: "compare" },
+      chatContext: { sourceTitle: "Focused", quote: "q" },
+      resolveAttachmentBundles,
+      actions: { onChatHistory: vi.fn(), onAssistantMessage: vi.fn() }
+    });
+    await runCommand("anchor.ask-ai", ctx);
+    expect(resolveAttachmentBundles).toHaveBeenCalledOnce();
+    expect(ctx.client.chat).toHaveBeenCalledWith({
+      messages: expect.any(Array),
+      context: {
+        sourceTitle: "Focused",
+        quote: "q",
+        sources: [{ title: "Attached Doc", type: "html", excerpt: "body", notes: [{ text: "n" }] }]
+      }
+    });
+  });
+
+  it("W2: an EMPTY resolver result leaves the flat context byte-identical (no sources key)", async () => {
+    const ctx = baseCtx({
+      payload: { text: "q" },
+      chatContext: { sourceTitle: "Focused" },
+      resolveAttachmentBundles: vi.fn(async () => []),
+      actions: { onChatHistory: vi.fn(), onAssistantMessage: vi.fn() }
+    });
+    await runCommand("anchor.ask-ai", ctx);
+    expect(ctx.client.chat).toHaveBeenCalledWith({
+      messages: expect.any(Array),
+      context: { sourceTitle: "Focused" }
+    });
+    const sentContext = (ctx.client.chat as ReturnType<typeof vi.fn>).mock.calls[0][0].context;
+    expect("sources" in sentContext).toBe(false);
+  });
+
+  it("W2: no resolver wired → sends the flat context unchanged (backward-compat)", async () => {
+    const ctx = baseCtx({
+      payload: { text: "q" },
+      chatContext: { sourceTitle: "Focused" },
+      actions: { onChatHistory: vi.fn(), onAssistantMessage: vi.fn() }
+    });
+    await runCommand("anchor.ask-ai", ctx);
+    expect(ctx.client.chat).toHaveBeenCalledWith({
+      messages: expect.any(Array),
+      context: { sourceTitle: "Focused" }
+    });
+  });
 });
 
 describe("command: concept.create", () => {

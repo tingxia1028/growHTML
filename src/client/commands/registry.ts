@@ -226,6 +226,15 @@ export type CommandContext = {
   chatMessages?: ChatMessage[];
   /** Where/what the assistant is answering about. */
   chatContext?: ChatContext;
+  /**
+   * W2 (ai-workspace §W2): resolve the session's source-level attachments (the focused
+   * source ∪ the explicit attachments) into ChatContext.sources[]. CHAT-ONLY —
+   * feature-detected + awaited by anchor.ask-ai ONLY (mirroring the chatStream idiom);
+   * operation.run / kit generation / note.generate-block never call it (they read the
+   * flat single-passage context via composeAutoContext, untouched). Absent in
+   * hosts/tests that don't wire attachments → ask-ai sends the flat context unchanged.
+   */
+  resolveAttachmentBundles?(): Promise<ChatContext["sources"]>;
   actions: CommandActions;
 };
 
@@ -249,6 +258,13 @@ const askAi: Command = {
     if (!text) return;
     const history: ChatMessage[] = [...(ctx.chatMessages ?? []), { role: "user", content: text }];
     ctx.actions.onChatHistory?.(history);
+    // W2: resolve the session's source attachments into the widened context BEFORE the
+    // chat call (feature-detected, like chatStream). When the host wires no resolver, or
+    // it yields nothing, the flat context rides unchanged — a zero-attachment request is
+    // byte-identical (the `sources` key is only added when non-empty).
+    const sources = ctx.resolveAttachmentBundles ? await ctx.resolveAttachmentBundles() : undefined;
+    const context: ChatContext | undefined =
+      sources && sources.length > 0 ? { ...(ctx.chatContext ?? {}), sources } : ctx.chatContext;
     // Prefer streaming when the host wired both a stream client and a chunk sink;
     // the progressive deltas build the assistant message as they arrive. If the
     // stream produced no deltas (endpoint unavailable → chatStream fell back to a
@@ -257,7 +273,7 @@ const askAi: Command = {
     if (ctx.client.chatStream && onChunk) {
       let streamed = false;
       const { message } = await ctx.client.chatStream(
-        { messages: history, context: ctx.chatContext },
+        { messages: history, context },
         (delta) => {
           streamed = true;
           onChunk(delta);
@@ -269,7 +285,7 @@ const askAi: Command = {
       else ctx.actions.onAssistantDone?.(message);
       return;
     }
-    const { message } = await ctx.client.chat({ messages: history, context: ctx.chatContext });
+    const { message } = await ctx.client.chat({ messages: history, context });
     ctx.actions.onAssistantMessage?.(message);
   }
 };
