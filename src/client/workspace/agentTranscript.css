@@ -1,0 +1,117 @@
+/* A4b agent transcript — tool cards + running/error tails, styled off the shared
+   surface/border/accent tokens (same vocabulary as .chat-artifact). */
+
+.agent-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.agent-tool-card {
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface);
+  overflow: hidden;
+}
+
+.agent-tool-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  color: var(--sv-text);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.agent-tool-head:hover {
+  background: var(--sv-accent-weak);
+}
+
+.agent-tool-icon {
+  color: var(--sv-text-muted);
+  flex: none;
+}
+
+.agent-tool-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-tool-truncated {
+  flex: none;
+  font-size: 11px;
+  color: var(--sv-text-muted);
+}
+
+.agent-tool-state {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.agent-tool-glyph-done {
+  color: var(--sv-success, #2e9e5b);
+}
+
+.agent-tool-glyph-error {
+  color: var(--sv-danger, #d1453b);
+}
+
+.agent-tool-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px 8px;
+  border-top: 1px solid var(--sv-border);
+}
+
+.agent-tool-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent-tool-label {
+  font-size: 11px;
+  color: var(--sv-text-muted);
+}
+
+.agent-tool-json {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface-sunken, rgba(0, 0, 0, 0.04));
+  color: var(--sv-text);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.agent-tool-json-error {
+  color: var(--sv-danger, #d1453b);
+}
+
+.agent-transcript-running,
+.agent-transcript-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--sv-text-muted);
+}
+
+.agent-transcript-error {
+  color: var(--sv-danger, #d1453b);
+}

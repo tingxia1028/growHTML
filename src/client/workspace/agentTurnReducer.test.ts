@@ -5,7 +5,7 @@ import {
   type AgentEvent,
   type AgentTranscriptItem,
   type AgentTurnState
-} from "./agentTranscript";
+} from "./agentTurnReducer";
 
 // Pure reducer for the A4b agent transcript: the six agent SSE events fold into a
 // render-only turn state. Covers text accumulation, keyed tool call→result

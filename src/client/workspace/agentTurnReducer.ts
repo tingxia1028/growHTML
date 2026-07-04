@@ -1,5 +1,8 @@
-// agentTranscript — the PURE reducer behind the A4b agent-loop transcript
-// (docs/implementation/a4b-build-spec.md). The agent SSE (POST /api/agent/stream)
+// agentTurnReducer — the PURE reducer behind the A4b agent-loop transcript
+// (docs/implementation/a4b-build-spec.md). NB the filename differs from
+// AgentTranscript.tsx by more than case on purpose: a case-only difference collides on
+// Windows' case-insensitive filesystem and silently breaks the import. The agent SSE
+// (POST /api/agent/stream)
 // forwards six typed events; this module folds them into a render-only
 // `AgentTurnState` the chat panel shows as tool-call/result CARDS + the streamed
 // answer. It is NOT a ChatMessage list — only the final `done.message` becomes a
