@@ -198,13 +198,39 @@ describe("NoteType render — sample content per type", () => {
     expect(mk).toContain('data-content-type="markmap"');
   });
 
-  it("quiz renders the question, options, and marks the answer", () => {
-    const content = { question: "2+2?", options: ["3", "4", "5"], answerIndex: 1 };
-    const html = renderToHtml(getNoteType("quiz")!.render({ content }));
-    expect(html).toContain("2+2?");
-    expect(html).toContain("sv-quiz-options");
-    // The answer option carries the answer class.
-    expect(html).toMatch(/sv-quiz-answer[^>]*>(✓\s*)?4/);
+  // N4-D7: the FULL quiz is INTERACTIVE — the answer is HIDDEN until the user picks an
+  // option (options are buttons), then the correct option is marked + the pick is scored.
+  // (Was static: it pre-marked the answer. That was the "answer visible before you try"
+  // bug this commit fixes; the paired assertion is updated in the same commit.)
+  it("quiz FULL renders options as buttons and HIDES the answer until a pick", () => {
+    const content = { question: "2+2?", options: ["3", "4", "5"], answerIndex: 1, explanation: "two plus two" };
+    // Render into a live container so the option buttons' onClick actually fires.
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(getNoteType("quiz")!.render({ content }) as React.ReactElement));
+
+    expect(container.innerHTML).toContain("2+2?");
+    expect(container.innerHTML).toContain("sv-quiz-options");
+    // Pre-pick: NO answer is marked, NO explanation/score shown, options are buttons.
+    expect(container.innerHTML).not.toContain("sv-quiz-answer");
+    expect(container.innerHTML).not.toContain("sv-quiz-score");
+    expect(container.innerHTML).not.toContain("two plus two");
+    const buttons = Array.from(container.querySelectorAll(".sv-quiz-option")) as HTMLButtonElement[];
+    expect(buttons).toHaveLength(3);
+
+    // Click a WRONG option (index 0 = "3"). Now the correct option (index 1) gains
+    // sv-quiz-answer, the picked one is marked wrong, and the score/explanation appear.
+    act(() => buttons[0].click());
+    const correct = container.querySelector(".sv-quiz-answer") as HTMLElement;
+    expect(correct).toBeTruthy();
+    expect(correct.getAttribute("data-option")).toBe("4"); // the correct option carries the answer class
+    expect(container.querySelector(".sv-quiz-picked-wrong")).toBeTruthy();
+    expect(container.querySelector(".sv-quiz-score-wrong")).toBeTruthy();
+    expect(container.innerHTML).toContain("two plus two"); // explanation now revealed
+
+    act(() => root.unmount());
+    container.remove();
   });
 
   it("code-snippet renders <pre><code> with the language", () => {

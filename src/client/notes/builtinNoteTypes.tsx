@@ -20,6 +20,7 @@
 
 import { useState } from "react";
 import { escapeHtml, renderNoteContent } from "../../adapters/notes/render";
+import { useChoiceQuiz } from "./noteInteractive";
 import { videoEmbedSrc, type VideoProvider } from "../../core/notes/parseVideoUrl";
 import { DiagramNote } from "../DiagramNote";
 import { entityClient } from "../data/entityClient";
@@ -308,11 +309,70 @@ function asQuiz(content: unknown): Quiz {
     explanation: typeof c.explanation === "string" ? c.explanation : undefined
   };
 }
+// FULL quiz is INTERACTIVE (N4-D7): the answer is HIDDEN until the user picks an option,
+// then the correct option is marked (sv-quiz-answer), the pick is marked correct/wrong,
+// the explanation appears, and a boolean score line is shown. A small stateful
+// sub-component (useChoiceQuiz) so the state lives in the render tree — no host branch,
+// no new render path, no schema change (adaptive-note contract). State is ephemeral: a
+// remount (overlay reopen) resets to unanswered = the intended V1 fresh-start.
+function QuizFull({ quiz }: { quiz: Quiz }) {
+  const { selected, revealed, correct, pick } = useChoiceQuiz(quiz.options.length, quiz.answerIndex);
+  return (
+    <div className="note-rendered sv-quiz sv-quiz-interactive" data-revealed={String(revealed)}>
+      <p className="sv-quiz-question">{quiz.question}</p>
+      <ul className="sv-quiz-options">
+        {quiz.options.map((option, index) => {
+          // Pre-pick: plain option (no answer marking — the answer stays hidden). Post-pick:
+          // the CORRECT option gains sv-quiz-answer; the PICKED option is marked
+          // correct/wrong. Keep sv-quiz-option + data-letter/data-option so the CSS
+          // ::after (which renders the label) and the answer styling still match.
+          const isAnswer = revealed && index === quiz.answerIndex;
+          const isPicked = selected === index;
+          const cls =
+            "sv-quiz-option" +
+            (isAnswer ? " sv-quiz-answer" : "") +
+            (isPicked ? (index === quiz.answerIndex ? " sv-quiz-picked-correct" : " sv-quiz-picked-wrong") : "");
+          return (
+            <li key={index} className="sv-quiz-option-item">
+              <button
+                type="button"
+                className={cls}
+                data-option={option}
+                data-letter={String.fromCharCode(65 + index)}
+                aria-pressed={isPicked}
+                disabled={revealed}
+                onClick={() => pick(index)}
+              >
+                {isAnswer ? "✓ " : ""}
+                {option}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {revealed ? (
+        <p className={`sv-quiz-score ${correct ? "sv-quiz-score-correct" : "sv-quiz-score-wrong"}`}>
+          {correct ? "✓ 正确" : "✗ 再想想"}
+        </p>
+      ) : null}
+      {revealed && quiz.explanation ? <p className="sv-quiz-explanation">{quiz.explanation}</p> : null}
+      <aside className="sv-quiz-overview">
+        <strong>Overview</strong>
+        <span>{quiz.options.length} options</span>
+        {quiz.options.map((_option, index) => (
+          <span key={index} className={revealed && index === quiz.answerIndex ? "active" : ""}>
+            {index + 1}
+          </span>
+        ))}
+      </aside>
+    </div>
+  );
+}
 function QuizRender({ content, mode }: NoteRenderInput) {
   const quiz = asQuiz(content);
   // "card" → just the question (1 line, truncated) — never the options (§10.3). The
   // option count is shown by the wrapper footer (extraMeta), so the body stays a single
-  // line. "full" → the question + options with the answer marked (the Center View).
+  // line. "full" → the INTERACTIVE quiz (answer hidden until a pick; the Center View).
   if (mode === "card") {
     return (
       <div className="note-rendered sv-card-quiz">
@@ -320,34 +380,7 @@ function QuizRender({ content, mode }: NoteRenderInput) {
       </div>
     );
   }
-  return (
-    <div className="note-rendered sv-quiz">
-      <p className="sv-quiz-question">{quiz.question}</p>
-      <ul className="sv-quiz-options">
-        {quiz.options.map((option, index) => (
-          <li
-            key={index}
-            className={`sv-quiz-option${index === quiz.answerIndex ? " sv-quiz-answer" : ""}`}
-            data-option={option}
-            data-letter={String.fromCharCode(65 + index)}
-          >
-            {index === quiz.answerIndex ? "✓ " : ""}
-            {option}
-          </li>
-        ))}
-      </ul>
-      {quiz.explanation ? <p className="sv-quiz-explanation">{quiz.explanation}</p> : null}
-      <aside className="sv-quiz-overview">
-        <strong>Overview</strong>
-        <span>{quiz.options.length} options</span>
-        {quiz.options.map((_option, index) => (
-          <span key={index} className={index === quiz.answerIndex ? "active" : ""}>
-            {index + 1}
-          </span>
-        ))}
-      </aside>
-    </div>
-  );
+  return <QuizFull quiz={quiz} />;
 }
 function QuizEditor({ content, onChange }: NoteEditInput) {
   const quiz = asQuiz(content);
