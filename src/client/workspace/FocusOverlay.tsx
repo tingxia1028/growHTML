@@ -20,6 +20,12 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
 import { createPortal } from "react-dom";
 import { Bookmark, ExternalLink, MoreHorizontal, X } from "lucide-react";
 import type { NoteRecord } from "../data/entityClient";
+import { getNoteContentSpec } from "../../core/notes/contentTypes";
+// 朗读 (SPEECH-1b 朗读通用化): ONE speaker affordance on the SHARED shell header — the
+// adaptive contract's unified-shell rule (never per note type). Text comes through the
+// type's own toSearchText flattening (the design doc's toSpokenText V1 default, the
+// same source NoteListPanel reads).
+import { SpeakButton } from "../speech/SpeakButton";
 import { getNoteType } from "../notes/noteTypeRegistry";
 import { noteTypeIcon } from "../notes/noteTypeIcon";
 import { InertNote } from "../notes/builtinNoteTypes";
@@ -174,6 +180,13 @@ export function FocusOverlay({ block, onClose }: { block: FocusOverlayBlock; onC
           {/* Keep the legacy .sv-focus-type hook (names the form) for back-compat. */}
           <span className="sv-focus-type">{meta.typeLabel}</span>
           <span className="sv-center-actions">
+            {/* 朗读 — the whole note's text via its type's toSearchText (SPEECH-1b).
+                Unknown type → no spec → empty text → the button renders disabled. */}
+            <SpeakButton
+              className="sv-center-speak"
+              text={getNoteContentSpec(block.contentType)?.toSearchText(block.content) ?? ""}
+              size={16}
+            />
             <button
               type="button"
               className="sv-center-action sv-center-bookmark"

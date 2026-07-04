@@ -103,7 +103,7 @@ Concept P-C1 (aggregation page, additive to existing API) ──> P-C2 (graph vi
 - **SEARCH-1** 全局搜索/Cmd+K (global-search.md) · **TRUST-1/2/3** 备份/导出/回收站 (data-trust.md) — both clean-file, slot-ready.
 - **REPORT-1/2** 学习报告 + 导出族 → **DELIVER-1/2** 配对推送 + 老师收件箱 (study-report-delivery.md; parent web = DELIVER-3, P3).
 - **A5/V-1** vision content-parts seam → **V-2** 拍错题 kit (vision-input.md; V-3 camera rides X2).
-- **SPEECH-1 ✅ 朗读** (edge-tts lane shipped, SPEECH-1-001) → **SPEECH-2 ✅ 语音输入** (LOCAL faster-whisper sidecar lane shipped, SPEECH-2-001; BYOK/managed lanes + runner 语音作答 later) → **SPEECH-3** 注音 (speech-and-young-learners.md; 低龄复习环 = the payoff).
+- **SPEECH-1 ✅ 朗读** (edge-tts lane shipped, SPEECH-1-001) → **SPEECH-1b ✅ 朗读通用化** (host-level GlobalSpeakSelection chip + chat-reply/note-shell affordances, SPEECH-1B-001 — 读=所有文本的可读能力) → **SPEECH-2 ✅ 语音输入** (LOCAL faster-whisper sidecar lane shipped, SPEECH-2-001; BYOK/managed lanes + runner 语音作答 later) → **SPEECH-3** 注音 (speech-and-young-learners.md; 低龄复习环 = the payoff).
 - **PRO-1** trigger engine + review-push → **PRO-2** 教回/口语 kit text-first (proactive-learning.md; the kernel's 4th AI-native rung — voice rides SPEECH).
 
 **P2 — surfaces & market (behind P0, beside it when parallel-safe):**

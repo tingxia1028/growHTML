@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -45,6 +45,18 @@ function mount(node: React.ReactNode) {
 
 beforeEach(() => {
   document.body.innerHTML = "";
+  // SPEECH-1b: ChatMessageBody (assistant bubbles) and the FocusOverlay header now
+  // mount a SpeakButton whose shared status probe fetches /api/speech/status — stub
+  // fetch to reject so the probe deterministically resolves "unavailable" (the 朗读
+  // button renders disabled; its speaking behavior is covered in the speech suites).
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => Promise.reject(new Error("no network in test")))
+  );
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("mode routing on the render contract", () => {
@@ -201,6 +213,8 @@ describe("chat thread wiring — rich reply → card, plain → markdown", () =>
     );
     expect(container.querySelector(".sv-artifact-card")).toBeNull();
     expect(container.querySelector(".note-rendered")).toBeTruthy();
+    // …and never carries the 朗读 control (SPEECH-1b reads AI answers, not prompts).
+    expect(container.querySelector(".speak-btn")).toBeNull();
     cleanup();
   });
 });
@@ -237,9 +251,12 @@ describe("chat reply actions — §10 Add as note / Regenerate", () => {
     expect(regen).toBe(1);
     withHandler.cleanup();
 
-    // No handlers → no actions row at all (the bare body renders).
+    // No handlers → no Add/Regenerate buttons; the row still carries the 朗读 control
+    // (SPEECH-1b: every assistant reply is readable).
     const bare = mount(<ChatMessageBody role="assistant" content={"plain reply"} />);
-    expect(bare.container.querySelector(".chat-artifact-actions")).toBeNull();
+    expect(bare.container.querySelector(".chat-artifact-add")).toBeNull();
+    expect(bare.container.querySelector(".chat-artifact-regen")).toBeNull();
+    expect(bare.container.querySelector(".speak-btn")).toBeTruthy();
     bare.cleanup();
   });
 

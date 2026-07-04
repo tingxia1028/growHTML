@@ -7,11 +7,12 @@
 // getNoteType().render path, never a bespoke bypass (display-side HARD contract
 // §0.5-B / §6.6).
 //
-// §10 actions: an assistant reply is also actionable — when the host passes
-// `onAddNote` / `onRegenerate`, a small actions row sits beneath the body so the user
-// can keep the generated artifact ("Add as note") or re-run the question
-// ("Regenerate"). The actions are siblings of the card, so they don't interfere with
-// the card's click-to-open gesture.
+// §10 actions: an assistant reply is also actionable — a small actions row sits
+// beneath the body. It ALWAYS carries 朗读 (SPEECH-1b: every AI answer is readable);
+// when the host passes `onAddNote` / `onRegenerate` the row also lets the user keep
+// the generated artifact ("Add as note") or re-run the question ("Regenerate"). The
+// actions are siblings of the card, so they don't interfere with the card's
+// click-to-open gesture.
 //
 // A small standalone host component so it is unit-testable without pulling the whole
 // workspace view tree (PdfReader/pdfjs etc.) — the actions arrive as plain callbacks.
@@ -20,6 +21,10 @@ import { FilePlus2, RefreshCw } from "lucide-react";
 import { classifyContent } from "../../core/notes/classifyContent";
 import { getNoteType } from "../notes/noteTypeRegistry";
 import { ArtifactCard } from "./ArtifactCard";
+// 朗读 (SPEECH-1b 朗读通用化): every ASSISTANT reply is readable — the user's law says
+// read-aloud is a property of ALL text, AI answers included. One shared SpeakButton
+// per assistant bubble, riding the existing actions row (compact, status-gated).
+import { SpeakButton } from "../speech/SpeakButton";
 
 export function ChatMessageBody({
   role,
@@ -51,13 +56,13 @@ export function ChatMessageBody({
       getNoteType("markdown")?.render({ content }) ?? null
     );
 
-  const showActions = !!onAddNote || !!onRegenerate;
-  if (!showActions) return <>{body}</>;
-
   return (
     <div className="chat-artifact">
       {body}
       <div className="chat-artifact-actions">
+        {/* 朗读 — reads this reply's raw text (SPEECH-1b). Always present on an
+            assistant bubble (disabled until the shared status probe says available). */}
+        <SpeakButton className="chat-reply-speak" text={content} size={14} />
         {onAddNote ? (
           <button
             type="button"

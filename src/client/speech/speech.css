@@ -43,3 +43,26 @@
   border-radius: var(--sv-radius-sm);
   background: var(--sv-surface);
 }
+
+/* SPEECH-1b — compact variant for the chat reply actions row (rides beside the
+   "Add as note"/"Regenerate" pills, matching their small metrics). */
+.chat-artifact-actions .speak-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface);
+}
+
+/* SPEECH-1b — the Center View (FocusOverlay) header variant: borderless 28px icon
+   button, matching its .sv-center-action siblings. */
+.sv-center-actions .speak-btn {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+}
+
+.sv-center-actions .speak-btn:hover:not(:disabled) {
+  background: var(--sv-surface-muted);
+}

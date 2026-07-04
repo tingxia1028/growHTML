@@ -42,6 +42,32 @@ Microsoft Edge read-aloud neural voices over wss, free, keyless, VERY natural zh
   selection-朗读 rides the contended toolbar (gated, SC-2 window). Speed/voice picker in
   Settings Hub (registerSettingsSection — the seam keeps paying).
 
+## 1b. 朗读通用化 (SPEECH-1b) — 朗读=文本的能力
+
+**Status: ✅ shipped (SPEECH-1B-001, 2026-07-04).** User law (2026-07-04): "读本质上不是一个
+anchor 的能力，而是所有文本的可读能力，包括 AI chat 里的回答。" Read-aloud is a property of
+TEXT, not of any one surface — so it is layered, never bolted on per view (the
+abstract-recurring-capabilities principle: one capability behind a shared contract):
+
+- **Host-level: `GlobalSpeakSelection`** (`src/client/speech/GlobalSpeakSelection.tsx`) —
+  mounted ONCE in the WorkspaceShell chrome (sibling of SelectionFloatingToolbar). Any
+  non-empty host-document text selection floats a small 朗读 chip near the selection end
+  (停止 while speaking; Escape dismisses; scroll hides an idle chip; hidden entirely when
+  the status probe says unavailable). Deliberately dumb: `selection.toString()` →
+  `useSpeakText`, no anchors, no persistence.
+- **Exclusion rule (no double-serving):** a selection whose anchorNode is inside the
+  source-viewer pane (`.reader-panel` — the same scope selector SelectionFloatingToolbar
+  uses) is the reader toolbar's job (it already carries 朗读, SPEECH-1); reader
+  iframes/webview guests never reach the host selection anyway (separate realms).
+- **Per-block affordances where selection is clumsy:** every ASSISTANT chat bubble
+  carries a compact SpeakButton (ChatMessageBody actions row — AI 回答可读; user prompts
+  don't), and the unified note shell (`FocusOverlay` Center View header) carries ONE
+  speaker affordance reading via the type's own `toSearchText` (the toSpokenText V1
+  default; per the adaptive contract this lives in the SHELL, never per note type).
+- **Readers keep their own toolbars** — the SPEECH-1 mounts (floating selection toolbar,
+  Anchor Action Bar, note-list rows) are unchanged; SPEECH-1b adds the universal layer
+  above them, it does not replace them.
+
 ## 2. 语音输入 STT (SPEECH-2) — honest China/Electron reality
 
 **Status: ✅ V1 local lane shipped (SPEECH-2-001, 2026-07-04)** — the desktop faster-whisper

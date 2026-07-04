@@ -1,0 +1,32 @@
+/* GlobalSpeakSelection (SPEECH-1b) — the floating host-level 朗读 chip. Scoped file
+   (styles.css untouched — contended). Metrics mirror the .selection-floating-toolbar
+   family: small pill, card surface, accent while speaking. */
+
+.global-speak-chip {
+  z-index: 260; /* above panes/overlays, same stratum as the floating toolbar */
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--sv-border);
+  border-radius: 999px;
+  background: var(--sv-surface-card);
+  color: var(--sv-text-muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(20, 30, 50, 0.12);
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.global-speak-chip:hover {
+  background: var(--sv-surface-muted);
+  border-color: var(--sv-accent-border);
+  color: var(--sv-accent);
+}
+
+/* While speaking the chip IS the 停止 affordance — accent it. */
+.global-speak-chip[data-speaking] {
+  border-color: var(--sv-accent-border);
+  color: var(--sv-accent);
+}
