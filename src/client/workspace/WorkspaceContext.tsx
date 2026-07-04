@@ -1155,12 +1155,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setRegenerating(true);
     setError("");
     try {
-      const { content } = await entityClient.generateStructured({
+      // An AUTO-output draft (a simple action with no pinned type — ACTION-2a) must
+      // re-run WITHOUT a contentType: the server rejects a pinned type for it, and
+      // the form router may legitimately route the rerun to a different form. The
+      // response's contentType keeps the preview in sync either way.
+      const { content, contentType } = await entityClient.generateStructured({
         promptId: draft.promptId,
-        contentType: draft.contentType,
+        contentType: draft.autoForm ? undefined : draft.contentType,
         input: draft.input
       });
-      setPendingDraft({ ...draft, content });
+      setPendingDraft({ ...draft, content, contentType: contentType ?? draft.contentType });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to regenerate");
     } finally {

@@ -1,0 +1,63 @@
+/* ACTION-2b — the 一句话新增 two-field creator + the 高级 accordion. Only the NEW
+   surface lives here; the shared .operation-panel chrome (inputs, buttons, list rows)
+   keeps riding styles.css so the manager stays visually identical in pane and modal. */
+
+/* The two-field form: label above field, comfortable modal-width rhythm. */
+.operation-simple-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.operation-simple-field > span {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.operation-instruction-input {
+  width: 100%;
+  min-height: 56px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+/* Inline validation message under a rejected field. */
+.operation-field-error {
+  color: var(--danger, #c0392b);
+  font-size: 12px;
+  margin: -4px 0 8px;
+}
+
+/* The one-line "context is automatic" reassurance under the instruction field. */
+.operation-simple-hint {
+  font-size: 12px;
+  opacity: 0.6;
+  margin: 0 0 10px;
+}
+
+/* 高级 accordion — collapsed by default; the summary reads as a quiet disclosure. */
+.operation-advanced {
+  margin: 4px 0 10px;
+  border-top: 1px solid var(--border-color, rgba(127, 127, 127, 0.25));
+  padding-top: 6px;
+}
+
+.operation-advanced > summary {
+  cursor: pointer;
+  font-size: 12px;
+  opacity: 0.7;
+  user-select: none;
+}
+
+.operation-advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.operation-convert-btn {
+  align-self: flex-start;
+}

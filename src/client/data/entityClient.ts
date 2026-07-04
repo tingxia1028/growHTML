@@ -120,10 +120,18 @@ export type OperationRecord = {
   id: string;
   name: string;
   description: string;
+  // Authoring mode (ACTION-2a): "simple" = 一句话指令 compiled at run time (auto-
+  // context preamble + instruction + output-form directive); "template" = the V1
+  // {{var}} template shape. The server's zod default makes every record carry one.
+  mode: "simple" | "template";
+  /** simple mode: the 一句话指令 the engine wraps with auto-context. */
+  instruction?: string;
   // A note contentType string (validated against the NoteContentSpec registry at
-  // generate time, not here).
-  outputContentType: string;
-  promptTemplate: string;
+  // generate time, not here). ABSENT on a simple op = AUTO — the adaptive-note
+  // form router picks the note form at run time.
+  outputContentType?: string;
+  /** template mode only — a simple op has no stored template. */
+  promptTemplate?: string;
   declaredVariables: OperationVariable[];
   source: "custom" | "fork";
   forkedFrom?: string;
@@ -131,11 +139,15 @@ export type OperationRecord = {
 };
 
 // The editable body of an Operation (the envelope id/type/timestamps are server-set).
+// Mode-conditional requirements (simple ⇒ instruction, template ⇒ promptTemplate +
+// outputContentType) are enforced server-side by operationSchema's refinement.
 export type OperationInput = {
   name: string;
   description?: string;
-  outputContentType: string;
-  promptTemplate: string;
+  mode?: "simple" | "template";
+  instruction?: string;
+  outputContentType?: string;
+  promptTemplate?: string;
   declaredVariables?: OperationVariable[];
   source?: "custom" | "fork";
   forkedFrom?: string;
@@ -170,7 +182,12 @@ export type PluginPrefs = {
   disabledContributions: string[];
   viewerAssociations: { byContentType: Record<string, string>; byNoteId: Record<string, string> };
   userKits: unknown[];
-  catalogState?: { installedPlugins: string[] | null; installedKits: string[] | null };
+  catalogState?: {
+    installedPlugins: string[] | null;
+    installedKits: string[] | null;
+    /** FLAT §2: kitId → disabled capability-group ids (absent = the kit's group defaults). */
+    disabledGroups?: Record<string, string[]>;
+  };
 };
 
 // —— Learner memory (MEM-1, docs/design/learner-memory.md) — behavior capture is
@@ -1018,9 +1035,17 @@ export const entityClient = {
   // —— Kit AI (structured generation) ——
   // Generate validated structured note content for a Product Kit command (e.g. a
   // textbook explanation/exercise). Server picks the prompt + validates against the
-  // contentType's schema; returns the parsed content object.
-  generateStructured(input: { promptId: string; contentType: string; input?: Record<string, unknown> }) {
-    return sendJson<{ content: unknown; provider: string }>("POST", "/api/kits/generate", input);
+  // contentType's schema; returns the parsed content object. `contentType` is
+  // OPTIONAL since ACTION-2a: absent means "the resolved operation decides" — a
+  // simple action with no pinned output rides the adaptive-note form router, and
+  // the response's `contentType` names the form actually produced (equal to the
+  // requested type whenever one was sent).
+  generateStructured(input: { promptId: string; contentType?: string; input?: Record<string, unknown> }) {
+    return sendJson<{ content: unknown; contentType: string; provider: string }>(
+      "POST",
+      "/api/kits/generate",
+      input
+    );
   },
 
   // —— Adaptive note forms · Phase 4 ——

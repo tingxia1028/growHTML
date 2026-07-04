@@ -44,6 +44,14 @@ export type GeneratedDraft = {
    * nothing to re-run). Save persists it exactly like any other draft.
    */
   classified?: boolean;
+  /**
+   * The operation resolves its output form AUTOMATICALLY (ACTION-2a: a simple
+   * action with no pinned outputContentType — the server's form router picked
+   * `contentType`). Regenerate must OMIT contentType again: the server rejects a
+   * pinned type for an auto-output operation, and the router may route the rerun
+   * to a different form.
+   */
+  autoForm?: boolean;
 };
 
 export type CommandActions = {
@@ -161,7 +169,11 @@ export type CommandContext = {
     // —— operation.run (a custom AI action authored as data) ——
     /** The op_ id (or any resolvable promptId) to run (operation.run). */
     operationId?: string;
-    /** The note contentType the operation produces (operation.run). */
+    /**
+     * The note contentType the operation produces (operation.run). OPTIONAL since
+     * ACTION-2a: absent = AUTO — a simple action with no pinned output lets the
+     * server's form router pick the note form (the response names it).
+     */
     outputType?: string;
     /** Whether the action runs over the focused passage ("anchor") or the whole source. */
     scope?: "anchor" | "source";
@@ -562,18 +574,19 @@ const runOperation: Command = {
   id: "operation.run",
   title: "Run Operation",
   group: "operation",
-  // Needs the op id + output type. Source-scope needs an active source; anchor-scope
-  // needs a passage in focus (a saved anchor or a fresh draft), exactly like the kit
-  // commands' `hasPassage`.
+  // Needs the op id; outputType is OPTIONAL since ACTION-2a (a simple action with no
+  // pinned output rides the server's form router). Source-scope needs an active
+  // source; anchor-scope needs a passage in focus (a saved anchor or a fresh draft),
+  // exactly like the kit commands' `hasPassage`.
   isAvailable: (ctx) => {
-    if (!ctx.payload.operationId || !ctx.payload.outputType) return false;
+    if (!ctx.payload.operationId) return false;
     return ctx.payload.scope === "source"
       ? !!ctx.sourceId
       : !!ctx.focus.anchor || !!ctx.focus.draft;
   },
   run: async (ctx) => {
     const { operationId, outputType, scope, variables } = ctx.payload;
-    if (!operationId || !outputType) return;
+    if (!operationId) return;
     const sourceScope = scope === "source";
 
     // Anchor-scope materializes the focused passage into an anchor (so Save attaches
@@ -604,22 +617,28 @@ const runOperation: Command = {
       if (value !== undefined) input[variable.name] = value;
     }
 
-    const { content } = await ctx.client.generateStructured({
+    // No outputType (an un-pinned simple action) sends NO contentType — the server
+    // compiles instruction + auto-context envelope and the form router picks the
+    // form; the response's contentType names what was actually produced.
+    const generated = await ctx.client.generateStructured({
       promptId: operationId,
       contentType: outputType,
       input
     });
+    const contentType = generated.contentType ?? outputType ?? "markdown";
 
     // Preview path (the shipped loop): hand the draft to the host — it already holds
     // the anchor id, so Save attaches there — instead of creating a note now.
     if (ctx.actions.onGenerated) {
       ctx.actions.onGenerated({
         promptId: operationId,
-        contentType: outputType,
+        contentType,
         input,
-        content,
+        content: generated.content,
         anchorId: anchor?.id,
-        sourceId: ctx.sourceId
+        sourceId: ctx.sourceId,
+        // Mark auto-output drafts so Regenerate omits contentType again.
+        autoForm: !outputType
       });
       return;
     }
@@ -627,8 +646,8 @@ const runOperation: Command = {
     const { note } = await ctx.client.createNote({
       sourceId: ctx.sourceId,
       anchorIds: anchor ? [anchor.id] : [],
-      contentType: outputType,
-      content
+      contentType,
+      content: generated.content
     });
     ctx.actions.onNoteCreated?.(note);
   }

@@ -1,8 +1,12 @@
 # Action V2 — 自动上下文 + 一句话新增 (redesign of AI-Operation-as-Data V1)
 
-> **Status: §1 + §2 (ACTION-2a engine) ✅ shipped 2026-07-04 (ACTION-2A-001)** — composeAutoContext
-> + generalized profileContext gate + simple mode + form-router auto output live server-side;
-> §3 UI (ACTION-2b) pending, rides FLAT-1/SHELL-4/I18N post-contention.
+> **Status: §1 + §2 (ACTION-2a engine) ✅ shipped 2026-07-04 (ACTION-2A-001); §3 UI (ACTION-2b)
+> ✅ shipped 2026-07-04 (ACTION-2B-001)** — two-field creator (名字 + 一句话指令) live in the
+> modal operations manager; V1 builder chrome folded into a collapsed 高级 accordion (simple:
+> pin-output/scope/one-way convert-to-template; template: full V1 editor, auto-opened on edit);
+> auto-output run/regenerate closed client-side (operation.run omits contentType, adopts the
+> routed form, autoForm flag re-omits on Regenerate). Known server nicety: PATCH can't UN-pin
+> an output type (merge drops undefined) — needs a nullable/clear convention, tracked.
 
 User decision (2026-07-04): "本质上可以通过文档的基本信息和用户的基本画像,得到已有的 kit 里
 tool 的上下文,自己填充;可以新增 action,但设计的 UI 交互要简单,现在很复杂。"

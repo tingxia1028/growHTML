@@ -1,23 +1,29 @@
-// Operation workspace view (operation-as-data V1) — a NEW pane that lets anyone AUTHOR
-// AI actions as DATA and MANAGE the action toolbars, without ever touching the core or
-// writing a prompt as code:
+// Operation workspace view — AUTHOR AI actions as DATA and MANAGE the action
+// toolbars, without ever touching the core or writing a prompt as code.
 //
-//   • BUILDER: name + description, an output-type picker (from the NoteContentSpec
-//     registry), and a prompt template whose variables are inserted as clickable CONTENT
-//     BLOCKS (the user never types {{}} syntax). A LIVE PREVIEW renders the template with
-//     the current passage's real text substituted in. "试一下" persists the draft and runs
-//     it through the SHIPPED generation-preview loop (operation.run → onGenerated). The
-//     editor can be PREFILLED from a built-in default (with one-click restore), and an
-//     advanced section exposes the declared variables (source / default / required).
+// ACTION-2b (action-v2-auto-context.md §3): creating an action is TWO fields —
+// 名字 + 一句话指令 — nothing else required:
+//
+//   • BUILDER (default = simple mode): name + one-sentence instruction. The engine
+//     compiles the prompt at run time (auto-context preamble + instruction + output-
+//     form directive), so the user never wires context and never picks an output
+//     type — the adaptive-note form router decides. A 高级 accordion (collapsed by
+//     default) lets you pin an explicit outputType / change the scope / convert to
+//     a full template (one-way, with confirm).
+//   • TEMPLATE mode (the V1 shape, for existing records and converted drafts): the
+//     whole V1 chrome — output-type picker, variables-as-content-blocks, live
+//     preview, declared variables — lives INSIDE the 高级 accordion, so the default
+//     creation path never shows it. "试一下" persists the draft and runs it through
+//     the SHIPPED generation-preview loop (operation.run → onGenerated).
 //   • MANAGER: every action (built-in kit actions + custom ops) in one list, with
 //     drag-to-reorder + an on/off toggle persisted to operation-prefs.json; built-in
-//     rows expose their placeholder PARAMS (grade / difficulty / language) which the
-//     server merges into generate input before build(). "复制为我的插件" forks a built-in
-//     into an editable Operation seeded with an approximating template.
+//     rows expose their placeholder PARAMS (grade / difficulty / language) and a
+//     "自定义此动作" fork into an editable Operation.
 //
-// Like the concept / layer panes it is ADDITIVE (its own pane node) and talks only
-// through the WorkspaceContext + entity client. The toolbars read the SAME prefs, so the
-// order / enable-disable configured here is exactly what the study panel renders.
+// Bilingual from day one (operationMessages + useLocale), modal-friendly (it renders
+// inside the SHELL-4 centered modal). It talks only through the WorkspaceContext +
+// entity client; the toolbars read the SAME prefs, so the order / enable-disable
+// configured here is exactly what the study panel renders.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Wand2, Plus, Play, RotateCcw, Trash2, Copy, GripVertical } from "lucide-react";
@@ -36,7 +42,9 @@ import { listNoteContentSpecs } from "../../core/notes/contentTypes";
 import { kitSurfaceItems } from "../../kits/clientContext";
 import { productKits } from "../../kits/clientKits";
 import type { KitPrompt } from "../../kits/types";
-import { resolveText } from "../i18n";
+import { resolveText, t, useLocale, type Message } from "../i18n";
+import { operationMessages as m } from "./operationMessages";
+import "./operationViews.css";
 
 // —— built-in prompt lookup (React-free data, read for params + fork seeding) ——————————
 // The 4 textbook prompts are固化 code; their command id IS their prompt id, so a surface
@@ -55,7 +63,8 @@ type BuiltinAction = {
 };
 
 // All installed built-in actions (both toolbar slots), unfiltered by active kit — the
-// manager lists every action a vault can run.
+// manager lists every action a vault can run. Called inside a locale-dependent memo so
+// resolveText picks the active locale.
 function listBuiltinActions(): BuiltinAction[] {
   const selection = kitSurfaceItems("selection-toolbar").map((item) => ({ item, scope: "anchor" as const }));
   const source = kitSurfaceItems("source-actions").map((item) => ({ item, scope: "source" as const }));
@@ -68,11 +77,11 @@ function listBuiltinActions(): BuiltinAction[] {
 // —— surface tabs (Customize Toolbar) ————————————————————————————————————————————————
 // One row of small tabs above the manager list. The single SURFACE tab — "Toolbar" —
 // configures the shared "passage" surface (the inline selection toolbar AND the Anchor bar
-// render the SAME list); the "My Actions" tab keeps the existing builder/manager.
+// render the SAME list); the "My Actions" tab keeps the builder/manager.
 type SurfaceTab = "passage" | "manage";
-const SURFACE_TABS: { id: SurfaceTab; label: string }[] = [
-  { id: "passage", label: "Toolbar" },
-  { id: "manage", label: "My Actions" }
+const SURFACE_TABS: { id: SurfaceTab; label: Message }[] = [
+  { id: "passage", label: m.tabToolbar },
+  { id: "manage", label: m.tabManage }
 ];
 
 // Map a Customize deep-link surface (from openOperationManager) to the tab to pre-select.
@@ -106,10 +115,10 @@ function surfacePool(builtins: SurfaceAction[], ops: SurfaceAction[]): SurfaceAc
 
 // The well-known variable SOURCES the run command can supply automatically (the user
 // inserts these as one-click blocks; anything else they name becomes a literal).
-const WELL_KNOWN: { name: string; label: string }[] = [
-  { name: "anchorText", label: "选中段落" },
-  { name: "sourceTitle", label: "来源标题" },
-  { name: "existingNotes", label: "已有笔记" }
+const WELL_KNOWN: { name: string; label: Message }[] = [
+  { name: "anchorText", label: m.varAnchorText },
+  { name: "sourceTitle", label: m.varSourceTitle },
+  { name: "existingNotes", label: m.varExistingNotes }
 ];
 
 const VARIABLE_SOURCES: OperationVariable["source"][] = ["anchorText", "sourceTitle", "existingNotes", "literal"];
@@ -155,12 +164,17 @@ function scopeForVariables(variables: OperationVariable[]): "anchor" | "source" 
   return variables.some((variable) => variable.source === "anchorText") ? "anchor" : "source";
 }
 
+// The inline-validation targets of the two-field creator (+ the template body when in
+// template mode). Errors show under the field, bilingual, and clear as the user types.
+type FieldErrorKey = "name" | "instruction" | "template";
+
 function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
   const { operations, operationPrefs, refreshOperations, dispatch, saveActionPrefs, customizeSurface } = ctx;
+  // Subscribe to the locale so every t()/resolveText below re-renders on flip.
+  const locale = useLocale();
   const [error, setError] = useState("");
-  // Which Customize tab is active: a surface tab (per-surface show/hide + order) or the
-  // existing builder/manager ("manage"). Defaults to "manage" so the panel opens to the
-  // full builder the IconRail already led to.
+  // Which Customize tab is active: the surface tab (per-surface show/hide + order) or the
+  // builder/manager ("manage"). Defaults to "manage" so the panel opens to the creator.
   const [surfaceTab, setSurfaceTab] = useState<SurfaceTab>("manage");
   // The drag source id within a SURFACE tab's list (separate from the manager's dragId).
   const [surfaceDragId, setSurfaceDragId] = useState<string | null>(null);
@@ -170,17 +184,23 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
   // Deep-link (R6 polish): when the panel is opened via a surface's More menu, the ctx
   // carries the requested surface. Pre-select that tab ONCE per request — keyed on
   // customizeSurface so a later manual tab change isn't overridden on the next render.
-  // "anchor"/"inline"/"bottom" map to the matching tab; "my"/undefined → the manager.
   useEffect(() => {
     if (customizeSurface === undefined) return;
     setSurfaceTab(mapCustomizeSurfaceToTab(customizeSurface));
   }, [customizeSurface]);
 
   // —— builder draft state ——
+  // `mode` mirrors the Operation entity's authoring mode (ACTION-2a): a NEW action is
+  // "simple" (name + instruction, output AUTO); "template" is the V1 shape, reached by
+  // editing a V1 record or converting via 高级 (one-way).
   const [editId, setEditId] = useState<string | null>(null);
+  const [mode, setMode] = useState<"simple" | "template">("simple");
   const [name, setName] = useState("");
+  const [instruction, setInstruction] = useState("");
   const [description, setDescription] = useState("");
-  const [outputContentType, setOutputContentType] = useState("markdown");
+  // "" = AUTO output (simple mode's default — the adaptive-note form router decides).
+  // Template mode always carries a concrete type (defaulted to markdown).
+  const [outputContentType, setOutputContentType] = useState("");
   const [promptTemplate, setPromptTemplate] = useState("");
   const [declaredVariables, setDeclaredVariables] = useState<OperationVariable[]>([]);
   const [scope, setScope] = useState<"anchor" | "source">("anchor");
@@ -189,6 +209,11 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
   // The built-in this draft was seeded from (enables one-click "restore default").
   const [prefilledFrom, setPrefilledFrom] = useState("");
   const [newVarName, setNewVarName] = useState("");
+  // Inline validation state: which required fields were empty on the last save attempt.
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldErrorKey, boolean>>>({});
+  // Whether the 高级 accordion is open (collapsed on every fresh draft; opened when
+  // editing a template op — its whole chrome lives inside).
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   // Per-built-in placeholder param drafts (persisted to prefs on blur).
   const [paramDrafts, setParamDrafts] = useState<Record<string, Record<string, string>>>({});
   const [dragId, setDragId] = useState<string | null>(null);
@@ -196,7 +221,12 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
   const templateRef = useRef<HTMLTextAreaElement | null>(null);
 
   const contentTypes = useMemo(() => listNoteContentSpecs().map((spec) => spec.contentType).sort(), []);
-  const builtinActions = useMemo(() => listBuiltinActions(), []);
+  // Locale-dependent: built-in titles resolve through resolveText at assembly time.
+  const builtinActions = useMemo(() => listBuiltinActions(), [locale]);
+
+  const clearFieldError = useCallback((key: FieldErrorKey) => {
+    setFieldErrors((prev) => (prev[key] ? { ...prev, [key]: false } : prev));
+  }, []);
 
   // Edit the template AND re-derive the declared variables from it in one step, so the
   // advanced section always matches the {{blocks}} in the body.
@@ -240,29 +270,40 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
   // —— builder lifecycle ——
   const resetBuilder = useCallback(() => {
     setEditId(null);
+    setMode("simple");
     setName("");
+    setInstruction("");
     setDescription("");
-    setOutputContentType("markdown");
+    setOutputContentType("");
     setPromptTemplate("");
     setDeclaredVariables([]);
     setScope("anchor");
     setSource("custom");
     setForkedFrom(undefined);
     setPrefilledFrom("");
+    setFieldErrors({});
+    setAdvancedOpen(false);
     setError("");
   }, []);
 
   const loadOperation = useCallback((operation: OperationRecord) => {
     setEditId(operation.id);
+    setMode(operation.mode);
     setName(operation.name);
+    setInstruction(operation.instruction ?? "");
     setDescription(operation.description ?? "");
-    setOutputContentType(operation.outputContentType);
-    setPromptTemplate(operation.promptTemplate);
+    // Simple mode keeps "" = AUTO when no pin; template mode needs a concrete type.
+    setOutputContentType(operation.outputContentType ?? (operation.mode === "template" ? "markdown" : ""));
+    setPromptTemplate(operation.promptTemplate ?? "");
     setDeclaredVariables(operation.declaredVariables);
     setScope(operation.scope);
     setSource(operation.source);
     setForkedFrom(operation.forkedFrom);
     setPrefilledFrom(operation.forkedFrom ?? "");
+    setFieldErrors({});
+    // Editing a simple action = the same two fields (高级 stays folded); a template
+    // op's entire chrome lives inside 高级, so open it.
+    setAdvancedOpen(operation.mode === "template");
     setError("");
   }, []);
 
@@ -273,6 +314,7 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
     if (!prompt) return;
     const template = buildForkTemplate(prompt);
     const variables = syncVariables(template, []);
+    setMode("template");
     setPromptTemplate(template);
     setDeclaredVariables(variables);
     setOutputContentType(prompt.outputType);
@@ -284,21 +326,57 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
     }
   }, []);
 
-  const canSave = !!name.trim() && !!promptTemplate.trim() && !!outputContentType.trim();
+  // 高级 → "编辑为完整模板": one-way convert (with confirm) of a simple draft into the
+  // V1 template shape. The instruction seeds the template (with the selection block
+  // appended, since simple actions read the selection through the auto envelope).
+  const convertToTemplate = useCallback(() => {
+    if (typeof window !== "undefined" && !window.confirm(t(m.convertConfirm))) return;
+    const seed = promptTemplate.trim() || [instruction.trim(), "{{anchorText}}"].filter(Boolean).join("\n\n");
+    setMode("template");
+    if (!outputContentType) setOutputContentType("markdown");
+    applyTemplate(seed);
+    setFieldErrors({});
+    setAdvancedOpen(true);
+  }, [promptTemplate, instruction, outputContentType, applyTemplate]);
+
+  // Attempt-time validation: empty name / instruction (simple) / template (template)
+  // is rejected INLINE (bilingual message under the field), nothing is sent.
+  const validateDraft = useCallback((): boolean => {
+    const errors: Partial<Record<FieldErrorKey, boolean>> = {};
+    if (!name.trim()) errors.name = true;
+    if (mode === "simple" && !instruction.trim()) errors.instruction = true;
+    if (mode === "template" && !promptTemplate.trim()) errors.template = true;
+    setFieldErrors(errors);
+    return !errors.name && !errors.instruction && !errors.template;
+  }, [name, mode, instruction, promptTemplate]);
 
   // Persist the draft (create or update); returns the op id for "试一下".
   const saveOperation = useCallback(async (): Promise<string | null> => {
-    if (!canSave) return null;
-    const body: OperationInput = {
-      name: name.trim(),
-      description: description.trim() || undefined,
-      outputContentType,
-      promptTemplate,
-      declaredVariables,
-      source,
-      forkedFrom,
-      scope
-    };
+    if (!validateDraft()) return null;
+    const body: OperationInput =
+      mode === "simple"
+        ? {
+            name: name.trim(),
+            description: description.trim() || undefined,
+            mode: "simple",
+            instruction: instruction.trim(),
+            // "" = AUTO — omit so the server stores no pin and the form router decides.
+            outputContentType: outputContentType || undefined,
+            source,
+            forkedFrom,
+            scope
+          }
+        : {
+            name: name.trim(),
+            description: description.trim() || undefined,
+            mode: "template",
+            outputContentType: outputContentType || "markdown",
+            promptTemplate,
+            declaredVariables,
+            source,
+            forkedFrom,
+            scope
+          };
     setError("");
     try {
       if (editId) {
@@ -311,35 +389,42 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
       refreshOperations();
       return operation.id;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save operation");
+      setError(err instanceof Error ? err.message : t(m.saveFailed));
       return null;
     }
-  }, [canSave, name, description, outputContentType, promptTemplate, declaredVariables, source, forkedFrom, scope, editId, refreshOperations]);
+  }, [validateDraft, mode, name, instruction, description, outputContentType, promptTemplate, declaredVariables, source, forkedFrom, scope, editId, refreshOperations]);
 
   // 试一下 — save, then run through the shipped generation-preview loop. operation.run
-  // resolves the SAVED template server-side, so we persist first.
+  // resolves the SAVED record server-side, so we persist first. An un-pinned simple
+  // action sends NO outputType: the auto-context envelope + form router take over.
   const tryOperation = useCallback(async () => {
     const id = await saveOperation();
     if (!id) return;
-    await dispatch("operation.run", { operationId: id, outputType: outputContentType, scope, variables: declaredVariables });
-  }, [saveOperation, dispatch, outputContentType, scope, declaredVariables]);
+    await dispatch("operation.run", {
+      operationId: id,
+      outputType: outputContentType || undefined,
+      scope,
+      variables: mode === "simple" ? [] : declaredVariables
+    });
+  }, [saveOperation, dispatch, outputContentType, scope, declaredVariables, mode]);
 
   const deleteOperation = useCallback(
     async (operation: OperationRecord) => {
-      if (typeof window !== "undefined" && !window.confirm(`Delete the "${operation.name}" action?`)) return;
+      if (typeof window !== "undefined" && !window.confirm(t(m.deleteConfirm).replace("{name}", operation.name))) return;
       setError("");
       try {
         await entityClient.deleteOperation(operation.id);
         if (editId === operation.id) resetBuilder();
         refreshOperations();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to delete operation");
+        setError(err instanceof Error ? err.message : t(m.deleteFailed));
       }
     },
     [editId, resetBuilder, refreshOperations]
   );
 
-  // Fork a built-in into an editable Operation, then open it in the builder.
+  // Fork a built-in into an editable Operation ("自定义此动作"), then open it in the
+  // builder (template mode — the fork is a faithful editable copy of the built-in).
   const forkBuiltin = useCallback(
     async (action: BuiltinAction) => {
       const prompt = builtinPromptsById.get(action.id);
@@ -349,7 +434,8 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
       setError("");
       try {
         const { operation } = await entityClient.createOperation({
-          name: `${action.title}（我的副本）`,
+          name: `${action.title}${t(m.forkSuffix)}`,
+          mode: "template",
           outputContentType: prompt.outputType,
           promptTemplate: template,
           declaredVariables: variables,
@@ -360,7 +446,7 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
         refreshOperations();
         loadOperation(operation);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to fork action");
+        setError(err instanceof Error ? err.message : t(m.forkFailed));
       }
     },
     [refreshOperations, loadOperation]
@@ -374,7 +460,7 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
         await entityClient.saveOperationPrefs(next);
         refreshOperations();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to save action prefs");
+        setError(err instanceof Error ? err.message : t(m.prefsFailed));
       }
     },
     [refreshOperations]
@@ -490,7 +576,7 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
       };
       setError("");
       void saveActionPrefs(next).catch((err) =>
-        setError(err instanceof Error ? err.message : "Failed to save toolbar prefs")
+        setError(err instanceof Error ? err.message : t(m.toolbarPrefsFailed))
       );
     },
     [operationPrefs, saveActionPrefs]
@@ -509,7 +595,7 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
       setError("");
       setIconPickerFor(null);
       void saveActionPrefs(next).catch((err) =>
-        setError(err instanceof Error ? err.message : "Failed to save icon")
+        setError(err instanceof Error ? err.message : t(m.iconFailed))
       );
     },
     [operationPrefs, saveActionPrefs]
@@ -574,46 +660,47 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
       const next: OperationPrefs = { ...operationPrefs, surfaces };
       setError("");
       void saveActionPrefs(next).catch((err) =>
-        setError(err instanceof Error ? err.message : "Failed to reset toolbar")
+        setError(err instanceof Error ? err.message : t(m.resetToolbarFailed))
       );
     },
     [operationPrefs, saveActionPrefs]
   );
 
-  // Live preview values: each variable replaced by the current passage's real text (or a
-  // readable placeholder when nothing is selected); literals show their default.
+  // Live preview values (template mode): each variable replaced by the current passage's
+  // real text (or a readable placeholder when nothing is selected); literals show their
+  // default.
   const preview = useMemo(() => {
     const values: Record<string, unknown> = {};
     for (const variable of declaredVariables) {
       switch (variable.source) {
         case "anchorText":
-          values[variable.name] = ctx.draftQuote || "〔选中的段落文本〕";
+          values[variable.name] = ctx.draftQuote || t(m.previewSelectionPlaceholder);
           break;
         case "sourceTitle":
-          values[variable.name] = ctx.activeSource?.title || "〔来源标题〕";
+          values[variable.name] = ctx.activeSource?.title || t(m.previewSourceTitlePlaceholder);
           break;
         case "existingNotes":
-          values[variable.name] = "〔已有笔记内容〕";
+          values[variable.name] = t(m.previewNotesPlaceholder);
           break;
         default:
           values[variable.name] = variable.default ?? `〔${variable.label || variable.name}〕`;
       }
     }
     return renderTemplate(promptTemplate, values);
-  }, [declaredVariables, promptTemplate, ctx.draftQuote, ctx.activeSource]);
+  }, [declaredVariables, promptTemplate, ctx.draftQuote, ctx.activeSource, locale]);
 
   return (
     <aside className="operation-panel">
       <div className="panel-title">
         <Wand2 size={16} />
-        Actions
+        {t(m.panelTitle)}
       </div>
 
       {error ? <div className="error-box">{error}</div> : null}
 
       {/* —— Surface tabs (R6.3 Customize Toolbar) —— pick a surface to configure its
           per-surface show/hide + order, or "My Actions" for the builder/manager. */}
-      <div className="operation-surface-tabs" role="tablist" aria-label="Customize toolbar surface">
+      <div className="operation-surface-tabs" role="tablist" aria-label={t(m.tablistLabel)}>
         {SURFACE_TABS.map((tab) => (
           <button
             key={tab.id}
@@ -624,28 +711,26 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
             data-surface-tab={tab.id}
             onClick={() => setSurfaceTab(tab.id)}
           >
-            {tab.label}
+            {t(tab.label)}
           </button>
         ))}
       </div>
 
       {/* —— SURFACE CUSTOMIZE (R6.3) —— per-surface show/hide + reorder of the actions a
-          surface renders, persisted to prefs.surfaces[surface]. Shown for the three
-          surface tabs; "My Actions" falls through to the builder/manager below. */}
+          surface renders, persisted to prefs.surfaces[surface]. Shown for the surface
+          tab; "My Actions" falls through to the builder/manager below. */}
       {surfaceTab !== "manage" ? (
         <section className="operation-surface-customize" data-surface={surfaceTab}>
           <div className="operation-surface-head">
-            <span className="operation-surface-title">
-              {SURFACE_TABS.find((t) => t.id === surfaceTab)?.label} toolbar
-            </span>
+            <span className="operation-surface-title">{t(m.passageSurfaceTitle)}</span>
             <button
               type="button"
               className="link-button operation-surface-reset"
-              title="Reset this surface to the default order/visibility"
+              title={t(m.resetSurfaceHint)}
               onClick={() => resetSurface(surfaceTab)}
             >
               <RotateCcw size={13} />
-              Reset to default
+              {t(m.resetSurface)}
             </button>
           </div>
           <div className="operation-surface-list">
@@ -683,10 +768,10 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
                     <button
                       type="button"
                       className={`operation-icon-btn${pickerOpen ? " active" : ""}`}
-                      aria-label="Change icon"
+                      aria-label={t(m.changeIcon)}
                       aria-haspopup="menu"
                       aria-expanded={pickerOpen}
-                      title="Change icon"
+                      title={t(m.changeIcon)}
                       onClick={() => setIconPickerFor(pickerOpen ? null : action.id)}
                     >
                       <CurrentIcon size={15} />
@@ -718,7 +803,7 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
                           onClick={() => setActionIcon(action.id, null)}
                         >
                           <RotateCcw size={12} />
-                          Reset icon
+                          {t(m.resetIcon)}
                         </button>
                       </div>
                     ) : null}
@@ -736,16 +821,16 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
                     </span>
                   </label>
                   <span className="operation-action-tag" data-scope={action.scope}>
-                    {action.scope === "source" ? "source" : "passage"}
+                    {action.scope === "source" ? t(m.tagSource) : t(m.tagPassage)}
                   </span>
                   <span className="operation-action-tag" data-kind={action.kind}>
-                    {action.kind === "builtin" ? "built-in" : "custom"}
+                    {action.kind === "builtin" ? t(m.tagBuiltin) : t(m.tagCustom)}
                   </span>
                   <span className="operation-surface-move">
                     <button
                       type="button"
                       className="link-button operation-surface-up"
-                      aria-label="Move up"
+                      aria-label={t(m.moveUp)}
                       disabled={index === 0}
                       onClick={() => moveOnSurface(surfaceTab, action.id, -1)}
                     >
@@ -754,7 +839,7 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
                     <button
                       type="button"
                       className="link-button operation-surface-down"
-                      aria-label="Move down"
+                      aria-label={t(m.moveDown)}
                       disabled={index === surfaceList.length - 1}
                       onClick={() => moveOnSurface(surfaceTab, action.id, 1)}
                     >
@@ -764,199 +849,296 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
                 </div>
               );
             })}
-            {surfaceList.length === 0 ? <div className="empty-state">No actions for this surface.</div> : null}
+            {surfaceList.length === 0 ? <div className="empty-state">{t(m.emptySurface)}</div> : null}
           </div>
         </section>
       ) : null}
 
-      {/* —— BUILDER —————————————————————————————————————————————————————————— */}
+      {/* —— BUILDER (ACTION-2b: the two-field 一句话新增 creator) ——————————————— */}
       {surfaceTab === "manage" ? (
       <>
-      <section className="operation-builder">
+      <section className="operation-builder" data-mode={mode}>
         <div className="operation-builder-head">
-          <span className="operation-builder-title">{editId ? "Edit action" : "New action"}</span>
+          <span className="operation-builder-title">{editId ? t(m.editAction) : t(m.newAction)}</span>
           <button type="button" className="link-button operation-new-btn" onClick={resetBuilder}>
             <Plus size={14} />
-            New
+            {t(m.newButton)}
           </button>
         </div>
 
-        <input
-          className="operation-name-input"
-          placeholder="Action name…"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-        />
-        <input
-          className="operation-description-input"
-          placeholder="Description (optional)"
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-        />
-
-        <div className="operation-row">
-          <label className="operation-field">
-            <span>Output type</span>
-            <select
-              className="operation-output-select"
-              value={outputContentType}
-              onChange={(event) => setOutputContentType(event.target.value)}
-            >
-              {contentTypes.map((contentType) => (
-                <option key={contentType} value={contentType}>
-                  {contentType}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="operation-field">
-            <span>Runs on</span>
-            <select
-              className="operation-scope-select"
-              value={scope}
-              onChange={(event) => setScope(event.target.value as "anchor" | "source")}
-            >
-              <option value="anchor">Selected passage</option>
-              <option value="source">Whole source</option>
-            </select>
-          </label>
-        </div>
-
-        {/* Prefill the editor from a built-in default (one-click restore below). */}
-        <label className="operation-field operation-prefill">
-          <span>Start from a built-in</span>
-          <select
-            className="operation-prefill-select"
-            value={prefilledFrom}
+        {/* Field 1: 名字 — always visible, in both modes. */}
+        <label className="operation-field operation-simple-field">
+          <span>{t(m.nameLabel)}</span>
+          <input
+            className="operation-name-input"
+            placeholder={t(m.namePlaceholder)}
+            value={name}
             onChange={(event) => {
-              if (event.target.value) seedFromBuiltin(event.target.value, false);
+              setName(event.target.value);
+              clearFieldError("name");
+            }}
+          />
+        </label>
+        {fieldErrors.name ? (
+          <div className="operation-field-error" data-field="name">
+            {t(m.nameRequired)}
+          </div>
+        ) : null}
+
+        {/* Field 2: 一句话指令 — the whole story for a simple action. */}
+        {mode === "simple" ? (
+          <>
+            <label className="operation-field operation-simple-field">
+              <span>{t(m.instructionLabel)}</span>
+              <textarea
+                className="operation-instruction-input"
+                placeholder={t(m.instructionPlaceholder)}
+                value={instruction}
+                onChange={(event) => {
+                  setInstruction(event.target.value);
+                  clearFieldError("instruction");
+                }}
+              />
+            </label>
+            {fieldErrors.instruction ? (
+              <div className="operation-field-error" data-field="instruction">
+                {t(m.instructionRequired)}
+              </div>
+            ) : null}
+            <p className="operation-simple-hint">{t(m.simpleHint)}</p>
+          </>
+        ) : null}
+
+        {/* 高级 — collapsed by default. Simple mode: pin an output type / change scope /
+            convert to a full template. Template mode: the entire V1 builder chrome. */}
+        <details className="operation-advanced" open={advancedOpen}>
+          <summary
+            onClick={(event) => {
+              event.preventDefault();
+              setAdvancedOpen((open) => !open);
             }}
           >
-            <option value="">— blank —</option>
-            {builtinActions.map((action) => (
-              <option key={action.id} value={action.id}>
-                {action.title}
-              </option>
-            ))}
-          </select>
-        </label>
+            {t(m.advanced)}
+          </summary>
+          <div className="operation-advanced-body">
+            {mode === "simple" ? (
+              <>
+                <div className="operation-row">
+                  <label className="operation-field">
+                    <span>{t(m.outputTypeLabel)}</span>
+                    <select
+                      className="operation-output-select"
+                      value={outputContentType}
+                      onChange={(event) => setOutputContentType(event.target.value)}
+                    >
+                      <option value="">{t(m.outputAuto)}</option>
+                      {contentTypes.map((contentType) => (
+                        <option key={contentType} value={contentType}>
+                          {contentType}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="operation-field">
+                    <span>{t(m.scopeLabel)}</span>
+                    <select
+                      className="operation-scope-select"
+                      value={scope}
+                      onChange={(event) => setScope(event.target.value as "anchor" | "source")}
+                    >
+                      <option value="anchor">{t(m.scopeAnchor)}</option>
+                      <option value="source">{t(m.scopeSource)}</option>
+                    </select>
+                  </label>
+                </div>
+                <button type="button" className="link-button operation-convert-btn" onClick={convertToTemplate}>
+                  {t(m.convertToTemplate)}
+                </button>
+              </>
+            ) : (
+              <>
+                <input
+                  className="operation-description-input"
+                  placeholder={t(m.descriptionPlaceholder)}
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                />
 
-        {/* Variable BLOCKS — clicking inserts {{name}} at the caret (no typing braces). */}
-        <div className="operation-var-row">
-          <span className="operation-var-label">Insert variable:</span>
-          {WELL_KNOWN.map((variable) => (
-            <button
-              key={variable.name}
-              type="button"
-              className="operation-var-btn"
-              data-var={variable.name}
-              onClick={() => insertVariable(variable.name)}
-            >
-              {variable.label}
-            </button>
-          ))}
-        </div>
+                <div className="operation-row">
+                  <label className="operation-field">
+                    <span>{t(m.outputTypeLabel)}</span>
+                    <select
+                      className="operation-output-select"
+                      value={outputContentType || "markdown"}
+                      onChange={(event) => setOutputContentType(event.target.value)}
+                    >
+                      {contentTypes.map((contentType) => (
+                        <option key={contentType} value={contentType}>
+                          {contentType}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="operation-field">
+                    <span>{t(m.scopeLabel)}</span>
+                    <select
+                      className="operation-scope-select"
+                      value={scope}
+                      onChange={(event) => setScope(event.target.value as "anchor" | "source")}
+                    >
+                      <option value="anchor">{t(m.scopeAnchor)}</option>
+                      <option value="source">{t(m.scopeSource)}</option>
+                    </select>
+                  </label>
+                </div>
 
-        <textarea
-          ref={templateRef}
-          className="operation-template-input"
-          placeholder="Write the instruction. Use the buttons above to drop in variables…"
-          value={promptTemplate}
-          onChange={(event) => applyTemplate(event.target.value)}
-        />
+                {/* Prefill the editor from a built-in default (one-click restore below). */}
+                <label className="operation-field operation-prefill">
+                  <span>{t(m.prefillLabel)}</span>
+                  <select
+                    className="operation-prefill-select"
+                    value={prefilledFrom}
+                    onChange={(event) => {
+                      if (event.target.value) seedFromBuiltin(event.target.value, false);
+                    }}
+                  >
+                    <option value="">{t(m.prefillBlank)}</option>
+                    {builtinActions.map((action) => (
+                      <option key={action.id} value={action.id}>
+                        {action.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-        {/* Live preview: blocks replaced with the current passage's real text. */}
-        <div className="operation-preview-head">Live preview</div>
-        <pre className="operation-preview">{preview || "〔nothing yet〕"}</pre>
+                {/* Variable BLOCKS — clicking inserts {{name}} at the caret (no typing braces). */}
+                <div className="operation-var-row">
+                  <span className="operation-var-label">{t(m.insertVariable)}</span>
+                  {WELL_KNOWN.map((variable) => (
+                    <button
+                      key={variable.name}
+                      type="button"
+                      className="operation-var-btn"
+                      data-var={variable.name}
+                      onClick={() => insertVariable(variable.name)}
+                    >
+                      {t(variable.label)}
+                    </button>
+                  ))}
+                </div>
 
-        {/* Advanced: the declared variables auto-seeded from the template. */}
-        <details className="operation-vars-advanced">
-          <summary>Variables ({declaredVariables.length})</summary>
-          <div className="operation-add-var">
-            <input
-              className="operation-add-var-input"
-              placeholder="new variable name"
-              value={newVarName}
-              onChange={(event) => setNewVarName(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  addNamedVariable();
-                }
-              }}
-            />
-            <button type="button" className="link-button operation-add-var-btn" onClick={addNamedVariable}>
-              <Plus size={13} />
-              Add
-            </button>
+                <textarea
+                  ref={templateRef}
+                  className="operation-template-input"
+                  placeholder={t(m.templatePlaceholder)}
+                  value={promptTemplate}
+                  onChange={(event) => {
+                    applyTemplate(event.target.value);
+                    clearFieldError("template");
+                  }}
+                />
+                {fieldErrors.template ? (
+                  <div className="operation-field-error" data-field="template">
+                    {t(m.templateRequired)}
+                  </div>
+                ) : null}
+
+                {/* Live preview: blocks replaced with the current passage's real text. */}
+                <div className="operation-preview-head">{t(m.livePreview)}</div>
+                <pre className="operation-preview">{preview || t(m.previewEmpty)}</pre>
+
+                {/* The declared variables auto-seeded from the template. */}
+                <details className="operation-vars-advanced">
+                  <summary>
+                    {t(m.variablesSummary)} ({declaredVariables.length})
+                  </summary>
+                  <div className="operation-add-var">
+                    <input
+                      className="operation-add-var-input"
+                      placeholder={t(m.newVarPlaceholder)}
+                      value={newVarName}
+                      onChange={(event) => setNewVarName(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          addNamedVariable();
+                        }
+                      }}
+                    />
+                    <button type="button" className="link-button operation-add-var-btn" onClick={addNamedVariable}>
+                      <Plus size={13} />
+                      {t(m.addVariable)}
+                    </button>
+                  </div>
+                  {declaredVariables.map((variable) => (
+                    <div key={variable.name} className="operation-var-edit" data-var={variable.name}>
+                      <code className="operation-var-name">{variable.name}</code>
+                      <select
+                        className="operation-var-source"
+                        value={variable.source}
+                        onChange={(event) =>
+                          updateVariable(variable.name, { source: event.target.value as OperationVariable["source"] })
+                        }
+                      >
+                        {VARIABLE_SOURCES.map((sourceKind) => (
+                          <option key={sourceKind} value={sourceKind}>
+                            {sourceKind}
+                          </option>
+                        ))}
+                      </select>
+                      {variable.source === "literal" ? (
+                        <input
+                          className="operation-var-default"
+                          placeholder={t(m.defaultValuePlaceholder)}
+                          value={variable.default ?? ""}
+                          onChange={(event) => updateVariable(variable.name, { default: event.target.value })}
+                        />
+                      ) : null}
+                      <label className="operation-var-required sv-check">
+                        <input
+                          type="checkbox"
+                          className="sv-check-input"
+                          checked={variable.required}
+                          onChange={(event) => updateVariable(variable.name, { required: event.target.checked })}
+                        />
+                        <span className="sv-check-box" aria-hidden="true" />
+                        <span>{t(m.requiredLabel)}</span>
+                      </label>
+                    </div>
+                  ))}
+                  {declaredVariables.length === 0 ? <div className="empty-state">{t(m.noVariables)}</div> : null}
+                </details>
+              </>
+            )}
           </div>
-          {declaredVariables.map((variable) => (
-            <div key={variable.name} className="operation-var-edit" data-var={variable.name}>
-              <code className="operation-var-name">{variable.name}</code>
-              <select
-                className="operation-var-source"
-                value={variable.source}
-                onChange={(event) =>
-                  updateVariable(variable.name, { source: event.target.value as OperationVariable["source"] })
-                }
-              >
-                {VARIABLE_SOURCES.map((sourceKind) => (
-                  <option key={sourceKind} value={sourceKind}>
-                    {sourceKind}
-                  </option>
-                ))}
-              </select>
-              {variable.source === "literal" ? (
-                <input
-                  className="operation-var-default"
-                  placeholder="default value"
-                  value={variable.default ?? ""}
-                  onChange={(event) => updateVariable(variable.name, { default: event.target.value })}
-                />
-              ) : null}
-              <label className="operation-var-required sv-check">
-                <input
-                  type="checkbox"
-                  className="sv-check-input"
-                  checked={variable.required}
-                  onChange={(event) => updateVariable(variable.name, { required: event.target.checked })}
-                />
-                <span className="sv-check-box" aria-hidden="true" />
-                <span>required</span>
-              </label>
-            </div>
-          ))}
-          {declaredVariables.length === 0 ? <div className="empty-state">No variables yet.</div> : null}
         </details>
 
         <div className="operation-builder-actions">
           <button
             type="button"
             className="icon-button primary operation-save-btn"
-            disabled={!canSave}
             onClick={() => void saveOperation()}
           >
-            Save
+            {t(m.save)}
           </button>
           <button
             type="button"
             className="icon-button operation-try-btn"
-            disabled={!canSave}
-            title="Save and run through the generation preview"
+            title={t(m.tryHint)}
             onClick={() => void tryOperation()}
           >
             <Play size={15} />
-            试一下
+            {t(m.tryIt)}
           </button>
-          {prefilledFrom ? (
+          {mode === "template" && prefilledFrom ? (
             <button
               type="button"
               className="link-button operation-restore-btn"
-              title="Restore the built-in default template"
+              title={t(m.restoreDefaultHint)}
               onClick={() => seedFromBuiltin(prefilledFrom, source === "fork")}
             >
               <RotateCcw size={13} />
-              Restore default
+              {t(m.restoreDefault)}
             </button>
           ) : null}
         </div>
@@ -964,7 +1146,7 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
 
       {/* —— MANAGER ———————————————————————————————————————————————————————————— */}
       <section className="operation-manager">
-        <div className="operation-manager-title">Action toolbar order</div>
+        <div className="operation-manager-title">{t(m.managerTitle)}</div>
         <div className="operation-action-list">
           {managerItems.map((item) => {
             const enabled = !operationPrefs.disabled.includes(item.id);
@@ -994,10 +1176,10 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
                     </span>
                   </label>
                   <span className="operation-action-tag" data-scope={item.scope}>
-                    {item.scope === "source" ? "source" : "passage"}
+                    {item.scope === "source" ? t(m.tagSource) : t(m.tagPassage)}
                   </span>
                   <span className="operation-action-tag" data-kind={item.kind}>
-                    {item.kind === "builtin" ? "built-in" : "custom"}
+                    {item.kind === "builtin" ? t(m.tagBuiltin) : t(m.tagCustom)}
                   </span>
                   {item.kind === "operation" ? (
                     <>
@@ -1006,12 +1188,12 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
                         className="link-button operation-edit-btn"
                         onClick={() => loadOperation(item.op)}
                       >
-                        Edit
+                        {t(m.editButton)}
                       </button>
                       <button
                         type="button"
                         className="link-button operation-delete-btn"
-                        aria-label="Delete action"
+                        aria-label={t(m.deleteAria)}
                         onClick={() => void deleteOperation(item.op)}
                       >
                         <Trash2 size={13} />
@@ -1021,11 +1203,11 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
                     <button
                       type="button"
                       className="link-button operation-fork-btn"
-                      title="复制为我的插件"
+                      title={t(m.customizeBuiltin)}
                       onClick={() => void forkBuiltin(item.action)}
                     >
                       <Copy size={13} />
-                      复制为我的插件
+                      {t(m.customizeBuiltin)}
                     </button>
                   )}
                 </div>
@@ -1060,7 +1242,7 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
               </div>
             );
           })}
-          {managerItems.length === 0 ? <div className="empty-state">No actions yet.</div> : null}
+          {managerItems.length === 0 ? <div className="empty-state">{t(m.emptyManager)}</div> : null}
         </div>
       </section>
       </>

@@ -40,7 +40,7 @@ function baseCtx(over: Partial<CommandContext> = {}): CommandContext {
       patchLayer: vi.fn(async () => ({ layer: { id: "layer_1" } as never })),
       createLayer: vi.fn(async () => ({ layer: { id: "layer_1" } as never })),
       deleteLayer: vi.fn(async () => ({ ok: true as const })),
-      generateStructured: vi.fn(async () => ({ content: {}, provider: "mock" })),
+      generateStructured: vi.fn(async () => ({ content: {}, contentType: "markdown", provider: "mock" })),
       generateBlock: vi.fn(async () => ({ contentType: "markdown", content: "routed", provider: "mock" })),
       notes: vi.fn(async () => ({ notes: [] as never })),
       deleteNote: vi.fn(async () => ({ ok: true as const }))
@@ -461,10 +461,66 @@ describe("command: operation.run", () => {
       input: expect.objectContaining({ topic: "passage", anchorText: "passage", sourceTitle: "Chapter 1" })
     });
     expect(onGenerated).toHaveBeenCalledWith(
-      expect.objectContaining({ promptId: "op_1", contentType: "markdown", anchorId: "anchor_1", sourceId: "src_1" })
+      expect.objectContaining({
+        promptId: "op_1",
+        contentType: "markdown",
+        anchorId: "anchor_1",
+        sourceId: "src_1",
+        // A pinned outputType is NOT auto-form: Regenerate re-sends the same type.
+        autoForm: false
+      })
     );
     // No note is persisted in the preview path — Save does that later.
     expect(ctx.client.createNote).not.toHaveBeenCalled();
+  });
+
+  it("simple action (ACTION-2b, no outputType): dispatch omits contentType, the input carries the envelope's selection/doc feeds, and the ROUTED form comes back", async () => {
+    const onGenerated = vi.fn();
+    // The server routed the auto-output run to a markmap (the form router decided).
+    const generateStructured = vi.fn(async () => ({
+      content: { markdown: "# routed" },
+      contentType: "markmap",
+      provider: "mock"
+    }));
+    const ctx = baseCtx({
+      payload: { operationId: "op_simple", scope: "anchor", variables: [] },
+      chatContext: { quote: "passage", sourceTitle: "Chapter 1" },
+      client: { ...baseCtx().client, generateStructured },
+      actions: { onGenerated }
+    });
+
+    const ran = await runCommand("operation.run", ctx);
+
+    expect(ran).toBe(true);
+    // NO contentType is sent — the server compiles the 一句话 instruction + auto-context
+    // envelope (composeAutoContext reads anchorText/sourceTitle off this input) and the
+    // adaptive-note form router picks the note form.
+    expect(generateStructured).toHaveBeenCalledWith({
+      promptId: "op_simple",
+      contentType: undefined,
+      input: expect.objectContaining({ anchorText: "passage", sourceTitle: "Chapter 1" })
+    });
+    // The draft rides the preview loop under the ROUTED contentType, flagged autoForm
+    // so Regenerate omits contentType again.
+    expect(onGenerated).toHaveBeenCalledWith(
+      expect.objectContaining({ promptId: "op_simple", contentType: "markmap", autoForm: true, anchorId: "anchor_1" })
+    );
+    expect(ctx.client.createNote).not.toHaveBeenCalled();
+  });
+
+  it("simple action auto-save fallback (no preview host) persists the ROUTED contentType", async () => {
+    const onNoteCreated = vi.fn();
+    const generateStructured = vi.fn(async () => ({ content: "routed", contentType: "markdown", provider: "mock" }));
+    const ctx = baseCtx({
+      payload: { operationId: "op_simple", scope: "anchor" },
+      client: { ...baseCtx().client, generateStructured },
+      actions: { onNoteCreated }
+    });
+    await runCommand("operation.run", ctx);
+    expect(ctx.client.createNote).toHaveBeenCalledWith(
+      expect.objectContaining({ anchorIds: ["anchor_1"], contentType: "markdown", content: "routed" })
+    );
+    expect(onNoteCreated).toHaveBeenCalledOnce();
   });
 
   it("source-scope: skips materialization and gathers existingNotes for the declared variable", async () => {
@@ -515,9 +571,10 @@ describe("command: operation.run", () => {
     expect(onNoteCreated).toHaveBeenCalledOnce();
   });
 
-  it("is unavailable without an operationId/outputType, and gates scope on source vs passage", () => {
+  it("is unavailable without an operationId (outputType is optional since ACTION-2a), and gates scope on source vs passage", () => {
     expect(getCommand("operation.run")!.isAvailable(baseCtx({ payload: { outputType: "markdown" } }))).toBe(false);
-    expect(getCommand("operation.run")!.isAvailable(baseCtx({ payload: { operationId: "op_1" } }))).toBe(false);
+    // No outputType is fine now (auto-output simple action) — a passage in focus suffices.
+    expect(getCommand("operation.run")!.isAvailable(baseCtx({ payload: { operationId: "op_1" } }))).toBe(true);
     // Source-scope without a source is unavailable.
     expect(
       getCommand("operation.run")!.isAvailable(
