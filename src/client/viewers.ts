@@ -44,6 +44,23 @@ export function getSourceViewer(sourceType: string | undefined): SourceViewer {
   return viewers.find((viewer) => !!sourceType && viewer.sourceTypes.includes(sourceType)) ?? fallbackViewer;
 }
 
+// F1 (P-A2, host-realm gate — delta 3): whether a viewer paints into the HOST document
+// (the main app DOM) rather than an isolated iframe/webview realm. Only `pdfjs` and
+// `image` do (PdfReader / ImageReader render + annotate in the host page). Two host-realm
+// bodies mounted at once would share the ONE `#sv-note-card` + the module-level
+// `notesHiddenAll` / `anchorGlyphsVisible` singletons + HideAllNotesToggle's per-source
+// seeding effect, so V1 allows at most ONE host-realm body concurrently; a split is
+// iframe/webview-backed only. (Per-paneId scoping of those singletons is the proper fix,
+// deferred — annotationLayer.ts/markerOverlay.ts are hot.)
+export function isHostRealmViewerKind(kind: SourceViewerKind): boolean {
+  return kind === "pdfjs" || kind === "image";
+}
+
+// Convenience: is a source (by its sourceType) a host-realm surface?
+export function isHostRealmSource(sourceType: string | undefined): boolean {
+  return isHostRealmViewerKind(getSourceViewer(sourceType).kind);
+}
+
 // Plugins register earlier so they take priority over built-ins for a type.
 export function registerSourceViewer(viewer: SourceViewer) {
   viewers.unshift(viewer);

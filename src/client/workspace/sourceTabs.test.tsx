@@ -45,16 +45,20 @@ type Ctx = WorkspaceContext & {
   sourceForPane: (paneId: string) => { id: string; title: string } | null;
 };
 
-function makeCtx(over: Partial<Ctx>): Ctx {
+function makeCtx(over: Partial<Ctx> & { sourceTypes?: Record<string, string> }): Ctx {
   const titles: Record<string, string> = { "pane:A": "Doc A", "pane:B": "Doc B" };
+  const sourceTypes = over.sourceTypes ?? {};
   return {
+    activeLayoutId: "test",
     openPanes: [],
     focusedPaneId: "",
     focusPane: vi.fn(),
     closePane: vi.fn(),
     sourceForPane: (paneId: string) => {
       const title = titles[paneId];
-      return title ? { id: paneId.replace("pane:", ""), title } : null;
+      return title
+        ? { id: paneId.replace("pane:", ""), title, sourceType: sourceTypes[paneId] ?? "html" }
+        : null;
     },
     ...over
   } as unknown as Ctx;
@@ -66,6 +70,7 @@ const paneB: OpenPane = { paneId: "pane:B", sourceId: "B", viewState: {} };
 describe("SourceTabs — multi-document tab strip", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
+    window.localStorage.clear();
   });
 
   it("single-pane DOM == old .reader-tab chrome (icon + title + close, one active tab)", () => {
@@ -145,6 +150,63 @@ describe("SourceTabs — multi-document tab strip", () => {
     const { container, cleanup } = mount(<>{plugin!.render({ id: "x", kind: "source.tabs" }, ctx)}</>);
     expect(container.querySelector(".reader-tab-empty")).toBeTruthy();
     expect(container.querySelector(".reader-tab-title")?.textContent).toBe("Open or import a source");
+    cleanup();
+  });
+
+  it("shows a 分屏 button with ≥2 panes; splitting renders two bodies + a divider", () => {
+    const plugin = getView("source.tabs");
+    const ctx = makeCtx({ openPanes: [paneA, paneB], focusedPaneId: "pane:A" });
+    const { container, cleanup } = mount(<>{plugin!.render({ id: "x", kind: "source.tabs" }, ctx)}</>);
+
+    const splitBtn = container.querySelector<HTMLButtonElement>(".reader-split-btn");
+    expect(splitBtn).toBeTruthy();
+    expect(splitBtn!.disabled).toBe(false); // html + html → allowed
+    act(() => {
+      splitBtn!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    // Two reader bodies + a divider now exist.
+    expect(container.querySelector(".source-split")).toBeTruthy();
+    expect(container.querySelector(".source-split-divider")).toBeTruthy();
+    expect(container.querySelectorAll(".reader-panel")).toHaveLength(2);
+
+    cleanup();
+  });
+
+  // HOST-REALM GATE (delta 3): a PDF focused body + a PDF/image candidate cannot split —
+  // the 分屏 button is disabled and flagged.
+  it("HOST-REALM GATE: two host-realm sources (pdf + image) cannot split (button disabled)", () => {
+    const plugin = getView("source.tabs");
+    const ctx = makeCtx({
+      openPanes: [paneA, paneB],
+      focusedPaneId: "pane:A",
+      sourceTypes: { "pane:A": "pdf", "pane:B": "image" }
+    });
+    const { container, cleanup } = mount(<>{plugin!.render({ id: "x", kind: "source.tabs" }, ctx)}</>);
+
+    const splitBtn = container.querySelector<HTMLButtonElement>(".reader-split-btn");
+    expect(splitBtn).toBeTruthy();
+    expect(splitBtn!.disabled).toBe(true);
+    expect(splitBtn!.getAttribute("data-host-realm-blocked")).toBe("true");
+    // Clicking a disabled/blocked button does NOT create a split.
+    act(() => {
+      splitBtn!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(container.querySelector(".source-split")).toBeFalsy();
+
+    cleanup();
+  });
+
+  it("HOST-REALM GATE: a PDF + an HTML source CAN split (one iframe-realm side)", () => {
+    const plugin = getView("source.tabs");
+    const ctx = makeCtx({
+      openPanes: [paneA, paneB],
+      focusedPaneId: "pane:A",
+      sourceTypes: { "pane:A": "pdf", "pane:B": "html" }
+    });
+    const { container, cleanup } = mount(<>{plugin!.render({ id: "x", kind: "source.tabs" }, ctx)}</>);
+    const splitBtn = container.querySelector<HTMLButtonElement>(".reader-split-btn");
+    expect(splitBtn!.disabled).toBe(false);
+    expect(splitBtn!.getAttribute("data-host-realm-blocked")).toBeNull();
     cleanup();
   });
 

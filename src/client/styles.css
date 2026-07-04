@@ -4665,6 +4665,65 @@ textarea {
   color: var(--sv-text);
 }
 
+/* F1 (P-A2): the 分屏 split button in the tab strip + the two-body row split. */
+.reader-split-btn {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  padding: 6px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-xs);
+  background: transparent;
+  color: var(--sv-text-muted);
+}
+
+.reader-split-btn:hover:not(:disabled) {
+  background: var(--sv-surface-muted);
+  color: var(--sv-text);
+}
+
+.reader-split-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.source-split {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+}
+
+.source-split-pane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.source-split-left {
+  flex: 0 0 var(--source-split-left, calc(50% - 3px));
+}
+
+.source-split-right {
+  flex: 0 0 var(--source-split-right, calc(50% - 3px));
+}
+
+.source-split-pane .reader-panel {
+  height: 100%;
+}
+
+.source-split-divider {
+  flex: 0 0 6px;
+  cursor: col-resize;
+  background: var(--sv-border);
+}
+
+.source-split-divider:hover {
+  background: var(--sv-accent-border);
+}
+
 .reader-toolbar {
   display: flex;
   align-items: center;
