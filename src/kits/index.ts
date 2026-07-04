@@ -13,15 +13,19 @@ import { textbookDetection } from "./textbook-learning/detection";
 import { subjectContentSpecs } from "./subject/contentTypes";
 import { subjectPrompts } from "./subject/prompts";
 import { subjectDetectionTables } from "./subject/detection";
+import { teachbackContentSpecs } from "./teachback/contentTypes";
+import { teachbackPrompts } from "./teachback/prompts";
 
 // REV-CORE: the review loop is CORE now — its grade spec registers with the core
 // built-ins (src/core/review/contentTypes) and its prompts seed the prompt registry
 // on load (src/kits/prompts.ts); nothing review-shaped rides the kit aggregation.
 export const kitContentSpecs: NoteContentSpec[] = [
   ...textbookContentSpecs,
-  ...subjectContentSpecs
+  ...subjectContentSpecs,
+  // PRO-2 teach-back kit: teachback.summary + teachback.turn (server validates them).
+  ...teachbackContentSpecs
 ];
-export const kitPrompts: KitPrompt[] = [...textbookPrompts, ...subjectPrompts];
+export const kitPrompts: KitPrompt[] = [...textbookPrompts, ...subjectPrompts, ...teachbackPrompts];
 export const kitLayerPolicies: KitLayerPolicy[] = [textbookLayerPolicy];
 // Subject Auto-Switch tables (M-A) — one per kit; M-B adds 英语/数学/史地, M-C adds
 // 语文/理化生 (subject-kits.md §3.3). All five ride `subjectDetectionTables`.
