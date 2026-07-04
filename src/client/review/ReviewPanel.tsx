@@ -34,10 +34,13 @@ import type { MemoryDimensionSummary } from "../../core/memory/digest";
 import type { NoteRecord, ProfileFactView } from "../data/entityClient";
 import { recordMemoryEvent } from "../memory/capture";
 import { REVIEW_GRADE_CONTENT_TYPE, type ReviewGradeContent } from "../../core/review/contentTypes";
+import { applyReviewOutcome, type ReviewScheduleState } from "../../core/review/schedule";
 import { explainPrompt, generateCheckPrompt, gradeAnswerPrompt } from "../../core/review/prompts";
 import {
   buildReviewQueue,
   noteMatchesWeakBucket,
+  REVIEW_SESSION_CAP,
+  reviewDueStats,
   weakReviewBuckets,
   type ReviewQueueItem,
   type ReviewWeakBucket
@@ -98,7 +101,12 @@ const reviewMessages = defineMessages({
   wrong: { zh: "错", en: "missed" },
   skipped: { zh: "跳过", en: "skipped" },
   restart: { zh: "再复习一轮", en: "Review Again" },
-  selfMissed: { zh: "自评:没答对", en: "Self grade: missed" }
+  selfMissed: { zh: "自评:没答对", en: "Self grade: missed" },
+  // REV-3 SRS surfaces
+  reviewAhead: { zh: "提前复习", en: "Review Ahead" },
+  aheadBadge: { zh: "提前复习中", en: "reviewing ahead" },
+  nextDueNow: { zh: "下次复习:现在", en: "Next review: now" },
+  nextDueTomorrow: { zh: "下次复习:明天", en: "Next review: tomorrow" }
 });
 
 const REASON_LABEL: Record<string, keyof typeof reviewMessages> = {
@@ -115,6 +123,29 @@ const WEAK_CHIP_LIMIT = 3;
 function pendingLabel(count: number, locale: Locale): string {
   if (locale === "en") return `${count} ${count === 1 ? "item" : "items"} to review`;
   return `${count} 项待复习`;
+}
+
+// —— REV-3 label helpers (pure; bilingual by construction) ————————————————————
+function scheduledLabel(count: number, locale: Locale): string {
+  if (locale === "en") return `${count} scheduled`;
+  return `${count} 项已排期`;
+}
+
+/** After grading: when the item comes back (0 = now — a fail returns next session). */
+function nextDueChipLabel(days: number, locale: Locale): string {
+  if (days <= 0) return t(reviewMessages.nextDueNow);
+  if (days === 1) return t(reviewMessages.nextDueTomorrow);
+  if (locale === "en") return `Next review: in ${days} days`;
+  return `下次复习:${days} 天后`;
+}
+
+/** The all-scheduled empty state: everything earned its interval. */
+function scheduledEmptyLabel(upcoming: number, nextDueAt: string | undefined, locale: Locale): string {
+  const day = nextDueAt ? nextDueAt.slice(0, 10) : "";
+  if (locale === "en") {
+    return `All caught up — ${upcoming} ${upcoming === 1 ? "item is" : "items are"} scheduled ahead${day ? ` (next due ${day})` : ""}.`;
+  }
+  return `全部完成——${upcoming} 项已排期${day ? `,最近 ${day} 到期` : ""}。`;
 }
 
 function progressLabel(index: number, total: number, locale: Locale): string {
@@ -203,10 +234,19 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
   const [digestSummaries, setDigestSummaries] = useState<MemoryDimensionSummary[]>([]);
   const [profileFacts, setProfileFacts] = useState<ProfileFactView[]>([]);
   const [weakFilter, setWeakFilter] = useState<ReviewWeakBucket | null>(null);
+  // REV-3 session data: the per-note SRS document (grading advances the local copy
+  // so due/upcoming counts stay live), the frozen session clock and note set the
+  // stats derive from, and the 提前复习 flag (ahead = the schedule-free legacy queue).
+  const [schedule, setSchedule] = useState<ReviewScheduleState>({});
+  const [ahead, setAhead] = useState(false);
+  const sessionNowRef = useRef(new Date().toISOString());
+  const sessionNotesRef = useRef<NoteRecord[]>([]);
 
   // Current-item state.
   const [revealed, setRevealed] = useState(false);
-  const [outcome, setOutcome] = useState<{ result: ReviewResult; mode: ReviewMode } | null>(null);
+  const [outcome, setOutcome] = useState<{ result: ReviewResult; mode: ReviewMode; nextDueDays?: number } | null>(
+    null
+  );
   const [check, setCheck] = useState<CheckFlow>(EMPTY_CHECK);
   const [explanation, setExplanation] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -220,28 +260,44 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
     setAiError("");
   };
 
-  // Build a review SESSION: fetch events (+ all notes for 全库), run the pure queue
-  // policy ONCE, then advance an index over the frozen order. Only mount / scope
-  // switch / 再复习一轮 rebuild it — never a background notes refresh.
-  const load = useCallback(async (nextScope: ReviewScope) => {
+  // Build a review SESSION: fetch events (+ all notes for 全库) + the SRS document,
+  // run the pure queue policy ONCE (schedule + a frozen session clock arm SRS mode;
+  // 提前复习 omits them = the legacy all-due queue), then advance an index over the
+  // frozen order. Only mount / scope switch / 再复习一轮 / 提前复习 rebuild it —
+  // never a background notes refresh.
+  const load = useCallback(async (nextScope: ReviewScope, opts?: { ahead?: boolean }) => {
+    const reviewAhead = opts?.ahead === true;
     setQueue(null);
     setLoadError("");
     try {
       const io = getReviewIo();
       const workspace = ctxRef.current;
-      const [reviewEvents, notes, summaries, facts] = await Promise.all([
+      const [reviewEvents, notes, summaries, facts, scheduleState] = await Promise.all([
         io.fetchEvents(),
         nextScope === "vault" ? io.fetchAllNotes() : Promise.resolve(workspace.notes),
         io.fetchDigestSummaries(),
-        io.fetchProfileFacts()
+        io.fetchProfileFacts(),
+        io.fetchSchedule()
       ]);
+      const nowIso = new Date().toISOString();
+      sessionNowRef.current = nowIso;
+      sessionNotesRef.current = notes;
       setDigestSummaries(summaries);
       setProfileFacts(facts);
-      setQueue(buildReviewQueue({ notes, reviewEvents, digestSummaries: summaries }));
+      setSchedule(scheduleState);
+      setQueue(
+        buildReviewQueue({
+          notes,
+          reviewEvents,
+          digestSummaries: summaries,
+          ...(reviewAhead ? {} : { schedule: scheduleState, now: nowIso, cap: REVIEW_SESSION_CAP })
+        })
+      );
     } catch (error) {
       setQueue([]);
       setLoadError(error instanceof Error ? error.message : t(reviewMessages.loadQueueFailed));
     }
+    setAhead(reviewAhead);
     setIndex(0);
     setTally({ pass: 0, fail: 0, skip: 0 });
     setWeakFilter(null);
@@ -276,6 +332,9 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
   const items = weakFilter ? allItems.filter((item) => noteMatchesWeakBucket(item.note, weakFilter)) : allItems;
   const current = index < items.length ? items[index] : null;
   const remaining = items.length - index;
+  // REV-3 stats: dueness over the session's note set + the LIVE schedule copy
+  // (grading advances it), against the frozen session clock — pure, per render.
+  const dueStats = reviewDueStats(sessionNotesRef.current, schedule, sessionNowRef.current);
   // REV-CORE: the AI-check flow keys on the registry's `mistake` CAPABILITY
   // (alias-aware — old textbook.mistake records qualify), not a contentType string.
   const isMistakeItem = getNoteContentSpec(current?.note.contentType ?? "")?.mistake === true;
@@ -285,6 +344,11 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
   // `note.review`; payload result/mode per review-loop.md §2). The subject carries
   // contentType so MEM-2 digests can bucket pass/fail per type — the fuel of the
   // very 弱项 signal this panel consumes.
+  // REV-3: a GRADE (pass/fail — never skip) also advances the item's SRS row: the
+  // pure engine computes the next row locally (instant 下次复习 chip + live counts)
+  // and the SAME outcome is POSTed through the io seam (fire-and-forget — the
+  // server recomputes with the identical pure function; a lost write only means
+  // the item stays due and returns next session).
   const complete = (result: ReviewResult, mode: ReviewMode) => {
     if (!current || outcome) return;
     recordMemoryEvent(
@@ -292,8 +356,19 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
       { noteId: current.note.id, sourceId: current.note.sourceId, contentType: current.note.contentType },
       { result, mode }
     );
+    let nextDueDays: number | undefined;
+    if (result !== "skip") {
+      const nextRow = applyReviewOutcome(schedule[current.note.id], result, new Date().toISOString());
+      if (nextRow) {
+        nextDueDays = nextRow.intervalDays;
+        setSchedule((rows) => ({ ...rows, [current.note.id]: nextRow }));
+      }
+      void getReviewIo()
+        .recordGrade({ noteId: current.note.id, result })
+        .catch(() => null); // the io seam already degrades; belt over suspenders
+    }
     setTally((t) => ({ ...t, [result]: t[result] + 1 }));
-    setOutcome({ result, mode });
+    setOutcome({ result, mode, nextDueDays });
   };
 
   const advance = () => {
@@ -433,13 +508,21 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
     ) : null;
 
   const outcomeChip = outcome ? (
-    <span className={`review-outcome review-outcome-${outcome.result}`}>
-      {outcome.result === "pass"
-        ? t(reviewMessages.outcomePass)
-        : outcome.result === "fail"
-          ? t(reviewMessages.outcomeFail)
-          : t(reviewMessages.outcomeSkip)}
-    </span>
+    <>
+      <span className={`review-outcome review-outcome-${outcome.result}`}>
+        {outcome.result === "pass"
+          ? t(reviewMessages.outcomePass)
+          : outcome.result === "fail"
+            ? t(reviewMessages.outcomeFail)
+            : t(reviewMessages.outcomeSkip)}
+      </span>
+      {outcome.nextDueDays !== undefined ? (
+        // REV-3: the per-card next-due readout right after grading.
+        <span className="review-next-due" data-days={outcome.nextDueDays}>
+          {nextDueChipLabel(outcome.nextDueDays, locale)}
+        </span>
+      ) : null}
+    </>
   ) : null;
 
   // A reviewable (quiz/flashcard/review-pack) item: card render (the question face) →
@@ -591,7 +674,21 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
             {t(reviewMessages.vault)}
           </button>
         </div>
-        <span className="review-count">{queue === null ? t(reviewMessages.loading) : pendingLabel(remaining, locale)}</span>
+        <span className="review-count">
+          {queue === null ? (
+            t(reviewMessages.loading)
+          ) : (
+            <>
+              {pendingLabel(remaining, locale)}
+              {ahead ? (
+                <span className="review-ahead-badge"> · {t(reviewMessages.aheadBadge)}</span>
+              ) : dueStats.upcoming > 0 ? (
+                // REV-3: scheduled-ahead count (live — grading moves items over).
+                <span className="review-scheduled-count"> · {scheduledLabel(dueStats.upcoming, locale)}</span>
+              ) : null}
+            </>
+          )}
+        </span>
       </div>
 
       {weakChips.length > 0 ? (
@@ -622,11 +719,24 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
       {aiError ? <div className="review-error review-ai-error">{aiError}</div> : null}
 
       {queue === null ? null : items.length === 0 ? (
-        <div className="empty-state review-empty">
-          {weakFilter
-            ? t(reviewMessages.emptyWeak)
-            : t(reviewMessages.emptyQueue)}
-        </div>
+        weakFilter ? (
+          <div className="empty-state review-empty">{t(reviewMessages.emptyWeak)}</div>
+        ) : !ahead && dueStats.upcoming > 0 ? (
+          // REV-3: nothing DUE but items are scheduled ahead — the healthy SRS
+          // state. Offer 提前复习 (rebuilds the schedule-free legacy queue).
+          <div className="empty-state review-empty review-empty-scheduled">
+            <p>{scheduledEmptyLabel(dueStats.upcoming, dueStats.nextDueAt, locale)}</p>
+            <button
+              type="button"
+              className="review-btn review-primary review-ahead-btn"
+              onClick={() => void load(scope, { ahead: true })}
+            >
+              {t(reviewMessages.reviewAhead)}
+            </button>
+          </div>
+        ) : (
+          <div className="empty-state review-empty">{t(reviewMessages.emptyQueue)}</div>
+        )
       ) : current ? (
         <section className="review-item" data-note-id={current.note.id} data-reason={current.reason}>
           <header className="review-item-head">

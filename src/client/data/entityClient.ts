@@ -301,6 +301,31 @@ export type ConsolidateMemorySummary = {
   prunedEvents: number;
 };
 
+// —— Review schedule REV-3 (SRS) — shapes mirror src/core/review/schedule.ts +
+// src/server/services/reviewSchedule.ts. ——
+
+/** One per-note SM-2 row (review-schedule.json value shape). */
+export type ReviewScheduleRecord = {
+  due: string;
+  intervalDays: number;
+  ease: number;
+  streak: number;
+  reviews: number;
+  lapses: number;
+  lastReviewedAt: string;
+  lastResult: "pass" | "fail";
+};
+
+/** noteId → record. A missing note means "never graded" ⇒ due now. */
+export type ReviewScheduleState = Record<string, ReviewScheduleRecord>;
+
+export type RecordReviewGradeInput = {
+  noteId: string;
+  result: "pass" | "fail" | "skip";
+  /** Optional grade-time override (tests/e2e pin clocks; the memory `ts` idiom). */
+  at?: string;
+};
+
 export type NodeRef =
   | { type: "source"; id: string }
   | { type: "anchor"; id: string }
@@ -948,6 +973,16 @@ export const entityClient = {
       "/api/memory",
       undefined
     );
+  },
+
+  // —— Review schedule (REV-3 SRS) ——
+  /** The whole per-note schedule document. Legacy vault (no file) ⇒ {} ⇒ all due. */
+  reviewSchedule() {
+    return getJson<{ schedule: ReviewScheduleState }>("/api/review/schedule");
+  },
+  /** Apply one grade outcome; returns the advanced row (null when skip/never graded). */
+  recordReviewGrade(input: RecordReviewGradeInput) {
+    return sendJson<{ noteId: string; schedule: ReviewScheduleRecord | null }>("POST", "/api/review/grade", input);
   },
 
   // —— Assets ——

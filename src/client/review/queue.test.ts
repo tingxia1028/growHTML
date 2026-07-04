@@ -5,6 +5,9 @@
 // verbs/subjects ignored; empties. REV-2: weak buckets from digest summaries —
 // threshold edges (the profile tier's own 弱项 rules), group-3 insertion + reasons,
 // the within-group boost, and the no-digest regression pin (REV-1 stays identical).
+// REV-3 (SRS mode, armed by `now`): non-due exclusion everywhere, overdue-first
+// ordering, mistake recurrence reasons, the legacy-vault all-due law, the session
+// cap, reviewDueStats, and the no-`now` regression pin (legacy stays identical).
 
 import { describe, expect, it } from "vitest";
 import { PROFILE_WEAK_FAIL_RATIO, PROFILE_WEAK_MIN_ATTEMPTS } from "../../core/memory/profile";
@@ -16,9 +19,11 @@ import {
 } from "../../core/notes/contentTypes";
 import { reviewPackSpec } from "../../kits/textbook-learning/contentTypes";
 import { z } from "zod";
+import { applyReviewOutcome, type ReviewScheduleRecord, type ReviewScheduleState } from "../../core/review/schedule";
 import {
   buildReviewQueue,
   noteMatchesWeakBucket,
+  reviewDueStats,
   weakReviewBuckets,
   type ReviewDigestSummaryLike,
   type ReviewEventLike,
@@ -465,6 +470,205 @@ describe("buildReviewQueue — the REV-2 within-group boost", () => {
     // Weak-first, then createdAt asc within the weak segment; the plain (older!) last.
     expect(ids(queue)).toEqual(["m_weak_old", "m_weak_new", "m_plain"]);
     expect(queue.map((item) => item.reason)).toEqual(["mistake-new", "mistake-new", "mistake-new"]);
+  });
+});
+
+// ————————————————————————————— REV-3: SRS mode —————————————————————————————
+
+const NOW = "2026-07-04T12:00:00.000Z";
+const DAY_MS = 86_400_000;
+const isoDaysFromNow = (days: number) => new Date(Date.parse(NOW) + days * DAY_MS).toISOString();
+
+/** A schedule row due `days` from NOW (negative = overdue), built via the real engine shape. */
+const rowDueIn = (days: number, over: Partial<ReviewScheduleRecord> = {}): ReviewScheduleRecord => ({
+  due: isoDaysFromNow(days),
+  intervalDays: Math.max(0, days),
+  ease: 2.5,
+  streak: 1,
+  reviews: 1,
+  lapses: 0,
+  lastReviewedAt: isoDaysFromNow(days - 1),
+  lastResult: "pass",
+  ...over
+});
+
+describe("buildReviewQueue — REV-3 SRS mode (armed by `now`)", () => {
+  it("scheduled-not-due notes leave the queue; due/overdue/never-graded stay", () => {
+    const notes = [
+      note("q_ahead", "quiz", "2026-01-01T00:00:00.000Z"),
+      note("q_overdue", "quiz", "2026-01-02T00:00:00.000Z"),
+      note("q_fresh", "quiz", "2026-01-03T00:00:00.000Z")
+    ];
+    const schedule: ReviewScheduleState = {
+      q_ahead: rowDueIn(3), // interval still running → excluded
+      q_overdue: rowDueIn(-2) // 2 days late → queued
+    };
+    const queue = buildReviewQueue({ notes, reviewEvents: [], schedule, now: NOW });
+    expect(ids(queue)).toEqual(["q_fresh", "q_overdue"]); // never-graded first, then overdue
+    expect(queue[0].schedule).toBeUndefined();
+    expect(queue[1].schedule).toEqual(schedule.q_overdue);
+  });
+
+  it("due boundary is inclusive: due == now queues, one ms later does not", () => {
+    const notes = [note("q_at", "quiz"), note("q_just", "quiz")];
+    const schedule: ReviewScheduleState = {
+      q_at: rowDueIn(0, { due: NOW }),
+      q_just: rowDueIn(0, { due: new Date(Date.parse(NOW) + 1).toISOString() })
+    };
+    expect(ids(buildReviewQueue({ notes, reviewEvents: [], schedule, now: NOW }))).toEqual(["q_at"]);
+  });
+
+  it("overdue orders MOST-overdue first (due asc); equal dues fall back to the age/id law", () => {
+    const notes = [
+      note("q_late1", "quiz", "2026-01-05T00:00:00.000Z"),
+      note("q_late7", "quiz", "2026-01-06T00:00:00.000Z"),
+      note("q_tie_new", "quiz", "2026-01-09T00:00:00.000Z"),
+      note("q_tie_old", "quiz", "2026-01-01T00:00:00.000Z")
+    ];
+    const tieDue = isoDaysFromNow(-3);
+    const schedule: ReviewScheduleState = {
+      q_late1: rowDueIn(-1),
+      q_late7: rowDueIn(-7),
+      q_tie_new: rowDueIn(-3, { due: tieDue }),
+      q_tie_old: rowDueIn(-3, { due: tieDue })
+    };
+    expect(ids(buildReviewQueue({ notes, reviewEvents: [], schedule, now: NOW }))).toEqual([
+      "q_late7",
+      "q_tie_old", // equal due → createdAt asc
+      "q_tie_new",
+      "q_late1"
+    ]);
+  });
+
+  it("mistakes ride the SAME scheduler: not-due mistakes excluded, due-again ones recur as 待复习", () => {
+    const notes = [
+      note("m_ahead", MISTAKE_CONTENT_TYPE, "2026-01-01T00:00:00.000Z"),
+      note("m_recur", MISTAKE_CONTENT_TYPE, "2026-01-02T00:00:00.000Z"),
+      note("m_failed", MISTAKE_CONTENT_TYPE, "2026-01-03T00:00:00.000Z"),
+      note("m_new", MISTAKE_CONTENT_TYPE, "2026-01-04T00:00:00.000Z"),
+      note("q_due", "quiz", "2026-01-05T00:00:00.000Z")
+    ];
+    const schedule: ReviewScheduleState = {
+      m_ahead: rowDueIn(6), // passed recently → interval respected, OUT
+      m_recur: rowDueIn(-1), // passed long ago → due again
+      m_failed: rowDueIn(0, { due: NOW, lastResult: "fail", streak: 0, lapses: 1 })
+    };
+    const queue = buildReviewQueue({ notes, reviewEvents: [], schedule, now: NOW });
+    // Group 1 (mistakes) still precedes group 2; in-group: never-graded ("" due) first.
+    expect(ids(queue)).toEqual(["m_new", "m_recur", "m_failed", "q_due"]);
+    expect(queue.map((item) => item.reason)).toEqual(["mistake-new", "due", "mistake-failed", "due"]);
+  });
+
+  it("a scheduled-not-due note is NOT dragged back by a weak bucket (interval beats 弱项)", () => {
+    const notes = [note("m_ahead", MISTAKE_CONTENT_TYPE), note("md_weak", "markdown")];
+    const queue = buildReviewQueue({
+      notes,
+      reviewEvents: [],
+      digestSummaries: [cell("sourceId", "src_1", 3, 0)],
+      schedule: { m_ahead: rowDueIn(4), md_weak: rowDueIn(5) },
+      now: NOW
+    });
+    expect(queue).toEqual([]);
+  });
+
+  it("legacy vault (empty schedule) in SRS mode: EVERYTHING due, ordered exactly like REV-1/2", () => {
+    const notes = [
+      note("m1", MISTAKE_CONTENT_TYPE, "2026-01-01T00:00:00.000Z"),
+      note("m_passed", MISTAKE_CONTENT_TYPE, "2026-01-02T00:00:00.000Z"),
+      note("q1", "quiz", "2026-01-03T00:00:00.000Z"),
+      note("f1", "flashcard", "2026-01-04T00:00:00.000Z")
+    ];
+    const events = [
+      review("m1", "2026-06-02T00:00:00.000Z", "fail"),
+      review("m_passed", "2026-06-01T00:00:00.000Z", "pass"),
+      review("q1", "2026-06-03T00:00:00.000Z", "pass")
+    ];
+    const srsQueue = buildReviewQueue({ notes, reviewEvents: events, schedule: {}, now: NOW });
+    // Rule-1 reasons survive from the event stream; the ONE divergence from legacy
+    // is deliberate: the passed mistake is no longer retired-forever — it queues as
+    // 待复习 until its first grade materializes a row (the zero-migration law).
+    // Row-less notes tie on due ("") → the least-recently-reviewed law orders the
+    // group (m_passed reviewed 06-01 precedes m1 reviewed 06-02).
+    expect(ids(srsQueue)).toEqual(["m_passed", "m1", "f1", "q1"]);
+    expect(srsQueue.map((item) => item.reason)).toEqual(["due", "mistake-failed", "due", "due"]);
+    // And within group 2 the order equals the legacy law (never-reviewed first).
+    const legacy = buildReviewQueue({ notes, reviewEvents: events });
+    expect(ids(legacy)).toEqual(["m1", "f1", "q1"]);
+  });
+
+  it("grading through the engine moves a note across sessions: due → scheduled → due again", () => {
+    const notes = [note("q1", "quiz")];
+    let schedule: ReviewScheduleState = {};
+    // Session 1: due (never graded) → pass materializes a 1d row.
+    expect(ids(buildReviewQueue({ notes, reviewEvents: [], schedule, now: NOW }))).toEqual(["q1"]);
+    schedule = { q1: applyReviewOutcome(undefined, "pass", NOW)! };
+    // Later the same day: scheduled ahead → gone.
+    expect(buildReviewQueue({ notes, reviewEvents: [], schedule, now: NOW })).toEqual([]);
+    // Tomorrow (clock injected): due again.
+    expect(ids(buildReviewQueue({ notes, reviewEvents: [], schedule, now: isoDaysFromNow(1) }))).toEqual(["q1"]);
+  });
+
+  it("the session cap trims the assembled queue, mistakes keep priority; ≤0/absent = uncapped", () => {
+    const notes = [
+      note("q_a", "quiz", "2026-01-01T00:00:00.000Z"),
+      note("q_b", "quiz", "2026-01-02T00:00:00.000Z"),
+      note("m_1", MISTAKE_CONTENT_TYPE, "2026-01-03T00:00:00.000Z")
+    ];
+    const capped = buildReviewQueue({ notes, reviewEvents: [], schedule: {}, now: NOW, cap: 2 });
+    expect(ids(capped)).toEqual(["m_1", "q_a"]);
+    expect(ids(buildReviewQueue({ notes, reviewEvents: [], schedule: {}, now: NOW, cap: 0 }))).toEqual([
+      "m_1",
+      "q_a",
+      "q_b"
+    ]);
+    expect(ids(buildReviewQueue({ notes, reviewEvents: [], schedule: {}, now: NOW }))).toHaveLength(3);
+  });
+
+  it("no `now` ⇒ the schedule input is ignored entirely (legacy byte-identical — the 提前复习 path)", () => {
+    const notes = [note("q_ahead", "quiz"), note("m1", MISTAKE_CONTENT_TYPE)];
+    const withSchedule = buildReviewQueue({
+      notes,
+      reviewEvents: [],
+      schedule: { q_ahead: rowDueIn(5), m1: rowDueIn(5) }
+    });
+    expect(withSchedule).toEqual(buildReviewQueue({ notes, reviewEvents: [] }));
+    expect(ids(withSchedule)).toEqual(["m1", "q_ahead"]); // everything queues, nothing excluded
+  });
+});
+
+describe("reviewDueStats — the header/empty-state numbers", () => {
+  it("counts due vs upcoming over ELIGIBLE notes only, and names the earliest next due", () => {
+    const notes = [
+      note("m1", MISTAKE_CONTENT_TYPE), // no row → due
+      note("q_over", "quiz"), // overdue → due
+      note("q_soon", "quiz"), // due in 2d → upcoming
+      note("f_late", "flashcard"), // due in 5d → upcoming
+      note("md", "markdown") // not eligible — never counted, scheduled or not
+    ];
+    const schedule: ReviewScheduleState = {
+      q_over: rowDueIn(-1),
+      q_soon: rowDueIn(2),
+      f_late: rowDueIn(5),
+      md: rowDueIn(1)
+    };
+    expect(reviewDueStats(notes, schedule, NOW)).toEqual({
+      due: 2,
+      upcoming: 2,
+      nextDueAt: isoDaysFromNow(2)
+    });
+  });
+
+  it("legacy vault: everything eligible is due, nothing upcoming, no nextDueAt", () => {
+    const notes = [note("m1", MISTAKE_CONTENT_TYPE), note("q1", "quiz"), note("md", "markdown")];
+    expect(reviewDueStats(notes, {}, NOW)).toEqual({ due: 2, upcoming: 0, nextDueAt: undefined });
+  });
+
+  it("stats are UNCAPPED and agree with the queue's group-1/2 population", () => {
+    const notes = Array.from({ length: 7 }, (_, index) => note(`q_${index}`, "quiz"));
+    const stats = reviewDueStats(notes, {}, NOW);
+    expect(stats.due).toBe(7);
+    const capped = buildReviewQueue({ notes, reviewEvents: [], schedule: {}, now: NOW, cap: 3 });
+    expect(capped).toHaveLength(3); // session trimmed, count not
   });
 });
 

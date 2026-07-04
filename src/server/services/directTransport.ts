@@ -42,6 +42,8 @@
 //             GET  /api/memory/profile                · facts + overrides + digestMeta
 //             PUT  /api/memory/profile                · replace the override document
 //             DELETE /api/memory                      · clear every tier (events/digests/overrides)
+//   review    GET  /api/review/schedule               · REV-3 per-note SRS records (absent ⇒ {})
+//             POST /api/review/grade                  · apply one grade outcome (skip never writes)
 // Anything else — including the HTTP-only streams (SSE chat, binary assets/files)
 // — throws DirectTransportUnsupportedError naming the method+path.
 
@@ -68,6 +70,7 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from ".
 import * as anchorsService from "./anchors";
 import * as layersService from "./layers";
 import * as notesService from "./notes";
+import * as reviewScheduleService from "./reviewSchedule";
 import * as searchService from "./search";
 import * as sourceAuthoringService from "./sourceAuthoring";
 import * as sourcesService from "./sources";
@@ -374,6 +377,20 @@ const routes: DirectRoute[] = [
     method: "DELETE",
     pattern: "/api/memory",
     call: ({ deps }) => clearMemory(deps)
+  }),
+
+  // —— Review schedule (REV-3 SRS) — the same service fns + schema the routes wrap ——
+  route({
+    method: "GET",
+    pattern: "/api/review/schedule",
+    call: async ({ deps }) => ({ schedule: await reviewScheduleService.readReviewSchedule(deps) })
+  }),
+  route({
+    method: "POST",
+    pattern: "/api/review/grade",
+    // No `schema` here ON PURPOSE (the events-POST idiom): recordReviewGrade parses
+    // the SAME exported recordReviewGradeSchema internally — one source of truth.
+    call: ({ deps, body }) => reviewScheduleService.recordReviewGrade(deps, body)
   })
 ];
 

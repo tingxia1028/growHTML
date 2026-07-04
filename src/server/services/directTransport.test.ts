@@ -276,6 +276,40 @@ describe("direct transport acceptance — entityClient with no HTTP", () => {
     expect((await request(app).get("/api/memory/profile").expect(200)).body.facts).toEqual([]);
   });
 
+  it("runs the REV-3 review-schedule flow (read → grade → advance → skip echo) with HTTP parity", async () => {
+    const AT = "2026-07-01T08:00:00.000Z";
+    // Legacy vault law on both sides: no file ⇒ {}.
+    expect((await entityClient.reviewSchedule()).schedule).toEqual({});
+    expect((await request(app).get("/api/review/schedule").expect(200)).body.schedule).toEqual({});
+
+    // First grade materializes the row; pinned `at` ⇒ byte-identical bodies.
+    const graded = await entityClient.recordReviewGrade({ noteId: "n1", result: "pass", at: AT });
+    const httpGraded = (
+      await request(app).post("/api/review/grade").send({ noteId: "n1", result: "pass", at: AT }).expect(200)
+    ).body;
+    expect(graded).toEqual(httpGraded);
+    expect(graded.schedule).toMatchObject({ intervalDays: 1, streak: 1, lastResult: "pass" });
+
+    // Read-back parity + skip echoes the current row without advancing it.
+    const readBack = (await entityClient.reviewSchedule()).schedule;
+    expect(JSON.stringify(readBack)).toBe(
+      JSON.stringify((await request(app).get("/api/review/schedule").expect(200)).body.schedule)
+    );
+    const skipped = await entityClient.recordReviewGrade({ noteId: "n1", result: "skip", at: AT });
+    expect(skipped.schedule).toEqual(graded.schedule);
+
+    // Malformed grade → the SAME 400 ("Invalid request") both sides.
+    const bad = await entityClient
+      .recordReviewGrade({ noteId: "n1", result: "good" as never })
+      .catch((err: unknown) => err);
+    expect(bad).toBeInstanceOf(ApiError);
+    expect((bad as ApiError).status).toBe(400);
+    const httpBad = (
+      await request(app).post("/api/review/grade").send({ noteId: "n1", result: "good" }).expect(400)
+    ).body;
+    expect((bad as ApiError).message).toBe(httpBad.error);
+  });
+
   it("maps typed service failures to the SAME ApiError(status/message) http produces", async () => {
     // NotFound: identical status AND message, and the client-facing class is ApiError
     // exactly as if the http transport had parsed a 404 response.

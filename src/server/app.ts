@@ -32,6 +32,7 @@ import * as patchesService from "./services/patches";
 import * as assetsService from "./services/assets";
 import * as workspaceService from "./services/workspace";
 import * as searchService from "./services/search";
+import * as reviewScheduleService from "./services/reviewSchedule";
 import * as aiService from "./services/ai";
 import * as aiProvidersService from "./services/aiProviders";
 import * as speechService from "./services/speech";
@@ -819,6 +820,25 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
   // (unref'd timer; the app-start pass lives in start.ts beside migrateStudyLayers).
   const memoryDeps = { vault, now: clock };
   registerMemoryRoutes(app, { ...memoryDeps, consolidation: createMemoryConsolidationScheduler(memoryDeps) });
+
+  // REV-3 SRS (docs/design/review-loop.md §4): the per-note schedule document —
+  // services/reviewSchedule.ts. GET hands the queue policy its dueness input;
+  // POST applies one grade through the pure core engine (skip never writes).
+  app.get("/api/review/schedule", async (_req, res, next) => {
+    try {
+      res.json({ schedule: await reviewScheduleService.readReviewSchedule({ vault }) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/review/grade", async (req, res, next) => {
+    try {
+      res.json(await reviewScheduleService.recordReviewGrade({ vault, now: clock }, req.body));
+    } catch (error) {
+      next(error);
+    }
+  });
 
   // Agent loop A4a (docs/design/multi-provider-ai-agent.md §4.1(2)/§4.3): the
   // /api/agent/stream SSE route + read-only vault tool registration — src/server/agent.ts.

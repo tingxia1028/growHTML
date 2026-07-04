@@ -8629,6 +8629,34 @@ select {
   white-space: nowrap;
 }
 
+/* REV-3 SRS readouts — scheduled-ahead count / 提前复习 badge in the header,
+   the per-card 下次复习 chip after grading, and the all-scheduled empty state. */
+.review-scheduled-count,
+.review-ahead-badge {
+  color: var(--sv-text-faint);
+}
+
+.review-next-due {
+  font-size: 12px;
+  color: var(--sv-text-muted);
+  border: 1px solid var(--sv-border);
+  border-radius: 999px;
+  padding: 0 9px;
+  line-height: 1.8;
+  white-space: nowrap;
+}
+
+.review-empty-scheduled {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.review-empty-scheduled p {
+  margin: 0;
+}
+
 /* REV-2 弱项 header — top weak buckets as clickable filter chips. */
 .review-weak-header {
   display: flex;

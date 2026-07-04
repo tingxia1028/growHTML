@@ -12,9 +12,18 @@
 //                     (incl. hidden flags) → the compact profileContext for explain.
 //   generate        — the existing entityClient.generateStructured binding — the SAME
 //                     /api/kits/generate dispatch every kit command uses.
+//   schedule/grade  — [REV-3] the entityClient.reviewSchedule / recordReviewGrade
+//                     bindings: the per-note SRS document in + one grade outcome out.
 
 import { summarizeMemoryDigests, type MemoryDimensionSummary } from "../../core/memory/digest";
-import { entityClient, type NoteRecord, type ProfileFactView } from "../data/entityClient";
+import {
+  entityClient,
+  type NoteRecord,
+  type ProfileFactView,
+  type RecordReviewGradeInput,
+  type ReviewScheduleRecord,
+  type ReviewScheduleState
+} from "../data/entityClient";
 import type { ReviewEventLike } from "./queue";
 
 export type GenerateRequest = { promptId: string; contentType: string; input?: Record<string, unknown> };
@@ -25,6 +34,10 @@ export type ReviewIo = {
   fetchDigestSummaries(): Promise<MemoryDimensionSummary[]>;
   fetchProfileFacts(): Promise<ProfileFactView[]>;
   generate(request: GenerateRequest): Promise<{ content: unknown }>;
+  /** [REV-3] The per-note SRS document. Degrades to {} — a legacy/offline vault just queues everything. */
+  fetchSchedule(): Promise<ReviewScheduleState>;
+  /** [REV-3] Persist one grade outcome. Degrades to null — a lost write only means an extra review later. */
+  recordGrade(input: RecordReviewGradeInput): Promise<ReviewScheduleRecord | null>;
 };
 
 // The server caps the read-back at 1000 (listMemoryEventsQuerySchema) — ask for the
@@ -59,12 +72,33 @@ async function fetchProfileFactsViaClient(): Promise<ProfileFactView[]> {
   }
 }
 
+// REV-3 edges, same degradation law. A failed schedule read = REV-1 behavior
+// (everything due); a failed grade write = the row simply doesn't advance, so the
+// item returns next session — always MORE review on failure, never silence.
+async function fetchScheduleViaClient(): Promise<ReviewScheduleState> {
+  try {
+    return (await entityClient.reviewSchedule()).schedule;
+  } catch {
+    return {};
+  }
+}
+
+async function recordGradeViaClient(input: RecordReviewGradeInput): Promise<ReviewScheduleRecord | null> {
+  try {
+    return (await entityClient.recordReviewGrade(input)).schedule;
+  } catch {
+    return null;
+  }
+}
+
 const defaultIo: ReviewIo = {
   fetchEvents: fetchEventsViaClient,
   fetchAllNotes: async () => (await entityClient.allNotes()).notes,
   fetchDigestSummaries: fetchDigestSummariesViaClient,
   fetchProfileFacts: fetchProfileFactsViaClient,
-  generate: (request) => entityClient.generateStructured(request)
+  generate: (request) => entityClient.generateStructured(request),
+  fetchSchedule: fetchScheduleViaClient,
+  recordGrade: recordGradeViaClient
 };
 
 let io: ReviewIo = defaultIo;

@@ -8,6 +8,9 @@
 // excluded) and filter the queue; the explain dispatch carries the compact
 // profileContext (and omits the key when no facts exist); note.review subjects carry
 // contentType so digests can bucket per type.
+// REV-3: the SRS surfaces — scheduled-ahead items leave the session and count in
+// the header; grading shows the 下次复习 chip and POSTs through the recordGrade
+// seam; the all-scheduled empty state offers 提前复习 (the schedule-free queue).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
@@ -35,6 +38,7 @@ import {
 } from "../memory/capture";
 import { setReviewIoForTests, type GenerateRequest } from "./reviewIo";
 import type { ReviewEventLike } from "./queue";
+import type { ReviewScheduleRecord } from "../../core/review/schedule";
 
 const SRC = "src_1";
 
@@ -473,7 +477,11 @@ describe("ReviewPanel — REV-2 弱项 header + queue weights", () => {
     cleanup();
   });
 
-  it("a weak bucket re-surfaces a RETIRED mistake as a 弱项 item (group 3, verbatim reason chip)", async () => {
+  it("a passed mistake with NO schedule row queues as 待复习 under SRS (no retirement; weak chip still renders)", async () => {
+    // Pre-REV-3 this pinned the 弱项 re-surface of a RETIRED mistake; the panel now
+    // runs the queue in SRS mode, where a pass is never retirement — a row-less
+    // (legacy-vault) mistake is simply DUE (zero-migration law), reason 待复习.
+    // The legacy 弱项 re-surface path stays pinned at the queue level (no `now`).
     setReviewIoForTests({
       fetchEvents: async () => [reviewEvent("n_m1", "2026-06-01T00:00:00.000Z", "pass")],
       fetchDigestSummaries: async () => [summaryCell("contentType", "textbook.mistake", 2, 1)],
@@ -483,8 +491,9 @@ describe("ReviewPanel — REV-2 弱项 header + queue weights", () => {
     const { container, cleanup } = await renderPanel(ctxWith({ notes: [mistakeNote("n_m1")] }));
     const item = container.querySelector(".review-item")!;
     expect(item.getAttribute("data-note-id")).toBe("n_m1");
-    expect(item.getAttribute("data-reason")).toBe("弱项:textbook.mistake");
-    expect(container.querySelector(".review-reason")!.textContent).toBe("弱项:textbook.mistake");
+    expect(item.getAttribute("data-reason")).toBe("due");
+    expect(container.querySelector(".review-reason")!.textContent).toBe("待复习");
+    expect(container.querySelector(".review-weak-chip[data-bucket='textbook.mistake']")).toBeTruthy();
     cleanup();
   });
 
@@ -502,6 +511,133 @@ describe("ReviewPanel — REV-2 弱项 header + queue weights", () => {
     expect(chips.map((chip) => chip.dataset.bucket)).toEqual(["浮力"]); // quiz chip suppressed
     // The QUEUE weighting itself is digest-driven and unaffected by the display hide.
     expect(container.querySelector(".review-item")!.getAttribute("data-note-id")).toBe("n_q1");
+    cleanup();
+  });
+});
+
+describe("ReviewPanel — REV-3 SRS surfaces", () => {
+  const DAY_MS = 86_400_000;
+  /** A schedule row due `days` from now (positive = scheduled ahead). */
+  const rowDueIn = (days: number, over: Partial<ReviewScheduleRecord> = {}): ReviewScheduleRecord => ({
+    due: new Date(Date.now() + days * DAY_MS).toISOString(),
+    intervalDays: Math.max(0, days),
+    ease: 2.5,
+    streak: 1,
+    reviews: 1,
+    lapses: 0,
+    lastReviewedAt: new Date(Date.now() - DAY_MS).toISOString(),
+    lastResult: "pass",
+    ...over
+  });
+
+  it("scheduled-ahead items leave the session and count in the header (· N 项已排期)", async () => {
+    setReviewIoForTests({
+      fetchEvents: async () => [],
+      fetchSchedule: async () => ({ n_f1: rowDueIn(3) }), // interval running → excluded
+      generate: generateStub()
+    });
+    const { container, cleanup } = await renderPanel(
+      ctxWith({ notes: [flashcardNote("n_f1"), quizNote("n_q1")] })
+    );
+    expect(container.querySelector(".review-count")!.textContent).toBe("1 项待复习 · 1 项已排期");
+    expect(container.querySelector(".review-item")!.getAttribute("data-note-id")).toBe("n_q1");
+    cleanup();
+  });
+
+  it("grading shows the 下次复习 chip (first pass ⇒ 明天) and advances through the recordGrade seam", async () => {
+    const recordGrade = vi.fn(async () => null);
+    setReviewIoForTests({
+      fetchEvents: async () => [],
+      fetchSchedule: async () => ({}),
+      recordGrade,
+      generate: generateStub()
+    });
+    const { container, cleanup, click } = await renderPanel(ctxWith({ notes: [flashcardNote("n_f1")] }));
+
+    await click(".review-reveal-btn");
+    await click(".review-pass-btn");
+    const chip = container.querySelector(".review-next-due")!;
+    expect(chip.getAttribute("data-days")).toBe("1"); // legacy vault: FIRST grade materializes 1d
+    expect(chip.textContent).toBe("下次复习:明天");
+    expect(recordGrade).toHaveBeenCalledWith({ noteId: "n_f1", result: "pass" });
+    // The header's scheduled count moved live: the graded card is now 已排期.
+    expect(container.querySelector(".review-scheduled-count")!.textContent).toContain("1 项已排期");
+    cleanup();
+  });
+
+  it("a fail comes back NOW (chip 现在, data-days 0) and still records the grade", async () => {
+    const recordGrade = vi.fn(async () => null);
+    setReviewIoForTests({
+      fetchEvents: async () => [],
+      fetchSchedule: async () => ({}),
+      recordGrade,
+      generate: generateStub()
+    });
+    const { container, cleanup, click } = await renderPanel(ctxWith({ notes: [quizNote("n_q1")] }));
+
+    await click(".review-reveal-btn");
+    await click(".review-fail-btn");
+    const chip = container.querySelector(".review-next-due")!;
+    expect(chip.getAttribute("data-days")).toBe("0");
+    expect(chip.textContent).toBe("下次复习:现在");
+    expect(recordGrade).toHaveBeenCalledWith({ noteId: "n_q1", result: "fail" });
+    cleanup();
+  });
+
+  it("skip neither advances the schedule nor calls recordGrade (not a grade)", async () => {
+    const recordGrade = vi.fn(async () => null);
+    setReviewIoForTests({
+      fetchEvents: async () => [],
+      fetchSchedule: async () => ({}),
+      recordGrade,
+      generate: generateStub()
+    });
+    const { container, cleanup, click } = await renderPanel(ctxWith({ notes: [flashcardNote("n_f1")] }));
+    await click(".review-skip-btn");
+    expect(recordGrade).not.toHaveBeenCalled();
+    expect(container.querySelector(".review-next-due")).toBeNull();
+    cleanup();
+  });
+
+  it("all scheduled ⇒ the 提前复习 empty state; the button rebuilds the schedule-free queue", async () => {
+    setReviewIoForTests({
+      fetchEvents: async () => [],
+      fetchSchedule: async () => ({ n_f1: rowDueIn(2), n_q1: rowDueIn(5) }),
+      generate: generateStub()
+    });
+    const { container, cleanup, click } = await renderPanel(
+      ctxWith({ notes: [flashcardNote("n_f1"), quizNote("n_q1")] })
+    );
+
+    const empty = container.querySelector(".review-empty-scheduled")!;
+    expect(empty.textContent).toContain("2 项已排期");
+    expect(container.querySelector(".review-item")).toBeNull();
+
+    await click(".review-ahead-btn");
+    // 提前复习 = the legacy queue: both items back, header badge instead of counts.
+    expect(container.querySelector(".review-count")!.textContent).toBe("2 项待复习 · 提前复习中");
+    expect(container.querySelector(".review-item")).toBeTruthy();
+    cleanup();
+  });
+
+  it("English SRS chrome has no Chinese residue (scheduled count, next-due chip, review-ahead)", async () => {
+    setLocale("en");
+    const recordGrade = vi.fn(async () => null);
+    setReviewIoForTests({
+      fetchEvents: async () => [],
+      fetchSchedule: async () => ({ n_q1: rowDueIn(4) }),
+      recordGrade,
+      generate: generateStub()
+    });
+    const { container, cleanup, click } = await renderPanel(
+      ctxWith({ notes: [flashcardNote("n_f1"), quizNote("n_q1")] })
+    );
+    expect(container.querySelector(".review-count")!.textContent).toBe("1 item to review · 1 scheduled");
+    await click(".review-reveal-btn");
+    await click(".review-pass-btn");
+    expect(container.querySelector(".review-next-due")!.textContent).toBe("Next review: tomorrow");
+    expect(container.textContent).not.toContain("已排期");
+    expect(container.textContent).not.toContain("下次复习");
     cleanup();
   });
 });
