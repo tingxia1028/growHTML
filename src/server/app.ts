@@ -24,6 +24,7 @@ import * as assetsService from "./services/assets";
 import * as workspaceService from "./services/workspace";
 import * as aiService from "./services/ai";
 import * as aiProvidersService from "./services/aiProviders";
+import * as speechService from "./services/speech";
 import { KeyNotPersistableError, type KeyStore } from "./keyStore";
 import {
   chatRequestSchema,
@@ -73,13 +74,22 @@ export type CreateAppOptions = {
     /** cli-agent probe override (tests); default spawns `<cli> --version` with a 3s timeout. */
     detectCliAgent?: (specId: aiProvidersService.CliAgentSpecId) => Promise<CliAgentDetectResult>;
   };
+  /**
+   * Speech / TTS lane seam (SPEECH-1, docs/design/speech-and-young-learners.md §1):
+   * `synthesizeEdge` overrides the edge lane's synthesizer — tests inject a mock
+   * (same seam style as the injected modelProvider); default = msedge-tts over wss
+   * to Microsoft (keyless but ONLINE — offline degrades to a friendly 502).
+   */
+  speech?: {
+    synthesizeEdge?: speechService.EdgeTtsSynthesizer;
+  };
 };
 
 const ingestUrlRequestSchema = z.object({
   url: z.string().url()
 });
 
-export function createApp({ vault, modelProvider, clientDir, identityDir, now, aiConfig }: CreateAppOptions) {
+export function createApp({ vault, modelProvider, clientDir, identityDir, now, aiConfig, speech }: CreateAppOptions) {
   const app = express();
   // Provider selection (A3b): a small manager replaces the boot-time singleton so
   // the stored config's active pick takes effect per request (memoized by config
@@ -260,6 +270,35 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
       const result = await probe(specId);
       res.json({ id: req.params.id, spec: specId, ...result });
     } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  // —— Speech / TTS (SPEECH-1, docs/design/speech-and-young-learners.md §1) ————————
+  // One service instance per app; the edge lane is the only V1 lane. The client's
+  // 朗读 action POSTs selected text here and plays back the mp3 — server-side because
+  // the edge-tts wss handshake (custom Sec-WebSocket-Version) only works in Node.
+  const speechSvc = speechService.createSpeechService({ synthesizeEdge: speech?.synthesizeEdge });
+
+  // Which lanes/voices exist — the client fetches this once and caches it to decide
+  // whether the 朗读 buttons are enabled at all.
+  app.get("/api/speech/status", (_req, res) => {
+    res.json(speechSvc.status());
+  });
+
+  // Synthesize one utterance → audio/mpeg bytes. Zod guards shape (empty / too-long
+  // text → 400); an unknown voice → 400 (ValidationError via handleServiceError);
+  // offline / upstream failure → 502 with the friendly { error, code } body.
+  app.post("/api/speech/tts", async (req, res, next) => {
+    try {
+      const input = speechService.ttsRequestSchema.parse(req.body);
+      const { audio, mimeType } = await speechSvc.synthesize(input);
+      res.type(mimeType).send(audio);
+    } catch (error) {
+      if (error instanceof speechService.SpeechSynthesisFailedError) {
+        res.status(502).json({ error: error.message, code: "tts_unavailable" });
+        return;
+      }
       if (!handleServiceError(res, error)) next(error);
     }
   });

@@ -5,9 +5,32 @@ Use this file as the live status board for implementation work.
 ## Current Status
 
 - Date: 2026-07-04
-- Phase: UI-PLUGIN-001 Kit & Plugin top tabs and search
+- Phase: LAYER-TREE-001 Layer tree model cleanup
 - Active task: None
-- Overall status: Complete. Kit & Plugin uses top underline tabs, collapsed search, installed/market filtering, and the pattern is captured in `design.md`.
+- Overall status: Complete. Layer organization now renders from `parentId`; preset/custom owned layers hang under Mine, and the Layer panes no longer expose a fixed Stages bucket.
+
+## 2026-07-04 - LAYER-TREE-001 Layer tree model cleanup
+
+- Goal: make `parentId` the single organization primitive for Layers, so preset labels like 预习/学习/复习/拓展 are ordinary child layers under Mine rather than a fixed `Stages` section.
+- Active plan: update lazy layer seeding to backfill preset/custom `parentId` under the owned layer; render the Layer switcher and Lens manager from `buildLayerTree`; revise tree helper semantics so parent rows cover their own layer plus descendants; document the rule in `design.md`.
+- Verification target: focused layer tests, `npm exec tsc -- --noEmit`, and `npm run build`.
+- Result: kit-seeded preset layers and newly-created custom layers now store `parentId` pointing at the source's owned/Mine layer; existing preset layers without a parent are backfilled on layer listing. The Layer switcher and Layer Lens manager render the `parentId` tree directly, with Mine displayed as the root and child layers indented; the old `GROUP_ORDER`/`Stages` UI path is gone. `design.md` now states that `role` is compatibility/permission metadata, not a UI grouping primitive.
+- Verification: `npm test -- src/core/study-layer/layers.test.ts src/server/studyLayer.test.ts src/client/workspace/layerTree.test.ts src/client/workspace/layerViews.test.tsx`; `npm exec tsc -- --noEmit`; `npm run build`.
+
+## 2026-07-04 - SPEECH-1-001 TTS 朗读 (read-aloud, edge lane)
+
+- Goal: ship SPEECH-1 (`docs/design/speech-and-young-learners.md` §1): server-side TTS through the edge-tts lane so ANY selected passage can be read aloud (低年级 users can't read every character). Lane-seamed service (V1 = one `edge` lane; `local`/`managed` slot in later without reshaping callers), keyless-but-ONLINE via Microsoft — offline degrades to a friendly 502.
+- Result: new dep `msedge-tts@2.0.6` (the Node edge-tts port — the custom `Sec-WebSocket-Version` handshake only works in Node, hence server-side). Server: `src/server/services/speech.ts` (`createSpeechService` with injectable `synthesizeEdge` — same seam style as the injected modelProvider; curated voices 晓晓/云希/晓伊 + Jenny, default `zh-CN-XiaoxiaoNeural`; 30s timeout; empty-stream = failure) wired into `createApp` (`speech.synthesizeEdge` option) behind `POST /api/speech/tts` (zod `{text ≤2000, voice?}` → `audio/mpeg`; unknown voice → 400; lane failure → 502 `{error, code:"tts_unavailable"}`) and `GET /api/speech/status` (`{tts:{available, lane:"edge", defaultVoice, voices}}`). Client: `src/client/speech/` — `useSpeakText()` (POST + blob-URL `Audio` playback, ONE utterance at a time — a new speak stops the old, stop() cancels in-flight via a seq guard; availability from the status endpoint, fetched once and cached module-wide) + shared `SpeakButton` (lucide `Volume2`, 朗读 ↔ 停止 while speaking, disabled when unavailable/no text) + scoped `speech.css` (styles.css untouched — contended). Mounted on: the floating selection toolbar (`SelectionToolbar` gains an opt-in `speakText` prop; `SelectionFloatingToolbar` passes the focus draft/anchor quote — realm-safe for iframe readers), the Anchor Action Bar (`anchorViews.tsx`, beside the ActionGrid; disabled slot in the empty state), and the note-list row action strip (`NoteListPanel.tsx`, text via the type's own `toSearchText` — the `toSpokenText` V1 default; rides the EXISTING jump/edit/delete strip, no new per-card toolbar). UI-only state: no new entities, no vault writes, no ToolbarAction/dispatch entry (the button is stateful 朗读↔停止, which the static action model doesn't express).
+- Verification: `npm run check` (tsc 0); `npx vitest run` — 160 files / 1551 tests: all speech tests green (9 server + 11 client), 2 failures in `src/client/workspace/layerTree.test.ts` belong to the parallel LAYER-TREE-001 session's in-flight working-tree edits (`layerTree.ts` dirty in their session; unrelated to speech); `npm run build` green (existing chunk-size warnings only). REAL end-to-end synthesis verified through the actual service via tsx: zh default voice → 30528 bytes of mp3 (`fff3…` MPEG sync) + `en-US-JennyNeural` → 18720 bytes, both straight from Microsoft's wss endpoint.
+- Still open from SPEECH-1's surface list (deliberately not this task): review-runner 听题, onboarding steps, Settings Hub voice/speed picker, dedicated `toSpokenText` overrides (quiz reading order, formula skip), offline `speechSynthesis` fallback lane.
+
+## 2026-07-04 - UI-SETTINGS-001 Settings provider visual unification
+
+- Goal: make Settings stop looking like a separate legacy page by aligning the Hub shell, AI provider cards, selection radio, status colors, and form controls with the shared Growte pane language.
+- Active plan: update `AiProvidersSection.tsx` row structure with selected/effective state attributes and a custom radio marker; tune `styles.css` for Settings shell, provider cards, neutral chips, accent-blue positive states, and form controls; document the rule in `design.md`.
+- Verification target: focused SettingsHub/AiProvidersSection tests, `npm exec tsc -- --noEmit`, `npm run build`, and a DOM/style smoke against the running app.
+- Result: Settings Hub now uses the same white 10px pane shell as the left work panels; sections are unframed groups separated by light dividers; AI provider rows are 8px cards with `data-selected` / `data-effective` state, hidden native radio inputs, 16px custom accent-blue radio markers, neutral provider/capability chips, and consistent form/button metrics. `design.md` now records the Settings panel rules.
+- Verification: `npm exec tsc -- --noEmit`; `npm test -- src/client/settings/SettingsHub.test.tsx src/client/settings/AiProvidersSection.test.tsx`; `npm run build`; Playwright DOM/style smoke against `http://127.0.0.1:5173`, screenshot saved to `C:/Users/Jump/AppData/Local/Temp/growte-settings-provider-unified.png`.
 
 ## 2026-07-04 - SHELL-PRIM-001 链接文件 — the core `file-link` note type
 

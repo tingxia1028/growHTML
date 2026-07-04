@@ -8,6 +8,7 @@
 import type { ToolbarAction } from "./WorkspaceContext";
 import { ActionMoreMenu } from "./ActionMoreMenu";
 import { actionIcon } from "./actionIcons";
+import { SpeakButton } from "../speech/SpeakButton";
 
 export type SelectionToolbarProps = {
   /** Show only when there's a passage to act on (a saved anchor or a fresh draft). */
@@ -21,9 +22,12 @@ export type SelectionToolbarProps = {
   /** Open the Customize panel (the host wires this to openOperationManager); the More
       menu's footer deep-links to this surface's Customize tab. */
   onCustomize?(surface: "inline" | "anchor" | "bottom"): void;
+  /** Opt-in 朗读 (SPEECH-1): when set (even ""), a SpeakButton for this text joins the
+      row — the host passes the focused passage's quote. Undefined → no speech button. */
+  speakText?: string;
 };
 
-export function SelectionToolbar({ visible, items, onRun, busy, onCustomize }: SelectionToolbarProps) {
+export function SelectionToolbar({ visible, items, onRun, busy, onCustomize, speakText }: SelectionToolbarProps) {
   if (!visible || items.length === 0) return null;
 
   return (
@@ -49,6 +53,10 @@ export function SelectionToolbar({ visible, items, onRun, busy, onCustomize }: S
           </button>
         );
       })}
+      {/* 朗读 (SPEECH-1): reads the focused passage aloud — a stateful trigger (it
+          becomes 停止 while speaking), so it is its own component beside the
+          ToolbarAction row rather than a dispatched command. */}
+      {speakText !== undefined ? <SpeakButton text={speakText} /> : null}
       {/* The grouped overflow twin (R6.2): the primary `.selection-toolbar-btn` row stays
           as-is; this trailing menu mirrors the full list bucketed by group + a Customize
           footer. Same items, same onRun — actions trigger, results render elsewhere. */}

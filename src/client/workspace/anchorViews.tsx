@@ -14,6 +14,7 @@ import { noteTypeIcon } from "../notes/noteTypeIcon";
 import { getNoteType } from "../notes/noteTypeRegistry";
 import { ActionGrid } from "./ActionGrid";
 import { ActionMoreMenu } from "./ActionMoreMenu";
+import { SpeakButton } from "../speech/SpeakButton";
 
 function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
   const { focus, activeSource, visibleNotes, anchorBarActions, runAction, generating, openOperationManager } = ctx;
@@ -94,6 +95,10 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
               (built-in kit actions + custom ops); each only FIRES runAction — results
               flow through the existing GenerationPreview / note render, not here. */}
           <div className="anchor-action-bar">
+            {/* 朗读 (SPEECH-1): read the focused passage aloud (低年级 users may not
+                recognize every character). Stateful trigger (朗读 ↔ 停止), so it sits
+                beside the dispatched-action grid instead of inside it. */}
+            <SpeakButton text={quote} />
             <ActionGrid
               items={anchorBarActions}
               onRun={runAction}
@@ -151,6 +156,8 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
           {/* The Action Bar still shows in the empty state, but disabled — so the user
               sees what's available before focusing a passage. */}
           <div className="anchor-action-bar">
+            {/* Same 朗读 slot, disabled (no text) — the capability stays discoverable. */}
+            <SpeakButton text="" />
             <ActionGrid items={anchorBarActions} onRun={runAction} disabled busy={generating} density="grid" />
           </div>
         </>

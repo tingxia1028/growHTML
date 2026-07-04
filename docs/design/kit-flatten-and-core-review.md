@@ -85,8 +85,11 @@ NOT a bypass of the registries (adaptive-note contract stays mandatory, no secon
 ## 4. Textbook Kit V1 composition (after flatten)
 
 Capability groups: 学科类型 (per-subject: english/math/history-geo + base textbook types) ·
-AI 操作 (讲解/出题/批改) · **语音 (SPEECH group)**: 拼音标注 (pinyin-pro, pure JS) + TTS 朗读
-(edge-tts lane, keyless, server-side — roundtable tts.py reference) + 语音输入 STT (LOCAL lane:
+AI 操作 (讲解/出题/批改) · **语音 (SPEECH group)**: 拼音标注 (pinyin-pro, pure JS) + **TTS 朗读
+✅ shipped (SPEECH-1-001, 2026-07-04)** (edge-tts lane via `msedge-tts`, keyless, server-side —
+`src/server/services/speech.ts` + `POST /api/speech/tts` / `GET /api/speech/status`, shared
+`SpeakButton` on the selection toolbar / Anchor bar / note-list rows — roundtable tts.py
+reference) + 语音输入 STT (LOCAL lane:
 detect a local engine/sidecar — reuse roundtable's faster-whisper stt.py as the V1 sidecar;
 点亮 when detected, one-click setup guide when not; sherpa-onnx embedded Node engine = V1.1) ·
 导入导出入口 (svpack, already core — the kit only surfaces entry points).

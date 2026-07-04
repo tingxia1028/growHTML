@@ -26,6 +26,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useWorkspace } from "./WorkspaceContext";
 import { SelectionToolbar } from "./SelectionToolbar";
+import { draftQuoteText } from "../focus/FocusContext";
 import {
   getSelectionRect,
   publishSelectionRect,
@@ -62,7 +63,7 @@ function readHostSelectionRect(): SelectionRect | null {
 }
 
 export function SelectionFloatingToolbar() {
-  const { selectionActions, runAction, generating, openOperationManager } = useWorkspace();
+  const { selectionActions, runAction, generating, openOperationManager, focus } = useWorkspace();
   // The current selection rect in HOST viewport coords (null = no live selection → hide).
   const [rect, setRect] = useState<SelectionRect | null>(() => getSelectionRect());
   // The computed fixed position for the toolbar (top/left), set after measuring.
@@ -150,6 +151,9 @@ export function SelectionFloatingToolbar() {
         onRun={runAction}
         busy={generating}
         onCustomize={openOperationManager}
+        // 朗读 (SPEECH-1): the selected passage's text — the shared focus draft/anchor
+        // is the realm-safe source (an iframe selection isn't readable from the host).
+        speakText={focus.anchor?.quote ?? draftQuoteText(focus.draft)}
       />
     </div>,
     document.body

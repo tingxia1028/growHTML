@@ -17,7 +17,8 @@ import { ChevronDown, ChevronRight, Crosshair, Pencil, StickyNote, Trash2 } from
 import { useWorkspace } from "./WorkspaceContext";
 import { ArtifactCard } from "./ArtifactCard";
 import { getNoteType } from "../notes/noteTypeRegistry";
-import { BOOKMARK_CONTENT_TYPE } from "../../core/notes/contentTypes";
+import { BOOKMARK_CONTENT_TYPE, getNoteContentSpec } from "../../core/notes/contentTypes";
+import { SpeakButton } from "../speech/SpeakButton";
 
 export function NoteListPanel({
   defaultOpen = false,
@@ -158,6 +159,14 @@ export function NoteListPanel({
                     }}
                   />
                   <div className="note-list-row-actions">
+                    {/* 朗读 (SPEECH-1): reads the note aloud via the type's OWN
+                        toSearchText flattening (the design doc's toSpokenText V1
+                        default) — rides the existing row-action strip, no new
+                        per-card toolbar. */}
+                    <SpeakButton
+                      text={getNoteContentSpec(contentType)?.toSearchText(note.content) ?? ""}
+                      size={14}
+                    />
                     {anchor ? (
                       <button
                         type="button"

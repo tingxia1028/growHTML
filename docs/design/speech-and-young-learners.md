@@ -5,6 +5,19 @@ core organs (speech seams), experience = kit defaults (小学 kit turns them on)
 2026-07-02.
 
 ## 1. 朗读 TTS (SPEECH-1) — roundtable absorption (user-directed 2026-07-02)
+
+**Status: ✅ shipped (SPEECH-1-001, 2026-07-04)** — the edge lane is live server-side:
+`src/server/services/speech.ts` (lane-seamed `SpeechService`, injectable edge synthesizer,
+`msedge-tts@2.0.6`, curated 3-zh+1-en voice shortlist, default `zh-CN-XiaoxiaoNeural`) +
+`POST /api/speech/tts` (zod ≤2000 chars → audio/mpeg; offline → friendly 502
+`{error, code:"tts_unavailable"}`) + `GET /api/speech/status`. Client: `src/client/speech/`
+(`useSpeakText` hook — blob-URL Audio playback, one utterance at a time, cached status probe —
++ shared `SpeakButton` 朗读↔停止) mounted on the floating selection toolbar, the Anchor Action
+Bar, and the note-list row action strip (reads via the type's own `toSearchText` — the
+`toSpokenText` V1 default below). Real-synthesis verified 2026-07-04 (30KB mp3 back from
+Microsoft). Still open from this section: review-runner 听题, onboarding steps, Settings Hub
+voice/speed picker, dedicated `toSpokenText` overrides, offline `speechSynthesis` fallback lane.
+
 The sibling prototype **C:\CG\roundtable** (本地播客录制台) shipped the answer: **edge-tts** —
 Microsoft Edge read-aloud neural voices over wss, free, keyless, VERY natural zh
 (zh-CN-XiaoxiaoNeural family). Honest correction: it is **free-and-keyless but ONLINE**

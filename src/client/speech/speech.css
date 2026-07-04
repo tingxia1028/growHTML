@@ -1,0 +1,45 @@
+/* SpeakButton (SPEECH-1) — scoped styles. Mirrors the .selection-toolbar-btn /
+   .action-grid-btn metrics so the 朗读 trigger sits flush in the existing action
+   rows without touching the shared styles.css. */
+
+.speak-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface-card);
+  color: var(--sv-text-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.speak-btn:hover:not(:disabled) {
+  background: var(--sv-surface-muted);
+  border-color: var(--sv-accent-border);
+  color: var(--sv-accent);
+}
+
+.speak-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* While speaking the button is the 停止 affordance — accent it so the active
+   utterance is findable at a glance. */
+.speak-btn[data-speaking] {
+  border-color: var(--sv-accent-border);
+  color: var(--sv-accent);
+}
+
+/* Compact variant for the note-list row action strip — matches its 24px
+   jump/edit/delete siblings exactly. */
+.note-list-row-actions .speak-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface);
+}
