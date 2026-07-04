@@ -26,6 +26,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useWorkspace } from "./WorkspaceContext";
 import { SelectionToolbar } from "./SelectionToolbar";
+import { ToolbarSlashButton } from "../slash/ToolbarSlashButton";
 import { draftQuoteText } from "../focus/FocusContext";
 import { usePinyinPopover } from "../speech/usePinyinPopover";
 import {
@@ -162,6 +163,11 @@ export function SelectionFloatingToolbar() {
               // 注音 (SPEECH-3): same text, second affordance — CJK-gated in the button.
               onPinyin={pinyinPopover.open}
             />
+            {/* SC-2: the `/类型` palette straight from a live selection. Always-enabled
+                here (the floating toolbar only exists WITH a selection, and every dispatch
+                path materializes the live focus.draft at run time); the keydown-driven
+                popover + preventDefault guards keep that draft alive until the pick fires. */}
+            <ToolbarSlashButton surface="selection" />
           </div>,
           document.body
         )
