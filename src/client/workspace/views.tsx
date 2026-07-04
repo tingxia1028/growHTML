@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
+  Copy,
   CornerDownLeft,
   FileText,
   ListRestart,
@@ -276,7 +277,9 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
     activeKitIds,
     installedKits,
     setActiveKit,
-    setActiveSourceId
+    setActiveSourceId,
+    canForkActiveSource,
+    forkActiveSource
   } = ctx;
 
   return (
@@ -329,6 +332,19 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
                   ))}
                 </select>
               </div>
+            ) : null}
+            {/* SRC-3: imported html/markdown are read-only in place; fork to an
+                editable authored copy (notes/anchors stay on the original). */}
+            {canForkActiveSource ? (
+              <button
+                type="button"
+                className="panel-menu-item"
+                title="复制为可编辑副本(原文档的批注保留在原件上)"
+                onClick={() => void forkActiveSource()}
+              >
+                <Copy size={14} />
+                复制为可编辑副本
+              </button>
             ) : null}
             <div className="panel-menu-sep" />
             <div className="panel-menu-row">

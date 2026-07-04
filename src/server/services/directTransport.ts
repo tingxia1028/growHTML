@@ -73,9 +73,11 @@ import * as anchorsService from "./anchors";
 import * as graphService from "./graph";
 import * as layersService from "./layers";
 import * as notesService from "./notes";
+import * as patchesService from "./patches";
 import * as reviewScheduleService from "./reviewSchedule";
 import * as searchService from "./search";
 import * as sourceAuthoringService from "./sourceAuthoring";
+import * as sourceForkService from "./sourceFork";
 import * as sourcesService from "./sources";
 
 export type DirectTransportDeps = {
@@ -216,6 +218,14 @@ const routes: DirectRoute[] = [
     call: ({ deps, params }) =>
       sourceAuthoringService.getSourceShareStatus({ vault: deps.vault }, { sourceId: params.sourceId })
   }),
+  // SRC-3: fork an imported source into an editable authored copy (parity with the route).
+  route({
+    method: "POST",
+    pattern: "/api/sources/:sourceId/fork",
+    schema: sourceForkService.forkSourceRequestSchema,
+    call: ({ deps, params, input }) =>
+      sourceForkService.forkSource({ vault: deps.vault }, { sourceId: params.sourceId, ...input })
+  }),
   route({
     method: "DELETE",
     pattern: "/api/sources/:sourceId",
@@ -286,6 +296,30 @@ const routes: DirectRoute[] = [
       await notesService.deleteNote(deps, { noteId: params.noteId });
       return { ok: true };
     }
+  }),
+
+  // —— Patches (SRC-3 apply engine) — parity with the routes so mobile drives the
+  // same accept→apply/conflict/revert lifecycle. ——
+  route({
+    method: "POST",
+    pattern: "/api/patches",
+    schema: patchesService.createPatchRequestSchema,
+    call: async ({ deps, input }) => ({ patch: await patchesService.createPatch({ vault: deps.vault }, input) })
+  }),
+  route({
+    method: "GET",
+    pattern: "/api/sources/:sourceId/patches",
+    call: async ({ deps, params }) => ({
+      patches: (await deps.vault.stores.patches.list()).filter((patch) => patch.sourceId === params.sourceId)
+    })
+  }),
+  route({
+    method: "PATCH",
+    pattern: "/api/patches/:patchId",
+    schema: patchesService.updatePatchRequestSchema,
+    call: async ({ deps, params, input }) => ({
+      patch: await patchesService.updatePatchStatus({ vault: deps.vault }, { patchId: params.patchId, ...input })
+    })
   }),
 
   // —— Study Layers ——

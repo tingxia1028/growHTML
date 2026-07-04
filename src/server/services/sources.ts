@@ -128,7 +128,13 @@ export async function renderSource({ vault }: SourcesDeps, input: { sourceId: st
   // projectedHtmlForSource. HTML-ish sources pass through unchanged as before.
   const content = projectedHtmlForSource(source, await readSourceContent(vault, source));
   const anchors = await getHtmlAnchorsForSource(vault, source.id);
-  const patches = (await vault.stores.patches.list()).filter((patch) => patch.sourceId === source.id);
+  // SRC-3: `applied` patches are now BAKED into the stored content by the apply engine
+  // (patches.ts rewrites the source through the SRC-2 pipeline), so re-materializing them
+  // here would double-apply. Only non-applied patches are surfaced as skipped read-model
+  // rows (the client's patch list still shows every status).
+  const patches = (await vault.stores.patches.list()).filter(
+    (patch) => patch.sourceId === source.id && patch.status !== "applied"
+  );
   const anchorsById = Object.fromEntries(anchors.map((anchor) => [anchor.id, anchor]));
   const rendered = materializeHtml(content, anchorsById, patches);
 

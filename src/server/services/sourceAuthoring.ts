@@ -160,7 +160,27 @@ export async function updateAuthoredSource(
     return { source: existing, reprojection: emptyReprojection() };
   }
 
-  const source = await updateStoredSourceContent(vault, existing, stored, { title: input.title });
+  return rewriteSourceContent(vault, existing, stored, { title: input.title });
+}
+
+/**
+ * The SRC-2 save pipeline BODY, factored out so the SRC-3 patch APPLY engine reuses it
+ * verbatim instead of growing a second content-rewrite path (source-authoring.md §4:
+ * "rewrites the stored content through the same save→re-hash→re-project pipeline"):
+ * rewrite the file + re-hash + bump `revision` (`updateStoredSourceContent`), then
+ * RE-PROJECT every live anchor of the source against the new content by quote+context.
+ *
+ * Unlike `updateAuthoredSource` this takes ALREADY-projected stored content and does
+ * NOT enforce the authored-only guard — patches are the sanctioned edit route for
+ * IMPORTED sources (§3), so the caller owns that policy.
+ */
+export async function rewriteSourceContent(
+  vault: StudyVault,
+  existing: SourceRecord,
+  stored: string,
+  opts: { title?: string } = {}
+): Promise<UpdateAuthoredSourceResult> {
+  const source = await updateStoredSourceContent(vault, existing, stored, { title: opts.title });
 
   // Re-project all of this source's live anchors against the NEW projected content.
   const projected = projectedHtmlForSource(source, stored);

@@ -62,6 +62,9 @@ import { DEFAULT_THEME_ID } from "../theme/builtins";
 import { listThemes } from "../theme/registry";
 import { setActiveTheme as applyActiveTheme, THEME_STORAGE_KEY } from "../theme/applyTheme";
 import { renderAnnotationNotePreview } from "./annotationNotePreview";
+// SRC-3: fork an imported source into an editable authored copy (the fork IO lives in
+// the SRC-2 authoring IO module, not the contended entityClient).
+import { getSourceAuthoringIo, isForkableImportedSource } from "./sourceAuthoringIo";
 import { defineMessages, resolveText, t, useLocale } from "../i18n";
 import { conceptMessages } from "./conceptMessages";
 // W1 (ai-workspace §2.1/§2.2): the chat-session domain module — the first F1 slice.
@@ -431,6 +434,10 @@ export type WorkspaceContextValue = {
    */
   importXmindFile(): Promise<void>;
   changePatchStatus(patch: PatchRecord, nextStatus: "applied" | "reverted" | "rejected"): Promise<void>;
+  /** SRC-3: whether the active source is a forkable IMPORTED html/markdown source. */
+  canForkActiveSource: boolean;
+  /** SRC-3: fork the active imported source into an editable authored copy + open it. */
+  forkActiveSource(): Promise<void>;
 
   // —— concepts / relations ——
   // A monotonically-increasing token bumped whenever a concept/relation/link command
@@ -1356,6 +1363,29 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [activeSource, loadSourceWorkspace]
   );
 
+  // SRC-3: fork the active IMPORTED source into an editable AUTHORED copy — the copy is
+  // a fresh document (notes/anchors STAY on the original, per §3), so we just reload the
+  // library and open the new source (which then routes to the authored editor view).
+  const forkActiveSource = useCallback(async () => {
+    if (!activeSource || !isForkableImportedSource(activeSource)) return;
+    setStatus("saving");
+    setError("");
+    try {
+      const { source } = await getSourceAuthoringIo().forkSource(activeSource.id);
+      await loadSources();
+      setActiveSourceId(source.id);
+      setStatus("idle");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fork source");
+      setStatus("error");
+    }
+  }, [activeSource, loadSources]);
+
+  const canForkActiveSource = useMemo(
+    () => !!activeSource && isForkableImportedSource(activeSource),
+    [activeSource]
+  );
+
   const refreshConcepts = useCallback(() => setConceptsVersion((value) => value + 1), []);
 
   // Cheap undo for 标为概念: delete the just-created marker note — that removes the
@@ -1800,6 +1830,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       regenerateChatReply,
       importXmindFile,
       changePatchStatus,
+      canForkActiveSource,
+      forkActiveSource,
       conceptsVersion,
       refreshConcepts,
       conceptMark,
@@ -1900,6 +1932,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       regenerateChatReply,
       importXmindFile,
       changePatchStatus,
+      canForkActiveSource,
+      forkActiveSource,
       conceptsVersion,
       refreshConcepts,
       conceptMark,

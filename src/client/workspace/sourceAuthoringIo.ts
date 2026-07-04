@@ -26,6 +26,18 @@ export function isAuthoredTextSource(source: {
   return origin === "authored" && (source.sourceType === "markdown" || source.sourceType === "html");
 }
 
+/** Whether this source can be FORKED to an editable authored copy (SRC-3): an
+    IMPORTED html/markdown source (authored ones are already editable in place). */
+export function isForkableImportedSource(source: {
+  sourceType: string;
+  origin?: unknown;
+}): boolean {
+  const origin = (source as SourceAuthoringFields).origin;
+  // Older records omit `origin` (default imported), so anything not explicitly
+  // authored counts as imported here.
+  return origin !== "authored" && (source.sourceType === "markdown" || source.sourceType === "html");
+}
+
 export type ReprojectedAnchorInfo = {
   anchorId: string;
   status: "matched" | "fuzzy" | "unmatched";
@@ -58,6 +70,8 @@ export type SourceAuthoringIo = {
   fetchContent(sourceId: string): Promise<string>;
   saveContent(sourceId: string, input: { content: string; title?: string }): Promise<SaveContentOutcome>;
   fetchShareStatus(sourceId: string): Promise<ShareStatus>;
+  /** SRC-3: fork an imported source into an editable authored copy (new source id). */
+  forkSource(sourceId: string, input?: { title?: string }): Promise<{ source: { id: string; title: string } }>;
 };
 
 async function requestJson<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -84,7 +98,8 @@ const defaultIo: SourceAuthoringIo = {
     return response.text();
   },
   saveContent: (sourceId, input) => requestJson("PATCH", `/api/sources/${sourceId}/content`, input),
-  fetchShareStatus: (sourceId) => requestJson("GET", `/api/sources/${sourceId}/share-status`)
+  fetchShareStatus: (sourceId) => requestJson("GET", `/api/sources/${sourceId}/share-status`),
+  forkSource: (sourceId, input) => requestJson("POST", `/api/sources/${sourceId}/fork`, input ?? {})
 };
 
 let io: SourceAuthoringIo = defaultIo;

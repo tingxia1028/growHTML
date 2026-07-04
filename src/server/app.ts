@@ -23,6 +23,7 @@ import { deleteSource, listSources } from "../core/store/sources";
 import { handleServiceError } from "./services/errors";
 import * as sourcesService from "./services/sources";
 import * as sourceAuthoringService from "./services/sourceAuthoring";
+import * as sourceForkService from "./services/sourceFork";
 import * as anchorsService from "./services/anchors";
 import * as notesService from "./services/notes";
 import * as layersService from "./services/layers";
@@ -575,6 +576,17 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
   app.get("/api/sources/:sourceId/share-status", async (req, res, next) => {
     try {
       res.json(await sourceAuthoringService.getSourceShareStatus({ vault }, { sourceId: req.params.sourceId }));
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  // SRC-3: fork an IMPORTED source into an editable AUTHORED copy — a new source that
+  // copies the content; the original's notes/anchors stay on the original (§3).
+  app.post("/api/sources/:sourceId/fork", async (req, res, next) => {
+    try {
+      const input = sourceForkService.forkSourceRequestSchema.parse(req.body ?? {});
+      res.status(201).json(await sourceForkService.forkSource({ vault }, { sourceId: req.params.sourceId, ...input }));
     } catch (error) {
       if (!handleServiceError(res, error)) next(error);
     }
