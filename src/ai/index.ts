@@ -4,6 +4,7 @@ import { claudeAgentSpec } from "./cliAgent/claude";
 import { codexAgentSpec } from "./cliAgent/codex";
 import { makeDeepSeekProvider, makeOpenAiCompatibleProvider } from "./http/presets";
 import { ManagedProvider } from "./managed";
+import { MockAgentProvider } from "./mockAgentProvider";
 import { MockModelProvider } from "./mockProvider";
 import { createClaudePtySession } from "./pty/nodePtySession";
 import type { ModelProvider } from "./provider";
@@ -17,6 +18,7 @@ export {
   type StructuredGenerateRequest
 } from "./structured";
 export { MockModelProvider, FORM_ROUTER_CONTENT_TYPE } from "./mockProvider";
+export { MockAgentProvider, MOCK_AGENT_FINAL_ANSWER } from "./mockAgentProvider";
 export {
   synthesisDocSchema,
   buildSynthesisMessages,
@@ -61,6 +63,11 @@ export {
 // docs/design/multi-provider-ai-agent.md §5). Construction args are IDENTICAL
 // to the old if-ladder's; only the dispatch moved into the registry.
 registerProvider({ id: "mock", kind: "mock", label: "Mock (offline)" }, () => new MockModelProvider());
+// mock-agent (A4b): the offline mock EXTENDED with the tool-calling agent loop, so the
+// agent transcript + tools-gated button have a deterministic, network-free provider to
+// render against (the e2e pins to it). Delegates complete/stream/completeStructured to a
+// held MockModelProvider byte-identically (DELTA 1) → every non-agent spec is unchanged.
+registerProvider({ id: "mock-agent", kind: "mock", label: "Mock Agent (offline, tools)" }, () => new MockAgentProvider());
 registerProvider(
   { id: "claude-cli", kind: "cli-agent", label: "Claude CLI (subscription)" },
   ({ env }) => new ClaudeCliProvider({ baseEnv: env, subscriptionMode: true })

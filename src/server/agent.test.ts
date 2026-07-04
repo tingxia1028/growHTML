@@ -3,7 +3,14 @@ import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import { clearToolsForTests, type AgentRequest, type AgentStepEvent, type ModelProvider } from "../ai";
+import {
+  clearToolsForTests,
+  MockAgentProvider,
+  MOCK_AGENT_FINAL_ANSWER,
+  type AgentRequest,
+  type AgentStepEvent,
+  type ModelProvider
+} from "../ai";
 import { openVault } from "../core/vault";
 import { AGENT_EVENT_PAYLOAD_CHAR_CAP, serializePayload } from "./agent";
 import { createApp } from "./app";
@@ -154,6 +161,21 @@ describe("POST /api/agent/stream", () => {
     expect(frames[0].data.truncated).toBe(true);
     expect(frames[1].data.resultJson.length).toBe(AGENT_EVENT_PAYLOAD_CHAR_CAP);
     expect(frames[1].data.truncated).toBe(true);
+  });
+
+  it("drives the shipping MockAgentProvider end-to-end (search_notes tool-call + result + final answer)", async () => {
+    // The real registered agent provider (A4b) against the real registered vault tools —
+    // no scripted fake. The empty temp vault → search_notes returns total 0.
+    const app = createApp({ vault: await tmpVault(), modelProvider: new MockAgentProvider() });
+    const res = await request(app).post("/api/agent/stream").send(ask).expect(200);
+    const frames = parseSse(res.text);
+
+    expect(frames.map((f) => f.event)).toEqual(["step", "tool-call", "tool-result", "step", "text-delta", "text-delta", "done"]);
+    expect(frames[1].data).toMatchObject({ toolName: "search_notes", truncated: false });
+    expect(JSON.parse(frames[1].data.argsJson)).toEqual({ query: "find my mitochondria note" });
+    // The real search_notes ran against the empty vault → { rows: [], total: 0 }.
+    expect(JSON.parse(frames[2].data.resultJson)).toMatchObject({ rows: [], total: 0 });
+    expect(frames.at(-1)!.data).toEqual({ message: { role: "assistant", content: MOCK_AGENT_FINAL_ANSWER }, provider: "mock-agent" });
   });
 
   it("reports a mid-stream failure as `event: error` (headers already sent)", async () => {
