@@ -70,10 +70,16 @@ ordinary sources.
   受影响的锚点; shared-source warning via `GET /api/sources/:id/share-status` (publish ledger +
   imported layers); 纯编辑模式 for authored html (source editor + sandboxed preview); markdown
   stored RAW, projected deterministically at render time (markdown renderer + injectStudyIds).
-- **SRC-3 — patch APPLY engine:** finish the designed lifecycle (accepted→applied/conflict,
-  revert) + imported-source fork. The chat's existing patch records become real. (Noted for
-  SRC-3: the IMPORT rematch path still matches markdown sources against raw markdown text —
-  quotes spanning formatting could miss; the edit pipeline already projects to HTML first.)
+- **SRC-3 — patch APPLY engine:** ✅ 2026-07-04 (SRC-3-001) — accepted→applied verifies
+  oldText at the anchor then rewrites stored content through the SRC-2 pipeline (shared
+  `rewriteSourceContent`: re-hash → revision bump → re-project anchors) + stamps appliedAt;
+  drift→conflict (not applied); revert restores the stashed pre-apply bytes (patch.metadata.
+  srcPriorContent) + stamps revertedAt; applied patches are excluded from render-time
+  materialize (baked in storage). Imported-source FORK (`POST /api/sources/:id/fork`): a new
+  origin:"authored" copy, notes/anchors stay on the original; client 复制为可编辑副本 in the
+  Reader ⋯ menu. The chat's existing patch records now drive the real transitions. (Still open:
+  the IMPORT rematch path matching markdown sources against RAW markdown text — quotes spanning
+  formatting could miss; the edit pipeline already projects to HTML first.)
 - **SRC-2b — HTML 所见即改:** ✅ 2026-07-04 (SRC-2B-001) — authored html 编辑 mode defaults to
   in-place page editing (contenteditable same-doc iframe, sandboxed WITHOUT allow-scripts; zero
   new deps, pure-DOM style engine — no execCommand) + floating style bar (加粗/斜体/标题/字号/

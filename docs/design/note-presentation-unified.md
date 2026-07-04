@@ -486,6 +486,11 @@ with a Customize hook (`openOperationManager`). "在文档里、一排快捷按�
 biggest one.
 
 ### D10 — note open-state + position persist AND export (extends D5's geometry)
+**Status: ✅ shipped as N5-001 (2026-07-04).** Open-state + ANCHOR-RELATIVE geometry persist via the
+extended `CardGeom` localStorage record (device-local; survives narrow/split panes); restore on paint
+in every realm (DOM + guest). `note.display` added to the schema (additive, zero-migration) as the
+future vault/svpack carry hook (see the corrected export note below — NOT yet in `.svpack`). Export =
+a client-side portable JSON+markdown bundle (`buildNotesExport`) of the source's notes/anchors + positions.
 **Gap (grounded):** D5/§10 card geometry uses `CardGeom` in **localStorage** (`readCardGeom`) and
 open-state is component-local (§ "state is component-local", L328). So a pinned card's position is
 per-device and **never travels in `.svpack`**. The user wants a note *fixed open, at a remembered
@@ -501,9 +506,11 @@ note.display?: {
 - **Anchor-relative** offset (from D2's right-slot origin — the same rect logic as the pinned card
   / D5 editor) is the crux: absolute pixels break on reflow / zoom / font-size / screen and are
   meaningless on a recipient's device; a relative offset survives all of them AND export.
-- **Stored on the note** ⇒ it lives in the vault jsonl and is **automatically included in the
-  `.svpack` export** — `buildStudyPack` already ships `note` records, so the field rides along with
-  no export change. The recipient sees the author's pinned layout.
+- **Stored on the note** ⇒ it lives in the vault jsonl. NOTE (corrected by N5-001): `buildStudyPack`
+  STRIPS notes to `portableNoteSchema` (`{contentType, content, anchorRefs, conceptRefs}`), so
+  `display` does NOT travel in `.svpack` yet — carrying it needs `pack.ts` (add `display` to
+  `portableNoteSchema` + forward it) plus threading through `updateNoteRequestSchema`/`createNote`.
+  The additive schema field is the future carry hook; that forwarding is a documented follow-up.
 - localStorage `CardGeom` stays the **ephemeral fallback** for un-pinned cards (drag-before-pin);
   a **Pin** affordance promotes the current geometry into `note.display`; un-pin clears it. The D2
   marker chip reflects pinned state (active glyph when `display.open`).
@@ -511,6 +518,11 @@ note.display?: {
   can still locally hide-all (D11 — a view flag) without mutating the sealed note.
 
 ### D11 — per-document "hide all notes" toggle (collapses the 3-way TopBar)
+**Status: ✅ shipped as N5-001 (2026-07-04).** A realm-local hide-all store through the shared
+card/margin/MarkerOverlay machinery (guest parity via `WebAnchorPrefs.notesHidden`); a reader-toolbar
+toggle; per-source device-local persist. Anchor glyphs stay (the inverse of the N1a glyph switch); each
+note's own `display.open` is untouched, so "打开的打开、关闭还是关闭" survives. The TopBar 3-way collapse
+itself is a separate layout change, not landed in N5.
 **Decision:** an icon next to the reader's TOC/目录 control flips a per-source `notesHidden` **view
 flag** → every pinned card collapses to its D2 icon chip; click again restores. Because each note's
 own open state lives in `display.open` (D10), "打开的打开、关闭还是关闭" is preserved for free — the

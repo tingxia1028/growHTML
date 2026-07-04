@@ -679,3 +679,13 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 | CG-123-001 | 图视图+镜头 | npx vitest run src/client/workspace/conceptGraphView.test.tsx forceLayout.test.ts graphLens.test.ts | render、节点点击、力导向、镜头注册 | passed | Passed |
 | N1B-001 | 标记+浮动编辑器 | npx vitest run src/client/markerOverlay.test.ts src/client/workspace/floatingNoteEditor.test.tsx slashComposer.test.tsx | 聚簇布局、开卡避让复合 N1a、浮动编辑器 create/edit + slash | passed | Passed |
 | CG+N1b+REV3 | 全树 | npm run check · npx vitest run · npm run build · electron:build:webview-preload | 全绿 | tsc 0 · 202 文件/2097 用例 · build ✓ · preload 48.6kb | Passed |
+| SRC-3-001 | apply 引擎单测 | npx vitest run src/server/services/patches.test.ts | oldText 命中→applied 经 rewriteSourceContent 重写(revision 1→2、hash 变、字节持新文)、重投影锚点;漂移→conflict 不应用;revert 逐字节还原;非法状态转移仍 ConflictError | passed | Passed |
+| SRC-3-001 | fork + 路由 | npx vitest run src/server/services/sourceFork.test.ts src/server/app.test.ts | fork→新 authored 源、原件笔记/锚点不动、fork 可编辑原件只读;fork 201/404/400 路由+对等 | passed | Passed |
+| SRC-3-001 | e2e | npx playwright test e2e/patch-apply.spec.ts | apply 烘焙进存储+阅读器显新文;revert 还原;导入 fork 为可编辑副本,笔记/锚点留原件 | 1 passed | Passed |
+| N5-001 | 持久+导出单测 | npx vitest run src/client/annotationDom.test.ts src/client/workspace/notesExport.test.ts | open 态+几何往返(锚点相对);restorePinnedNoteCards 重钉;导出信封形状固定、note.display 逐字携带、markdown 📌 | passed | Passed |
+| N5-001 | 全隐藏复合 | npx vitest run src/client/markerOverlay.test.ts src/client/selection/webviewSelection.test.ts | 全隐藏遮卡片/笔记芯片、锚点符号留;与 N1a 过滤正交;WebAnchorPrefs.notesHidden 推送+翻转重推 | passed | Passed |
+| N5-001 | e2e | npx playwright test e2e/note-persist-export.spec.ts | 全隐藏遮卡片+芯片、符号留、开关还原;导出触发下载 | 1 passed | Passed |
+| SEARCH-2-001 | 模糊层+拼音 | npx vitest run src/core/search/rank.test.ts src/core/search/pinyin.test.ts src/server/services/search.test.ts | 模糊层排于 substring 下+错字用例;拼音全拼/首字母命中 CJK;SEARCH-1 rank 测试不变 | passed | Passed |
+| SEARCH-2-001 | 过滤+最近 | npx vitest run src/client/search/searchFilters.test.ts src/client/search/searchRecents.test.ts src/client/search/globalSearch.test.tsx | 过滤收窄+空过滤=SEARCH-1 对等;recents 往返;面板 family 芯片 | passed | Passed |
+| SEARCH-2-001 | e2e | npx playwright test e2e/search-filters.spec.ts | 过滤收窄 family、拼音命中 CJK 源、recents 一键重搜 | 1 passed | Passed |
+| SRC-3+N5+SEARCH-2 | 合并树 | npm run check · npx vitest run · npm run build · electron:build:webview-preload | 全绿 | tsc 0 · 208 文件/2168 用例 · build ✓ · preload 51.2kb | Passed |

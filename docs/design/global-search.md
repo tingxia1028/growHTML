@@ -3,7 +3,14 @@
 > **Status: SEARCH-1 ✅ shipped 2026-07-04 (SEARCH-1-001).** Endpoint (`GET /api/search`
 > in services + direct-transport parity) · Cmd/Ctrl+K palette (shell chrome, SC-0 idioms)
 > · all three families (notes via `toSearchText`+anchor quotes / sources / navigation
-> commands) · keyboard flow. SEARCH-2 (pinyin/fuzzy/filters/recents) remains.
+> commands) · keyboard flow.
+>
+> **SEARCH-2 ✅ shipped 2026-07-04 (SEARCH-2-001).** Fuzzy tier (`RANK_FUZZY`, additive, below
+> substring — Latin edit-distance + subsequence, CJK stays substring) · family/type/source/date
+> filters (shared `parseSearchFilters`, transport parity, empty=SEARCH-1 byte-identical) + a
+> bilingual family chip bar · localStorage recents in the empty state · **pinyin dependency-free**
+> (reused `pinyin-pro` from SPEECH-3; 全拼+首字母 over CJK titles at `RANK_FUZZY`). The palette
+> type/source/date filter UI is server-ready but ships family-only in V1 (type picker = follow-up).
 
 Verified gap (2026-07-02): AI has `search_notes` (agentTools), readers have in-document find —
 but the USER has no cross-vault search surface at all. Table stakes for a knowledge tool;
