@@ -66,8 +66,17 @@ also dissolves the "11 subject types would need 11 buttons" problem (M-B synergy
   `views.tsx` wiring + `openManualEditor` actually landed with N1b (02c0476, "slash 集成保留");
   SC-1-001 completed the missing `.chat-slash-palette` positioning CSS (it was rendering inline
   and shoving the textarea) + the e2e.
-- **SC-2 — toolbar surfaces:** selection toolbar + anchor/bottom bar mounts (+ anchor-context
-  materialization).
+- **SC-2 — toolbar surfaces:** ✅ SHIPPED (SC-2-001, 2026-07-05, commits 2609cf0→5f82d6c). A `/`
+  affordance button mounts the shipped palette on the **selection floating toolbar** (in
+  `SelectionFloatingToolbar.tsx`, the `useWorkspace` host — NOT the dumb shared `SelectionToolbar`
+  renderer) + the **anchor action bar** (`anchorViews.tsx`, gated on `focus.anchor||focus.draft`).
+  No NEW materialization — every dispatch path already materializes the focused selection at run
+  time, so the picked entry runs while `focus.draft` is live. Selection-blur is closed by three
+  guards: **keydown-driven filter (NO focusable input)** + `onMouseDown→preventDefault` on
+  button/popover/rows + Escape `stopPropagation`. Shared `slash/dispatchSlashEntry.ts` gives chat
+  + toolbar ONE pick→dispatch decision. Toolbar picks carry no instruction (bare→manual editor,
+  operation→run); `/type+instruction` AI-generate stays chat-only. Deferred: SourceActions/BottomBar
+  mounts, instruction-from-toolbar, webview cross-realm (no floating toolbar there).
 - **SC-3 — breadth:** ✅ SHIPPED (SC-3-001, 2026-07-05). Operations in the palette (built-in kit
   actions + custom `op_` ops via `slash/operationAdapter.ts`; effective-installed gated), pinyin
   matching (full + initials, reusing SEARCH-2's `pinyinForms`), active-kit-first ranking

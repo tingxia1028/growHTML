@@ -748,3 +748,8 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 | 2026-07-05 | A4b-001 | e2e/agent-tools.spec.ts | mock-agent:挂源→🛠 用工具→search_notes 卡片+tool-result+确定性最终答 | Passed |
 | 2026-07-05 | A4b-001 | DELTA-2 全 e2e 套件@mock-agent 全局 pin | 50 passed / 2 failed(loop.spec:144 + slash-composer:30)——两者为**既有全套件排序 flake**(旧 mock pin 重跑同样 2 个失败,单跑皆过),mock-agent 不扰动 | 非 A4b 引入 |
 | 2026-07-05 | A4b-001 | npx vitest run(全量) | 231 文件 / 2447 用例(基线 226/2406 + 41) | Passed |
+| 2026-07-05 | SC-2-001 | dispatchSlashEntry.test.ts | 3 分支(operation/bare/instruction)+ 精确 generate-block 串 + operation payload | Passed |
+| 2026-07-05 | SC-2-001 | ToolbarSlashButton.test.tsx | button→popover→rows;keydown 过滤/导航;pick 调 stub dispatch;**mousedown preventDefault 选区守卫**;Escape stopPropagation(文档级监听未触发) | Passed |
+| 2026-07-05 | SC-2-001 | selectionToolbarSlash + anchorBarSlash RTL | pick 时 focus.draft/focus.anchor 仍在场→分派正确命令;anchor 空态按钮禁用 | Passed(mount×2) |
+| 2026-07-05 | SC-2-001 | e2e/slash-toolbar.spec.ts(隔离) | 选区→浮动工具栏→点`/`→面板列类型→`/markdown`→floating editor 存到新锚点@选中段 | Passed |
+| 2026-07-05 | SC-2-001 | npx vitest run(全量) | 235 文件 / 2464 用例(基线 231/2447 + 17) | Passed |
