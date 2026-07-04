@@ -3018,6 +3018,17 @@ button {
   padding-left: 18px;
 }
 
+/* N4-D7: the review-pack practice checklist (the parsed exercises[] prompts). */
+.tb-review-exercises {
+  margin: 2px 0 0;
+  padding-left: 18px;
+}
+
+.tb-review-exercise {
+  margin: 2px 0;
+  font-size: 13px;
+}
+
 .chat-log {
   display: flex;
   flex-direction: column;
@@ -4203,6 +4214,96 @@ textarea {
 .sv-quiz-overview .active {
   color: var(--sv-accent);
   font-weight: 700;
+}
+
+/* —— N4-D7 interactive full-mode note states ————————————————————————————————— */
+/* Shared FlipCard (flashcard + vocab full): the whole card is the flip control. */
+.sv-flip {
+  cursor: pointer;
+  border-radius: 8px;
+  outline: none;
+}
+
+.sv-flip:focus-visible {
+  box-shadow: 0 0 0 2px var(--sv-accent);
+}
+
+.sv-flip-face {
+  display: block;
+}
+
+/* Interactive quiz: options are now <button>s. Reset the native button chrome so the
+   existing .sv-quiz-option grid + ::after label styling reads the same as the old <li>. */
+.sv-quiz-option-item {
+  list-style: none;
+}
+
+button.sv-quiz-option {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.sv-quiz-option:disabled {
+  cursor: default;
+}
+
+button.sv-quiz-option:not(:disabled):hover {
+  background: #f2f6fc;
+}
+
+/* Post-pick marking: the picked-correct option is highlighted green, picked-wrong red. */
+.sv-quiz-picked-correct {
+  background: #e8f7ee;
+}
+
+.sv-quiz-picked-correct::before {
+  border-color: var(--sv-success);
+  box-shadow: inset 0 0 0 3px #ffffff;
+  background: var(--sv-success);
+}
+
+.sv-quiz-picked-wrong {
+  background: #fdecec;
+}
+
+.sv-quiz-picked-wrong::before {
+  border-color: var(--sv-danger-2);
+  box-shadow: inset 0 0 0 3px #ffffff;
+  background: var(--sv-danger-2);
+}
+
+/* The boolean score line shown after a pick. */
+.sv-quiz-score {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.sv-quiz-score-correct {
+  color: var(--sv-success);
+}
+
+.sv-quiz-score-wrong {
+  color: var(--sv-danger-2);
+}
+
+.sv-quiz-explanation {
+  margin: 6px 0 0;
+  color: #526071;
+  font-size: 12px;
+}
+
+/* Reveal ("show answer") — used by the textbook exercise full view. */
+.sv-reveal {
+  margin: 6px 0 0;
+}
+
+.sv-reveal-shown {
+  animation: none;
 }
 
 .sv-code-full {
