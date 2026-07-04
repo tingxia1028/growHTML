@@ -2,6 +2,7 @@ import path from "node:path";
 import {
   anchorSchema,
   assetSchema,
+  chatSessionSchema,
   conceptSchema,
   memoryEventSchema,
   noteSchema,
@@ -12,6 +13,7 @@ import {
   studyLayerSchema,
   type AnchorRecord,
   type AssetRecord,
+  type ChatSessionRecord,
   type ConceptRecord,
   type MemoryEventRecord,
   type NoteRecord,
@@ -35,6 +37,8 @@ export const entityFileNames = {
   assets: "assets.jsonl",
   layers: "layers.jsonl",
   operations: "operations.jsonl",
+  // AI chat sessions (ai-workspace.md §2.1, W1) — durable, resumable conversations.
+  chatSessions: "chat-sessions.jsonl",
   // Learner-memory 短期 stream (learner-memory.md §2) — its OWN jsonl so the raw,
   // prunable event stream never mingles with the durable entities above.
   memoryEvents: "memory-events.jsonl"
@@ -50,6 +54,7 @@ export type EntityStores = {
   assets: SnapshotStore<AssetRecord>;
   layers: SnapshotStore<StudyLayerRecord>;
   operations: SnapshotStore<OperationRecord>;
+  chatSessions: SnapshotStore<ChatSessionRecord>;
   memoryEvents: SnapshotStore<MemoryEventRecord>;
 };
 
@@ -65,6 +70,7 @@ export function createEntityStores(studyDir: string, storage: StorageAdapter = n
     assets: createSnapshotStore({ filePath: filePath(entityFileNames.assets), schema: assetSchema, storage }),
     layers: createSnapshotStore({ filePath: filePath(entityFileNames.layers), schema: studyLayerSchema, storage }),
     operations: createSnapshotStore({ filePath: filePath(entityFileNames.operations), schema: operationSchema, storage }),
+    chatSessions: createSnapshotStore({ filePath: filePath(entityFileNames.chatSessions), schema: chatSessionSchema, storage }),
     memoryEvents: createSnapshotStore({ filePath: filePath(entityFileNames.memoryEvents), schema: memoryEventSchema, storage })
   };
 }

@@ -10,6 +10,7 @@ import { studyLayerSchema } from "./study-layer";
 
 export * from "./anchor";
 export * from "./asset";
+export * from "./chatSession";
 export * from "./common";
 export * from "./concept";
 export * from "./memory";
@@ -25,6 +26,8 @@ export * from "./vault";
 // Memory is the most sensitive data in the vault (learner-memory §6) — keeping it
 // out of the generic vault-entity shape means no generic entity flow (import/export/
 // sharing) can ever pick memory records up by accident.
+// chatSessionSchema stays out for the same reason: conversations are private
+// (ai-workspace §2.1); the full-vault backup still carries them via entityFileNames.
 export const vaultEntitySchema = z.discriminatedUnion("type", [
   sourceSchema,
   anchorSchema,

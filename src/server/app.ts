@@ -16,6 +16,7 @@ import {
 } from "./dataTrust";
 import { createMemoryConsolidationScheduler, registerMemoryRoutes } from "./memory";
 import { registerAgentRoutes } from "./agent";
+import { registerChatRoutes } from "./chatSessions";
 import type { StudyVault } from "../core/vault";
 import { deleteSource, listSources } from "../core/store/sources";
 import { handleServiceError } from "./services/errors";
@@ -759,6 +760,11 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
   // Agent loop A4a (docs/design/multi-provider-ai-agent.md §4.1(2)/§4.3): the
   // /api/agent/stream SSE route + read-only vault tool registration — src/server/agent.ts.
   registerAgentRoutes(app, { vault, getProvider });
+
+  // AI chat sessions W1 (docs/design/ai-workspace.md §2.1): /api/chat/sessions
+  // CRUD + append — src/server/chatSessions.ts. The chat transport below is
+  // untouched; the client persists turns through these routes.
+  registerChatRoutes(app, { vault, now: clock });
 
   // Preview an import: match the pack to a local source + rematch every anchor.
   // Does NOT persist anything.

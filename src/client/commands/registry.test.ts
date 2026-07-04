@@ -211,6 +211,44 @@ describe("command: anchor.ask-ai", () => {
       getCommand("anchor.ask-ai")!.isAvailable(baseCtx({ payload: { text: "q" }, sourceId: undefined }))
     ).toBe(false);
   });
+
+  // W1 (chat sessions): a STREAMED reply must hand hosts the completed turn via
+  // onAssistantDone (persist-only — the chunks already built the visible message),
+  // and must NOT double-append through onAssistantMessage.
+  it("streamed reply: chunks flow to onAssistantChunk, the final turn to onAssistantDone", async () => {
+    const onAssistantChunk = vi.fn();
+    const onAssistantMessage = vi.fn();
+    const onAssistantDone = vi.fn();
+    const ctx = baseCtx({
+      payload: { text: "explain" },
+      actions: { onChatHistory: vi.fn(), onAssistantChunk, onAssistantMessage, onAssistantDone }
+    });
+    ctx.client.chatStream = vi.fn(async (_input, onDelta: (delta: string) => void) => {
+      onDelta("part 1 ");
+      onDelta("part 2");
+      return { message: { role: "assistant" as const, content: "part 1 part 2" }, provider: "mock" };
+    });
+    await runCommand("anchor.ask-ai", ctx);
+    expect(onAssistantChunk).toHaveBeenCalledTimes(2);
+    expect(onAssistantDone).toHaveBeenCalledWith({ role: "assistant", content: "part 1 part 2" });
+    expect(onAssistantMessage).not.toHaveBeenCalled();
+  });
+
+  it("no-delta stream fallback: onAssistantMessage appends the reply, onAssistantDone stays silent", async () => {
+    const onAssistantMessage = vi.fn();
+    const onAssistantDone = vi.fn();
+    const ctx = baseCtx({
+      payload: { text: "explain" },
+      actions: { onChatHistory: vi.fn(), onAssistantChunk: vi.fn(), onAssistantMessage, onAssistantDone }
+    });
+    ctx.client.chatStream = vi.fn(async () => ({
+      message: { role: "assistant" as const, content: "single reply" },
+      provider: "mock"
+    }));
+    await runCommand("anchor.ask-ai", ctx);
+    expect(onAssistantMessage).toHaveBeenCalledWith({ role: "assistant", content: "single reply" });
+    expect(onAssistantDone).not.toHaveBeenCalled();
+  });
 });
 
 describe("command: concept.create", () => {

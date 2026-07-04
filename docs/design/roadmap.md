@@ -99,7 +99,7 @@ Concept P-C1 (aggregation page, additive to existing API) ──> P-C2 (graph vi
 
 **P1 — in flight / next slots:**
 - **SC-0** (slash engine+palette) + **X0b** (transport seam + direct adapter) — agents running.
-- Then per slot: **SRC-1 create half** · **N6 board (+F7b)** · **W1** (chat sessions ≡ first F1 slice) · **Subject M-A ✅** (auto-switch engine + chip landed post-F4 — subject-kits.md §7; per-kit `detection` tables, pin = `activeKitIds`; only the chip's topbar mount rides the reader-gated batch).
+- Then per slot: **SRC-1 create half** · **N6 board (+F7b)** · **W1 ✅** (chat sessions ≡ first F1 slice — shipped 2026-07-04, W1-001: `chatSession` entity + `registerChatRoutes` CRUD/append (F2 slice) + client session domain `src/client/chat/` (chat state left the god object; +1 context field) + in-panel switcher (新对话/resume/delete) + restart-resume; `<ChatPanel>` extraction rides W3) · **Subject M-A ✅** (auto-switch engine + chip landed post-F4 — subject-kits.md §7; per-kit `detection` tables, pin = `activeKitIds`; only the chip's topbar mount rides the reader-gated batch).
 
 **P1.5 — product table stakes (user-endorsed 2026-07-02, unplanned-gap audit):**
 - **SEARCH-1** 全局搜索/Cmd+K (global-search.md) · **TRUST-1 ✅ 备份轮转 + TRUST-2 ✅ 全库导出/导入** (TRUST-12-001 — rotating sibling-`backups/` zips: 7d+4w+24h-protection, MEM-2-idiom scheduler, pre-destructive-op backups, restore route; streamed `.growte-vault.zip` export + confirm-phrase REPLACE import with pre-import backup + staging swap; UserMenu 数据 entries — hub 数据 section deferred, SettingsHub contended) · **TRUST-3** 回收站 remains (data-trust.md).

@@ -50,6 +50,10 @@ import "../notes/builtinNoteTypes";
 import "../notes/tableViewer";
 import { ChatMessageBody } from "./ChatMessageBody";
 import { GenerationPreview } from "./GenerationPreview";
+// W1 (ai-workspace §2.1): the compact session switcher in the chat panel title row —
+// 新对话 + history (select to resume, delete with confirm). State lives in the chat
+// session domain (src/client/chat); StudyView only passes the bundled api through.
+import { ChatSessionSwitcher } from "../chat/ChatSessionSwitcher";
 // 语音输入 (SPEECH-2): the mic on the chat composer — which is ALSO the slash
 // composer's main text field ("Type / for commands"), so one mount covers both.
 // The confirmed transcript appends to the SAME chatInput state the keyboard edits.
@@ -340,6 +344,7 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
     status,
     draftQuote,
     chatMessages,
+    chatSessions,
     dispatch,
     chatInput,
     setChatInput,
@@ -369,6 +374,8 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
             title={`AI Chat status: ${status}`}
             aria-label={`AI Chat status: ${status}`}
           />
+          {/* W1: session list + 新对话 — the conversation is durable & resumable. */}
+          <ChatSessionSwitcher api={chatSessions} />
           <PanelMenu label="AI Chat actions" align="right">
             {/* Keep non-note utilities out of the main conversation surface. */}
             <details className="patch-fold">

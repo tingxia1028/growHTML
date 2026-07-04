@@ -5,9 +5,20 @@ Use this file as the live status board for implementation work.
 ## Current Status
 
 - Date: 2026-07-04
-- Phase: LAYER-TREE-001 Layer tree model cleanup
+- Phase: W1-001 AI chat session persistence (ai-workspace.md W1 ≡ the first F1 slice)
 - Active task: None
-- Overall status: Complete. Layer organization now renders from `parentId`; preset/custom owned layers hang under Mine, and the Layer panes no longer expose a fixed Stages bucket.
+- Overall status: Complete. Chat conversations are durable + resumable: `chatSession` vault entity, `/api/chat/sessions` CRUD+append (registerChatRoutes), client session domain `src/client/chat/`, in-panel switcher; app restart resumes the last session.
+
+## 2026-07-04 - W1-001 AI chat session persistence (ai-workspace.md W1 — sessions; ≡ the first F1 slice)
+
+- Goal: the chat stops being amnesiac (today `chatMessages` is one ephemeral useState wiped on every source switch). W1 of ai-workspace.md: `chatSession` vault entity + `/api/chat/sessions` CRUD (the F2 register-module slice) + a client session domain (the F1 slice — chat state peels OFF the WorkspaceContext god object) + a compact in-panel session switcher. W2 attachments / W3 synthesis out of scope; **no AI change** (streaming transport untouched).
+- **Entity + store**: `src/core/schema/chatSession.ts` — `recordEnvelopeSchema("chatSession", …)` + `title` (auto from first user msg, renamable) + `messages[{role,content,ts}]` (mirrors the ai ChatMessage + a server `ts` stamp; core never imports src/ai) + `attachments[{sourceId,includeNotes}]` (the §2.1 context set — W1 records the refs, W2 consumes them). New `chatSession` entity kind (`chat_` prefix, ids.ts) · `chat-sessions.jsonl` in `entityFileNames` (auto: vault-open ensure + data-trust export/import counts). Deliberately NOT in `vaultEntitySchema` (privacy — the memory/operation precedent, pinned by test).
+- **Server**: `src/server/services/chatSessions.ts` (envelope assembly, ts stamping, `deriveSessionTitle` 40-char collapse+truncate, summary list newest-first) + `src/server/chatSessions.ts` `registerChatRoutes` — GET list (summaries) / POST create / GET one / PATCH rename / POST `:id/messages` append (title backfill + updatedAt bump) / DELETE; wired in app.ts beside registerAgentRoutes with the shared clock.
+- **Client domain (the F1 measure)**: NEW `src/client/chat/` — `sessionClient.ts` (own transport instance, the dataTrust/speech carve-out idiom; entityClient untouched) · `useChatSessionDomain` (transcript + session list/load/save; FIFO write queue with conversation TOKENS so create→append never race and turns land in the conversation they were sent from; lazy create on first user turn with the active source as attachment ref; localStorage resume incl. an explicit-新对话 NONE sentinel) · `ChatSessionSwitcher.tsx` + scoped `chatSessions.css` + `chatSessionMessages.ts` (i18n seed). WorkspaceContext: `chatMessages` keeps its exact shape (now `chatDomain.messages`), the four chat action seams delegate (`onChatHistory/onAssistantMessage/onAssistantChunk` + NEW `onAssistantDone` in the command registry — the streamed path's completed-turn hook), the source-switch chat WIPE is removed (§5: switch, not wipe), and the god object gains exactly ONE field (`chatSessions`).
+- **UI**: the switcher lives INSIDE the chat panel title row (StudyView) — 新对话 + history list (title · compact time, active highlight, select-to-resume, per-row delete behind window.confirm). PanelMenu popover reused; RightSidebarTabs untouched (contended).
+- Tests (+4 files / +33 tests over baseline): schema roundtrip/defaults/rejections + union-exclusion pin · server CRUD+append+store roundtrip (supertest, pinned advanceable clock) · client domain over MOCKED fetch (resume/stored-vs-recent/sentinel, lazy create FIFO, chunks-never-persist, switch/delete/startNew) · StudyView jsdom (fixture-session history renders; switcher resumes/creates/deletes) · registry streamed/fallback onAssistantDone arms.
+- Gates: `npm run check` 0 errors · `npx vitest run` **178 files / 1766 tests all green** · `npm run build` ✓ · `npx playwright test e2e/streaming-chat.spec.ts` **2 passed** (ephemeral-vault harness).
+- Deferred (recorded in ai-workspace.md §3): the full `<ChatPanel>` extraction from StudyView (rides W3's workspace page); rename UI (PATCH exists server+client-IO side); direct-transport (mobile X2) parity for the chat lane.
 
 ## 2026-07-04 - E2E-DEBT-001 e2e 债务清偿 — ephemeral-vault harness + full web suite green
 

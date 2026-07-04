@@ -60,6 +60,10 @@ import { setActiveTheme as applyActiveTheme, THEME_STORAGE_KEY } from "../theme/
 import { renderAnnotationNotePreview } from "./annotationNotePreview";
 import { t } from "../i18n";
 import { conceptMessages } from "./conceptMessages";
+// W1 (ai-workspace §2.1/§2.2): the chat-session domain module — the first F1 slice.
+// Transcript + session list/load/save live in src/client/chat; this provider only
+// delegates (chatMessages keeps its exact shape; the switcher gets ONE bundled api).
+import { useChatSessionDomain, type ChatSessionsApi } from "../chat/useChatSessions";
 
 export type Status = "idle" | "loading" | "saving" | "error";
 
@@ -323,6 +327,9 @@ export type WorkspaceContextValue = {
 
   // —— study panel (chat / notes / patches / terminal) ——
   chatMessages: ChatMessage[];
+  /** W1 (ai-workspace §2.1): the chat panel's session surface — list/new/resume/
+      delete bundled as ONE field; the session domain itself lives in src/client/chat. */
+  chatSessions: ChatSessionsApi;
   composerMode: "ask" | "note";
   setComposerMode(mode: "ask" | "note"): void;
   noteContentType: string;
@@ -539,7 +546,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // string default doesn't seed it.
   const [noteContent, setNoteContent] = useState<unknown>(undefined);
   const [composerMode, setComposerMode] = useState<"ask" | "note">("ask");
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  // W1 (ai-workspace §2.1/§2.2): the chat transcript + session state moved into the
+  // chat-session domain module (the first F1 slice off this provider). The domain
+  // persists turns as they land and resumes the last session on mount; the active
+  // source rides new sessions as their §2.1 attachment context ref.
+  const chatDomain = useChatSessionDomain({ activeSourceId });
+  const chatMessages = chatDomain.messages;
   const [chatInput, setChatInput] = useState("");
   const [showTerminal, setShowTerminal] = useState(false);
   const [patchHtml, setPatchHtml] = useState("");
@@ -799,7 +811,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setSourceLayers(layersResponse.layers);
         focus.clear();
         setPatchHtml("");
-        setChatMessages([]);
+        // W1: the chat SESSION survives a source switch (ai-workspace §5 — switch/
+        // attach, not wipe); only the draft input resets with the reader.
         setChatInput("");
         setStatus("idle");
       } catch (err) {
@@ -1027,19 +1040,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         // of auto-saving. The host renders it and only persists on Save.
         onGenerated: (draft) => setPendingDraft(draft),
         onPatchCreated: () => void refreshAnnotations(),
-        onChatHistory: (history) => setChatMessages(history),
-        onAssistantMessage: (message) => setChatMessages((items) => [...items, message]),
-        // Progressive streaming: append the delta to the trailing assistant message,
-        // or start a new one if the last message is the user's prompt. The accumulated
-        // text equals the final reply, so no separate finalize step is needed.
-        onAssistantChunk: (delta) =>
-          setChatMessages((items) => {
-            const last = items[items.length - 1];
-            if (last && last.role === "assistant") {
-              return [...items.slice(0, -1), { ...last, content: last.content + delta }];
-            }
-            return [...items, { role: "assistant", content: delta }];
-          }),
+        // W1 chat-session seams (src/client/chat/useChatSessions): the domain module
+        // updates the visible transcript AND persists the turns — user message on
+        // send, assistant message on reply (non-streamed) or stream end (Done);
+        // chunks stay render-only so no partial reply is ever written.
+        onChatHistory: (history) => chatDomain.recordHistory(history),
+        onAssistantMessage: (message) => chatDomain.appendAssistant(message),
+        onAssistantChunk: (delta) => chatDomain.applyChunk(delta),
+        onAssistantDone: (message) => chatDomain.persistAssistant(message),
         // A new concept / changed link / new-or-deleted relation: bump the token so
         // concept views re-fetch, and refresh the source's notes so a freshly linked
         // note's conceptIds show up in the study panel too.
@@ -1068,7 +1076,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
       }
     }),
-    [focus, activeSourceId, chatMessages, buildChatContext, refreshAnnotations]
+    [focus, activeSourceId, chatMessages, chatDomain, buildChatContext, refreshAnnotations]
   );
 
   const dispatch = useCallback(
@@ -1662,6 +1670,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       importFromUrl,
       openLiveUrl,
       chatMessages,
+      chatSessions: chatDomain.sessions,
       composerMode,
       setComposerMode,
       noteContentType,
@@ -1762,6 +1771,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       importFromUrl,
       openLiveUrl,
       chatMessages,
+      chatDomain.sessions,
       composerMode,
       noteContentType,
       changeNoteContentType,

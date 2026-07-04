@@ -24,6 +24,7 @@ export const assetIdSchema = idSchema("asset");
 export const layerIdSchema = idSchema("layer");
 export const operationIdSchema = idSchema("operation");
 export const memoryEventIdSchema = idSchema("memory");
+export const chatSessionIdSchema = idSchema("chatSession");
 
 export function recordEnvelopeSchema<TType extends string>(type: TType, id: z.ZodString) {
   return z.object({

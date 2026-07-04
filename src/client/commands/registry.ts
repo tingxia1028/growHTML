@@ -54,6 +54,12 @@ export type CommandActions = {
   onAssistantMessage?(message: ChatMessage): void;
   /** A streamed delta of the assistant's reply (progressive render). */
   onAssistantChunk?(delta: string): void;
+  /**
+   * A STREAMED reply completed — carries the final assistant message. The visible
+   * state already holds the accumulated chunks (onAssistantChunk), so hosts use this
+   * to PERSIST the finished turn (chat-session W1), not to append it again.
+   */
+  onAssistantDone?(message: ChatMessage): void;
   /** A concept was created or a note↔concept link changed. */
   onConceptChanged?(concept?: ConceptRecord): void;
   /**
@@ -207,6 +213,9 @@ const askAi: Command = {
         }
       );
       if (!streamed) ctx.actions.onAssistantMessage?.(message);
+      // Chunks already built the visible reply; hand hosts the COMPLETED turn so
+      // they can persist it (ai-workspace W1 — assistant message on stream end).
+      else ctx.actions.onAssistantDone?.(message);
       return;
     }
     const { message } = await ctx.client.chat({ messages: history, context: ctx.chatContext });

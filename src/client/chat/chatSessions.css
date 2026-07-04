@@ -1,0 +1,75 @@
+/* Chat-session switcher (ai-workspace W1) — scoped styles for the session surface
+   inside the chat panel title row (styles.css is untouched; contended). Uses the
+   shared --sv-* tokens so every theme skins these for free. */
+
+.chat-session-switcher {
+  display: inline-flex;
+  margin-left: auto;
+}
+
+/* The title row already lays out icon+text+status; keep the two menus adjacent. */
+.chat-panel-title .chat-session-switcher + .panel-menu {
+  margin-left: 4px;
+}
+
+.chat-session-list {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.chat-session-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.chat-session-row .chat-session-open {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.chat-session-row.active .chat-session-title {
+  color: var(--sv-accent);
+}
+
+.chat-session-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.chat-session-time {
+  flex: 0 0 auto;
+  color: var(--sv-text-muted);
+  font-size: 11px;
+}
+
+.chat-session-delete {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: none;
+  border-radius: var(--sv-radius-sm, 6px);
+  background: transparent;
+  color: var(--sv-text-muted);
+  cursor: pointer;
+}
+
+.chat-session-delete:hover {
+  background: var(--sv-surface-muted);
+  color: var(--sv-danger, #b91c1c);
+}
+
+.chat-session-empty {
+  padding: 6px 10px;
+  color: var(--sv-text-muted);
+  font-size: 12px;
+}
