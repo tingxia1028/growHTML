@@ -687,7 +687,10 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
   app.get("/api/search", async (req, res, next) => {
     try {
       const q = typeof req.query.q === "string" ? req.query.q : "";
-      const hits = await searchService.searchVault({ vault, sealed }, { q });
+      // SEARCH-2 filters (additive; absent params ⇒ SEARCH-1 path). Express already
+      // parses repeated/comma params into string|string[]; parseSearchFilters normalizes.
+      const filters = searchService.parseSearchFilters((name) => req.query[name] as string | string[] | undefined);
+      const hits = await searchService.searchVault({ vault, sealed }, { q, filters });
       res.json({ hits });
     } catch (error) {
       if (!handleServiceError(res, error)) next(error);

@@ -211,6 +211,87 @@ describe("searchVault — families, rank, cap", () => {
   });
 });
 
+describe("searchVault — SEARCH-2 filters (additive; empty filter = SEARCH-1 parity)", () => {
+  it("no-filter path is byte-identical to omitting the filters field", async () => {
+    const source = await seedSource("浮力实验讲义", "2026-06-01T00:00:00.000Z");
+    await seedNote({ sourceId: source.id, content: "浮力定律与压强", updatedAt: "2026-06-11T00:00:00.000Z" });
+    const withoutField = await searchVault({ vault, sealed }, { q: "浮力" });
+    const withEmpty = await searchVault({ vault, sealed }, { q: "浮力", filters: {} });
+    expect(withEmpty).toEqual(withoutField);
+  });
+
+  it("family filter narrows to one family", async () => {
+    const source = await seedSource("浮力实验讲义", "2026-06-01T00:00:00.000Z");
+    await seedNote({ sourceId: source.id, content: "浮力定律", updatedAt: "2026-06-11T00:00:00.000Z" });
+    const onlyNotes = await searchVault({ vault, sealed }, { q: "浮力", filters: { families: ["note"] } });
+    expect(onlyNotes.every((hit) => hit.family === "note")).toBe(true);
+    const onlySources = await searchVault({ vault, sealed }, { q: "浮力", filters: { families: ["source"] } });
+    expect(onlySources.every((hit) => hit.family === "source")).toBe(true);
+  });
+
+  it("note contentType filter narrows to allowed types", async () => {
+    const md = await seedNote({ content: "浮力笔记", contentType: "markdown", updatedAt: "2026-06-10T00:00:00.000Z" });
+    await seedNote({
+      contentType: "quiz",
+      content: { question: "浮力是什么?", options: ["A", "B"], answerIndex: 0 },
+      updatedAt: "2026-06-11T00:00:00.000Z"
+    });
+    const hits = await searchVault({ vault, sealed }, { q: "浮力", filters: { contentType: ["markdown"] } });
+    expect(noteHits(hits).map((hit) => hit.id)).toEqual([md.id]);
+  });
+
+  it("sourceType filter narrows source hits", async () => {
+    await seedSource("浮力网页", "2026-06-02T00:00:00.000Z"); // html (seedSource default)
+    const hits = await searchVault({ vault, sealed }, { q: "浮力", filters: { sourceType: ["pdf"] } });
+    expect(sourceHits(hits)).toEqual([]); // none are pdf
+    const htmlHits = await searchVault({ vault, sealed }, { q: "浮力", filters: { sourceType: ["html"] } });
+    expect(sourceHits(htmlHits).length).toBe(1);
+  });
+
+  it("sourceId filter scopes note hits to that source", async () => {
+    const s1 = await seedSource("讲义一", "2026-06-01T00:00:00.000Z");
+    const s2 = await seedSource("讲义二", "2026-06-02T00:00:00.000Z");
+    const n1 = await seedNote({ sourceId: s1.id, content: "浮力A", updatedAt: "2026-06-10T00:00:00.000Z" });
+    await seedNote({ sourceId: s2.id, content: "浮力B", updatedAt: "2026-06-11T00:00:00.000Z" });
+    const hits = await searchVault({ vault, sealed }, { q: "浮力", filters: { sourceId: s1.id } });
+    expect(noteHits(hits).map((hit) => hit.id)).toEqual([n1.id]);
+  });
+
+  it("date range filter bounds updatedAt (inclusive)", async () => {
+    const older = await seedNote({ content: "浮力旧", updatedAt: "2026-05-01T00:00:00.000Z" });
+    const newer = await seedNote({ content: "浮力新", updatedAt: "2026-07-01T00:00:00.000Z" });
+    const afterHits = await searchVault({ vault, sealed }, { q: "浮力", filters: { updatedAfter: "2026-06-01T00:00:00.000Z" } });
+    expect(noteHits(afterHits).map((hit) => hit.id)).toEqual([newer.id]);
+    const beforeHits = await searchVault({ vault, sealed }, { q: "浮力", filters: { updatedBefore: "2026-06-01T00:00:00.000Z" } });
+    expect(noteHits(beforeHits).map((hit) => hit.id)).toEqual([older.id]);
+  });
+});
+
+describe("searchVault — SEARCH-2 pinyin + fuzzy (additive, below every literal tier)", () => {
+  it("finds a CJK source title by full pinyin and by initials", async () => {
+    const source = await seedSource("浮力", "2026-06-01T00:00:00.000Z");
+    const full = await searchVault({ vault, sealed }, { q: "fuli" });
+    expect(sourceHits(full).map((hit) => hit.id)).toEqual([source.id]);
+    const initials = await searchVault({ vault, sealed }, { q: "fl" });
+    expect(sourceHits(initials).map((hit) => hit.id)).toEqual([source.id]);
+  });
+
+  it("finds a CJK note by pinyin of its search text", async () => {
+    const note = await seedNote({ content: "浮力定律", updatedAt: "2026-06-10T00:00:00.000Z" });
+    const hits = await searchVault({ vault, sealed }, { q: "fulidingl" });
+    expect(noteHits(hits).map((hit) => hit.id)).toEqual([note.id]);
+  });
+
+  it("a literal English hit still outranks a fuzzy typo hit in the same family", async () => {
+    const exact = await seedSource("buoyancy", "2026-06-02T00:00:00.000Z"); // literal
+    const typo = await seedSource("buoyanci lab", "2026-06-03T00:00:00.000Z"); // fuzzy only
+    const hits = await searchVault({ vault, sealed }, { q: "buoyancy" });
+    const ids = sourceHits(hits).map((hit) => hit.id);
+    expect(ids[0]).toBe(exact.id);
+    expect(ids).toContain(typo.id);
+  });
+});
+
 describe("direct-transport parity (design §2 — mobile searches identically)", () => {
   it("GET /api/search over the direct adapter returns the same hits shape", async () => {
     const source = await seedSource("浮力实验讲义", "2026-06-01T00:00:00.000Z");
@@ -225,5 +306,18 @@ describe("direct-transport parity (design §2 — mobile searches identically)",
     const service = await searchVault({ vault, sealed }, { q: "浮力" });
     expect(direct.hits).toEqual(service);
     expect((direct.hits as { id: string }[]).map((hit) => hit.id)).toEqual([note.id, source.id]);
+  });
+
+  it("SEARCH-2 filter params travel over the transport identically (family=source)", async () => {
+    const source = await seedSource("浮力实验讲义", "2026-06-01T00:00:00.000Z");
+    await seedNote({ sourceId: source.id, content: "浮力定律", updatedAt: "2026-06-11T00:00:00.000Z" });
+    const transport = createDirectTransport({ vault, sealed });
+    const direct = await transport.request<{ hits: unknown }>(
+      "GET",
+      "/api/search?q=%E6%B5%AE%E5%8A%9B&family=source"
+    );
+    const service = await searchVault({ vault, sealed }, { q: "浮力", filters: { families: ["source"] } });
+    expect(direct.hits).toEqual(service);
+    expect((direct.hits as { family: string }[]).every((hit) => hit.family === "source")).toBe(true);
   });
 });

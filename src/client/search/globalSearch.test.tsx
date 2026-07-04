@@ -13,8 +13,18 @@ import { setLocale } from "../i18n";
 import type { SearchCommandEntry } from "./commandEntries";
 import { GlobalSearchPalette, isSearchHotkey, type GlobalSearchDeps } from "./GlobalSearch";
 import { SEARCH_DEBOUNCE_MS, type SearchHitDto } from "./searchEngine";
+import type { RecentsStore } from "./searchRecents";
 
 type AnchorFixture = { id: string };
+
+/** An in-memory RecentsStore so tests never touch real localStorage. */
+function memoryRecentsStore(): RecentsStore {
+  const map = new Map<string, string>();
+  return {
+    getItem: (key) => map.get(key) ?? null,
+    setItem: (key, value) => void map.set(key, value)
+  };
+}
 
 const FIXTURE_HITS: SearchHitDto[] = [
   {
@@ -67,7 +77,8 @@ function makeDeps(hits: SearchHitDto[] = FIXTURE_HITS) {
     focusNote: vi.fn(),
     openSource: vi.fn(),
     commands,
-    fetchHits: vi.fn(async () => hits)
+    fetchHits: vi.fn(async (_q: string) => hits),
+    recentsStore: memoryRecentsStore()
   };
   return { deps, runCommand };
 }
@@ -169,7 +180,7 @@ describe("GlobalSearchPalette — query → grouped results", () => {
     type("浮力");
     await settle();
 
-    expect(deps.fetchHits).toHaveBeenCalledWith("浮力");
+    expect(deps.fetchHits).toHaveBeenCalledWith("浮力", { families: [], contentTypes: [] });
     expect(groupTitles()).toEqual(["笔记", "文档"]);
     expect(document.querySelector('[data-row-id="note_active"]')).not.toBeNull();
     expect(document.querySelector('[data-row-id="src_two"]')).not.toBeNull();
@@ -267,6 +278,75 @@ describe("GlobalSearchPalette — Enter dispatches per family", () => {
   });
 });
 
+const filterButtons = () => Array.from(document.querySelectorAll<HTMLButtonElement>(".global-search-filter"));
+const clickFilter = (label: string) => {
+  const button = filterButtons().find((el) => el.textContent === label)!;
+  act(() => button.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true })));
+};
+const recentRows = () => Array.from(document.querySelectorAll<HTMLElement>("[data-recent]"));
+
+describe("GlobalSearchPalette — SEARCH-2 filters (design §3)", () => {
+  it("empty filter fetches with the SEARCH-1-parity shape; a family chip narrows the fetch + hides commands", async () => {
+    const { deps } = makeDeps();
+    mount(deps);
+    openPalette();
+    // The filter bar renders: 全部 · 笔记 · 文档.
+    expect(filterButtons().map((el) => el.textContent)).toEqual(["全部", "笔记", "文档"]);
+    // Empty (全部) is active by default; the command group shows.
+    expect(groupTitles()).toEqual(["命令"]);
+
+    clickFilter("文档"); // narrow to sources only
+    type("浮力");
+    await settle();
+    // Fetch carried the family filter (the server does the actual narrowing); the
+    // command group is hidden client-side while a specific family is chosen.
+    expect(deps.fetchHits).toHaveBeenLastCalledWith("浮力", { families: ["source"], contentTypes: [] });
+    expect(groupTitles()).not.toContain("命令");
+
+    clickFilter("全部"); // reset to neutral
+    await settle();
+    expect(deps.fetchHits).toHaveBeenLastCalledWith("浮力", { families: [], contentTypes: [] });
+  });
+});
+
+describe("GlobalSearchPalette — SEARCH-2 recents (design §3)", () => {
+  it("a settled query is recorded and offered on the next empty open; picking it re-runs it", async () => {
+    const store = memoryRecentsStore();
+    const { deps } = makeDeps();
+    deps.recentsStore = store;
+    mount(deps);
+
+    openPalette();
+    type("浮力");
+    await settle(); // records "浮力"
+    pressWindow("Escape");
+
+    openPalette(); // empty query → recents surface
+    expect(document.querySelector(".global-search-group[data-family='recent']")).not.toBeNull();
+    expect(recentRows().map((el) => el.getAttribute("data-recent"))).toContain("浮力");
+
+    // Picking a recent fills the input and re-runs the search.
+    act(() => recentRows()[0].dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true })));
+    expect(paletteInput()?.value).toBe("浮力");
+    await settle();
+    expect(deps.fetchHits).toHaveBeenLastCalledWith("浮力", { families: [], contentTypes: [] });
+  });
+
+  it("clear empties the recents list", async () => {
+    const { deps } = makeDeps();
+    mount(deps);
+    openPalette();
+    type("压强");
+    await settle();
+    pressWindow("Escape");
+    openPalette();
+    expect(recentRows().length).toBeGreaterThan(0);
+    const clear = document.querySelector<HTMLButtonElement>(".global-search-recents-clear")!;
+    act(() => clear.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true })));
+    expect(recentRows().length).toBe(0);
+  });
+});
+
 describe("GlobalSearchPalette — i18n", () => {
   it("the new strings flip with the locale (headers + placeholder + empty state)", async () => {
     setLocale("en");
@@ -275,6 +355,7 @@ describe("GlobalSearchPalette — i18n", () => {
     openPalette();
     expect(paletteInput()?.placeholder).toBe("Search notes, documents, commands…");
     expect(groupTitles()).toEqual(["Commands"]);
+    expect(filterButtons().map((el) => el.textContent)).toEqual(["All", "Notes", "Documents"]);
     type("浮力");
     await settle();
     expect(groupTitles()).toEqual(["Notes", "Documents"]);

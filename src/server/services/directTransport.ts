@@ -345,8 +345,13 @@ const routes: DirectRoute[] = [
   route({
     method: "GET",
     pattern: "/api/search",
+    // SEARCH-2 filters travel over the SAME query params (parity with GET /api/search):
+    // getAll → the shared parser, so a repeated `family` / comma `type` behaves identically.
     call: async ({ deps, query }) => ({
-      hits: await searchService.searchVault(deps, { q: query.get("q") ?? "" })
+      hits: await searchService.searchVault(deps, {
+        q: query.get("q") ?? "",
+        filters: searchService.parseSearchFilters((name) => query.getAll(name))
+      })
     })
   }),
 

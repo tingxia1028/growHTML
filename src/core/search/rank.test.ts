@@ -8,6 +8,7 @@ import {
   matchText,
   rankMatches,
   RANK_EXACT,
+  RANK_FUZZY,
   RANK_PREFIX,
   RANK_SUBSTRING,
   RANK_WORD,
@@ -44,6 +45,38 @@ describe("matchText — tiers", () => {
 
   it("reports the first occurrence index (for snippets)", () => {
     expect(matchText("力", "浮力定律的力学")?.index).toBe(1);
+  });
+});
+
+describe("matchText — the fuzzy tier (SEARCH-2, additive, below substring)", () => {
+  it("a literal hit ALWAYS beats fuzzy: the four SEARCH-1 tiers are untouched", () => {
+    // Every literal tier still ranks above RANK_FUZZY, so SEARCH-1 order is byte-stable.
+    expect(matchText("buoyancy", "buoyancy")?.rank).toBe(RANK_EXACT);
+    expect(matchText("ancy", "buoyancy lab")?.rank).toBe(RANK_SUBSTRING);
+    expect(RANK_SUBSTRING < RANK_FUZZY).toBe(true);
+  });
+
+  it("tolerates a transposition/typo via bounded edit distance", () => {
+    // "buoancy" (dropped y) and "buoyanci" (final swap) have no substring in the text.
+    expect(matchText("buoancy", "buoyancy")?.rank).toBe(RANK_FUZZY);
+    expect(matchText("buoyanci", "the buoyancy lab")?.rank).toBe(RANK_FUZZY);
+  });
+
+  it("matches a subsequence (skipped letters) as fuzzy", () => {
+    expect(matchText("bync", "buoyancy")?.rank).toBe(RANK_FUZZY);
+    expect(matchText("gsrch", "global search")?.rank).toBe(RANK_FUZZY);
+  });
+
+  it("does NOT fuzz too-short queries, non-matches, or CJK (design §2)", () => {
+    expect(matchText("bo", "buoyancy")).toBeNull(); // < 3 chars
+    expect(matchText("zzzz", "buoyancy")).toBeNull(); // unrelated
+    expect(matchText("浮定", "浮力定律")).toBeNull(); // CJK stays substring-only
+  });
+
+  it("reports a word-anchored index for the snippet", () => {
+    const match = matchText("buoancy", "the buoyancy lab");
+    expect(match?.rank).toBe(RANK_FUZZY);
+    expect(match?.index).toBe(4); // start of "buoyancy"
   });
 });
 

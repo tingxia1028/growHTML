@@ -12,6 +12,14 @@ export const searchMessages = defineMessages({
   empty: { zh: "没有匹配结果", en: "No results" },
   searching: { zh: "搜索中…", en: "Searching…" },
 
+  // —— SEARCH-2 filters (design §3 — per-family narrowing) ——
+  filterAll: { zh: "全部", en: "All" },
+  filterLabel: { zh: "筛选", en: "Filter" },
+
+  // —— SEARCH-2 recent searches (design §3) ——
+  groupRecents: { zh: "最近搜索", en: "Recent searches" },
+  clearRecents: { zh: "清除", en: "Clear" },
+
   // —— the three result families (design §1) ——
   groupNotes: { zh: "笔记", en: "Notes" },
   groupSources: { zh: "文档", en: "Documents" },

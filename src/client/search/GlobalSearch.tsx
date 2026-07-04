@@ -36,6 +36,20 @@ import {
   type PaletteRow,
   type SearchHitDto
 } from "./searchEngine";
+import {
+  EMPTY_FILTERS,
+  isEmptyFilter,
+  toggleFamily,
+  type SearchFamilyFilter,
+  type SearchFilterState
+} from "./searchFilters";
+import {
+  clearRecentSearches,
+  defaultRecentsStore,
+  readRecentSearches,
+  recordRecentSearch,
+  type RecentsStore
+} from "./searchRecents";
 import { searchMessages } from "./searchMessages";
 import "./globalSearch.css";
 
@@ -58,7 +72,10 @@ export type GlobalSearchDeps<A extends { id: string } = { id: string }> = {
   /** Open a source in the reader. */
   openSource(sourceId: string): void;
   commands: readonly SearchCommandEntry[];
-  fetchHits(q: string): Promise<SearchHitDto[]>;
+  /** Query the vault with the active SEARCH-2 filters (empty filter = SEARCH-1 URL). */
+  fetchHits(q: string, filters: SearchFilterState): Promise<SearchHitDto[]>;
+  /** Recent-search persistence (injected so jsdom drives an in-memory store). */
+  recentsStore?: RecentsStore;
 };
 
 function groupTitle(family: PaletteRow["family"]): string {
@@ -88,6 +105,8 @@ export function GlobalSearchPalette<A extends { id: string }>({ deps }: { deps: 
   const [hits, setHits] = useState<SearchHitDto[]>([]);
   const [searching, setSearching] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [filters, setFilters] = useState<SearchFilterState>(EMPTY_FILTERS);
+  const [recents, setRecents] = useState<string[]>([]);
   const activeRef = useRef<HTMLLIElement | null>(null);
   // Monotonic token so a stale (slower) fetch can never overwrite a newer one.
   const seqRef = useRef(0);
@@ -109,16 +128,22 @@ export function GlobalSearchPalette<A extends { id: string }>({ deps }: { deps: 
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // Fresh palette every open.
+  // Fresh palette on EVERY open/close edge — reset the query/hits/filters and (re)load
+  // the recent-search list so a reopened palette is blank (design §3: recents lead the
+  // empty state). Resetting on BOTH edges (not just open) guarantees no stale query
+  // survives a close → reopen, independent of render timing.
+  const { recentsStore } = deps;
   useEffect(() => {
-    if (!open) return;
     setQuery("");
     setHits([]);
     setSearching(false);
     setActiveIndex(0);
-  }, [open]);
+    setFilters(EMPTY_FILTERS);
+    if (open) setRecents(readRecentSearches(recentsStore));
+  }, [open, recentsStore]);
 
-  // Debounced server query (design §2). Empty query → no fetch (commands still show).
+  // Debounced server query (design §2), re-fired when the filters change. Empty query →
+  // no fetch (commands + recents still show). A settled non-empty query records a recent.
   const { fetchHits } = deps;
   useEffect(() => {
     if (!open) return;
@@ -131,17 +156,25 @@ export function GlobalSearchPalette<A extends { id: string }>({ deps }: { deps: 
     }
     setSearching(true);
     const timer = setTimeout(() => {
-      void fetchHits(q).then((results) => {
+      void fetchHits(q, filters).then((results) => {
         if (seqRef.current !== seq) return;
         setHits(results);
         setSearching(false);
         setActiveIndex(0);
+        setRecents(recordRecentSearch(recentsStore, q));
       });
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [open, query, fetchHits]);
+  }, [open, query, filters, fetchHits, recentsStore]);
 
-  const commands = useMemo(() => rankCommandEntries(query, deps.commands), [query, deps.commands]);
+  // Commands are a CLIENT-only family (not a server filter). When the user narrows to
+  // specific server families (笔记/文档), the command group hides too — the family bar
+  // then reads as "show only these". A neutral filter keeps commands (the nav menu).
+  const commandsAllowed = filters.families.length === 0;
+  const commands = useMemo(
+    () => (commandsAllowed ? rankCommandEntries(query, deps.commands) : []),
+    [commandsAllowed, query, deps.commands]
+  );
   const { groups, rows } = useMemo(() => buildPaletteGroups(hits, commands), [hits, commands]);
 
   // Keep the active row valid as the row set changes, and visible as arrows move it
@@ -193,11 +226,20 @@ export function GlobalSearchPalette<A extends { id: string }>({ deps }: { deps: 
 
   if (!open || typeof document === "undefined") return null;
 
-  const emptyText = !query.trim()
+  const blankQuery = !query.trim();
+  // The empty state shows recents (a one-click redo) when we have any; otherwise the hint.
+  const showRecents = blankQuery && recents.length > 0;
+  const emptyText = blankQuery
     ? t(searchMessages.hint)
     : searching
       ? t(searchMessages.searching)
       : t(searchMessages.empty);
+
+  const familyFilters: { family: SearchFamilyFilter; label: string }[] = [
+    { family: "note", label: t(searchMessages.groupNotes) },
+    { family: "source", label: t(searchMessages.groupSources) }
+  ];
+  const onToggleFamily = (family: SearchFamilyFilter) => setFilters((prev) => toggleFamily(prev, family));
 
   return createPortal(
     <div
@@ -224,11 +266,87 @@ export function GlobalSearchPalette<A extends { id: string }>({ deps }: { deps: 
             }
           }}
         />
+        {/* SEARCH-2 family filter bar (design §3). "全部" = the neutral (empty) filter;
+            each chip toggles a server family. mousedown so the input keeps focus. */}
+        <div className="global-search-filters" role="group" aria-label={t(searchMessages.filterLabel)}>
+          <button
+            type="button"
+            className={`global-search-filter${isEmptyFilter(filters) ? " active" : ""}`}
+            aria-pressed={isEmptyFilter(filters)}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              setFilters(EMPTY_FILTERS);
+            }}
+          >
+            {t(searchMessages.filterAll)}
+          </button>
+          {familyFilters.map(({ family, label }) => {
+            const on = filters.families.includes(family);
+            return (
+              <button
+                key={family}
+                type="button"
+                className={`global-search-filter${on ? " active" : ""}`}
+                aria-pressed={on}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  onToggleFamily(family);
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
         <div className="global-search-body">
+          {/* Recents lead the empty state (design §3) — a one-click query redo. They
+              coexist ABOVE the command nav menu on a blank query; a typed query hides them. */}
+          {showRecents ? (
+            <section className="global-search-group" data-family="recent">
+              <h2 className="global-search-group-title">
+                {t(searchMessages.groupRecents)}
+                <button
+                  type="button"
+                  className="global-search-recents-clear"
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    setRecents(clearRecentSearches(recentsStore));
+                  }}
+                >
+                  {t(searchMessages.clearRecents)}
+                </button>
+              </h2>
+              <ul className="global-search-list" role="listbox" aria-label={t(searchMessages.groupRecents)}>
+                {recents.map((recent) => (
+                  <li
+                    key={recent}
+                    className="global-search-row"
+                    role="option"
+                    aria-selected={false}
+                    data-recent={recent}
+                    // Re-run the recent query (fills the input; the fetch effect fires).
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      setQuery(recent);
+                    }}
+                  >
+                    <span className="global-search-row-icon" aria-hidden="true">
+                      ↩
+                    </span>
+                    <span className="global-search-row-main">
+                      <span className="global-search-row-title">{recent}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
           {rows.length === 0 ? (
-            <div className="global-search-empty" role="status">
-              {emptyText}
-            </div>
+            showRecents ? null : (
+              <div className="global-search-empty" role="status">
+                {emptyText}
+              </div>
+            )
           ) : (
             groups.map((group) => (
               <section className="global-search-group" key={group.family} data-family={group.family}>
@@ -304,7 +422,8 @@ export function GlobalSearch() {
         focusNote: (noteId: string) => ctx.focus.setFocus({ type: "note", noteId }),
         openSource: ctx.setActiveSourceId,
         commands,
-        fetchHits: fetchSearchHits
+        fetchHits: fetchSearchHits,
+        recentsStore: defaultRecentsStore()
       }}
     />
   );

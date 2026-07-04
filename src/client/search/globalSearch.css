@@ -37,6 +37,36 @@
   outline: none;
 }
 
+/* SEARCH-2 family filter bar — a thin chip row under the input. */
+.global-search-filters {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--sv-border);
+  flex-wrap: wrap;
+}
+
+.global-search-filter {
+  padding: 3px 10px;
+  border: 1px solid var(--sv-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--sv-text-muted, #7a8699);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.global-search-filter:hover {
+  border-color: var(--sv-accent, #2563eb);
+}
+
+.global-search-filter.active {
+  border-color: var(--sv-accent, #2563eb);
+  background: var(--sv-surface-muted, #eef2f8);
+  color: var(--sv-accent, #2563eb);
+  font-weight: 600;
+}
+
 .global-search-body {
   flex: 1;
   min-height: 0;
@@ -51,11 +81,24 @@
 }
 
 .global-search-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin: 4px 14px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--sv-text-muted, #7a8699);
+}
+
+/* SEARCH-2 recents "clear" affordance in the group header. */
+.global-search-recents-clear {
+  border: none;
+  background: transparent;
+  color: var(--sv-accent, #2563eb);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
 }
 
 .global-search-list {
