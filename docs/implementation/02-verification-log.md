@@ -737,3 +737,8 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 | 2026-07-05 | F-1-001 | e2e/multi-doc.spec.ts | 两 iframe 面板 hide-all/字形开关 PER-PANE;单面板 note-persist-export hide-all 回归 | 5 passed |
 | 2026-07-05 | F-1-001 | npm run check / build | tsc 0 · build 0 | Passed |
 | 2026-07-05 | F-1-001 | npx vitest run(全量) | 224 文件 / 2386 用例(基线 224/2382 + 4) | Passed |
+| 2026-07-05 | W3-001 | synthesizePrompt.test.ts | transcript+excerpts present;"Attached: N" 标记present@非空/absent@零;over-cap 丢最旧保末条 user | Passed(10) |
+| 2026-07-05 | W3-001 | synthesis.test.ts | 建 authored markdown 源(content==sample,headings 渲染);contentType "";空 title/markdown throw;path 结果→400 | Passed(5) |
+| 2026-07-05 | W3-001 | app.ts route + registry chat.synthesize | POST 返回新源 id;命令转发 transcript+context+fires onSourceSynthesized;availability false@空 | Passed(2+3) |
+| 2026-07-05 | W3-001 | e2e/chat-synthesize.spec.ts | 挂源→点生成文档→新 markdown 源出现+开面板+渲染带标题 | Passed |
+| 2026-07-05 | W3-001 | npx vitest run(全量) | 226 文件 / 2406 用例(基线 224/2386 + 20) | Passed |

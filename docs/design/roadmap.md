@@ -10,7 +10,7 @@ One dependency-ordered plan over the six design docs written this cycle. Purpose
 | `note-presentation-unified.md` | In-reader note surface D1–D12 | N1 · N2 · **N3 ✅**(N3-001, D6 草稿芯片)· N4 · **N5 ✅** · **N6 ✅**(N6-001, D12 看板) |
 | `subject-kits.md` | 11 subject types × 5 kits + auto-switch | **M-A ✅ · M-B ✅ · M-C ✅**(M-C-001 — 全 11 类型 + 5 kit) |
 | `multidoc-and-concepts.md` | Multi-pane docs + cross-doc notes + concept graph | **P-A1 ✅ · P-A2 ✅**(F1-001 — 多文档并排,方案+实现双审)· P-B · P-C1 · **P-C2 ✅**(关联图 CG-1/2/3) |
-| `ai-workspace.md` | AI chat sessions + file/note attachments + doc synthesis | **W1 ✅ · W2 ✅**(W2-001, 附件+bundle+ChatContext.sources[]+token 预算)· W3(合成→新文档;多选/剪贴板挂载) |
+| `ai-workspace.md` | AI chat sessions + file/note attachments + doc synthesis | **W1 ✅ · W2 ✅ · W3 ✅**(W3-001, chat→合成 authored markdown 新源+TOC+新面板打开)— AI workspace 全线完成(工作区页/剪贴板挂载 defer) |
 | `multi-provider-ai-agent.md` (+§9) | BYOK 多厂商 + `cli-agent` kind (claude/codex 官方 SDK) + agent loop | A1 · A2 · A3 · A4 |
 | `managed-ai-credits.md` (+§10) | 托管网关 + 积分 + 月费/AI Group 档位 | G-A · G-B · G-C (external-gated) |
 | `multi-platform.md` | macOS/Android/iOS + 打包发布流水线 (Capacitor 共享核心) | X0 · X1 ✅(Win) · X2 · X3 · X4 |
