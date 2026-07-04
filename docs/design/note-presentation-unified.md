@@ -301,6 +301,14 @@ i.e. PDF pages in V1.
 
 ## 6. D6 — AI answer → note chip (auto-materialize with anchor context)
 
+**Status: ✅ shipped as N3-001 (2026-07-05).** `status:"draft"` (additive, zero-migration) +
+`materializeAnchor` (createNote, not parkDraft) + `DraftNoteToast` undo (note.delete, skipConfirm).
+Auto-materialize is OPT-IN via an additive `GeneratedDraft.autoMaterialize` flag (default off) — wired
+on the anchor-context chat-reply path; 试一下/operation.run/kit-buttons/note.generate-block/slash keep the
+D5 preview loop UNCHANGED. Draft = a `.sv-note-draft` WRAPPER flag on ArtifactCard, never a render fork
+(contract.guard green). Follow-up: opt in the direct anchor-bar/selection note-type buttons (needs
+per-surface preview-first prefs).
+
 Grounding: a chat reply already renders through the contract — `ChatMessageBody.tsx` classifies
 (`classifyContent`) and shows high-confidence rich replies as an `ArtifactCard`; "Add as note"
 (`addReplyAsNote`, `WorkspaceContext.tsx` L1123) classifies + dispatches `anchor.add-note`,
@@ -537,6 +545,15 @@ toggle only masks, it never loses per-note state.
   the author's pins.
 
 ### D12 — Anchor Focus: from weak re-reveal → a real board (two modes)
+
+**Status: ✅ shipped as N6-001 (2026-07-05).** `AnchorFocusBoard` — layout A (anchors in document
+order, row = passage + its notes) / layout B (columns = the source's ENABLED stage layers from F7a
+`stagePresetForKits` + user-editable, notes bucketed by layerId with a 未分层 catch-all). Header layout
+toggle + §10 filters (只看当前Layer / search / fullscreen). Read-only through the WorkspaceContext seam;
+every note renders via the §10 PreviewCard (`getNoteType().render`) — no new render path. Registered view
+`anchor.focus.board` + TopBar Anchor Focus tab → shell overlay (replaces the one-anchor reveal). Open-state
+via a module store (`anchorFocusBoardStore`). V1 = single document (multi-doc board rides F1).
+
 **Today** "Anchor Focus" (TopBar) only re-reveals the one focused anchor (badge = 1). **Upgrade** to
 a board centered on anchors+notes, two layouts (the user's mockup):
 - **Mode A — by document order (default):** anchors in reading order; each row = the anchor passage

@@ -534,3 +534,12 @@ SC-1 = chat wiring:把 SC-0 已发的 slash 引擎/palette 接进 AI-chat 作曲
 - 双模一流:bare `/quiz` → openManualEditor(createDefault 种子)进 D5 浮动编辑器手敲;`/type+指令` → note.generate-block 表单路由(模型选型填型)→ GeneratedDraft 停进同一浮动编辑器 → Save。生成与手敲都只经 getNoteType().render/edit(§0.5 无旁路)。
 - 同波 M-B 核实为**早已 ship**(2026-07-02,公式/词汇/时间线学科类型 + KaTeX 懒加载 + FLAT-1 能力组已 commit),代理跑全验证零改动,不重复造轮子。
 - Gates:tsc 0 · vitest 208/2168 · build ✓ · 新 e2e/slash-composer.spec.ts 1 passed。
+
+## 2026-07-05 - N-track + M-C 波次 (M-C + N6 + N3 三路并行, 三 commit 外科拆分)
+
+三个文件集基本不相交的真空白轨,并行代理各带测试完成,主循环按 hunk 拆分入库(commit eb9a2cb / 96fbf23 / 09b422e;唯一共享文件 WorkspaceShell.tsx 的混合 import hunk 按行拆 + --recount)。合并树全绿:tsc 0 · vitest 211 文件/2237 用例 · build ✓ · webview-preload ✓。
+
+- **M-C-001 剩余 8 学科类型 + 语文/理化生 kit(commit eb9a2cb):** derivation/theorem/grammar/excerpt/argument/figure/cause-effect/experiment,照 M-B 的 spec/plugin/prompt/command/catalog 环复制;数学类型复用 `<Latex>` 无第二渲染器。语文/理化生作为 Textbook Kit 的 opt-in 能力组(defaultEnabled:false)+ catalog `provides` 导入提示索引。FLAT 决策:共享学科插件只属唯一 home 组(避免开一组误激活兄弟学科的成员),跨学科可达经全局渲染 + kit language 而非组成员。11 类型全经 getNoteType().render(contract.guard 绿)。
+- **N6-001 D12 锚点看板(commit 96fbf23):** 新 AnchorFocusBoard.tsx + 纯 anchorBoardModel.ts + anchorFocusBoardStore 开态 + scoped css。双布局——A:锚点按文档序,每行=段落+其笔记;B:列=本源 ENABLED 阶段层(F7a stagePresetForKits + 用户可编辑),按 layerId 分桶 + 未分层兜底。头部布局开关 + §10 过滤(只看当前Layer/搜索/全屏)。只读经 WorkspaceContext seam;笔记全经 §10 PreviewCard(getNoteType().render)无新渲染路径。注册视图 "anchor.focus.board" + TopBar Anchor Focus tab → shell overlay(替代弱单锚点 reveal)。开态用模块 store 以避开 N3 的 WorkspaceContext。
+- **N3-001 D6 AI答案→草稿芯片(commit 09b422e):** additive `status?:"draft"`(零迁移)+ materializeAnchor(createNote 而非 parkDraft)+ DraftNoteToast 撤销(note.delete skipConfirm)。onGenerated 增自动保存消费者,由纯 shouldAutoMaterialize 路由——**OPT-IN**(autoMaterialize + anchorId + !classified + !manual),试一下/operation.run/kit 按钮/slash 全走原预览回路不变,默认只接在锚点上下文的 chat 回复路径。草稿=ArtifactCard 的 `.sv-note-draft` 包装标记,body 仍走 getNoteType().render。
+- 遗留:N3 直接锚点/选区笔记按钮的 opt-in(需 per-surface preview-first prefs 或 M-C kit 命令 opt-in)。

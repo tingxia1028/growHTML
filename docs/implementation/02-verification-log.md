@@ -694,3 +694,10 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 | 2026-07-04 | SC-1-001 | slash 域(slash/ + slashComposer.test.tsx) | 4 文件 / 45 用例 | Passed |
 | 2026-07-04 | SC-1-001 | npx playwright test e2e/slash-composer.spec.ts | `/`→palette(markdown/quiz 在、hidden bookmark 不在)→ bare /quiz manual → /markdown 生成预览 → Save 落库 | 1 passed |
 | 2026-07-04 | M-B(核实) | npm run check · npx vitest run · npm run build | M-B 早已 ship;全验证 tsc 0 · 208/2168 · katex 懒 chunk 77.46kB gzip 主包零静态引用 | Passed(零改动) |
+| 2026-07-05 | M-C-001 | npx vitest run src/kits/subject | 8 类型 schema/card/full/编辑器往返 + 2 kit 注册 + market 仍单 Textbook Kit | passed |
+| 2026-07-05 | M-C-001 | npm run build + playwright subject-types-mc | KaTeX 仍懒 chunk 77.46kB gzip;3 e2e(种子笔记经 PreviewCard 渲染、服务端校验 4xx) | passed |
+| 2026-07-05 | N6-001 | npx vitest run anchorBoardModel.test.ts AnchorFocusBoard.test.tsx | 双布局(文档序/层序列)、未分层兜底、只看当前Layer/搜索过滤、布局开关 | 16 passed |
+| 2026-07-05 | N6-001 | npx playwright test anchor-board.spec.ts | TopBar 开板 → A/B 切换 → 搜索收窄 | 1 passed |
+| 2026-07-05 | N3-001 | npx vitest run schema.test.ts services.test.ts registry.test.ts draftMaterialize.test.tsx | status:draft 零迁移往返、服务端 draft create、skipConfirm delete、materialize+undo、非锚点路径不变 | passed |
+| 2026-07-05 | N3-001 | npx playwright test draft-note.spec.ts | 锚点上下文生成 → 草稿芯片现 → 撤销移除;streaming-chat/operation-authoring 回归绿 | 1 passed |
+| 2026-07-05 | M-C+N6+N3 | 合并树 npm run check · npx vitest run · npm run build · webview-preload | 全绿 | tsc 0 · 211 文件/2237 用例 · build ✓ |

@@ -229,6 +229,12 @@ registrations (§8.2). Card render obeys §10.3 (1–3 lines, no interaction). R
 
 ## PART 2 — the 5 subject kits (marketplace `CatalogEntry(kind:"kit")`)
 
+> **Status: M-A ✅ · M-B ✅ · M-C ✅ (2026-07-05, M-C-001).** All 11 PART-1 types shipped;
+> the 5 kits complete (语文/理化生 added as opt-in Textbook-Kit capability groups, `defaultEnabled:false`).
+> §8.7 import prompts resolve every `subject.*` via the catalog `provides` index. FLAT-1: the market lists
+> ONE Textbook Kit (no new sellable kit); a shared subject plugin belongs to exactly ONE (home) capability
+> group so enabling a group never over-activates a sibling subject. Market *selling* of subject kits = M3.
+
 Each kit `members` an array of plugin ids (the 11 above + existing built-ins). Existing types are
 **referenced, not re-created**: `flashcard`/`quiz` (built-in plugins per §8.1), `textbook.mistake`
 (the `mistake` plugin), and concept-map = the existing core **`markmap`** contentType (the `diagrams`

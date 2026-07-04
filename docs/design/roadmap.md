@@ -7,8 +7,8 @@ One dependency-ordered plan over the six design docs written this cycle. Purpose
 |---|---|---|
 | `studypack-sharing.md` | Offline `.svpack` protected sharing v2 | **A✅ B✅ C✅ D✅ — shipped.** Follow-ups: renew UI (needs a publisher pack-LIST endpoint), e2e identity-dir override (shared server pins into real `~/.growte`), publish-ledger delete API, sealed-layer DOM marker |
 | `plugin-viewer-model.md` §8 | Plugin/Kit **marketplace** | M1 · M2 · M3 |
-| `note-presentation-unified.md` | In-reader note surface D1–D12 | N1 · N2 · N3 · N4 · N5 · N6 |
-| `subject-kits.md` | 11 subject types × 5 kits + auto-switch | M-A · M-B · M-C |
+| `note-presentation-unified.md` | In-reader note surface D1–D12 | N1 · N2 · **N3 ✅**(N3-001, D6 草稿芯片)· N4 · **N5 ✅** · **N6 ✅**(N6-001, D12 看板) |
+| `subject-kits.md` | 11 subject types × 5 kits + auto-switch | **M-A ✅ · M-B ✅ · M-C ✅**(M-C-001 — 全 11 类型 + 5 kit) |
 | `multidoc-and-concepts.md` | Multi-pane docs + cross-doc notes + concept graph | P-A1 · P-A2 · P-B · P-C1 · P-C2 |
 | `ai-workspace.md` | AI chat sessions + file/note attachments + doc synthesis | W1 · W2 · W3 |
 | `multi-provider-ai-agent.md` (+§9) | BYOK 多厂商 + `cli-agent` kind (claude/codex 官方 SDK) + agent loop | A1 · A2 · A3 · A4 |
@@ -134,9 +134,9 @@ Rule: a task is buildable only when its spec (a) lives in a design doc, (b) is *
 |---|---|---|---|
 | svpack **C**(dialogs)/**D**(e2e) | studypack-sharing.md §5–§7 | ✅ server+watermark shipped (`9e38428`,`81992ea`,`1a8d036`) | n/a (crypto = node built-ins, decided) |
 | Market **M1**(+F4/F5)/**M2**/**M3** | plugin-viewer-model.md §8 | ✅ (activation gate, `seedCorePlugin`, registries cited) | n/a |
-| Subject **M-A**/**M-B**/**M-C** | subject-kits.md | **M-A ✅ · M-B ✅** (核实 2026-07-04 — formula/vocab/timeline + KaTeX 懒 chunk 77.46kB gzip + FLAT-1 能力组;M-B-001 验证) · M-C pending | KaTeX 选型 RESOLVED(ADOPTED,懒 chunk 零主包成本);M-C = 剩余 8 类型 + 语文/理化生组 + 导入提示,市场 M3 |
+| Subject **M-A**/**M-B**/**M-C** | subject-kits.md | **M-A ✅ · M-B ✅ · M-C ✅** (M-C-001 2026-07-05 — 剩余 8 类型 derivation/theorem/grammar/excerpt/argument/figure/cause-effect/experiment + 语文/理化生 opt-in 能力组 + catalog provides 导入提示;共享插件只属 home 组) | KaTeX 懒 chunk 零主包成本;全 11 类型 5 kit 完成;市场售卖仍 M3(FLAT-1:市场只列 1 个 Textbook Kit) |
 | **N1**(D2+D5)/**N2**(D4+D3)/**N3**(D6)/**N4** | note-presentation-unified.md §1–§9 | ✅ (e.g. `GenerationPreview`@views.tsx:492, CardGeom) | n/a |
-| **N5**(D10+D11)/**N6**(D12 board) | note-presentation-unified.md §10 | ✅ (localStorage geom, TopBar 3-way, F7 axis) | n/a |
+| **N5**(D10+D11)/**N6**(D12 board) | note-presentation-unified.md §10 | **N5 ✅**(N5-001)· **N6 ✅**(N6-001 — AnchorFocusBoard 双布局,§10 PreviewCard 复用,F7a 层列,TopBar 板 overlay) | n/a |
 | **P-A1**(≡F1)/**P-A2**/**P-B**/**P-C1**/**P-C2** | multidoc-and-concepts.md | ✅ (DockNode shape, 46 activeSource refs) | n/a |
 | **F1–F7** | architecture-review.md | ✅ measured (line/field counts); **F7a shipped** `a462207` | n/a |
 | **W1**/**W2**/**W3** (AI workspace) | ai-workspace.md | ✅ (chat state :516/:772, `ingestSource`:64-91, folders/recent) | n/a |
