@@ -9,7 +9,7 @@ One dependency-ordered plan over the six design docs written this cycle. Purpose
 | `plugin-viewer-model.md` §8 | Plugin/Kit **marketplace** | M1 · M2 · M3 |
 | `note-presentation-unified.md` | In-reader note surface D1–D12 | N1 · N2 · **N3 ✅**(N3-001, D6 草稿芯片)· N4 · **N5 ✅** · **N6 ✅**(N6-001, D12 看板) |
 | `subject-kits.md` | 11 subject types × 5 kits + auto-switch | **M-A ✅ · M-B ✅ · M-C ✅**(M-C-001 — 全 11 类型 + 5 kit) |
-| `multidoc-and-concepts.md` | Multi-pane docs + cross-doc notes + concept graph | P-A1 · P-A2 · P-B · P-C1 · P-C2 |
+| `multidoc-and-concepts.md` | Multi-pane docs + cross-doc notes + concept graph | **P-A1 ✅ · P-A2 ✅**(F1-001 — 多文档并排,方案+实现双审)· P-B · P-C1 · **P-C2 ✅**(关联图 CG-1/2/3) |
 | `ai-workspace.md` | AI chat sessions + file/note attachments + doc synthesis | W1 · W2 · W3 |
 | `multi-provider-ai-agent.md` (+§9) | BYOK 多厂商 + `cli-agent` kind (claude/codex 官方 SDK) + agent loop | A1 · A2 · A3 · A4 |
 | `managed-ai-credits.md` (+§10) | 托管网关 + 积分 + 月费/AI Group 档位 | G-A · G-B · G-C (external-gated) |
@@ -35,7 +35,7 @@ One dependency-ordered plan over the six design docs written this cycle. Purpose
 The extension seams (registries / content-as-data / entity stores / render contract) are clean; the coupled spots below block deep features and cause cross-session merge contention. Each is pulled to sit **immediately before or fused with** its first dependent feature:
 | # | Foundation refactor | Blocks until fixed | Fuse with |
 |---|---|---|---|
-| **F1** | Decompose the `WorkspaceContext` god object (1753 lines / ~79 fields / single `activeSourceId`) into per-domain stores + selectors | multi-doc, cross-doc paint, re-render/contention on every feature | **P-A1** (it *is* the multi-doc enabler) |
+| **F1** | ✅ **shipped** (F1-001, 2026-07-05) — `activeSourceId`→open-panes derived shim (single-pane byte-unchanged, regression-locked); per-source SourceBundle cache; `source.tabs` host view; per-pane paint (P-A2); split-to-side + focus-follows-pane; persist + prune. Plan + implementation both adversarially reviewed (SAFE TO PUSH). Follow-up F-1: per-paneId scope of `notesHiddenAll` for iframe splits | ~~multi-doc, cross-doc paint~~ P-A1+P-A2 unblocked; P-B/P-C ride on | **P-A1 ✅ · P-A2 ✅** |
 | **F2** | Extract `app.ts` (1737 lines / 59 inline routes) into `registerXRoutes` modules (svpack already shows the pattern) | nothing hard-blocked; friction + contention grow | incremental, any server work |
 | **F3** | ✅ **shipped** (F3-D1-001, 2026-07-04) — the D1 `ReaderAnnotationAdapter` landed: `src/client/surfaces/readerAnnotationAdapter.ts` (contract + `collectAnchorRects` first/last/all + shared DOM-realm factory), `MarkerOverlay` measures through `rectsFor` (chip at `.first`), every reader (DomReader iframe / PDF / image / webview guest) hosts an adapter, and the guest's divergent inline chip is now a real body-mounted `MarkerOverlay` bridging `sv:marker-action` | ~~reader-consistency, mobile, N1/P-A2~~ unblocked | **N1** builds directly on it (D2 two slots = `rectsFor.first/.last`) |
 | **F4** | Replace the single-active-kit gate (`activation.ts` `FALLBACK_DEFAULT_KIT`) with marketplace **effective-installed** | market, subject kits "foreground not filter" | **Market M1** |

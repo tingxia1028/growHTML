@@ -1,6 +1,6 @@
 # Multi‑document workspace, cross‑document notes & the fine‑grained concept graph
 
-Status: **Design only** (2026-07-02). No code in this pass. Branch: `codex/ai-study-vault-rework`.
+Status: **P-A1 + P-A2 SHIPPED** (F1-001, 2026-07-05, 6 commits 372c1eb…5db886b — plan + implementation both adversarially reviewed). `activeSourceId`→open-panes derived shim, per-source SourceBundle cache, `source.tabs` host view, per-pane paint (`buildPaintPipeline`, regression-locked byte-equal), split-to-side + focus-follows-pane, persistence + pane-prune. Library click = switch focused pane; Ctrl/Cmd-click = new pane. **DEFERRED to P-B:** per-pane Layer Lens, cross-pane reveal (focus/revealSeq stay ONE global), host-realm readers in a split, cross-source shared-note paint end-to-end (server `listNotes` must also match `anchor.sourceId`). **Known follow-up (F-1):** two iframe panes in a split share the module-global `notesHiddenAll` (hide-all leaks across panes) — fix = per-paneId scoping of annotationLayer/markerOverlay singletons. P-B / P-C not started. Branch: `codex/ai-study-vault-rework`.
 
 This doc specs three intertwined capabilities that share ONE enabler (per‑pane source
 resolution):

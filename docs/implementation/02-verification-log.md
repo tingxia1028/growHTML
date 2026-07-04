@@ -701,3 +701,10 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 | 2026-07-05 | N3-001 | npx vitest run schema.test.ts services.test.ts registry.test.ts draftMaterialize.test.tsx | status:draft 零迁移往返、服务端 draft create、skipConfirm delete、materialize+undo、非锚点路径不变 | passed |
 | 2026-07-05 | N3-001 | npx playwright test draft-note.spec.ts | 锚点上下文生成 → 草稿芯片现 → 撤销移除;streaming-chat/operation-authoring 回归绿 | 1 passed |
 | 2026-07-05 | M-C+N6+N3 | 合并树 npm run check · npx vitest run · npm run build · webview-preload | 全绿 | tsc 0 · 211 文件/2237 用例 · build ✓ |
+| 2026-07-05 | F1-001 | npm run check | tsc 0(5db886b) | Passed |
+| 2026-07-05 | F1-001 | npx vitest run(全量,主循环权威复验) | 216 文件 / 2291 用例(基线 211/2237 + panes/sourceBundles/paneSelectors/sourceTabs/sourceSplit 54 新测试) | Passed |
+| 2026-07-05 | F1-001 | 回归锁 | paneSelectors.test.ts "buildPaintPipeline == 旧内联映射(字节等)" — oldPipeline 逐字节复刻旧逻辑,非稻草人 | Passed |
+| 2026-07-05 | F1-001 | npm run build + electron:build:webview-preload | build ✓ · preload 51.2kb | Passed |
+| 2026-07-05 | F1-001 | e2e/multi-doc.spec.ts | (a) 单文档不变 (b+c) 两 iframe 面板独立上色(既断在场也断另一面板 count 0)+ 焦点双向跟随 (d) host-realm 门槛 | 3 passed |
+| 2026-07-05 | F1-001 | e2e/layer-as-lens.spec.ts | 单文档切换语义无回归 | 4 passed |
+| 2026-07-05 | F1-001 | 对抗实现审查(独立 agent) | 单文档字节不变=YES;零 blocker;F-1 SHOULD-FIX(iframe 分屏共享 notesHiddenAll)记 follow-up | SAFE TO PUSH |
