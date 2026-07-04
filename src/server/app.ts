@@ -22,6 +22,7 @@ import type { StudyVault } from "../core/vault";
 import { deleteSource, listSources } from "../core/store/sources";
 import { handleServiceError } from "./services/errors";
 import * as sourcesService from "./services/sources";
+import * as sourceAuthoringService from "./services/sourceAuthoring";
 import * as anchorsService from "./services/anchors";
 import * as notesService from "./services/notes";
 import * as layersService from "./services/layers";
@@ -537,6 +538,41 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
     try {
       const { source, content } = await sourcesService.readSourceContentById({ vault }, { sourceId: req.params.sourceId });
       res.type(source.mimeType ?? "text/plain").send(content);
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  // SRC-1 (source-authoring.md §4): blank-create an AUTHORED markdown/html document
+  // (the Library 新建 group). Authored sources are the only ones with an editable body.
+  app.post("/api/sources/authored", async (req, res, next) => {
+    try {
+      const input = sourceAuthoringService.createAuthoredSourceRequestSchema.parse(req.body);
+      res.status(201).json(await sourceAuthoringService.createAuthoredSource({ vault }, input));
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  // SRC-2: save an authored source's edited content — re-hash, bump `revision`, and
+  // RE-PROJECT all of the source's anchors against the new content by quote+context
+  // (import machinery); non-matching anchors surface as `unmatched` in the response.
+  app.patch("/api/sources/:sourceId/content", async (req, res, next) => {
+    try {
+      const input = sourceAuthoringService.updateAuthoredSourceRequestSchema.parse(req.body);
+      res.json(
+        await sourceAuthoringService.updateAuthoredSource({ vault }, { sourceId: req.params.sourceId, ...input })
+      );
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  // SRC-2: the shared-source edit warning input — whether this source has publish-ledger
+  // entries or shared layers (editing re-hashes → old shared packs stop binding).
+  app.get("/api/sources/:sourceId/share-status", async (req, res, next) => {
+    try {
+      res.json(await sourceAuthoringService.getSourceShareStatus({ vault }, { sourceId: req.params.sourceId }));
     } catch (error) {
       if (!handleServiceError(res, error)) next(error);
     }

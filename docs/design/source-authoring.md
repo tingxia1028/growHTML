@@ -58,15 +58,24 @@ ordinary sources.
   consolidated into one affordance.
 
 ## 4. Phasing
-- **SRC-1 — create half:** blank-create templates + entityClient bindings + the + menu +
-  a minimal authored-markdown editor view (new registered viewer, own chrome hosts the toggle —
-  avoids reader files). Library UI wiring lives in contended `views.tsx` → component built
-  parallel-safe, one-line mount gated. Build the update-source service on the X0a service layer.
-- **SRC-2 — the edit pipeline:** save→re-hash→re-project→unmatched surfacing + the shared-source
-  edit warning + 纯编辑模式 for authored html. (Projection files = reader-session-gated.)
+- **SRC-1 — create half:** ✅ 2026-07-04 (SRC-12-001) — 新建 Markdown (default, first) + 新建
+  HTML 页 in the Library 新建 group; `POST /api/sources/authored`; `AuthoredSourceView` wraps
+  authored sources via the `readerForSource` seam (own chrome hosts the 阅读⇄编辑 toggle — no
+  reader-file edits needed after all); kid-first markdown editor (big toolbar buttons + live
+  preview, ZERO syntax knowledge needed — blank create auto-enters 编辑, title edited inline).
+  True WYSIWYG (TipTap) = recorded V1.1 follow-up.
+- **SRC-2 — the edit pipeline:** ✅ 2026-07-04 (SRC-12-001) — `PATCH /api/sources/:id/content`:
+  re-hash → revision bump → re-project ALL anchors by quote+context (`toPortable` →
+  `rematchAnchor` → `resolveLocalStudyId`, never by studyId) → unmatched surfaced as
+  受影响的锚点; shared-source warning via `GET /api/sources/:id/share-status` (publish ledger +
+  imported layers); 纯编辑模式 for authored html (source editor + sandboxed preview); markdown
+  stored RAW, projected deterministically at render time (markdown renderer + injectStudyIds).
 - **SRC-3 — patch APPLY engine:** finish the designed lifecycle (accepted→applied/conflict,
-  revert) + imported-source fork. The chat's existing patch records become real.
-- **SRC-4 — rich editing:** GrapesJS decision for html pages; templates.
+  revert) + imported-source fork. The chat's existing patch records become real. (Noted for
+  SRC-3: the IMPORT rematch path still matches markdown sources against raw markdown text —
+  quotes spanning formatting could miss; the edit pipeline already projects to HTML first.)
+- **SRC-4 — rich editing:** GrapesJS decision for html pages; templates. SRC-2b (HTML 所见即改:
+  contenteditable in-place + style bar, authored only) is queued ahead of it.
 
 ## 5. Tests
 Create: + entries → source appears with origin/revision, guard existing imports unchanged.

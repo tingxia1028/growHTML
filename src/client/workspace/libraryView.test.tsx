@@ -295,11 +295,18 @@ describe("the unified + menu (registry groups)", () => {
     expect(ctx.importFromUrl).toHaveBeenCalledTimes(1);
   });
 
-  it("exposes the built-in 新建 → 文档… entry point", async () => {
+  it("exposes the built-in 新建 entries — Markdown (default, first) + HTML 页 (SRC-1)", async () => {
     await mountLibrary(makeCtx());
     const popover = await openAddMenu();
     const createGroup = popover.querySelector('[data-add-group="create"]')!;
-    expect(createGroup.querySelector('[data-add-action="core.create-document"]')!.textContent).toBe("文档…");
+    const actions = Array.from(createGroup.querySelectorAll("[data-add-action]")).map((el) =>
+      el.getAttribute("data-add-action")
+    );
+    expect(actions.indexOf("core.create-markdown")).toBeLessThan(actions.indexOf("core.create-html"));
+    expect(createGroup.querySelector('[data-add-action="core.create-markdown"]')!.textContent).toBe("新建 Markdown");
+    expect(createGroup.querySelector('[data-add-action="core.create-html"]')!.textContent).toBe("新建 HTML 页");
+    // The LIB-2 transitional 文档… action (HTML import seam) is superseded by SRC-1.
+    expect(createGroup.querySelector('[data-add-action="core.create-document"]')).toBeNull();
   });
 
   it("shows a fixture add-action under its group and drops it after unregistering", async () => {

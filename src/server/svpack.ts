@@ -157,7 +157,9 @@ const ledgerValiditySchema = z.object({
   validUntil: z.string().nullable()
 });
 
-const publishLedgerSchema = z.object({
+// Exported for SRC-2 (services/sourceAuthoring.ts): the shared-source edit warning
+// counts the ledgers hanging off a source's layers before allowing the first edit.
+export const publishLedgerSchema = z.object({
   v: z.literal(1),
   packId: z.string().min(1),
   layerId: z.string().min(1),

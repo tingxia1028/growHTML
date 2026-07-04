@@ -10,6 +10,7 @@ import { sourceSchema, type HtmlSelectionAnchor, type SourceRecord } from "../..
 import { ingestBinarySource, ingestHtmlSource, readSourceContent, readSourceFile } from "../../core/store/sources";
 import type { StudyVault } from "../../core/vault";
 import { NotFoundError, ValidationError } from "./errors";
+import { projectedHtmlForSource } from "./sourceAuthoring";
 
 export type SourcesDeps = { vault: StudyVault };
 
@@ -122,7 +123,10 @@ export async function renderSource({ vault }: SourcesDeps, input: { sourceId: st
   const source = await vault.stores.sources.get(input.sourceId);
   if (!source) throw new NotFoundError("Source not found");
 
-  const content = await readSourceContent(vault, source);
+  // Markdown sources store RAW markdown (the SRC-1 editor round-trips it); the reader
+  // HTML is derived deterministically (markdown renderer + study-id injection) in
+  // projectedHtmlForSource. HTML-ish sources pass through unchanged as before.
+  const content = projectedHtmlForSource(source, await readSourceContent(vault, source));
   const anchors = await getHtmlAnchorsForSource(vault, source.id);
   const patches = (await vault.stores.patches.list()).filter((patch) => patch.sourceId === source.id);
   const anchorsById = Object.fromEntries(anchors.map((anchor) => [anchor.id, anchor]));

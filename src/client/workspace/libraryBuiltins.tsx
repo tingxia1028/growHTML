@@ -8,12 +8,14 @@
 // trees) so row styling + behaviors (open / delete / close-folder / active highlight)
 // port unchanged; only WHERE they render moved (a registered section, not inline JSX).
 
-import { useState } from "react";
-import { File, FilePlus2, FolderOpen, Globe, Trash2, X } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { File, FileCode2, FilePlus2, FolderOpen, Globe, Trash2, X } from "lucide-react";
 import { baseName, FileTree } from "../FileTree";
-import { entityClient, type SourceRecord } from "../data/entityClient";
+import { type SourceRecord } from "../data/entityClient";
 import { t, type Message } from "../i18n";
 import { libraryMessages as m } from "./libraryMessages";
+import { getSourceAuthoringIo } from "./sourceAuthoringIo";
+import { sourceAuthoringMessages as sam } from "./sourceAuthoringMessages";
 import {
   registerLibraryAddAction,
   registerLibrarySection,
@@ -269,28 +271,57 @@ registerLibraryAddAction({
   run: (ctx) => void ctx.openFolderDialog()
 });
 
-// 新建 → 文档…: the minimal create-source wire over the EXISTING ingest seam
-// (POST /api/sources/html — the same route the sample doc and AI synthesis use). Creates
-// a small seeded HTML document and opens it. The full authored-markdown create + edit
-// flow (blank-create templates, 纯编辑模式) is SRC-1/2 (source-authoring.md) — this
-// action is its registry-backed entry point.
-registerLibraryAddAction({
-  id: "core.create-document",
-  group: "create",
-  title: m.createDocument,
-  icon: <FilePlus2 size={15} />,
-  order: 10,
-  run: async (ctx) => {
-    try {
-      const response = await entityClient.ingestHtml(
-        t(m.newDocumentTitle),
-        `<h1>${t(m.newDocumentTitle)}</h1><p>${t(m.newDocumentBody)}</p>`
-      );
-      await ctx.loadSources();
-      ctx.setActiveSourceId(response.source.id);
-    } catch (error) {
-      // The menu fire-and-forgets; surface create failures like other view-level IO.
-      console.error("Failed to create document", error);
+// 新建 → the SRC-1 blank-creates (source-authoring.md §4): 新建 Markdown (the default,
+// first) + 新建 HTML 页. Both create an AUTHORED source (POST /api/sources/authored —
+// origin "authored", the only sources with an editable body) with an untitled title and
+// a BLANK body, then open it: the authored editor view starts in 编辑 mode for a blank
+// document, so a kid is typing within seconds (no title prompt in the way — the title
+// is edited inline in the editor chrome). These supersede the LIB-2 transitional
+// 新建→文档 action that borrowed the POST /api/sources/html import seam.
+function registerCreateAuthoredAction(input: {
+  id: string;
+  order: number;
+  title: Message;
+  icon: ReactNode;
+  sourceType: "markdown" | "html";
+  newTitle: Message;
+}) {
+  registerLibraryAddAction({
+    id: input.id,
+    group: "create",
+    title: input.title,
+    icon: input.icon,
+    order: input.order,
+    run: async (ctx) => {
+      try {
+        const { source } = await getSourceAuthoringIo().createAuthored({
+          title: t(input.newTitle),
+          sourceType: input.sourceType
+        });
+        await ctx.loadSources();
+        ctx.setActiveSourceId(source.id);
+      } catch (error) {
+        // The menu fire-and-forgets; surface create failures like other view-level IO.
+        console.error("Failed to create document", error);
+      }
     }
-  }
+  });
+}
+
+registerCreateAuthoredAction({
+  id: "core.create-markdown",
+  order: 10,
+  title: sam.createMarkdown,
+  icon: <FilePlus2 size={15} />,
+  sourceType: "markdown",
+  newTitle: sam.newMarkdownTitle
+});
+
+registerCreateAuthoredAction({
+  id: "core.create-html",
+  order: 20,
+  title: sam.createHtml,
+  icon: <FileCode2 size={15} />,
+  sourceType: "html",
+  newTitle: sam.newHtmlTitle
 });

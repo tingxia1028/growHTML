@@ -23,6 +23,8 @@ import { PdfReader } from "../PdfReader";
 import { ImageReader } from "../ImageReader";
 import { LocalHtmlReader } from "../LocalHtmlReader";
 import { DomReader } from "../surfaces/DomReader";
+import { AuthoredSourceView } from "./sourceEditor";
+import { isAuthoredTextSource } from "./sourceAuthoringIo";
 
 // Build the /api/local URL for a local file, mirroring its absolute path so the
 // page's relative assets resolve against its own directory.
@@ -58,7 +60,20 @@ export type ReaderArgs = {
 // Resolve the reader for the active source. Returns the empty-state placeholder when
 // there's nothing to show (no source, or an HTML-pipeline source whose render hasn't
 // arrived yet) — the SAME fallbacks the old inline switch produced.
-export function readerForSource({
+//
+// SRC-1/2 (source-authoring.md §4): an AUTHORED markdown/html source resolves to the
+// editor-capable AuthoredSourceView, whose OWN chrome hosts the 阅读 ⇄ 编辑 toggle and
+// hosts the base reader node in 阅读 mode. Imported sources are untouched — the plain
+// reader stays their surface (read-only body; fork/patch editing is SRC-3).
+export function readerForSource(args: ReaderArgs): ReactNode {
+  const reader = baseReaderForSource(args);
+  if (args.source && isAuthoredTextSource(args.source)) {
+    return <AuthoredSourceView key={args.source.id} source={args.source} reader={reader} />;
+  }
+  return reader;
+}
+
+function baseReaderForSource({
   source,
   anchors,
   revealAnchors,

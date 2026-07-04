@@ -295,6 +295,10 @@ export type WorkspaceContextValue = {
   setActiveSourceId(id: string): void;
   loadSources(): Promise<void>;
   deleteSourceItem(sourceId: string, title: string): Promise<void>;
+  /** SRC-2 (source-authoring.md): re-run the ACTIVE source's workspace load (rendered
+      HTML + anchors + notes) — the authored editor calls this after a save so the
+      reader reflects the new content and the re-projected anchors. */
+  reloadActiveSource(): Promise<void>;
 
   // —— reader data ——
   renderedHtml: string;
@@ -822,6 +826,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     },
     [sources, focus]
   );
+
+  // SRC-2: the authored editor's post-save refresh — a full workspace reload of the
+  // ACTIVE source (rendered HTML changes on save, so refreshAnnotations isn't enough).
+  const reloadActiveSource = useCallback(async () => {
+    if (activeSourceId) await loadSourceWorkspace(activeSourceId);
+  }, [activeSourceId, loadSourceWorkspace]);
 
   // Re-fetch anchors/notes/patches after a mutation that may have created a new
   // anchor (note/patch save), so the painted highlights and lists stay in sync —
@@ -1649,6 +1659,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setActiveSourceId,
       loadSources,
       deleteSourceItem,
+      reloadActiveSource,
       renderedHtml,
       anchors: visibleAnchors,
       notes,
@@ -1751,6 +1762,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       activeViewer,
       loadSources,
       deleteSourceItem,
+      reloadActiveSource,
       renderedHtml,
       visibleAnchors,
       notes,

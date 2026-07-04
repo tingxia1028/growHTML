@@ -69,6 +69,7 @@ import * as anchorsService from "./anchors";
 import * as layersService from "./layers";
 import * as notesService from "./notes";
 import * as searchService from "./search";
+import * as sourceAuthoringService from "./sourceAuthoring";
 import * as sourcesService from "./sources";
 
 export type DirectTransportDeps = {
@@ -188,6 +189,26 @@ const routes: DirectRoute[] = [
     method: "GET",
     pattern: "/api/sources/:sourceId/rendered",
     call: ({ deps, params }) => sourcesService.renderSource({ vault: deps.vault }, { sourceId: params.sourceId })
+  }),
+  // —— Source authoring (SRC-1 create / SRC-2 edit pipeline) ——
+  route({
+    method: "POST",
+    pattern: "/api/sources/authored",
+    schema: sourceAuthoringService.createAuthoredSourceRequestSchema,
+    call: ({ deps, input }) => sourceAuthoringService.createAuthoredSource({ vault: deps.vault }, input)
+  }),
+  route({
+    method: "PATCH",
+    pattern: "/api/sources/:sourceId/content",
+    schema: sourceAuthoringService.updateAuthoredSourceRequestSchema,
+    call: ({ deps, params, input }) =>
+      sourceAuthoringService.updateAuthoredSource({ vault: deps.vault }, { sourceId: params.sourceId, ...input })
+  }),
+  route({
+    method: "GET",
+    pattern: "/api/sources/:sourceId/share-status",
+    call: ({ deps, params }) =>
+      sourceAuthoringService.getSourceShareStatus({ vault: deps.vault }, { sourceId: params.sourceId })
   }),
   route({
     method: "DELETE",

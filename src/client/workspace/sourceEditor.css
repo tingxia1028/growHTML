@@ -1,0 +1,307 @@
+/* AuthoredSourceView (SRC-1/2) — the 阅读 ⇄ 编辑 chrome + the kid-first editor.
+   All selectors are scoped under .source-editor-* (new-CSS-scoped rule). */
+
+.source-editor-host {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* —— chrome bar (mode toggle · title · save) —— */
+
+.source-editor-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--sv-border, #e3e3e6);
+  background: var(--sv-panel, #fafafa);
+  flex-wrap: wrap;
+}
+
+.source-editor-modes {
+  display: inline-flex;
+  border: 1px solid var(--sv-border, #d9d9de);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.source-editor-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--sv-text, #333);
+}
+
+.source-editor-mode-btn.active {
+  background: var(--sv-accent-weak, #e8f0fe);
+  color: var(--sv-accent, #2456c9);
+  font-weight: 600;
+}
+
+.source-editor-title {
+  flex: 1;
+  min-width: 140px;
+  padding: 7px 10px;
+  border: 1px solid var(--sv-border, #d9d9de);
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.source-editor-dirty {
+  font-size: 12px;
+  color: var(--sv-warn, #b3620d);
+}
+
+.source-editor-saved {
+  font-size: 12px;
+  color: var(--sv-ok, #1c7d3c);
+}
+
+.source-editor-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--sv-accent, #2456c9);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.source-editor-save:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.source-editor-error {
+  margin: 8px 12px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fdecec;
+  color: #a02020;
+  font-size: 13px;
+}
+
+/* —— read mode —— */
+
+.source-editor-reader {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.source-editor-empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  color: var(--sv-text-muted, #8a8a92);
+  font-size: 14px;
+  padding: 24px;
+  text-align: center;
+}
+
+/* —— edit mode: kid-first toolbar (big touch-friendly buttons) —— */
+
+.source-editor-markdown,
+.source-editor-html {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.source-editor-toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--sv-border, #ececef);
+}
+
+.source-editor-tool {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 64px;
+  padding: 8px 10px;
+  border: 1px solid var(--sv-border, #d9d9de);
+  border-radius: 10px;
+  background: var(--sv-panel, #fff);
+  font-size: 12px;
+  color: var(--sv-text, #333);
+  cursor: pointer;
+}
+
+.source-editor-tool:hover {
+  border-color: var(--sv-accent-border, #9db9ee);
+  background: var(--sv-accent-weak, #eef4ff);
+}
+
+/* —— split editor + live preview —— */
+
+.source-editor-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.source-editor-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  resize: none;
+  padding: 16px;
+  font-size: 15px;
+  line-height: 1.7;
+  font-family: inherit;
+  outline: none;
+}
+
+.source-editor-input-html {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 13px;
+}
+
+.source-editor-preview {
+  flex: 1;
+  min-width: 0;
+  border-left: 1px solid var(--sv-border, #ececef);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--sv-panel, #fcfcfd);
+}
+
+.source-editor-preview-head {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--sv-text-muted, #8a8a92);
+  border-bottom: 1px dashed var(--sv-border, #ececef);
+}
+
+.source-editor-preview-body {
+  padding: 12px 16px;
+  overflow: auto;
+  flex: 1;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.source-editor-preview-empty {
+  padding: 16px;
+  color: var(--sv-text-muted, #9a9aa2);
+  font-size: 13px;
+}
+
+.source-editor-html-hint {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--sv-text-muted, #8a8a92);
+}
+
+.source-editor-html-preview {
+  flex: 1;
+  border: none;
+  background: #fff;
+}
+
+/* Narrow center column: stack the editor above the preview. */
+@media (max-width: 900px) {
+  .source-editor-split {
+    flex-direction: column;
+  }
+  .source-editor-preview {
+    border-left: none;
+    border-top: 1px solid var(--sv-border, #ececef);
+    max-height: 40%;
+  }
+}
+
+/* —— 受影响的锚点 (post-save re-projection results) —— */
+
+.source-editor-affected {
+  margin: 10px 12px 0;
+  border: 1px solid var(--sv-warn-border, #f0d9b8);
+  background: var(--sv-warn-weak, #fdf6ec);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.source-editor-affected-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.source-editor-affected-dismiss {
+  border: none;
+  background: transparent;
+  color: var(--sv-accent, #2456c9);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.source-editor-affected-hint {
+  margin: 4px 0 8px;
+  color: var(--sv-text-muted, #7c6a4d);
+}
+
+.source-editor-affected ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.source-editor-affected-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.source-editor-affected-status {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: #f3e3c3;
+  color: #7a5a17;
+}
+
+.source-editor-affected-status.is-unmatched {
+  background: #f6d5d5;
+  color: #8f2727;
+}
+
+.source-editor-affected-quote {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-editor-affected-jump {
+  flex-shrink: 0;
+  border: 1px solid var(--sv-border, #d9d9de);
+  background: #fff;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}

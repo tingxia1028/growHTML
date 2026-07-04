@@ -29,7 +29,9 @@ import type { StudyVault } from "../core/vault";
 const HTML_TYPES = new Set(["html", "webpage", "markdown"]);
 
 // Plain text for rematch: strip tags from HTML-ish sources, pass others through.
-function plainTextForSource(content: string, sourceType: string): string {
+// Exported for SRC-2 (services/sourceAuthoring.ts): editing a source re-projects its
+// anchors through the SAME text normalization the import path matches against.
+export function plainTextForSource(content: string, sourceType: string): string {
   if (HTML_TYPES.has(sourceType)) {
     return content
       .replace(/<[^>]+>/g, " ")
@@ -43,7 +45,9 @@ function plainTextForSource(content: string, sourceType: string): string {
 // Find the data-study-id of the most specific local element whose text contains the
 // (re-located) quote — used to rebuild an imported html_selection anchor against the
 // importer's own injected study-ids (the author's studyId is meaningless here).
-function resolveLocalStudyId(content: string, quote: string): string | null {
+// Exported for SRC-2: after an edit, a re-matched anchor re-binds to whichever
+// element now carries its quote (never trusts the pre-edit studyId).
+export function resolveLocalStudyId(content: string, quote: string): string | null {
   const needle = quote.replace(/\s+/g, " ").trim();
   if (!needle) return null;
   try {
@@ -66,7 +70,9 @@ function resolveLocalStudyId(content: string, quote: string): string | null {
   }
 }
 
-function toPortable(anchor: AnchorRecord): PortablePackAnchor {
+// Exported for SRC-2: re-projection strips a local anchor down to the same portable
+// quote+context form an exported pack would carry, then re-matches it like an import.
+export function toPortable(anchor: AnchorRecord): PortablePackAnchor {
   const base: PortablePackAnchor = {
     refId: anchor.id,
     anchorKind: anchor.anchorKind,

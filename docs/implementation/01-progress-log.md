@@ -12,9 +12,17 @@ Use this file as the live status board for implementation work.
 ## Current Status
 
 - Date: 2026-07-04
-- Phase: UI-LIBRARY-003 Library compact rows and safe remove
+- Phase: I18N-1 Global UI language switch
 - Active task: None
-- Overall status: Complete. Library source rows are now compact title-only rows with hover tooltip detail; row `x` actions are non-destructive; the local Library search follows the collapsed magnifier + expanded search-row pattern.
+- Overall status: Complete. The app now has a live zh/en locale store, a Settings language radio, workspace-scoped `ui-prefs` persistence, and bilingual chrome coverage for TopBar, IconRail, UserMenu, RightSidebarTabs, SettingsHub, Plugin Manager, and Onboarding.
+
+## 2026-07-04 - I18N-1 Global UI language switch
+
+- Goal: stop the shell from mixing Chinese and English by making Chinese the default locale, English the alternate locale, and giving Settings a live language switch that persists outside the layout writer.
+- Result: `src/client/i18n` now exposes an observable locale store (`useLocale`, `LocaleProvider`) while keeping the existing `defineMessages/t/LocalizedText/resolveText` API. `App.tsx` bootstraps the server-stored preference. The server owns a new field-group-safe `/api/workspace/ui-prefs` slice inside `workspace.json`; `/api/workspace` layout PUTs still preserve onboarding and now preserve locale prefs as well.
+- UI sweep: SettingsHub gained a `语言/Language` radio section registered through `registerSettingsSection`; Settings section titles accept `LocalizedText`. TopBar, IconRail, RightSidebarTabs, UserMenu, Plugin Manager, and Onboarding moved visible chrome copy into typed dictionaries and subscribe to locale changes for immediate rerender. Note type/kit/command contribution titles are now compatible with `LocalizedText`, with render/adapters resolving them at the edge.
+- Tests: added locale-flip coverage for SettingsHub, TopBar, IconRail, RightSidebarTabs, UserMenu, Plugin Manager, and Onboarding; updated existing tests to the current default Chinese chrome and current Settings/Onboarding behavior.
+- Verification: focused chrome suite passed (44 tests), `npm exec tsc -- --noEmit` passed, full `npm test` passed (188 files / 1898 tests), and `npm run build` passed.
 
 ## 2026-07-04 - UI-LIBRARY-003 Library compact rows and safe remove
 
@@ -445,3 +453,11 @@ In-app multi-tab web reading (B): all link clicks open a new tab; each tab is it
 - Result: buildMarkerHtml split into buildAnchorSlotHtml()/buildNoteSlotHtml() (annotationLayer.ts); MarkerOverlay.setMarkers takes {anchorId, anchorSlotHtml, noteSlotHtml} and layout() places two chips per anchor (single-rect degenerate: first===last, still separated); per-anchor hidden state lives in annotationLayer (WeakMap<Document, Set>) consumed by wireNoteCard (hover/pin gate + dismissIfKey controller) and paintMarginNotes (input memo + filter + live re-pack); global switch = markerOverlay module store (overlays subscribe) + annotations.ts read/persist helpers + AnchorGlyphSwitch in anchorViews.tsx (scoped anchorViews.css — .sv-switch not yet in committed styles.css). Guest realm: same shared modules ⇒ toggle works in-guest with no new IPC; the switch rides sv:anchors as an additive third payload ({anchorGlyphsVisible}), re-pushed on flip by bindWebviewAnchors' store subscription (self-cleaning for undisposed webviews). PDF/image/DomReader/guest all render the split via the shared machinery — no per-reader forks.
 - Out of scope (still pending from D2): same-line clustering, card-open suppression, D5 floating editor (= N1b).
 - Verification: 9 affected test files green; isolated-worktree gate on the staged 17-file slice: tsc 0 + 7 suites / 121 tests green against HEAD; vite build ✓; webview-preload bundle ✓ (React-free, 39.2kb). Full-tree noise attributed: 4 tsc LocalizedText errors + 8 vitest failures all in concurrent streams' dirty files.
+
+## 2026-07-04 - SRC-12-001 Source authoring: create half + edit pipeline (source-authoring.md SRC-1/2)
+
+- Goal: 新建默认 Markdown (replace LIB-2's transitional 新建→文档 HTML seam), authored documents editable by a zero-syntax user (toolbar buttons + live preview), and the SRC-2 save pipeline with anchor re-projection + shared-source warning.
+- Active plan: additive source schema (origin/revision); authored create + update-source + share-status as ONE new X0a service (routes + direct-transport parity); markdown stored RAW and projected to study-id HTML at render time via the existing markdown renderer; readerForSource wraps authored sources in a new AuthoredSourceView (own chrome hosts 阅读 ⇄ 编辑); re-projection reuses toPortable → rematchAnchor → resolveLocalStudyId (never studyId); Library 新建 group swapped to 新建 Markdown + 新建 HTML 页 (untitled + blank → editor auto-opens in 编辑 mode, title edited inline).
+- Result: POST /api/sources/authored, PATCH /api/sources/:id/content, GET /api/sources/:id/share-status; sourceEditor.tsx/.css + sourceAuthoringIo/Messages + sourcePreview.ts (renders a source BODY outside the §0.5-B-guarded note pipeline — contract guard intact); core updateStoredSourceContent (rewrite → re-hash → revision+1); renderSource markdown projection; WorkspaceContext.reloadActiveSource for the post-save reader refresh; imported sources rejected server-side (400) and never mount the editor. TipTap true-WYSIWYG recorded as the V1.1 follow-up; SRC-3 (patch apply + fork) and SRC-4 (GrapesJS) remain.
+- Landing note (orchestrator): the agent's edits to 3 shared-hot files (WorkspaceContext / libraryBuiltins / libraryView.test) + app.ts interleaved with the parallel UI session's uncommitted UI-LIBRARY-003 + locale work; staged SRC-only via filtered patches (hunk-level split), their hunks remain in the working tree untouched.
+- Verification: agent gates — npm run check 0 errors · full vitest 186 files: 184 passed / 1891 tests (2 failures = parallel session's in-flight locale tests, fail in isolation) · new e2e source-authoring.spec.ts 1 passed · build ✓. Orchestrator gate — isolated worktree (HEAD 12c7d44 + SRC-only staged slice): tsc 0 + 6 suites / 118 tests green (incl. contract.guard, libraryView).

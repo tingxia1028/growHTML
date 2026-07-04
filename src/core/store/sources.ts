@@ -15,6 +15,8 @@ export type IngestSourceInput = {
   metadata?: Record<string, unknown>;
   createdBy?: CreatedBy;
   createdAt?: string;
+  /** SRC-1: "authored" for documents born in the app (editable body); defaults "imported". */
+  origin?: "authored" | "imported";
 };
 
 export type IngestBinarySourceInput = {
@@ -85,9 +87,35 @@ export async function ingestSource(vault: StudyVault, input: IngestSourceInput):
     path: relativePath,
     mimeType: input.mimeType ?? (input.sourceType === "html" ? "text/html" : undefined),
     contentHash: computeContentHash(input.content),
-    metadata: input.metadata ?? {}
+    metadata: input.metadata ?? {},
+    origin: input.origin ?? "imported",
+    revision: 1
   });
 
+  await vault.stores.sources.upsert(record);
+  return record;
+}
+
+/**
+ * Overwrite a source's stored TEXT content in place (SRC-2 edit pipeline,
+ * docs/design/source-authoring.md §3): rewrite the file, re-hash, bump `revision`.
+ * This is only the STORAGE half — re-projecting the source's anchors against the
+ * new content is the caller's job (src/server/services/sourceAuthoring.ts).
+ */
+export async function updateStoredSourceContent(
+  vault: StudyVault,
+  source: SourceRecord,
+  content: string,
+  opts: { title?: string } = {}
+): Promise<SourceRecord> {
+  await vault.storage.writeText(resolveSourcePath(vault, source), content);
+  const record = sourceSchema.parse({
+    ...source,
+    title: opts.title ?? source.title,
+    contentHash: computeContentHash(content),
+    revision: (source.revision ?? 1) + 1,
+    updatedAt: new Date().toISOString()
+  });
   await vault.stores.sources.upsert(record);
   return record;
 }
