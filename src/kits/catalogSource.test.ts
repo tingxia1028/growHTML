@@ -32,9 +32,12 @@ describe("CatalogSource('local') — the MH-0 seam", () => {
     expect(kit).toBeTruthy();
     expect(kit!.kind).toBe("kit");
     expect(kit!.memberCount).toBe(5);
+    // REV-CORE: the mistake TYPE is core now — the kit's union no longer carries it
+    // (the `mistake` member provides the command/surface, not a contentType).
     expect(kit!.contentTypes).toEqual(
-      expect.arrayContaining(["textbook.explanation", "textbook.exercise", "textbook.mistake", "textbook.review-pack"])
+      expect.arrayContaining(["textbook.explanation", "textbook.exercise", "textbook.review-pack"])
     );
+    expect(kit!.contentTypes).not.toContain("textbook.mistake");
   });
 
   it("filters by kind and by search (title + description, case-insensitive)", async () => {
@@ -46,8 +49,9 @@ describe("CatalogSource('local') — the MH-0 seam", () => {
     expect(flash.some((l) => l.id === "flashcard")).toBe(true);
     expect(flash.some((l) => l.id === "quiz")).toBe(false);
 
+    // REV-CORE: the review loop is CORE — no market listing sells 复习环 anymore.
     const zh = await localCatalogSource.list({ search: "复习环" });
-    expect(zh.map((l) => l.id)).toEqual(["review"]);
+    expect(zh).toEqual([]);
   });
 
   it("get() returns null for unknown ids", async () => {

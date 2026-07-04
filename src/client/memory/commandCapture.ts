@@ -6,7 +6,7 @@
 // closed set. Hardcoding the textbook kit's four generate commands here is a MEM-1
 // stopgap; MEM-3's registerBehaviorTaxonomy moves kit knowledge back into kits.
 
-import { BOOKMARK_CONTENT_TYPE } from "../../core/notes/contentTypes";
+import { BOOKMARK_CONTENT_TYPE, MISTAKE_CONTENT_TYPE } from "../../core/notes/contentTypes";
 import type { CommandContext } from "../commands/registry";
 import type { MemorySubject, MemoryVerb } from "../data/entityClient";
 import { recordMemoryEvent } from "./capture";
@@ -26,7 +26,8 @@ export const commandVerbWhitelist: Readonly<Record<string, CommandCaptureRule>> 
   "operation.run": { verb: "ai.generate" },
   "textbook.explain-concept": { verb: "ai.generate", contentType: "textbook.explanation" },
   "textbook.generate-practice": { verb: "ai.generate", contentType: "textbook.exercise" },
-  "textbook.mark-as-mistake": { verb: "ai.generate", contentType: "textbook.mistake" },
+  // REV-CORE: the command now produces the CORE `mistake` contentType.
+  "textbook.mark-as-mistake": { verb: "ai.generate", contentType: MISTAKE_CONTENT_TYPE },
   "textbook.generate-review-pack": { verb: "ai.generate", contentType: "textbook.review-pack" },
   // —— Note creation ——
   "anchor.add-note": { verb: "note.create" },

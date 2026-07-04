@@ -7,11 +7,23 @@ import { exerciseSpec, explanationSpec, mistakeSpec, reviewPackSpec } from "./co
 // (the same path the server uses for API validation).
 installServerKits();
 
+// textbook.mistake resolves via the CORE registry ALIAS since REV-CORE (the spec
+// itself is the core `mistake` built-in) — the lookup contract is unchanged.
 const TYPES = ["textbook.explanation", "textbook.exercise", "textbook.mistake", "textbook.review-pack"];
 
 describe("Textbook Kit content specs", () => {
   it("registers all 4 Study Block content types into the core registry", () => {
     for (const t of TYPES) expect(getNoteContentSpec(t), `missing spec ${t}`).toBeTruthy();
+  });
+
+  it("REV-CORE: mistakeSpec IS the core spec (id `mistake`); the legacy id aliases to it", () => {
+    expect(mistakeSpec.contentType).toBe("mistake");
+    expect(getNoteContentSpec("textbook.mistake")).toBe(mistakeSpec);
+    expect(mistakeSpec.mistake).toBe(true); // the queue rule-1 capability
+  });
+
+  it("REV-CORE: the review pack declares review.reviewable in ITS OWN file (kit extends by declaring)", () => {
+    expect(reviewPackSpec.review?.reviewable).toBe(true);
   });
 
   it("each createDefault round-trips through its own schema", () => {

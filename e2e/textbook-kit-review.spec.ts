@@ -84,5 +84,7 @@ test.skip("textbook kit: exporting a layer strips the student's Mistake block (p
   const types = pack.notes.map((n) => n.contentType);
 
   expect(types, "explanation should be exported").toContain("textbook.explanation");
+  // REV-CORE: new mistakes persist the CORE "mistake" id; both ids must stay stripped.
   expect(types, "mistake must be stripped from the export").not.toContain("textbook.mistake");
+  expect(types, "core mistake must be stripped from the export").not.toContain("mistake");
 });

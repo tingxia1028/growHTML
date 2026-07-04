@@ -6,7 +6,7 @@
 import { renderNoteContent } from "../../adapters/notes/render";
 import type { NoteEditInput, NoteRenderInput } from "../../client/notes/noteTypeRegistry";
 import type { KitNoteTypePlugin } from "../types";
-import type { ExerciseContent, ExplanationContent, MistakeContent, ReviewPackContent } from "./contentTypes";
+import type { ExerciseContent, ExplanationContent, ReviewPackContent } from "./contentTypes";
 
 // One-item-per-line <textarea> helpers for the string[] fields.
 const linesToArray = (text: string): string[] =>
@@ -215,88 +215,8 @@ function ExerciseEditor({ content, onChange }: NoteEditInput) {
 }
 
 // —— Mistake ————————————————————————————————————————————————————————————————
-function asMistake(content: unknown): MistakeContent {
-  const c = (content ?? {}) as Partial<MistakeContent>;
-  const mastery =
-    c.mastery === "unknown" || c.mastery === "improving" || c.mastery === "mastered" ? c.mastery : "weak";
-  return {
-    exerciseNoteId: typeof c.exerciseNoteId === "string" ? c.exerciseNoteId : undefined,
-    question: typeof c.question === "string" ? c.question : "",
-    wrongAnswer: typeof c.wrongAnswer === "string" ? c.wrongAnswer : "",
-    correctAnswer: typeof c.correctAnswer === "string" ? c.correctAnswer : "",
-    mistakeReason: typeof c.mistakeReason === "string" ? c.mistakeReason : undefined,
-    correction: typeof c.correction === "string" ? c.correction : undefined,
-    retryCount: typeof c.retryCount === "number" ? c.retryCount : 0,
-    mastery
-  };
-}
-
-function MistakeRender({ content, mode }: NoteRenderInput) {
-  const c = asMistake(content);
-  if (mode === "card") {
-    return <div className="note-rendered tb-card-preview tb-mistake-preview">{c.question || c.correction || "(empty mistake)"}</div>;
-  }
-  return (
-    <div className="note-rendered tb-card tb-mistake">
-      <div className="tb-card-head">
-        <span className="tb-card-kind">Mistake</span>
-        <span className="tb-badge" data-mastery={c.mastery}>{c.mastery}</span>
-        {c.retryCount > 0 ? <span className="tb-badge">retries: {c.retryCount}</span> : null}
-      </div>
-      {c.question ? <p className="tb-mistake-question">{c.question}</p> : null}
-      <p className="tb-mistake-wrong">
-        <strong>My answer:</strong> {c.wrongAnswer}
-      </p>
-      <p className="tb-mistake-correct">
-        <strong>Correct:</strong> {c.correctAnswer}
-      </p>
-      {c.mistakeReason ? <Prose text={`**Why I missed it:** ${c.mistakeReason}`} /> : null}
-      {c.correction ? <Prose text={c.correction} /> : null}
-    </div>
-  );
-}
-
-function MistakeEditor({ content, onChange }: NoteEditInput) {
-  const c = asMistake(content);
-  return (
-    <div className="note-edit tb-edit tb-edit-mistake">
-      <input
-        className="note-edit-field tb-mistake-question"
-        placeholder="Question"
-        value={c.question}
-        onChange={(e) => onChange({ ...c, question: e.target.value })}
-      />
-      <input
-        className="note-edit-field tb-mistake-wrong"
-        placeholder="My (wrong) answer"
-        value={c.wrongAnswer}
-        onChange={(e) => onChange({ ...c, wrongAnswer: e.target.value })}
-      />
-      <input
-        className="note-edit-field tb-mistake-correct"
-        placeholder="Correct answer"
-        value={c.correctAnswer}
-        onChange={(e) => onChange({ ...c, correctAnswer: e.target.value })}
-      />
-      <textarea
-        className="note-edit note-edit-text tb-mistake-reason"
-        placeholder="Why I missed it (optional)"
-        value={c.mistakeReason ?? ""}
-        onChange={(e) => onChange({ ...c, mistakeReason: e.target.value || undefined })}
-      />
-      <select
-        className="note-edit-field tb-mistake-mastery"
-        value={c.mastery}
-        onChange={(e) => onChange({ ...c, mastery: e.target.value as MistakeContent["mastery"] })}
-      >
-        <option value="unknown">unknown</option>
-        <option value="weak">weak</option>
-        <option value="improving">improving</option>
-        <option value="mastered">mastered</option>
-      </select>
-    </div>
-  );
-}
+// REV-CORE: the 错题 render/editor moved to the CORE built-ins
+// (src/client/notes/mistakeNoteType.tsx) — the kit no longer owns the type.
 
 // —— Review Pack ————————————————————————————————————————————————————————————
 function asReviewPack(content: unknown): ReviewPackContent {
@@ -389,8 +309,9 @@ function ReviewPackEditor({ content, onChange }: NoteEditInput) {
 }
 
 // `title`/`aliases` = the slash-palette display meta (slash-composer §2 / SC-0):
-// `/讲解`, `/练习题`, `/错题`, `/复习包` (+ English shorthands) all resolve. The full
-// `textbook.*` id matches by itself, so aliases carry only the natural names.
+// `/讲解`, `/练习题`, `/复习包` (+ English shorthands) all resolve (`/错题` now lands
+// on the CORE mistake type). The full `textbook.*` id matches by itself, so aliases
+// carry only the natural names.
 export const explanationPlugin: KitNoteTypePlugin = {
   label: "Explanation",
   title: "讲解",
@@ -411,11 +332,4 @@ export const exercisePlugin: KitNoteTypePlugin = {
   aliases: ["练习题", "习题", "practice", "exercise"],
   render: (input) => <ExerciseRender {...input} />,
   edit: (input) => <ExerciseEditor {...input} />
-};
-export const mistakePlugin: KitNoteTypePlugin = {
-  label: "Mistake",
-  title: "错题",
-  aliases: ["错题本", "订正", "mistake"],
-  render: (input) => <MistakeRender {...input} />,
-  edit: (input) => <MistakeEditor {...input} />
 };

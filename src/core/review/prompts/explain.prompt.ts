@@ -8,8 +8,11 @@
 // facts never reach `kind:"managed"` without consent) lives in the server generate
 // path (src/server/services/ai.ts), NOT here — build() stays a pure formatter.
 // React-free.
+//
+// REV-CORE: lives in core — the id `review.explain` MUST stay stable: the REV-2
+// server gate (PROFILE_GATED_PROMPT_IDS in services/ai.ts) keys on it.
 
-import type { KitPrompt } from "../../types";
+import type { KitPrompt } from "../../../kits/types";
 
 export type ExplainInput = {
   /** The reviewed item flattened to text (question or the note's toSearchText). */

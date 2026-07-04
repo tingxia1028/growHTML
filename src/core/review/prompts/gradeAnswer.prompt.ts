@@ -3,8 +3,11 @@
 // shown inline in the runner and is NEVER persisted as a note (review-loop.md §2);
 // it still flows through /api/kits/generate so the schema gate + re-prompt loop
 // apply exactly as for any declared-form generation. React-free.
+//
+// REV-CORE: lives in core — prompt id and outputType UNCHANGED from the dissolved
+// review plugin. KitPrompt is a React-free structural contract (type-only import).
 
-import type { KitPrompt } from "../../types";
+import type { KitPrompt } from "../../../kits/types";
 import { REVIEW_GRADE_CONTENT_TYPE, type ReviewGradeContent } from "../contentTypes";
 
 export type GradeAnswerInput = {

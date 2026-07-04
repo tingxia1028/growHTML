@@ -785,13 +785,15 @@ function HtmlSandboxEditor({ content, onChange }: NoteEditInput) {
         value={html}
         onChange={(event) => onChange({ html: event.target.value, interactive })}
       />
-      <label className="note-edit-html-interactive">
+      <label className="note-edit-html-interactive sv-check">
         <input
           type="checkbox"
+          className="sv-check-input"
           checked={interactive}
           onChange={(event) => onChange({ html, interactive: event.target.checked })}
         />
-        Interactive (run scripts in a hardened sandbox)
+        <span className="sv-check-box" aria-hidden="true" />
+        <span>Interactive (run scripts in a hardened sandbox)</span>
       </label>
     </div>
   );
@@ -904,6 +906,14 @@ registerNoteType({
   render: (input) => <BookmarkChip {...input} />,
   edit: (input) => <BookmarkEditor {...input} />
 });
+
+// —— REV-CORE core-seed registrations ————————————————————————————————————————
+// The mission loop's types register WITH the built-ins (kit-flatten-and-core-review
+// §1): `mistake` (错题, moved out of the textbook kit; old `textbook.mistake` records
+// reach it via the registry alias) and the hidden `review.grade` transport verdict
+// (moved out of the dissolved review plugin).
+import "./mistakeNoteType";
+import "../review/gradeNoteType";
 
 // Exported only so a host can show an inert fallback for an UNKNOWN contentType
 // (one with no registered plugin) instead of nothing.

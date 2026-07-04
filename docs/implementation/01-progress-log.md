@@ -4,10 +4,30 @@ Use this file as the live status board for implementation work.
 
 ## Current Status
 
+## 2026-07-04 - UI-PLUGIN-001 Kit & Plugin top tabs and search
+
+- Goal: make the Kit & Plugin panel match the shared sidebar style: 已安装/市场 are top-level tabs, and search is a right-side icon that expands a search input below the tabs.
+- Active plan: refactor `pluginManagerViews.tsx` header structure, make search filter both installed rows and market listings, tune CSS for the top tab/search affordance, and document the rule in `design.md`.
+- Verification target: focused plugin-manager tests, `npm run check`, `npm run build`, and a DOM/style smoke if the dev server is running.
+
 - Date: 2026-07-04
-- Phase: Reader annotation surface unification (F3 / D1)
+- Phase: REV-CORE — 复习通用化 + 沉核心 (kit-flatten-and-core-review.md §1)
 - Active task: None
-- Overall status: Complete. Every reader realm now hosts the one D1 `ReaderAnnotationAdapter`; the webview guest's divergent inline marker chip is replaced by a real body-mounted `MarkerOverlay`.
+- Overall status: Complete. The review loop is core: queue eligibility reads registry capabilities, 错题 is the core `mistake` built-in (with a `textbook.mistake` alias, zero migration), and the review plugin is dissolved.
+
+## 2026-07-04 - REV-CORE-001 复习通用化 + 沉核心
+
+- Goal: sever the review loop's coupling to the textbook kit and dissolve the review plugin into core (`docs/design/kit-flatten-and-core-review.md` §1) — the loop is the mission loop, not uninstallable. §2 (FLAT) explicitly NOT in scope.
+- Active plan: (1) extend `NoteContentSpec` with `review?: { reviewable, expectedAnswer? }` + `mistake?: true` capabilities and a GENERIC contentType alias map (`registerNoteContentSpecAlias`, alias-aware `getNoteContentSpec`/`parseNoteContent`/`getNoteType`); (2) move `mistakeSpec` into core as contentType `"mistake"` (same schema/render/labels; alias `"textbook.mistake"` → it; the kit re-exports); (3) queue rules 1/2 read the capabilities (ordering/reasons/weak-bucket logic untouched); ReviewPanel saves 错题 as `"mistake"` and grades via `spec.review.expectedAnswer`; quiz/flashcard declare the capability in core, `textbook.review-pack` declares it IN THE KIT FILE (kit-extends-by-declaring proof); (4) move `src/kits/review/prompts/*` → `src/core/review/prompts/` (ids unchanged: `review.generate-check` / `review.grade-answer` / `review.explain`) + the `review.grade` spec → `src/core/review/contentTypes.ts`, all registered at core seed (the prompt registry seeds on load; grade/mistake client halves register with `builtinNoteTypes`); delete `src/kits/review/`, remove the review catalog entry + productKits registration.
+- Result: `src/client/review/queue.ts` and `ReviewPanel.tsx` import ZERO kit files; new mistakes persist `"mistake"` everywhere (ReviewPanel 存为错题, the `textbook.mark-as-mistake` command/prompt, memory capture) while every reader of mistakes (queue rule 1, review-pack gathering, Practice view, export privacy) accepts BOTH ids; core `mistake` is private-by-default WITHOUT any kit policy (policy.ts core seed); the REV-2 server profileContext gate (`services/ai.ts`) now imports the prompt from core, ids unchanged; the plugin manager/market no longer lists the review loop, and a stale persisted `"review"` install id is tolerated (uncataloged ⇒ inert, covered by a new installState test).
+- Verification: `npm run check` (tsc 0); `npx vitest run` — 157 files / 1510 tests, all green (kit review tests ported to `src/core/review/prompts.test.ts` + `src/client/review/coreReviewRegistration.test.tsx`; queue tests now include a FIXTURE spec entering rule 2 via `review.reviewable` with zero queue-code changes and a both-ids rule-1 case); `npm run build` green.
+
+## 2026-07-04 - UI-CONTROLS-001 Unified checkbox/switch controls
+
+- Goal: make every visible checked control use one visual system: compact accent-blue checkboxes for list selection, and Codex-like pill switches for persistent binary settings.
+- Active plan: add shared `.sv-check` and `.sv-switch` CSS primitives; migrate Layers, plugin toggles, operation toggles, profile/settings memory capture, and HTML interactive note editing; redesign Layers rows as the same soft-card language used by the rest of the panes; update `design.md` with the control taxonomy and implementation rules.
+- Result: Layers now render 8px-radius accent-blue card rows with `.sv-check`; persistent toggles in Profile, Settings, Plugin Manager, and Operation Manager render as 34x20 `.sv-switch` controls; note-edit checkboxes use the same `.sv-check` primitive; `design.md` was rewritten as a clean UTF-8 design map with the control taxonomy, Layers rules, note-card rules, plugin boundary, and schedule-plugin direction.
+- Verification: `npm run check`; focused Vitest run for Profile/Settings/Layers/Plugin/Operation/Review panels (6 files, 47 tests); `npm run build`; Playwright DOM/style smoke at `http://127.0.0.1:5173` confirmed Layers checks are 16x16 accent blue, switches are 34x20 accent blue, and screenshot evidence was saved to `C:/Users/Jump/AppData/Local/Temp/growte-ui-controls-001.png`.
 
 ## 2026-07-04 - F3-D1-001 ReaderAnnotationAdapter contract (D1)
 

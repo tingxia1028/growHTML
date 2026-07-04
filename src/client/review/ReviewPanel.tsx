@@ -27,16 +27,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BookOpenCheck } from "lucide-react";
 import { registerView, type WorkspaceContext } from "../workspace/viewRegistry";
 import { getNoteType, type NoteRenderMode } from "../notes/noteTypeRegistry";
-import { getNoteContentSpec } from "../../core/notes/contentTypes";
+import { getNoteContentSpec, MISTAKE_CONTENT_TYPE, mistakeSpec } from "../../core/notes/contentTypes";
 import type { MemoryDimensionSummary } from "../../core/memory/digest";
 import type { NoteRecord, ProfileFactView } from "../data/entityClient";
 import { recordMemoryEvent } from "../memory/capture";
-import { mistakeSpec } from "../../kits/textbook-learning/contentTypes";
-import { REVIEW_GRADE_CONTENT_TYPE, type ReviewGradeContent } from "../../kits/review/contentTypes";
-import { explainPrompt, generateCheckPrompt, gradeAnswerPrompt } from "../../kits/review/prompts";
+import { REVIEW_GRADE_CONTENT_TYPE, type ReviewGradeContent } from "../../core/review/contentTypes";
+import { explainPrompt, generateCheckPrompt, gradeAnswerPrompt } from "../../core/review/prompts";
 import {
   buildReviewQueue,
-  MISTAKE_CONTENT_TYPE,
   noteMatchesWeakBucket,
   weakReviewBuckets,
   type ReviewQueueItem,
@@ -76,6 +74,14 @@ function asQuizShape(content: unknown): QuizShape {
 function asGradeShape(content: unknown): ReviewGradeContent {
   const c = (content ?? {}) as Partial<ReviewGradeContent>;
   return { correct: c.correct === true, explanation: typeof c.explanation === "string" ? c.explanation : "" };
+}
+
+// The expected answer for grading — REV-CORE: prefer the check type's REGISTRY
+// capability (spec.review.expectedAnswer, declared by gradable types) over poking the
+// content shape; the quiz-shape read stays as the defensive fallback.
+function expectedAnswerFor(quiz: QuizShape): string {
+  const viaSpec = getNoteContentSpec(generateCheckPrompt.outputType)?.review?.expectedAnswer?.(quiz);
+  return viaSpec ?? quiz.options[quiz.answerIndex] ?? "";
 }
 
 /** A note's content flattened to prompt text — the core spec's own reducer. */
@@ -194,7 +200,9 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
   const items = weakFilter ? allItems.filter((item) => noteMatchesWeakBucket(item.note, weakFilter)) : allItems;
   const current = index < items.length ? items[index] : null;
   const remaining = items.length - index;
-  const isMistakeItem = current?.note.contentType === MISTAKE_CONTENT_TYPE;
+  // REV-CORE: the AI-check flow keys on the registry's `mistake` CAPABILITY
+  // (alias-aware — old textbook.mistake records qualify), not a contentType string.
+  const isMistakeItem = getNoteContentSpec(current?.note.contentType ?? "")?.mistake === true;
   const itemMode: ReviewMode = isMistakeItem ? "ai-check" : "self";
 
   // ONE memory event per completed item — the loop's durable output (MEM-1 verb
@@ -251,7 +259,7 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
     setBusy(true);
     setAiError("");
     try {
-      const expected = quiz.options[quiz.answerIndex] ?? "";
+      const expected = expectedAnswerFor(quiz);
       const { content } = await getReviewIo().generate({
         promptId: gradeAnswerPrompt.id,
         contentType: gradeAnswerPrompt.outputType,
@@ -309,11 +317,13 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
     const quiz = check.quiz;
     const grade = check.grade;
     if (!current || !quiz || !grade || check.savedMistake) return;
-    // Validate against the kit's own spec before dispatch (the composer idiom).
+    // Validate against the CORE mistake spec before dispatch (the composer idiom).
+    // REV-CORE: NEW 错题 saves write the core `"mistake"` contentType (old
+    // `textbook.mistake` records keep working through the registry alias).
     const content = mistakeSpec.schema.parse({
       question: quiz.question,
       wrongAnswer: check.userAnswer.trim(),
-      correctAnswer: quiz.options[quiz.answerIndex] ?? "",
+      correctAnswer: expectedAnswerFor(quiz),
       mistakeReason: grade.explanation,
       retryCount: 0,
       mastery: "weak"
@@ -400,7 +410,7 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
   const mistakeItem = (item: ReviewQueueItem<NoteRecord>) => {
     const quiz = check.quiz;
     const grade = check.grade;
-    const expected = quiz ? quiz.options[quiz.answerIndex] ?? "" : "";
+    const expected = quiz ? expectedAnswerFor(quiz) : "";
     return (
       <>
         <div className="review-item-content">

@@ -162,4 +162,23 @@ describe("the module store (the availability predicate selectors read)", () => {
     expect(isPluginEffectiveInstalled("flashcard")).toBe(true);
     expect(isKitInstalled("user:k")).toBe(true);
   });
+
+  it("REV-CORE migration safety: a STALE plugin id persisted before a catalog entry was retired is ignored gracefully", () => {
+    // Vaults that materialized their catalogState while the review plugin was a market
+    // good still carry "review" in installedPlugins. The id is UNCATALOGED now: every
+    // derivation tolerates it (no crash, no listing), and the availability predicate
+    // treats it as always-available (the loop is core).
+    syncInstallState({
+      catalogState: { installedPlugins: ["review", "quiz"], installedKits: ["textbook-learning"] },
+      userKits: []
+    });
+    const snap = installStateSnapshot();
+    expect(snap.effectivePluginIds.has("quiz")).toBe(true);
+    expect(snap.effectivePluginIds.has("review")).toBe(true); // inert — nothing resolves it
+    expect(isPluginEffectiveInstalled("review")).toBe(true); // uncataloged ⇒ always available
+    expect(holdsOf("review", snap.catalogState)).toEqual({ direct: true, viaKits: [] });
+    // Uninstalling the stale id is a plain set op — still no crash.
+    const next = withPluginUninstalled(snap.catalogState, "review");
+    expect(next.installedPlugins).not.toContain("review");
+  });
 });

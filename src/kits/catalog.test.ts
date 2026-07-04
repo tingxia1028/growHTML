@@ -42,7 +42,7 @@ describe("bundled catalog invariants (§8.1)", () => {
     }
   });
 
-  it("lists the §8.1 classification: reclassified built-ins, textbook members, review, the kit", () => {
+  it("lists the §8.1 classification: reclassified built-ins, textbook members, the kit", () => {
     for (const id of [
       "flashcard",
       "quiz",
@@ -53,8 +53,7 @@ describe("bundled catalog invariants (§8.1)", () => {
       "practice",
       "mistake",
       "review-pack",
-      "textbook-language",
-      "review"
+      "textbook-language"
     ]) {
       expect(getCatalogEntry(id)?.kind, id).toBe("plugin");
     }
@@ -96,11 +95,14 @@ describe("providerOf — the contentType → plugin index (§8.2/§8.7)", () => 
     expect(providerOf("mindmap")?.id).toBe("diagrams");
     expect(providerOf("textbook.explanation")?.id).toBe("explanation");
     expect(providerOf("textbook.exercise")?.id).toBe("practice");
-    expect(providerOf("review.grade")?.id).toBe("review");
     // "always available, nothing to install":
     expect(providerOf("markdown")).toBeUndefined();
     expect(providerOf("html-sandbox")).toBeUndefined();
     expect(providerOf("unknown.type")).toBeUndefined();
+    // REV-CORE: the review loop and the mistake type are CORE — no provider to install.
+    expect(providerOf("review.grade")).toBeUndefined();
+    expect(providerOf("mistake")).toBeUndefined();
+    expect(providerOf("textbook.mistake")).toBeUndefined();
   });
 
   it("defaultInstalledIds splits by kind", () => {

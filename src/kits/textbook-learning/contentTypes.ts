@@ -59,31 +59,12 @@ export const exerciseSpec: NoteContentSpec<ExerciseContent> = {
   toSearchText: (c) => [c.question, c.explanation].join("\n")
 };
 
-// —— Mistake Block (textbook.mistake) ————————————————————————————————————————
-const mistakeSchema = z.object({
-  exerciseNoteId: z.string().optional(),
-  question: z.string(),
-  wrongAnswer: z.string(),
-  correctAnswer: z.string(),
-  mistakeReason: z.string().optional(),
-  correction: z.string().optional(),
-  retryCount: z.number().default(0),
-  mastery: z.enum(["unknown", "weak", "improving", "mastered"]).default("weak")
-});
-export type MistakeContent = z.infer<typeof mistakeSchema>;
-
-export const mistakeSpec: NoteContentSpec<MistakeContent> = {
-  contentType: "textbook.mistake",
-  schema: mistakeSchema,
-  createDefault: () => ({
-    question: "",
-    wrongAnswer: "",
-    correctAnswer: "",
-    retryCount: 0,
-    mastery: "weak"
-  }),
-  toSearchText: (c) => [c.question, c.mistakeReason ?? "", c.correction ?? ""].join("\n")
-};
+// —— Mistake Block ————————————————————————————————————————————————————————————
+// REV-CORE (kit-flatten-and-core-review.md §1): 错题 is CORE now — the spec lives in
+// src/core/notes/contentTypes.ts as contentType `"mistake"`, and the old persisted
+// `"textbook.mistake"` id resolves to it through the registry ALIAS (zero data
+// migration). Re-exported here so kit code/tests keep one import path.
+export { MISTAKE_CONTENT_TYPE, mistakeSpec, type MistakeContent } from "../../core/notes/contentTypes";
 
 // —— Review Pack (textbook.review-pack) ——————————————————————————————————————
 // A chapter-level study summary synthesized from a source's Explanation + Mistake
@@ -116,14 +97,18 @@ export const reviewPackSpec: NoteContentSpec<ReviewPackContent> = {
     flashcards: [],
     exercises: []
   }),
-  toSearchText: (c) => [c.title, c.summary, ...c.keyPoints, ...c.weakPoints].join("\n")
+  toSearchText: (c) => [c.title, c.summary, ...c.keyPoints, ...c.weakPoints].join("\n"),
+  // REV-CORE: the kit EXTENDS the core review loop by DECLARING the capability in its
+  // own spec — the queue's rule 2 picks review packs up with zero core/kit imports
+  // (the proof the reviewable contract works; kit-flatten-and-core-review.md §1).
+  review: { reviewable: true }
 };
 
 // All Textbook Kit core specs — registered by both the server (validation) and the
 // client (defaults / editors), keeping content-shape definition in one place.
+// (mistake is a CORE built-in since REV-CORE — no longer defined or registered here.)
 export const textbookContentSpecs: NoteContentSpec[] = [
   explanationSpec as NoteContentSpec,
   exerciseSpec as NoteContentSpec,
-  mistakeSpec as NoteContentSpec,
   reviewPackSpec as NoteContentSpec
 ];

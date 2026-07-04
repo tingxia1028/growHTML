@@ -76,7 +76,10 @@ describe("MH-0 — the 市场 tab lists the new kits automatically via CatalogSo
     expect(english!.memberCount).toBe(2); // subject-vocab + flashcard
     expect(english!.contentTypes).toEqual(expect.arrayContaining(["subject.vocab", "flashcard"]));
     const math = kits.find((l) => l.id === "subject-math");
-    expect(math!.contentTypes).toEqual(expect.arrayContaining(["subject.formula", "textbook.mistake", "quiz"]));
+    // REV-CORE: the mistake TYPE is core — the `mistake` member contributes its command
+    // only, so the kit's contentTypes union carries formula + quiz.
+    expect(math!.contentTypes).toEqual(expect.arrayContaining(["subject.formula", "quiz"]));
+    expect(math!.contentTypes).not.toContain("textbook.mistake");
     expect(kits.find((l) => l.id === "subject-history-geo")).toBeTruthy();
   });
 

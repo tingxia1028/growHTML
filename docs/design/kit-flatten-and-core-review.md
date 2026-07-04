@@ -8,6 +8,10 @@ taxonomy is too messy → **user-facing there is ONLY the kit**; ④ review move
 
 ## 1. REV-CORE — 复习通用化 + 沉核心
 
+**Status: ✅ shipped (REV-CORE-001, 2026-07-04)** — capabilities + alias landed in
+`src/core/notes/contentTypes.ts`; prompts/grade type/panel register from core;
+`src/kits/review/` deleted; queue/panel read the registry.
+
 **Coupling evidence (all to be severed):**
 - `src/client/review/queue.ts:23` imports `mistakeSpec, reviewPackSpec` from
   `kits/textbook-learning/contentTypes`; `REVIEWABLE_CONTENT_TYPES` is a hardcoded list.

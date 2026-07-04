@@ -1,3 +1,5 @@
+import { MISTAKE_CONTENT_TYPE } from "../core/notes/contentTypes";
+
 // Kit layer-propagation policy — React-free registry (server registers these, like
 // prompts + content specs). A Product Kit declares which of its note contentTypes are
 // safe to SHARE (export) and which are PRIVATE BY DEFAULT, so a teacher exporting a
@@ -24,7 +26,10 @@ export type KitLayerPolicy = {
 };
 
 const policies: KitLayerPolicy[] = [];
-const privateByDefault = new Set<string>();
+// CORE LAW (REV-CORE): 错题 is a core built-in type now, and a student's mistakes must
+// NEVER leave the vault on export — seeded here, not via any kit policy. The legacy
+// "textbook.mistake" id stays covered by the textbook kit's own policy.
+const privateByDefault = new Set<string>([MISTAKE_CONTENT_TYPE]);
 
 export function registerKitLayerPolicy(policy: KitLayerPolicy): void {
   // Idempotent per kit (re-install / test re-import shouldn't duplicate).

@@ -73,8 +73,13 @@ describe("slashEntriesFromNoteTypes — registry-derived palette entries", () =>
   it("textbook kit types appear with 中文 titles + their owning MEMBER plugin id (F5 split)", () => {
     expect(byId("textbook.explanation")).toMatchObject({ title: "讲解", kitId: "explanation" });
     expect(byId("textbook.exercise")).toMatchObject({ title: "练习", kitId: "practice" });
-    expect(byId("textbook.mistake")).toMatchObject({ title: "错题", kitId: "mistake" });
     expect(byId("textbook.review-pack")).toMatchObject({ title: "复习包", kitId: "review-pack" });
+  });
+
+  it("REV-CORE: 错题 is the CORE `mistake` type — no provider badge, legacy id not listed", () => {
+    expect(byId("mistake")).toMatchObject({ title: "错题" });
+    expect(byId("mistake")!.kitId).toBeUndefined(); // core — never gated
+    expect(byId("textbook.mistake")).toBeUndefined(); // an ALIAS, not a palette entry
   });
 
   it("a registration without title/aliases falls back to contentType + [] (never dropped)", () => {
@@ -92,6 +97,7 @@ describe("M1/F4 — effective-installed gates the palette list (slash-composer �
     expect(byId("textbook.explanation")).toBeUndefined(); // kit uninstalled → member gone
     expect(byId("flashcard")).toBeTruthy(); // directly installed → stays
     expect(byId("markdown")).toBeTruthy(); // core primitive → ALWAYS available
+    expect(byId("mistake")).toBeTruthy(); // REV-CORE: the mission-loop type is core → never gated
   });
 
   it("a kit install brings its members' types back (union semantics)", () => {

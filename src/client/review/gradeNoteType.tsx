@@ -1,14 +1,15 @@
-// Review plugin — the React half of the HIDDEN `review.grade` type. A grade is a
+// The React half of the HIDDEN core `review.grade` type — moved out of the dissolved
+// review plugin by REV-CORE (kit-flatten-and-core-review.md §1). A grade is a
 // transient verdict shown inline in the review runner, never persisted as a note —
 // but the adaptive-note contract still holds: IF grade content ever reaches a
 // display surface it renders through getNoteType("review.grade").render like every
 // other contentType (no bespoke path). `hidden: true` keeps it out of the composer
 // type picker AND the slash palette (the SC-0 adapter skips hidden registrations),
-// so it is never OFFERED for authoring.
+// so it is never OFFERED for authoring. Importing this module registers the type
+// (the built-in side-effect pattern; builtinNoteTypes.tsx imports it as core seed).
 
-import type { NoteEditInput, NoteRenderInput } from "../../client/notes/noteTypeRegistry";
-import type { KitNoteTypePlugin } from "../types";
-import type { ReviewGradeContent } from "./contentTypes";
+import { registerNoteType, type NoteEditInput, type NoteRenderInput } from "../notes/noteTypeRegistry";
+import { REVIEW_GRADE_CONTENT_TYPE, type ReviewGradeContent } from "../../core/review/contentTypes";
 
 function asGrade(content: unknown): ReviewGradeContent {
   const c = (content ?? {}) as Partial<ReviewGradeContent>;
@@ -34,13 +35,15 @@ function GradeEditor({ content, onChange }: NoteEditInput) {
   const grade = asGrade(content);
   return (
     <div className="note-edit review-grade-edit">
-      <label className="review-grade-edit-correct">
+      <label className="review-grade-edit-correct sv-check">
         <input
           type="checkbox"
+          className="sv-check-input"
           checked={grade.correct}
           onChange={(e) => onChange({ ...grade, correct: e.target.checked })}
         />
-        correct
+        <span className="sv-check-box" aria-hidden="true" />
+        <span>correct</span>
       </label>
       <textarea
         className="note-edit note-edit-text review-grade-edit-explanation"
@@ -52,10 +55,11 @@ function GradeEditor({ content, onChange }: NoteEditInput) {
   );
 }
 
-export const reviewGradePlugin: KitNoteTypePlugin = {
+registerNoteType({
+  contentType: REVIEW_GRADE_CONTENT_TYPE,
   label: "检验判定",
   title: "检验判定",
   hidden: true,
   render: (input) => <GradeRender {...input} />,
   edit: (input) => <GradeEditor {...input} />
-};
+});

@@ -10,18 +10,18 @@ import { textbookContentSpecs } from "./textbook-learning/contentTypes";
 import { textbookPrompts } from "./textbook-learning/prompts";
 import { textbookLayerPolicy } from "./textbook-learning/policy";
 import { textbookDetection } from "./textbook-learning/detection";
-import { reviewContentSpecs } from "./review/contentTypes";
-import { reviewPrompts } from "./review/prompts";
 import { subjectContentSpecs } from "./subject/contentTypes";
 import { subjectPrompts } from "./subject/prompts";
 import { subjectDetectionTables } from "./subject/detection";
 
+// REV-CORE: the review loop is CORE now — its grade spec registers with the core
+// built-ins (src/core/review/contentTypes) and its prompts seed the prompt registry
+// on load (src/kits/prompts.ts); nothing review-shaped rides the kit aggregation.
 export const kitContentSpecs: NoteContentSpec[] = [
   ...textbookContentSpecs,
-  ...reviewContentSpecs,
   ...subjectContentSpecs
 ];
-export const kitPrompts: KitPrompt[] = [...textbookPrompts, ...reviewPrompts, ...subjectPrompts];
+export const kitPrompts: KitPrompt[] = [...textbookPrompts, ...subjectPrompts];
 export const kitLayerPolicies: KitLayerPolicy[] = [textbookLayerPolicy];
 // Subject Auto-Switch tables (M-A) — one per kit; M-B adds the shipped subject kits'
 // (英语/数学/史地 — subject-kits.md §3.3); 语文/理化生 follow with M-C.

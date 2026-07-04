@@ -7,6 +7,9 @@ import { kitContentTypeLabel } from "../language";
 
 // Side-effect: installs the Product Kits (registers textbook specs + plugins + language).
 import "../clientKits";
+// REV-CORE: the 错题 render is a CORE built-in now (old textbook.mistake records reach
+// it via the registry alias) — register it the way builtinNoteTypes' core seed does.
+import "../../client/notes/mistakeNoteType";
 
 function renderToHtml(node: React.ReactNode): string {
   const container = document.createElement("div");
@@ -23,7 +26,7 @@ function setValue(el: HTMLInputElement | HTMLTextAreaElement, value: string) {
   el.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-const TYPES = ["textbook.explanation", "textbook.exercise", "textbook.mistake"];
+const TYPES = ["textbook.explanation", "textbook.exercise"];
 
 describe("Textbook Kit client install", () => {
   it("registers a client plugin for each Study Block type", () => {
@@ -31,6 +34,12 @@ describe("Textbook Kit client install", () => {
       expect(getNoteType(t), `missing plugin ${t}`).toBeTruthy();
       expect(listNoteTypes().map((p) => p.contentType)).toContain(t);
     }
+  });
+
+  it("REV-CORE: the kit no longer registers textbook.mistake — the legacy id resolves to the CORE plugin via the alias", () => {
+    expect(listNoteTypes().map((p) => p.contentType)).not.toContain("textbook.mistake");
+    expect(listNoteTypes().map((p) => p.contentType)).toContain("mistake");
+    expect(getNoteType("textbook.mistake")?.contentType).toBe("mistake");
   });
 
   it("exposes domain display names via the kit language", () => {

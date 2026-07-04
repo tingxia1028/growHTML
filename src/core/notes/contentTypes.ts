@@ -15,16 +15,50 @@ export type NoteContentSpec<T = unknown> = {
   createDefault(): T;
   /** Human-readable text for search / export (no structural noise). */
   toSearchText(content: T): string;
+  /**
+   * REV-CORE review capability (kit-flatten-and-core-review.md §1) — the reviewable
+   * CONTRACT on the registry (the adaptive-note move: capability declared per spec,
+   * the review engine reads the registry, core never imports kit files). A spec that
+   * declares `review.reviewable` enters queue rule 2 (review material,
+   * least-recently-reviewed); a GRADABLE spec also exposes `expectedAnswer` so the
+   * AI check/grade flow knows the correct answer without poking the content shape.
+   */
+  review?: {
+    reviewable: true;
+    expectedAnswer?(content: T): string | null;
+  };
+  /** Marks a spec as 错题-material — queue rule 1 (mistakes first) keys on THIS
+      capability, never on a contentType string. */
+  mistake?: true;
 };
 
 const registry = new Map<string, NoteContentSpec>();
+
+// —— contentType aliases (REV-CORE) ——————————————————————————————————————————
+// A GENERIC alias map: an old persisted contentType id resolves to a live spec
+// under a new id — zero data migration (existing vault records keep validating and
+// rendering; new saves write the canonical id). A DIRECT registration for the alias
+// id always wins over the alias (aliases only fill lookup gaps, never shadow).
+const aliases = new Map<string, string>();
+
+export function registerNoteContentSpecAlias(alias: string, contentType: string): void {
+  aliases.set(alias, contentType);
+}
+
+/** The canonical contentType an alias points at (undefined when not an alias). */
+export function resolveNoteContentTypeAlias(contentType: string): string | undefined {
+  return aliases.get(contentType);
+}
 
 export function registerNoteContentSpec<T>(spec: NoteContentSpec<T>): void {
   registry.set(spec.contentType, spec as NoteContentSpec);
 }
 
 export function getNoteContentSpec(contentType: string): NoteContentSpec | undefined {
-  return registry.get(contentType);
+  const direct = registry.get(contentType);
+  if (direct) return direct;
+  const alias = aliases.get(contentType);
+  return alias ? registry.get(alias) : undefined;
 }
 
 export function listNoteContentSpecs(): readonly NoteContentSpec[] {
@@ -35,10 +69,11 @@ export function listNoteContentSpecs(): readonly NoteContentSpec[] {
  * Validate a note's content against its type's spec. Returns the parsed value.
  * Throws a ZodError on mismatch and a plain Error for an unknown contentType
  * (the API turns the former into 400 via its ZodError handler, the latter is
- * caught and reported as an invalid request).
+ * caught and reported as an invalid request). Alias-aware: an aliased legacy id
+ * (e.g. "textbook.mistake") validates against its canonical spec.
  */
 export function parseNoteContent(contentType: string, content: unknown): unknown {
-  const spec = registry.get(contentType);
+  const spec = getNoteContentSpec(contentType);
   if (!spec) throw new Error(`Unknown note contentType: ${contentType}`);
   return spec.schema.parse(content);
 }
@@ -148,6 +183,40 @@ const bookmarkSchema = z.object({
 
 const stripTags = (html: string) => html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 
+// —— mistake (错题) — CORE built-in since REV-CORE ————————————————————————————
+// The mission loop's rule-1 material moved out of the textbook kit
+// (kit-flatten-and-core-review.md §1): the structure is EXACTLY the old
+// `textbook.mistake` schema. Zero data migration: "textbook.mistake" registers as an
+// ALIAS of this spec (see registerBuiltinNoteContentSpecs), so existing vault records
+// keep validating/rendering; NEW saves write `"mistake"`.
+export const MISTAKE_CONTENT_TYPE = "mistake";
+const mistakeSchema = z.object({
+  exerciseNoteId: z.string().optional(),
+  question: z.string(),
+  wrongAnswer: z.string(),
+  correctAnswer: z.string(),
+  mistakeReason: z.string().optional(),
+  correction: z.string().optional(),
+  retryCount: z.number().default(0),
+  mastery: z.enum(["unknown", "weak", "improving", "mastered"]).default("weak")
+});
+export type MistakeContent = z.infer<typeof mistakeSchema>;
+
+export const mistakeSpec: NoteContentSpec<MistakeContent> = {
+  contentType: MISTAKE_CONTENT_TYPE,
+  schema: mistakeSchema,
+  createDefault: () => ({
+    question: "",
+    wrongAnswer: "",
+    correctAnswer: "",
+    retryCount: 0,
+    mastery: "weak"
+  }),
+  toSearchText: (c) => [c.question, c.mistakeReason ?? "", c.correction ?? ""].join("\n"),
+  // Queue rule 1 keys on this capability (NOT on the contentType string).
+  mistake: true
+};
+
 export const builtinNoteContentSpecs: NoteContentSpec[] = [
   {
     contentType: "markdown",
@@ -174,6 +243,11 @@ export const builtinNoteContentSpecs: NoteContentSpec[] = [
     toSearchText: (c) => {
       const card = c as z.infer<typeof flashcardSchema>;
       return `${card.front} ${card.back}`.trim();
+    },
+    // REV-CORE: review material (queue rule 2); the back IS the expected answer.
+    review: {
+      reviewable: true,
+      expectedAnswer: (c) => (c as z.infer<typeof flashcardSchema>).back || null
     }
   },
   {
@@ -195,6 +269,14 @@ export const builtinNoteContentSpecs: NoteContentSpec[] = [
     toSearchText: (c) => {
       const q = c as z.infer<typeof quizSchema>;
       return [q.question, ...q.options, q.explanation ?? ""].join(" ").trim();
+    },
+    // REV-CORE: quiz IS the core 可检验卡片 primitive — reviewable + gradable.
+    review: {
+      reviewable: true,
+      expectedAnswer: (c) => {
+        const q = c as z.infer<typeof quizSchema>;
+        return q.options[q.answerIndex] ?? null;
+      }
     }
   },
   {
@@ -234,7 +316,8 @@ export const builtinNoteContentSpecs: NoteContentSpec[] = [
     schema: bookmarkSchema,
     createDefault: () => ({ label: "" }),
     toSearchText: (c) => (c as z.infer<typeof bookmarkSchema>).label
-  }
+  },
+  mistakeSpec as NoteContentSpec
 ];
 
 let registered = false;
@@ -242,6 +325,9 @@ let registered = false;
 export function registerBuiltinNoteContentSpecs(): void {
   if (registered) return;
   for (const spec of builtinNoteContentSpecs) registerNoteContentSpec(spec);
+  // REV-CORE zero-migration alias: pre-existing vault records persisted as
+  // "textbook.mistake" resolve to the core mistake spec (validate, search, render).
+  registerNoteContentSpecAlias("textbook.mistake", MISTAKE_CONTENT_TYPE);
   registered = true;
 }
 

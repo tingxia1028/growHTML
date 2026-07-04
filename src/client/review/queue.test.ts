@@ -9,15 +9,26 @@
 import { describe, expect, it } from "vitest";
 import { PROFILE_WEAK_FAIL_RATIO, PROFILE_WEAK_MIN_ATTEMPTS } from "../../core/memory/profile";
 import {
-  buildReviewQueue,
+  getNoteContentSpec,
   MISTAKE_CONTENT_TYPE,
+  registerNoteContentSpec,
+  type NoteContentSpec
+} from "../../core/notes/contentTypes";
+import { reviewPackSpec } from "../../kits/textbook-learning/contentTypes";
+import { z } from "zod";
+import {
+  buildReviewQueue,
   noteMatchesWeakBucket,
-  REVIEWABLE_CONTENT_TYPES,
   weakReviewBuckets,
   type ReviewDigestSummaryLike,
   type ReviewEventLike,
   type ReviewQueueNote
 } from "./queue";
+
+// The queue reads ELIGIBILITY from the content-type registry (REV-CORE). Core
+// built-ins (mistake / quiz / flashcard) register on import; the kit's review-pack
+// spec registers here exactly as installClientKits/installServerKits would.
+registerNoteContentSpec(reviewPackSpec as NoteContentSpec);
 
 const note = (id: string, contentType: string, createdAt?: string): ReviewQueueNote => ({
   id,
@@ -36,12 +47,54 @@ const review = (noteId: string, createdAt: string, result?: string): ReviewEvent
 
 const ids = (items: { note: { id: string } }[]) => items.map((item) => item.note.id);
 
-describe("queue type constants (read from the real registrations)", () => {
-  it("mistake type is the textbook kit's real id", () => {
-    expect(MISTAKE_CONTENT_TYPE).toBe("textbook.mistake");
+describe("queue eligibility comes from the REGISTRY capabilities (REV-CORE)", () => {
+  it("mistake is the CORE type; rule 1 keys on the `mistake` capability", () => {
+    expect(MISTAKE_CONTENT_TYPE).toBe("mistake");
+    expect(getNoteContentSpec("mistake")?.mistake).toBe(true);
+    // Zero-migration alias: the legacy id resolves to the SAME core spec.
+    expect(getNoteContentSpec("textbook.mistake")).toBe(getNoteContentSpec("mistake"));
+    expect(getNoteContentSpec("textbook.mistake")?.mistake).toBe(true);
   });
-  it("rule-2 material is exactly quiz / flashcard / review-pack", () => {
-    expect([...REVIEWABLE_CONTENT_TYPES].sort()).toEqual(["flashcard", "quiz", "textbook.review-pack"]);
+
+  it("rule-2 material declares review.reviewable: quiz/flashcard in core, review-pack in ITS OWN kit file", () => {
+    expect(getNoteContentSpec("quiz")?.review?.reviewable).toBe(true);
+    expect(getNoteContentSpec("flashcard")?.review?.reviewable).toBe(true);
+    expect(reviewPackSpec.review?.reviewable).toBe(true); // declared in the kit's spec, not core
+    // Non-review types declare nothing → not material.
+    expect(getNoteContentSpec("markdown")?.review).toBeUndefined();
+    expect(getNoteContentSpec("markdown")?.mistake).toBeUndefined();
+  });
+
+  it("gradable types expose expectedAnswer through the capability", () => {
+    expect(
+      getNoteContentSpec("quiz")!.review!.expectedAnswer!({ question: "q", options: ["a", "b"], answerIndex: 1 })
+    ).toBe("b");
+    expect(getNoteContentSpec("flashcard")!.review!.expectedAnswer!({ front: "f", back: "b" })).toBe("b");
+  });
+
+  it("rule 1 accepts BOTH contentType strings (old records exist) via the alias-aware capability", () => {
+    const queue = buildReviewQueue({
+      notes: [note("m_new", "mistake", "2026-01-02T00:00:00.000Z"), note("m_old", "textbook.mistake", "2026-01-01T00:00:00.000Z")],
+      reviewEvents: []
+    });
+    expect(ids(queue)).toEqual(["m_old", "m_new"]); // both rule-1, older first
+    expect(queue.map((item) => item.reason)).toEqual(["mistake-new", "mistake-new"]);
+  });
+
+  it("a FIXTURE kit spec declaring review.reviewable enters rule 2 with ZERO queue-code changes", () => {
+    registerNoteContentSpec({
+      contentType: "fixture.drill",
+      schema: z.unknown(),
+      createDefault: () => ({}),
+      toSearchText: () => "",
+      review: { reviewable: true }
+    });
+    const queue = buildReviewQueue({
+      notes: [note("d1", "fixture.drill"), note("md", "markdown")],
+      reviewEvents: []
+    });
+    expect(ids(queue)).toEqual(["d1"]);
+    expect(queue[0].reason).toBe("due");
   });
 });
 

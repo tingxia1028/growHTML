@@ -142,7 +142,7 @@ describe("the verb whitelist", () => {
     const events = await recorded();
     expect(events.map((e) => e.verb)).toEqual(["ai.generate", "ai.generate"]);
     expect(events[0].subject?.contentType).toBe("textbook.explanation");
-    expect(events[1].subject?.contentType).toBe("textbook.mistake");
+    expect(events[1].subject?.contentType).toBe("mistake"); // REV-CORE: the core id
   });
 
   it("operation.run maps to ai.generate carrying the op id and output type", async () => {

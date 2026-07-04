@@ -12,8 +12,9 @@ import { registerView, type WorkspaceContext } from "./viewRegistry";
 import { getNoteType } from "../notes/noteTypeRegistry";
 import { InertNote } from "../notes/builtinNoteTypes";
 
-// The Textbook kit content types this panel collects (drill + review material).
-const PRACTICE_TYPES = new Set(["textbook.exercise", "textbook.mistake"]);
+// The drill + mistake types this panel collects. REV-CORE: 错题 is the CORE
+// `"mistake"` type now — BOTH ids count (legacy `textbook.mistake` records exist).
+const PRACTICE_TYPES = new Set(["textbook.exercise", "textbook.mistake", "mistake"]);
 
 function PracticeView({ ctx }: { ctx: WorkspaceContext }) {
   const items = ctx.notes.filter((note) => PRACTICE_TYPES.has(note.contentType ?? ""));

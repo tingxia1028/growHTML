@@ -1,6 +1,8 @@
 // Prompt: turn a missed question/passage into a Mistake Study Block. React-free.
+// REV-CORE: the output type is the CORE `mistake` spec — NEW generations persist the
+// core id (old `textbook.mistake` records resolve through the registry alias).
 import type { KitPrompt } from "../../types";
-import type { MistakeContent } from "../contentTypes";
+import { MISTAKE_CONTENT_TYPE, type MistakeContent } from "../contentTypes";
 
 type MistakeInput = {
   anchorText?: string;
@@ -16,7 +18,7 @@ const snippet = (text: string, n = 80) => {
 
 export const markAsMistakePrompt: KitPrompt<MistakeInput> = {
   id: "textbook.mark-as-mistake",
-  outputType: "textbook.mistake",
+  outputType: MISTAKE_CONTENT_TYPE,
   build: (input) =>
     [
       "Create a study Mistake card from the student's error below.",

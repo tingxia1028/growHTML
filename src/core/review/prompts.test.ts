@@ -1,40 +1,43 @@
-// Review operations (REV-1 + REV-2) — the three kit-prompt records through the REAL
-// structured-generation engine + MockModelProvider: declared-form check generation
-// (outputType quiz), the grade schema roundtrip incl. the re-prompt path, explain as
-// markdown, the review.grade spec validation, and the server registration threading
-// (kitPrompts/kitContentSpecs aggregation installServerKits consumes). REV-2: the
-// explain profileContext weave — facts present ⇒ one delimited 学生画像 section;
-// absent ⇒ byte-identical REV-1 prompt (regression-pinned). The managed-provider
-// strip is the SERVER's (services/ai.ts) — tested there, not here.
+// Core review operations (REV-1 + REV-2, ported from the dissolved review plugin by
+// REV-CORE) — the three CORE prompt records through the REAL structured-generation
+// engine + MockModelProvider: declared-form check generation (outputType quiz), the
+// grade schema roundtrip incl. the re-prompt path, explain as markdown, the
+// review.grade spec validation, and the CORE registration seam (the kit-prompt
+// registry seeds them on load — no plugin manifest, no installServerKits required).
+// REV-2: the explain profileContext weave — facts present ⇒ one delimited 学生画像
+// section; absent ⇒ byte-identical REV-1 prompt (regression-pinned). The
+// managed-provider strip is the SERVER's (services/ai.ts) — tested there, not here.
 
 import { describe, expect, it } from "vitest";
 import { MockModelProvider } from "../../ai/mockProvider";
 import type { ChatResponse, ModelProvider } from "../../ai/provider";
-import { getNoteContentSpec } from "../../core/notes/contentTypes";
-import { generateStructuredContent, StructuredGenerationError } from "../structured";
-import { installServerKits } from "../server";
-import { kitContentSpecs, kitPrompts } from "../index";
+import { getNoteContentSpec } from "../notes/contentTypes";
+import { generateStructuredContent, StructuredGenerationError } from "../../kits/structured";
+import { getKitPrompt } from "../../kits/prompts";
 import { REVIEW_GRADE_CONTENT_TYPE, reviewGradeSpec, type ReviewGradeContent } from "./contentTypes";
-import { explainPrompt, generateCheckPrompt, gradeAnswerPrompt, reviewPrompts } from "./prompts";
-
-// Register specs + prompts exactly as the server composition root does.
-installServerKits();
+import { coreReviewPrompts, explainPrompt, generateCheckPrompt, gradeAnswerPrompt } from "./prompts";
 
 const NOTE_TEXT = "浮力等于排开液体的重力 (阿基米德原理)。";
 
-describe("registration threading (server half)", () => {
-  it("the three operations ride the kit aggregation installServerKits registers", () => {
-    const ids = kitPrompts.map((prompt) => prompt.id);
-    expect(ids).toEqual(
-      expect.arrayContaining(["review.generate-check", "review.grade-answer", "review.explain"])
-    );
-    expect(kitContentSpecs.map((spec) => spec.contentType)).toContain(REVIEW_GRADE_CONTENT_TYPE);
-    // And the core registry actually has the grade spec after install.
+describe("core registration (REV-CORE — no plugin manifest)", () => {
+  it("the three operations are seeded into the prompt registry the moment it loads", () => {
+    for (const id of ["review.generate-check", "review.grade-answer", "review.explain"]) {
+      expect(getKitPrompt(id), `prompt ${id} must be registered at core seed`).toBeTruthy();
+    }
+    // The EXACT ids are pinned: the REV-2 server profileContext gate keys on them.
+    expect(coreReviewPrompts.map((p) => p.id)).toEqual([
+      "review.generate-check",
+      "review.grade-answer",
+      "review.explain"
+    ]);
+  });
+
+  it("the grade content spec registers with the core registry (import-time seed)", () => {
     expect(getNoteContentSpec(REVIEW_GRADE_CONTENT_TYPE)).toBeTruthy();
   });
 
   it("every review prompt's outputType matches a REGISTERED content spec", () => {
-    for (const prompt of reviewPrompts) {
+    for (const prompt of coreReviewPrompts) {
       expect(getNoteContentSpec(prompt.outputType), `${prompt.id} → ${prompt.outputType}`).toBeTruthy();
     }
     expect(generateCheckPrompt.outputType).toBe("quiz"); // the EXISTING built-in type
@@ -45,15 +48,15 @@ describe("registration threading (server half)", () => {
 
 describe("review.generate-check — declared-form quiz generation", () => {
   it("builds a prompt carrying the note text and generates quiz-schema-valid content", async () => {
-    const built = generateCheckPrompt.build({ noteText: NOTE_TEXT, contentType: "textbook.mistake" });
+    const built = generateCheckPrompt.build({ noteText: NOTE_TEXT, contentType: "mistake" });
     expect(built).toContain(NOTE_TEXT);
     expect(built.toLowerCase()).toContain("json");
-    expect(built).toContain("textbook.mistake");
+    expect(built).toContain("mistake");
 
     const content = await generateStructuredContent(new MockModelProvider(), {
       promptId: "review.generate-check",
       contentType: "quiz",
-      input: { noteText: NOTE_TEXT, contentType: "textbook.mistake" }
+      input: { noteText: NOTE_TEXT, contentType: "mistake" }
     });
     const quiz = getNoteContentSpec("quiz")!.schema.parse(content) as {
       question: string;
@@ -227,9 +230,9 @@ describe("review.grade content spec", () => {
     expect(reviewGradeSpec.toSearchText({ correct: false, explanation: "why" })).toBe("why");
   });
 
-  it("grades are a hidden transport shape: the spec exists, no textbook-style label leaks", () => {
+  it("grades are a hidden transport shape: the spec exists, the wire id stays stable", () => {
     // The spec registers for validation only; the CLIENT half is hidden (asserted in
-    // the plugin install test) — here we just pin the id so the wire stays stable.
+    // the core registration test) — here we just pin the id so the wire stays stable.
     expect(reviewGradeSpec.contentType).toBe("review.grade");
   });
 });

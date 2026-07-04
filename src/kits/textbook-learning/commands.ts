@@ -6,6 +6,7 @@
 // These are host Commands; the kit registers them via KitInstallContext.commands,
 // which wires them into the CommandRegistry (see src/kits/clientContext).
 
+import { getNoteContentSpec, MISTAKE_CONTENT_TYPE } from "../../core/notes/contentTypes";
 import type { Command, CommandContext } from "../../client/commands/registry";
 
 // The text the AI reasons over: the materialized anchor's quote, falling back to
@@ -68,7 +69,8 @@ export const markAsMistakeCommand: Command = {
   title: "Mark as Mistake",
   group: "textbook",
   isAvailable: hasPassage,
-  run: (ctx) => generateBlock(ctx, "textbook.mark-as-mistake", "textbook.mistake")
+  // REV-CORE: NEW mistakes persist the CORE `mistake` contentType.
+  run: (ctx) => generateBlock(ctx, "textbook.mark-as-mistake", MISTAKE_CONTENT_TYPE)
 };
 
 // Review Pack is SOURCE-level (user spec §16 step 4): it synthesizes the source's
@@ -84,7 +86,11 @@ export const generateReviewPackCommand: Command = {
     if (!sourceId) return;
     const { notes } = await ctx.client.notes(sourceId);
     const explanations = notes.filter((n) => n.contentType === "textbook.explanation").map((n) => n.content);
-    const mistakes = notes.filter((n) => n.contentType === "textbook.mistake").map((n) => n.content);
+    // REV-CORE: 错题 gathering keys on the registry's `mistake` capability (alias-aware),
+    // so BOTH the core `"mistake"` id and legacy `"textbook.mistake"` records count.
+    const mistakes = notes
+      .filter((n) => getNoteContentSpec(n.contentType)?.mistake === true)
+      .map((n) => n.content);
     const input = { sourceId, sourceTitle: ctx.chatContext?.sourceTitle, explanations, mistakes };
     const { content } = await ctx.client.generateStructured({
       promptId: "textbook.generate-review-pack",

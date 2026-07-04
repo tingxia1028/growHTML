@@ -17,7 +17,7 @@ One dependency-ordered plan over the six design docs written this cycle. Purpose
 | `learner-memory.md` | 分级记忆(短/中长/长期+画像): 机制=core, taxonomy=kit 注册 | MEM-1 · MEM-2 · MEM-3 |
 | `slash-composer.md` | `/类型` 通用生成入口(chat+toolbar, AI/手敲双模, 类型注册表驱动) | SC-0 · SC-1 · SC-2 · SC-3 |
 | `source-authoring.md` | Library "+"新建(md/html/…)+ 源编辑 + 纯编辑模式 + 补丁 apply 引擎 | SRC-1 · SRC-2 · SRC-3 · SRC-4 |
-| `review-loop.md` | **最小复习环**(环闭合头号任务)= 第一个上层 AI-native 插件;掌握度=memory 动词,零新实体 | REV-1 · REV-2 · REV-3 |
+| `review-loop.md` | **最小复习环**(环闭合头号任务);掌握度=memory 动词,零新实体。**REV-CORE 后复习环是 CORE**(不再是插件,kit-flatten-and-core-review.md §1) | REV-1 · REV-2 · REV-3 · REV-CORE ✅ |
 | `marketplace-hosted.md` | 托管市场(web 门面+客户端安装):笔记市场=svpack 服务器层、插件市场=**纯数据插件**;`CatalogSource` 接口约定 | MH-0 ✅(骑 M1)· MH-1 · MH-2 · MH-3(P3) |
 | `app-shell-ux.md` | 左下角用户菜单 + Settings Hub(registerSettingsSection,A3b/G-A3b 的落点)+ 新手引导(V1 清单式,聚光灯=阅读器批) | SHELL-1 · SHELL-2 · SHELL-3(gated) |
 | `website.md` | 官网:Astro+MDX(website/,复用 --sv-* tokens)· 首页/教育版/下载/文档+插件教程/定价 | WEB-1 · WEB-2 · WEB-3(P3,下载链接 gate on X1) |
@@ -88,7 +88,7 @@ Concept P-C1 (aggregation page, additive to existing API) ──> P-C2 (graph vi
 
 ## Recommended sequence — 环闭合优先 (re-sorted per `product-kernel.md`, 2026-07)
 
-**✅ Shipped this cycle (for the record):** svpack A–D (`c287d87`…`1a1bf27`) · AI provider server side A1–A4a (`4b9c950`,`5b35272`,`df2337e`,`3014f07`) · managed code side G-A1–A3a (`358c126`,`bf7dcb2`,`b8a974d`) · MEM-1 (`44acb3f`) · X0a services (`b0913c4`) · F7a (`a462207`).
+**✅ Shipped this cycle (for the record):** svpack A–D (`c287d87`…`1a1bf27`) · AI provider server side A1–A4a (`4b9c950`,`5b35272`,`df2337e`,`3014f07`) · managed code side G-A1–A3a (`358c126`,`bf7dcb2`,`b8a974d`) · MEM-1 (`44acb3f`) · X0a services (`b0913c4`) · F7a (`a462207`) · **REV-CORE ✅** (kit-flatten-and-core-review.md §1 — review 通用化+沉核心: `review.reviewable`/`mistake` capabilities on the content-type registry + a generic contentType alias (`textbook.mistake`→core `mistake`, zero migration); the review PLUGIN dissolved into core — prompts/grade type/panel register at core seed, no market entry).
 
 **P0 — 闭合学习环 — ✅ COMPLETE (all three shipped same-day):**
 1. **REV-1 ✅ `aa7c55b`** — the review loop, deterministic (复习 rail view + explainable queue + 3 operations + `note.review` events; zero new entities).

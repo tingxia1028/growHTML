@@ -19,7 +19,7 @@ import {
 } from "../../core/notes/formRouter";
 import { getNoteContentSpec } from "../../core/notes/contentTypes";
 import { generateStructuredContent, StructuredGenerationError } from "../../kits/structured";
-import { explainPrompt } from "../../kits/review/prompts/explain.prompt";
+import { explainPrompt } from "../../core/review/prompts/explain.prompt";
 import type { StudyVault } from "../../core/vault";
 import { readOperationPrefs } from "./workspace";
 

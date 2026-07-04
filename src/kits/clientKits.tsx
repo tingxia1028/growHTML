@@ -4,11 +4,12 @@
 
 import { installClientKits } from "./clientContext";
 import { textbookLearningKit } from "./textbook-learning";
-import { reviewPlugin } from "./review";
 import { subjectKits } from "./subject";
 
 // The subject kits (M-B) register like every kit — types render everywhere — but are
 // NOT default-installed (catalog.ts): their create affordances light up on market install.
-export const productKits = [textbookLearningKit, reviewPlugin, ...subjectKits];
+// (REV-CORE: the review loop is CORE — its panel/types/prompts register at core seed,
+// no plugin record, so it is deliberately absent here.)
+export const productKits = [textbookLearningKit, ...subjectKits];
 
 installClientKits(productKits);

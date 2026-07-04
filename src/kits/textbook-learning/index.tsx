@@ -10,8 +10,8 @@
 // now tagged with the member's own plugin id.
 
 import type { KitMemberPlugin, ProductKit } from "../types";
-import { exerciseSpec, explanationSpec, mistakeSpec, reviewPackSpec, textbookContentSpecs } from "./contentTypes";
-import { exercisePlugin, explanationPlugin, mistakePlugin, reviewPackPlugin } from "./noteTypes";
+import { exerciseSpec, explanationSpec, reviewPackSpec, textbookContentSpecs } from "./contentTypes";
+import { exercisePlugin, explanationPlugin, reviewPackPlugin } from "./noteTypes";
 import { textbookLanguage } from "./language";
 import {
   explainConceptCommand,
@@ -52,11 +52,13 @@ const practiceMember: KitMemberPlugin = {
   }
 };
 
+// REV-CORE: the 错题 TYPE is a core built-in now (spec + render both register at core
+// seed); this member keeps only its AI command + toolbar surface (the affordance that
+// GENERATES mistakes stays a kit capability — the mission-loop type itself does not).
 const mistakeMember: KitMemberPlugin = {
   id: "mistake",
   name: "错题 Mistake",
   install(ctx) {
-    ctx.noteTypes.register(mistakeSpec, mistakePlugin);
     ctx.commands.register(markAsMistakeCommand);
     ctx.surfaces.contribute(
       "selection-toolbar",

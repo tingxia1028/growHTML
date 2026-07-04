@@ -18,7 +18,8 @@ vi.mock("../DiagramNote", () => ({
   DiagramNote: () => <div className="mock-diagram" />
 }));
 
-// Side effects: built-in note types + Product Kits (textbook + review) + the view.
+// Side effects: built-in note types (incl. the core mistake + review.grade types,
+// REV-CORE) + Product Kits (textbook) + the view.
 import "../notes/builtinNoteTypes";
 import "../../kits/clientKits";
 import "./ReviewPanel";
@@ -368,8 +369,10 @@ describe("ReviewPanel — AI check flow (mistake items)", () => {
     await click(".review-submit-answer-btn");
 
     await click(".review-save-mistake-btn");
+    // REV-CORE: NEW 错题 saves write the CORE "mistake" contentType (the reviewed
+    // fixture itself stays a LEGACY "textbook.mistake" record — alias-covered).
     expect(dispatch).toHaveBeenCalledWith("anchor.add-note", {
-      contentType: "textbook.mistake",
+      contentType: "mistake",
       content: expect.objectContaining({
         question: "检验题Q",
         wrongAnswer: "错误项",

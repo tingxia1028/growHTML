@@ -17,6 +17,12 @@ describe("kit layer policy", () => {
     expect(isExportableContentType("markdown")).toBe(true);
   });
 
+  it("REV-CORE core law: the CORE `mistake` type is private-by-default WITHOUT any kit policy", () => {
+    // Seeded by the policy module itself — a vault with no kits still never exports 错题.
+    expect(isPrivateByDefault("mistake")).toBe(true);
+    expect(isExportableContentType("mistake")).toBe(false);
+  });
+
   it("re-registering the same kit policy is a no-op (idempotent)", () => {
     registerKitLayerPolicy(textbookLayerPolicy);
     registerKitLayerPolicy(textbookLayerPolicy);

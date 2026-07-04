@@ -2,8 +2,12 @@
 // ordering rule (review-loop.md §2; explicitly NOT SRS — real SRS is a later swap of
 // this one function, not a rewrite):
 //
-//   1. mistake notes (textbook.mistake) never reviewed OR failed last time
-//   2. quiz / flashcard / review-pack notes, least-recently-reviewed
+//   1. mistake notes (specs declaring the `mistake` capability — the core `mistake`
+//      type; old `textbook.mistake` records resolve via the registry alias)
+//      never reviewed OR failed last time
+//   2. review-material notes (specs declaring `review.reviewable` — quiz/flashcard
+//      in core; a kit extends by declaring, e.g. textbook.review-pack),
+//      least-recently-reviewed
 //      (recency = the latest `note.review` memory event whose subject.noteId matches)
 //   3. [REV-2] weak-bucket notes: MEM-2 digest summaries name the (subject |
 //      contentType | sourceId) buckets whose graded fail ratio crosses the profile
@@ -15,17 +19,21 @@
 //   No digest input → byte-identical to the REV-1 queue (regression-pinned).
 //
 // The function takes PLAIN records (notes + memory-event records + digest summary
-// cells) and touches no registry, no client, no clock — the view fetches and passes
-// them in. Zero new entities: "mastery" is just the note.review event stream
-// consolidated by MEM-2 digests (product-kernel §1).
+// cells) plus the CONTENT-TYPE REGISTRY's declared capabilities (REV-CORE: rule-1/2
+// eligibility comes from `spec.mistake` / `spec.review.reviewable`, alias-aware — no
+// kit import, no hardcoded type list); it touches no client, no clock — the view
+// fetches and passes the records in. Zero new entities: "mastery" is just the
+// note.review event stream consolidated by MEM-2 digests (product-kernel §1).
 
 import { PROFILE_WEAK_FAIL_RATIO, PROFILE_WEAK_MIN_ATTEMPTS } from "../../core/memory/profile";
-import { mistakeSpec, reviewPackSpec } from "../../kits/textbook-learning/contentTypes";
+import { getNoteContentSpec } from "../../core/notes/contentTypes";
 
-/** The mistake type that seeds queue rule 1 — read from the kit's spec (the real id). */
-export const MISTAKE_CONTENT_TYPE = mistakeSpec.contentType;
-/** The rule-2 "review material" types: built-in quiz/flashcard + the kit review pack. */
-export const REVIEWABLE_CONTENT_TYPES: readonly string[] = ["quiz", "flashcard", reviewPackSpec.contentType];
+/** Rule-1 eligibility: the note's spec (alias-aware) declares the mistake capability. */
+const isMistakeNote = (note: ReviewQueueNote): boolean =>
+  getNoteContentSpec(note.contentType)?.mistake === true;
+/** Rule-2 eligibility: the note's spec declares itself review material. */
+const isReviewMaterial = (note: ReviewQueueNote): boolean =>
+  getNoteContentSpec(note.contentType)?.review?.reviewable === true;
 
 // Structural minimum of a note the policy needs. Client NoteRecord satisfies it
 // (createdAt is on the wire even though the client type omits it — optional here, and
@@ -187,7 +195,7 @@ export function buildReviewQueue<N extends ReviewQueueNote>(input: {
     const lastReviewedAt = last ? eventTime(last) || undefined : undefined;
     const lastResult = typeof last?.payload?.result === "string" ? (last.payload.result as string) : undefined;
 
-    if (note.contentType === MISTAKE_CONTENT_TYPE) {
+    if (isMistakeNote(note)) {
       // Rule 1 — literally "never reviewed OR failed last time". A pass retires the
       // mistake from the queue; a skip counts as reviewed-not-failed (also retires —
       // the V1 literal rule; rule 3 below is the REV-2 re-surface policy: a retired
@@ -201,7 +209,7 @@ export function buildReviewQueue<N extends ReviewQueueNote>(input: {
       continue;
     }
 
-    if (REVIEWABLE_CONTENT_TYPES.includes(note.contentType)) {
+    if (isReviewMaterial(note)) {
       due.push({ note, reason: "due", lastReviewedAt, lastResult });
       continue;
     }

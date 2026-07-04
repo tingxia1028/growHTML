@@ -53,7 +53,9 @@ function ctx(over: Partial<CommandContext> = {}): CommandContext {
       notes: vi.fn(async () => ({
         notes: [
           { id: "n1", contentType: "textbook.explanation", content: { title: "E" }, anchorIds: [], conceptIds: [], visibility: "private" },
+          // BOTH mistake ids count (REV-CORE: legacy alias + the core id).
           { id: "n2", contentType: "textbook.mistake", content: { question: "Q" }, anchorIds: [], conceptIds: [], visibility: "private" },
+          { id: "n4", contentType: "mistake", content: { question: "Q2" }, anchorIds: [], conceptIds: [], visibility: "private" },
           { id: "n3", contentType: "markdown", content: "x", anchorIds: [], conceptIds: [], visibility: "private" }
         ]
       }))
@@ -129,8 +131,9 @@ describe("textbook commands", () => {
 
     const cm = ctx();
     await markAsMistakeCommand.run(cm);
+    // REV-CORE: NEW mistakes persist the CORE `mistake` contentType.
     expect(cm.client.createNote).toHaveBeenCalledWith(
-      expect.objectContaining({ contentType: "textbook.mistake" })
+      expect.objectContaining({ contentType: "mistake" })
     );
   });
 
@@ -154,7 +157,8 @@ describe("textbook commands", () => {
         input: expect.objectContaining({
           sourceId: "src_1",
           explanations: [{ title: "E" }],
-          mistakes: [{ question: "Q" }]
+          // The legacy-alias record AND the core-id record both gather (capability-keyed).
+          mistakes: [{ question: "Q" }, { question: "Q2" }]
         })
       })
     );

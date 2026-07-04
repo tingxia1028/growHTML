@@ -2,8 +2,13 @@
 // question FROM a note's content, through the EXISTING /api/kits/generate path.
 // Output type is the built-in `quiz` (question/options/answerIndex/explanation) —
 // the review loop invents no new study material shape (review-loop.md §0). React-free.
+//
+// REV-CORE: lives in core (the review loop is the mission loop) — the prompt id and
+// outputType are UNCHANGED from the dissolved review plugin, so the server-side
+// profileContext gate and every stored operation-pref keep working.
+// KitPrompt is a React-free structural contract (type-only import — erased at runtime).
 
-import type { KitPrompt } from "../../types";
+import type { KitPrompt } from "../../../kits/types";
 
 // What the runner sends: the note's content flattened to text (the core spec's
 // toSearchText — the same React-free reducer search/export use) + its contentType,

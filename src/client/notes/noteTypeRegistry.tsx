@@ -17,6 +17,7 @@
 import type { ReactNode } from "react";
 import {
   getNoteContentSpec,
+  resolveNoteContentTypeAlias,
   type NoteContentSpec
 } from "../../core/notes/contentTypes";
 import type { NoteRecord } from "../data/entityClient";
@@ -138,7 +139,12 @@ export function resetNoteTypes(): void {
 }
 
 export function getNoteType(contentType: string): NoteTypePlugin | undefined {
-  return registry.get(contentType);
+  const direct = registry.get(contentType);
+  if (direct) return direct;
+  // Alias-aware fallback (REV-CORE): a legacy persisted id (e.g. "textbook.mistake")
+  // renders through its canonical spec's plugin — a DIRECT registration always wins.
+  const alias = resolveNoteContentTypeAlias(contentType);
+  return alias ? registry.get(alias) : undefined;
 }
 
 export function listNoteTypes(): readonly NoteTypePlugin[] {

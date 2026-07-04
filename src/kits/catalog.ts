@@ -8,7 +8,7 @@
 //   (a) core primitives (markdown / code-snippet / image / audio / video / html-sandbox and
 //       the legacy plain-text alias) are HIDDEN — always-on infrastructure, never listed;
 //   (b) plugins are the market's item unit — flashcard / quiz / bookmark / diagrams /
-//       table-viewer / the textbook members / the review loop;
+//       table-viewer / the textbook members (the review loop is CORE since REV-CORE);
 //   (c) kits are bundles of plugin refs (members[]) + kit-level config (layout / policy).
 //
 // `id` doubles as the pluginId (kind:"plugin") / kitId (kind:"kit") used everywhere else
@@ -46,7 +46,7 @@ export type CatalogEntry = {
   source?: "bundled" | "registry";
 };
 
-// —— The V1 bundled catalog (§8.1 classification table + the review-loop plugin) ————
+// —— The V1 bundled catalog (§8.1 classification table) ————————————————————————
 // Every entry is defaultInstalled (everything shipping today is active today), so a vault
 // whose catalogState is null behaves byte-for-byte as before the market existed.
 const BUNDLED_CATALOG: CatalogEntry[] = [
@@ -137,7 +137,9 @@ const BUNDLED_CATALOG: CatalogEntry[] = [
     icon: "triangle-alert",
     description: "Log a passage as a mistake for later review.",
     author: "growte",
-    provides: ["textbook.mistake"],
+    // REV-CORE: the 错题 TYPE is a core built-in (always available, never gated);
+    // this plugin now provides only the mark-as-mistake command + toolbar surface.
+    provides: [],
     defaultInstalled: true,
     source: "bundled"
   },
@@ -163,19 +165,9 @@ const BUNDLED_CATALOG: CatalogEntry[] = [
     defaultInstalled: true,
     source: "bundled"
   },
-  // (b) the review loop — the first upper-layer AI-native plugin (review-loop.md)
-  {
-    id: "review",
-    kind: "plugin",
-    name: "Review Loop 复习环",
-    icon: "book-open-check",
-    description:
-      "复习环:错题、小测、闪卡、复习包排成确定性队列,AI 出题/判分/讲解,结果写入 learner memory.",
-    author: "growte",
-    provides: ["review.grade"],
-    defaultInstalled: true,
-    source: "bundled"
-  },
+  // (REV-CORE: the review loop is CORE — the mission loop is not a market good, so it
+  // has NO catalog entry. Stale `"review"` ids in a vault's persisted catalogState are
+  // harmless: uncataloged ids are treated as always-available and never listed.)
   // (b) subject exemplar plugins (subject-kits.md M-B). NOT default-installed: the
   // first true install-to-activate market goods — installing lights up their create
   // affordances (slash/composer/toolbar); rendering is never gated.
