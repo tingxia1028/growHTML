@@ -1843,12 +1843,10 @@ button {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
 
-/* In region mode the text layer must not eat the drag, and the cursor signals it. */
-.pdf-reader-canvas.region-mode .textLayer {
-  pointer-events: none;
-  user-select: none;
-}
-.pdf-reader-canvas.region-mode .page {
+/* Modeless region selection (D4a): no mode class. Holding Alt over a page signals the
+   explicit region-drag intent with a crosshair (the reader stamps data-alt on the canvas
+   while Alt is held); a plain drag stays a text selection. */
+.pdf-reader-canvas[data-alt] .page {
   cursor: crosshair;
 }
 

@@ -15,6 +15,21 @@ export type NormalizedRect = Rect;
 // Minimum drag extent (px) below which a gesture is treated as a stray click.
 const MIN_DRAG = 6;
 
+// D4a — MODELESS region gesture classification (the mode-tab is gone). A pointer
+// gesture on a region-capable overlay surface is a REGION rubber-band iff:
+//   • Alt is held (the PRIMARY, unambiguous explicit trigger — always region), OR
+//   • the gesture did NOT start over text (`overText === false`) — a BEST-EFFORT
+//     convenience: dragging in a page margin / between glyphs (not on a `.textLayer`
+//     span) reads as region. This is only best-effort because pdf.js text layers are
+//     sparse (inter-glyph/line gaps + margins aren't in a span), so the non-text path
+//     is additionally guarded downstream by isRealRegion/MIN_DRAG; Alt+drag is the
+//     acceptance trigger. A plain gesture that STARTS on text stays a text selection.
+// Pure (no DOM) — the caller resolves `overText` from the event target.
+export function isRegionGesture(event: { altKey?: boolean }, overText: boolean): boolean {
+  if (event.altKey) return true;
+  return !overText;
+}
+
 // Normalize a drag (start + current point, both relative to `rect`) to a rect in
 // 0..1 of `rect`, clamped to its bounds. Pure — unit-tested without the DOM. The
 // math now lives once in core/region; re-exported here under its original name so

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { MoveHorizontal, ScanLine, TextCursor, ZoomIn, ZoomOut } from "lucide-react";
+import { MoveHorizontal, ZoomIn, ZoomOut } from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
 import { EventBus, PDFLinkService, PDFViewer } from "pdfjs-dist/web/pdf_viewer.mjs";
 import workerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
@@ -23,7 +23,7 @@ import {
 } from "./surfaces/readerAnnotationAdapter";
 import { anchorsOfKind, type PaintAnchor, type SurfaceReaderProps } from "./surfaces/types";
 import { registerSourceRealmDoc, unregisterSourceRealmDoc } from "./workspace/sourceRealmDoc";
-import { isRealRegion, normalizeDragRect, placeRegionBox } from "./surfaces/overlay";
+import { isRealRegion, isRegionGesture, normalizeDragRect, placeRegionBox } from "./surfaces/overlay";
 import { formatZoomPct, nextZoom } from "./surfaces/pdfZoom";
 import { selectorFromPdfRange, spansForPdfQuote } from "./surfaces/pdfTextLayer";
 
@@ -95,12 +95,6 @@ export function PdfReader({
   anchorsRef.current = anchorsOfKind(anchors, "pdf_selection");
   const revealAnchorsRef = useRef(anchorsOfKind(revealAnchors ?? anchors, "pdf_selection"));
   revealAnchorsRef.current = anchorsOfKind(revealAnchors ?? anchors, "pdf_selection");
-
-  // Region (rubber-band) mode: while on, the text layer is click-through and a
-  // drag draws a selection rectangle that becomes a pdf_selection region anchor.
-  const [regionMode, setRegionMode] = useState(false);
-  const regionModeRef = useRef(regionMode);
-  regionModeRef.current = regionMode;
 
   // Live zoom scale (pdf.js `currentScale`, 1 = 100%) for the % indicator. null
   // until the first `scalechanging` fires (i.e. before the initial page-width fit),
@@ -333,6 +327,17 @@ export function PdfReader({
     };
     container.addEventListener("wheel", onWheel, { passive: false });
 
+    // —— Alt-held crosshair (D4a) —— stamp data-alt on the canvas while Alt is held so
+    // the page shows a crosshair cursor, signaling the explicit region-drag intent. Purely
+    // cosmetic; the actual region/quote classification lives in onMouseDown (isRegionGesture).
+    const syncAltCursor = (event: KeyboardEvent) => {
+      if (event.key === "Alt") container.toggleAttribute("data-alt", event.type === "keydown");
+    };
+    const clearAltCursor = () => container.removeAttribute("data-alt");
+    window.addEventListener("keydown", syncAltCursor);
+    window.addEventListener("keyup", syncAltCursor);
+    window.addEventListener("blur", clearAltCursor);
+
     const loadingTask = pdfjsLib.getDocument({ url: fileUrl });
     loadingTask.promise.then(
       (pdf) => {
@@ -346,8 +351,12 @@ export function PdfReader({
     );
 
     // —— Text selection → quote draft ——
+    // Modeless (D4a): a plain drag STARTING on text is a quote; an Alt-drag or a drag
+    // starting off-text is a region (see onMouseDown). `regionDragActive` is set by a
+    // region mousedown so this mouseup doesn't ALSO emit a stray quote for that drag.
+    let regionDragActive = false;
     const onMouseUp = () => {
-      if (regionModeRef.current) return; // region mode handles its own gesture
+      if (regionDragActive) return; // a region gesture owns this pointer stroke
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
       const exact = selection.toString().replace(/\s+/g, " ").trim();
@@ -384,10 +393,18 @@ export function PdfReader({
     let marquee: HTMLDivElement | null = null;
 
     const onMouseDown = (event: MouseEvent) => {
-      if (!regionModeRef.current || event.button !== 0) return;
+      regionDragActive = false; // fresh stroke — reclassify below
+      if (event.button !== 0) return;
       const target = event.target as Element | null;
       const pageEl = target?.closest(".page") as HTMLElement | null;
       if (!pageEl || !viewer.contains(pageEl)) return;
+      // Modeless region classification (D4a): Alt held = region (primary/explicit); a
+      // gesture NOT starting on a `.textLayer` span = region (best-effort convenience,
+      // guarded by isRealRegion in finishDrag). A plain drag on text stays a quote —
+      // let the browser build the selection and onMouseUp emit the quote draft.
+      const overText = !!target?.closest(".textLayer");
+      if (!isRegionGesture(event, overText)) return; // plain text drag — quote path
+      regionDragActive = true;
       event.preventDefault();
       dragPage = pageEl;
       const rect = pageEl.getBoundingClientRect();
@@ -412,6 +429,10 @@ export function PdfReader({
     };
 
     const finishDrag = (event: MouseEvent) => {
+      // Release the pointer-stroke ownership so the NEXT plain click/selection emits a
+      // quote again (reset regardless of whether this drag produced a region).
+      const wasRegion = regionDragActive;
+      regionDragActive = false;
       if (!dragPage || !marquee) return;
       const pageEl = dragPage;
       const rect = pageEl.getBoundingClientRect();
@@ -420,7 +441,7 @@ export function PdfReader({
       marquee.remove();
       marquee = null;
       dragPage = null;
-      if (!isRealRegion(rect, start, current)) return; // ignore stray clicks
+      if (!wasRegion || !isRealRegion(rect, start, current)) return; // ignore stray clicks
       const page = Number(pageEl.dataset.pageNumber) || 1;
       const draft: AnchorDraft = {
         mode: "region",
@@ -440,6 +461,9 @@ export function PdfReader({
       cancelled = true;
       container.removeEventListener("mouseup", onMouseUp);
       container.removeEventListener("wheel", onWheel);
+      window.removeEventListener("keydown", syncAltCursor);
+      window.removeEventListener("keyup", syncAltCursor);
+      window.removeEventListener("blur", clearAltCursor);
       container.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", finishDrag);
@@ -522,26 +546,9 @@ export function PdfReader({
   return (
     <div className="pdf-reader-shell">
       <div className="pdf-reader-toolbar">
-        <button
-          type="button"
-          className={`mode-tab${regionMode ? "" : " active"}`}
-          onClick={() => setRegionMode(false)}
-          title="Select text to quote"
-        >
-          <TextCursor size={14} />
-          Text
-        </button>
-        <button
-          type="button"
-          className={`mode-tab${regionMode ? " active" : ""}`}
-          onClick={() => setRegionMode(true)}
-          title="Drag to mark a region (figure / formula / scan)"
-        >
-          <ScanLine size={14} />
-          Region
-        </button>
-        {/* Zoom cluster — sits to the right of the mode tabs (toolbar pushes it over).
-            Ctrl/Cmd + wheel over the page does the same as the +/- buttons. */}
+        {/* Modeless region selection (D4a): no Text|Region mode tabs. A plain drag on
+            text quotes; Alt+drag (or a drag starting off-text) marks a region. The zoom
+            cluster is the only toolbar control; Ctrl/Cmd + wheel mirrors the +/- buttons. */}
         <div className="pdf-zoom-controls">
           <button type="button" className="pdf-zoom-button" onClick={() => zoomBy(-1)} title="Zoom out">
             <ZoomOut size={14} />
@@ -560,7 +567,7 @@ export function PdfReader({
       {/* The viewport is the relatively-positioned flex item; the container fills it
           absolutely (PDFViewer requires an absolutely-positioned scroll root). */}
       <div className="pdf-reader-viewport">
-        <div ref={containerRef} className={`pdf-reader-canvas${regionMode ? " region-mode" : ""}`}>
+        <div ref={containerRef} className="pdf-reader-canvas">
           <div ref={viewerRef} className="pdfViewer" />
         </div>
       </div>

@@ -1,6 +1,23 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { isRealRegion, normalizeDragRect, placeRegionBox } from "./overlay";
+import { isRealRegion, isRegionGesture, normalizeDragRect, placeRegionBox } from "./overlay";
+
+describe("isRegionGesture (D4a modeless classification)", () => {
+  it("Alt held → region, even when the gesture starts over text", () => {
+    expect(isRegionGesture({ altKey: true }, true)).toBe(true);
+    expect(isRegionGesture({ altKey: true }, false)).toBe(true);
+  });
+
+  it("no Alt + NOT over text → region (best-effort convenience)", () => {
+    expect(isRegionGesture({ altKey: false }, false)).toBe(true);
+    expect(isRegionGesture({}, false)).toBe(true);
+  });
+
+  it("no Alt + over text → text selection (not a region)", () => {
+    expect(isRegionGesture({ altKey: false }, true)).toBe(false);
+    expect(isRegionGesture({}, true)).toBe(false);
+  });
+});
 
 describe("normalizeDragRect", () => {
   it("normalizes a top-left → bottom-right drag to [x,y,w,h] in 0..1", () => {
