@@ -95,6 +95,45 @@ describe("prompt shaping (mirrors the legacy claudeCliProvider context weaving)"
     expect(prompt.endsWith("USER: Q2")).toBe(true);
   });
 
+  it("W2 fold: turnPrompt weaves the attachments block (claude-cli delegates here now)", () => {
+    const request: ChatRequest = {
+      messages: [{ role: "user", content: "Compare them." }],
+      context: {
+        ...context,
+        sources: [{ title: "Attached Doc", type: "pdf", excerpt: "body text" }]
+      }
+    };
+    const prompt = turnPrompt(request, true);
+    expect(prompt).toContain("Attached: 1 source(s)");
+    expect(prompt).toContain("[1] Attached Doc (pdf)");
+    // The attachments ride BEFORE the user message (context first, question last).
+    expect(prompt.indexOf("Attached: 1 source(s)")).toBeLessThan(prompt.indexOf("Compare them."));
+    expect(prompt.endsWith("Compare them.")).toBe(true);
+  });
+
+  it("W2 fold: flattenPrompt weaves the attachments block into the transcript replay", () => {
+    const request: ChatRequest = {
+      messages: [
+        { role: "user", content: "Q1" },
+        { role: "assistant", content: "A1" },
+        { role: "user", content: "Q2" }
+      ],
+      context: { ...context, sources: [{ title: "Doc", excerpt: "x" }] }
+    };
+    const prompt = flattenPrompt(request);
+    expect(prompt).toContain("Attached: 1 source(s)");
+    expect(prompt).toContain("USER: Q1");
+    expect(prompt.endsWith("USER: Q2")).toBe(true);
+  });
+
+  it("W2 fold: ZERO attachments → prompts are byte-identical (regression lock)", () => {
+    const request: ChatRequest = { messages: [{ role: "user", content: "What does it do?" }], context };
+    const withEmpty: ChatRequest = { ...request, context: { ...context, sources: [] } };
+    expect(turnPrompt(withEmpty, true)).toBe(turnPrompt(request, true));
+    expect(flattenPrompt(withEmpty)).toBe(flattenPrompt(request));
+    expect(turnPrompt(request, true)).not.toContain("Attached:");
+  });
+
   it("shapeTurn: first turn → fresh session with the single-turn prompt", () => {
     const request: ChatRequest = { messages: [{ role: "user", content: "Q1" }] };
     expect(shapeTurn(request, false)).toEqual({ resuming: false, prompt: "Q1" });

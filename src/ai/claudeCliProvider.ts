@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { flattenPrompt, turnPrompt } from "./cliAgent/spec";
 import type { ChatRequest, ChatResponse, ModelProvider } from "./provider";
 
 export type ClaudeCliOptions = {
@@ -29,48 +30,12 @@ export function buildSubprocessEnv(
   return env;
 }
 
-function lastUserMessage(request: ChatRequest): string {
-  return [...request.messages].reverse().find((message) => message.role === "user")?.content ?? "";
-}
-
-// Identify the source so the model knows what's being discussed: title, type,
-// and where it lives (URL / file path / page).
-function sourceBlock(request: ChatRequest): string {
-  const ctx = request.context;
-  if (!ctx) return "";
-  const head = [ctx.sourceTitle, ctx.sourceType ? `(${ctx.sourceType})` : ""].filter(Boolean).join(" ");
-  const lines = [head ? `Source: ${head}` : "", ctx.location ? `Location: ${ctx.location}` : ""].filter(Boolean);
-  return lines.join("\n");
-}
-
-// The selected passage with its surrounding context, so the model can locate the
-// exact span the user means even when the quote is short or ambiguous.
-function passageBlock(request: ChatRequest): string {
-  const ctx = request.context;
-  if (!ctx?.quote) return "";
-  const before = ctx.contextBefore ? `…${ctx.contextBefore}` : "";
-  const after = ctx.contextAfter ? `${ctx.contextAfter}…` : "";
-  return `Selected passage (between ⟦⟧, with surrounding context):\n${before}⟦${ctx.quote}⟧${after}`;
-}
-
-// Full transcript — used only to seed a fresh session that already has history
-// (e.g. the server restarted mid-conversation, so claude can't --resume it).
-function flattenPrompt(request: ChatRequest): string {
-  const parts = [sourceBlock(request), passageBlock(request)].filter(Boolean);
-  for (const message of request.messages) {
-    parts.push(`${message.role.toUpperCase()}: ${message.content}`);
-  }
-  return parts.join("\n\n");
-}
-
-// A single turn: just the new user message, plus the source identity (first turn
-// only) and the current passage+context (selection can change between turns).
-function turnPrompt(request: ChatRequest, firstTurn: boolean): string {
-  const parts = [firstTurn ? sourceBlock(request) : "", passageBlock(request), lastUserMessage(request)].filter(
-    Boolean
-  );
-  return parts.join("\n\n");
-}
+// Prompt shaping (source identity / selected passage / W2 attachments) + the
+// single-turn-vs-transcript choice are the SHARED cli-agent weavers in
+// cliAgent/spec.ts — this legacy provider now DELEGATES to them (DRY: one weaver set
+// every provider uses, so claude-cli weaves the W2 attachments block identically to
+// the SDK adapters and the http providers). It used to carry a PRIVATE copy of
+// sourceBlock/passageBlock+flatten/turn that pre-dated the shared module.
 
 // Local Claude CLI in print mode (`claude -p`) with persistent context: the first
 // turn opens a conversation under an explicit `--session-id <uuid>`, later turns

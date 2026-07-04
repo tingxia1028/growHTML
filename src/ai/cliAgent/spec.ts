@@ -21,7 +21,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { passageBlock, sourceBlock } from "../buildPrompt";
+import { attachmentsBlock, passageBlock, sourceBlock } from "../buildPrompt";
 import type { ChatRequest, ModelProvider } from "../provider";
 
 export type CliAgentDetectResult = { ok: boolean; version?: string };
@@ -84,7 +84,11 @@ function lastUserMessage(request: ChatRequest): string {
  * The source/passage blocks come from the shared buildPrompt module.
  */
 export function flattenPrompt(request: ChatRequest): string {
-  const parts = [sourceBlock(request.context), passageBlock(request.context)].filter(Boolean);
+  const parts = [
+    sourceBlock(request.context),
+    passageBlock(request.context),
+    attachmentsBlock(request.context)
+  ].filter(Boolean);
   for (const message of request.messages) {
     parts.push(`${message.role.toUpperCase()}: ${message.content}`);
   }
@@ -93,12 +97,15 @@ export function flattenPrompt(request: ChatRequest): string {
 
 /**
  * A single turn: just the new user message, plus the source identity (first turn
- * only) and the current passage+context (selection can change between turns).
+ * only), the current passage+context (selection can change between turns), and the
+ * W2 attachments (session context — woven every turn since the attachment set, like
+ * the selection, can change between turns).
  */
 export function turnPrompt(request: ChatRequest, firstTurn: boolean): string {
   const parts = [
     firstTurn ? sourceBlock(request.context) : "",
     passageBlock(request.context),
+    attachmentsBlock(request.context),
     lastUserMessage(request)
   ].filter(Boolean);
   return parts.join("\n\n");

@@ -8,7 +8,7 @@
 // Pure string building over ChatContext; imports nothing but the provider
 // seam (iron rule).
 
-import type { ChatContext } from "./provider";
+import type { ChatContext, ChatContextSource } from "./provider";
 
 /**
  * Identify the source so the model knows what's being discussed: title, type,
@@ -33,10 +33,48 @@ export function passageBlock(ctx: ChatContext | undefined): string {
 }
 
 /**
- * Both context blocks joined the way every prompt-shaper composes them
- * (source identity first, then the passage). Empty string when the context
- * carries nothing — callers skip the weaving entirely in that case.
+ * One attached source rendered as a labelled block: its identity line, the bounded
+ * body excerpt, and each note's text. Pure over the already-bounded ChatContextSource
+ * (the bundle service caps the excerpt + note count; the resolver caps the
+ * cross-source total) — this weaver only formats.
+ */
+function attachedSourceBlock(source: ChatContextSource, index: number): string {
+  const head = [source.title, source.type ? `(${source.type})` : ""].filter(Boolean).join(" ");
+  const lines = [`[${index + 1}] ${head || "Untitled source"}`];
+  if (source.location) lines.push(`Location: ${source.location}`);
+  if (source.excerpt) lines.push(`Excerpt:\n${source.excerpt}`);
+  const notes = source.notes ?? [];
+  if (notes.length > 0) {
+    lines.push("Notes:");
+    for (const note of notes) {
+      const label = note.contentType ? `(${note.contentType}) ` : "";
+      lines.push(`- ${label}${note.text}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+/**
+ * The W2 attachments block: every source the chat carries as context, headed by a
+ * count marker ("Attached: N source(s)") the deterministic mock echoes to prove an
+ * attachment reached the prompt. Empty string when nothing is attached — so a
+ * zero-attachment request produces NO extra text (the byte-for-byte prior path).
+ */
+export function attachmentsBlock(ctx: ChatContext | undefined): string {
+  const sources = ctx?.sources ?? [];
+  if (sources.length === 0) return "";
+  const header = `Attached: ${sources.length} source(s)`;
+  const blocks = sources.map((source, index) => attachedSourceBlock(source, index));
+  return [header, ...blocks].join("\n\n");
+}
+
+/**
+ * The context blocks joined the way every prompt-shaper composes them (source
+ * identity first, then the passage, then the W2 attachments). Empty string when the
+ * context carries nothing — callers skip the weaving entirely in that case. The
+ * attachments block appends only when `sources[]` is non-empty, so the pre-W2 output
+ * is byte-identical for a zero-attachment context.
  */
 export function contextPreamble(ctx: ChatContext | undefined): string {
-  return [sourceBlock(ctx), passageBlock(ctx)].filter(Boolean).join("\n\n");
+  return [sourceBlock(ctx), passageBlock(ctx), attachmentsBlock(ctx)].filter(Boolean).join("\n\n");
 }

@@ -21,6 +21,37 @@ describe("MockModelProvider", () => {
     expect(again.message.content).toBe(response.message.content);
   });
 
+  it("W2: echoes the 'Attached: N source(s)' marker when the chat carries attachments", async () => {
+    const provider = new MockModelProvider();
+    const response = await provider.complete({
+      messages: [{ role: "user", content: "Compare these." }],
+      context: {
+        sources: [
+          { title: "Alpha", type: "article", excerpt: "Alpha body.", notes: [{ contentType: "markdown", text: "note A" }] },
+          { title: "Beta", type: "pdf", excerpt: "Beta body." }
+        ]
+      }
+    });
+    // The count marker proves the widened ChatContext.sources reached the prompt.
+    expect(response.message.content).toContain("Attached: 2 source(s)");
+    expect(response.message.content).toContain("[1] Alpha (article)");
+    expect(response.message.content).toContain("note A");
+    expect(response.message.content).toContain("[2] Beta (pdf)");
+  });
+
+  it("W2: a ZERO-attachment reply is byte-identical to the flat-context reply", async () => {
+    const provider = new MockModelProvider();
+    const flat = {
+      messages: [{ role: "user" as const, content: "What is this?" }],
+      context: { sourceTitle: "Render Thread", quote: "submits rendering commands" }
+    };
+    const withEmptySources = { ...flat, context: { ...flat.context, sources: [] } };
+    const a = (await provider.complete(flat)).message.content;
+    const b = (await provider.complete(withEmptySources)).message.content;
+    expect(a).toBe(b);
+    expect(a).not.toContain("Attached:");
+  });
+
   it("declares the streaming capability", () => {
     expect(new MockModelProvider().capabilities.streaming).toBe(true);
   });

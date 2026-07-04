@@ -15,8 +15,38 @@ export const chatMessageSchema = z.object({
 });
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
 
+// One attached SOURCE the chat carries as context (ai-workspace.md §W2). Beside the
+// flat single-passage fields (below), a session can attach whole sources — each with
+// a bounded body excerpt and its notes — so the model reasons over several documents
+// at once. A compact note digest keeps the high-signal part cheap; the excerpt is a
+// capped head slice (the bundle service enforces the caps, the resolver enforces the
+// cross-source total — provider.ts stays a pure shape).
+export const chatContextNoteSchema = z.object({
+  /** The note's contentType (markdown/flashcard/…) so the model reads it in context. */
+  contentType: z.string().optional(),
+  /** The note reduced to plain text (via its spec's toSearchText), bounded upstream. */
+  text: z.string()
+});
+export type ChatContextNote = z.infer<typeof chatContextNoteSchema>;
+
+export const chatContextSourceSchema = z.object({
+  title: z.string().optional(),
+  type: z.string().optional(),
+  /** Where the source lives: a URL, a file path, and/or a page reference. */
+  location: z.string().optional(),
+  /** A bounded head slice of the source body (the bundle service caps it). */
+  excerpt: z.string().optional(),
+  /** The source's notes, reduced to text (sealed notes are filtered out upstream). */
+  notes: z.array(chatContextNoteSchema).optional()
+});
+export type ChatContextSource = z.infer<typeof chatContextSourceSchema>;
+
 // Study context the provider weaves into its answer so it knows exactly which
-// passage, of which source, the user is asking about.
+// passage, of which source, the user is asking about. The flat single-passage fields
+// are the pre-W2 contract (untouched — the byte-for-byte zero-attachment path); the
+// optional `sources[]` is the ADDITIVE W2 widening (source-level attachments + their
+// notes). `sources` is OMITTED when empty so a zero-attachment request serializes
+// byte-identically to before (a hard regression lock, tested directly).
 export const chatContextSchema = z
   .object({
     sourceTitle: z.string().optional(),
@@ -25,7 +55,10 @@ export const chatContextSchema = z
     location: z.string().optional(),
     quote: z.string().optional(),
     contextBefore: z.string().optional(),
-    contextAfter: z.string().optional()
+    contextAfter: z.string().optional(),
+    // W2: source-level attachments (the focused source ∪ the session's explicit
+    // attachments, de-duped by sourceId). Absent when nothing is attached.
+    sources: z.array(chatContextSourceSchema).optional()
   })
   .default({});
 export type ChatContext = z.infer<typeof chatContextSchema>;

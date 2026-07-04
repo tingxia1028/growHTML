@@ -1,3 +1,4 @@
+import { attachmentsBlock } from "./buildPrompt";
 import type { ChatRequest, ChatResponse, ModelProvider, StructuredRequest } from "./provider";
 
 // The `contentType` marker the form-router request carries (it is NOT a stored note
@@ -31,10 +32,20 @@ export class MockModelProvider implements ModelProvider {
     const sourceTitle = request.context?.sourceTitle?.trim();
     const location = request.context?.location?.trim();
 
+    // W2: the attachments block leads the reply with "Attached: N source(s)" when the
+    // chat carries source attachments — the deterministic proof that the widened
+    // ChatContext reached the prompt. Empty (nothing prepended) at zero attachments,
+    // so the pre-W2 reply is byte-identical.
+    const attachments = attachmentsBlock(request.context);
+
     const lines: string[] = [];
     lines.push(`**Study assistant (mock)**`);
     if (sourceTitle) lines.push(`Source: *${sourceTitle}*${location ? ` — ${location}` : ""}`);
     if (quote) lines.push(`> ${quote}`);
+    if (attachments) {
+      lines.push("");
+      lines.push(attachments);
+    }
     lines.push("");
     lines.push(question ? `You asked: ${question}` : "Ask a question about this passage.");
     if (quote) {
