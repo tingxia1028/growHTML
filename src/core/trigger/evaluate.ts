@@ -22,7 +22,19 @@
 // property holds by construction: dailyCap is checked BEFORE the condition, against a
 // count the caller only ever increments on surface, scoped to the local day.
 
-import type { TriggerRecord } from "../schema/trigger";
+import type { TriggerActionRef, TriggerConstraints, TriggerWhen } from "../schema/trigger";
+
+// The STRUCTURAL minimum the evaluator reads — the envelope (id/timestamps/…) is
+// irrelevant to firing. Both the core TriggerRecord (from the entity store) AND the slim
+// client TriggerRecord (entityClient) satisfy this, so the client tick can pass either
+// without importing the full core record shape.
+export type EvaluableTrigger = {
+  enabled: boolean;
+  when: TriggerWhen;
+  actionRef: TriggerActionRef;
+  reason: string;
+  constraints: TriggerConstraints;
+};
 
 /** The injected evaluation context — every time-local value is CLIENT-computed. */
 export type TriggerEvalContext = {
@@ -85,7 +97,7 @@ function inQuietHours(localHhmm: string, quiet: { start: string; end: string }):
  * client should surface a nudge NOW, or { fire:false, suppressedBy } naming the FIRST
  * restraint that stopped it. Pure + total.
  */
-export function evaluateTrigger(trigger: TriggerRecord, ctx: TriggerEvalContext): TriggerEvalResult {
+export function evaluateTrigger(trigger: EvaluableTrigger, ctx: TriggerEvalContext): TriggerEvalResult {
   // 克制: a trigger family is off until the user opts in.
   if (!trigger.enabled) return { fire: false, suppressedBy: "disabled" };
 
