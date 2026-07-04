@@ -217,6 +217,30 @@ export const mistakeSpec: NoteContentSpec<MistakeContent> = {
   mistake: true
 };
 
+// —— file-link (链接文件) — CORE built-in since SHELL-PRIM ————————————————————
+// The raw shell's third primitive tool (kit-flatten-and-core-review.md §3): a note
+// that POINTS at a local file (path + optional title/note). The note owns only the
+// reference — the bytes stay on disk (unlike image/audio/video, which import into
+// the vault as assets). 打开 opens it with the OS default app via the electron
+// bridge; in a plain browser the action degrades to copy-the-path. A blank path is
+// rejected before storage (like the media types' empty asset seeds).
+export const FILE_LINK_CONTENT_TYPE = "file-link";
+const fileLinkSchema = z.object({
+  path: z.string().min(1),
+  title: z.string().optional(),
+  note: z.string().optional()
+});
+export type FileLinkContent = z.infer<typeof fileLinkSchema>;
+
+export const fileLinkSpec: NoteContentSpec<FileLinkContent> = {
+  contentType: FILE_LINK_CONTENT_TYPE,
+  schema: fileLinkSchema,
+  // Intentionally incomplete seed (path must be user-filled before save), mirroring
+  // the image/audio/video empty-asset seeds.
+  createDefault: () => ({ path: "" }) as unknown as FileLinkContent,
+  toSearchText: (c) => [c.title ?? "", c.path, c.note ?? ""].filter(Boolean).join("\n")
+};
+
 export const builtinNoteContentSpecs: NoteContentSpec[] = [
   {
     contentType: "markdown",
@@ -317,7 +341,8 @@ export const builtinNoteContentSpecs: NoteContentSpec[] = [
     createDefault: () => ({ label: "" }),
     toSearchText: (c) => (c as z.infer<typeof bookmarkSchema>).label
   },
-  mistakeSpec as NoteContentSpec
+  mistakeSpec as NoteContentSpec,
+  fileLinkSpec as NoteContentSpec
 ];
 
 let registered = false;

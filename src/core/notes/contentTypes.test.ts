@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
+  FILE_LINK_CONTENT_TYPE,
+  fileLinkSpec,
   getNoteContentSpec,
   listNoteContentSpecs,
   MISTAKE_CONTENT_TYPE,
@@ -147,6 +149,42 @@ describe("note content specs", () => {
       registerNoteContentSpecAlias("test.dangling", "no.such.type");
       expect(getNoteContentSpec("test.dangling")).toBeUndefined();
       expect(() => parseNoteContent("test.dangling", {})).toThrow(/Unknown note contentType/);
+    });
+  });
+
+  // file-link (链接文件) — SHELL-PRIM, the raw shell's third primitive tool
+  // (docs/design/kit-flatten-and-core-review.md §3).
+  describe("file-link (SHELL-PRIM)", () => {
+    it("is registered as a CORE built-in content type", () => {
+      expect(FILE_LINK_CONTENT_TYPE).toBe("file-link");
+      expect(listNoteContentSpecs().map((s) => s.contentType)).toContain("file-link");
+    });
+
+    it("accepts { path } alone and { path, title, note }", () => {
+      expect(() => parseNoteContent("file-link", { path: "C:\\docs\\paper.pdf" })).not.toThrow();
+      expect(() =>
+        parseNoteContent("file-link", { path: "/home/me/notes.md", title: "讲义", note: "第三章重点" })
+      ).not.toThrow();
+    });
+
+    it("rejects a missing/empty/non-string path (the blank seed is not persistable)", () => {
+      expect(() => parseNoteContent("file-link", {})).toThrow();
+      expect(() => parseNoteContent("file-link", { path: "" })).toThrow();
+      expect(() => parseNoteContent("file-link", { path: 42 })).toThrow();
+      expect(() => parseNoteContent("file-link", { path: "x", title: 1 })).toThrow();
+      expect(() => parseNoteContent("file-link", { path: "x", note: {} })).toThrow();
+    });
+
+    it("createDefault seeds an (intentionally incomplete) empty path", () => {
+      expect(fileLinkSpec.createDefault()).toEqual({ path: "" });
+    });
+
+    it("toSearchText carries title + path + note (no structural noise)", () => {
+      const text = fileLinkSpec.toSearchText({ path: "C:\\a\\b.pdf", title: "讲义", note: "重点" });
+      expect(text).toContain("讲义");
+      expect(text).toContain("C:\\a\\b.pdf");
+      expect(text).toContain("重点");
+      expect(fileLinkSpec.toSearchText({ path: "/x/y.md" })).toBe("/x/y.md");
     });
   });
 

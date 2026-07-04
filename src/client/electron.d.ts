@@ -23,6 +23,9 @@ interface StudyVaultBridge {
   pickDirectory?(): Promise<string | null>;
   // Opens a native file picker; resolves to the chosen path or null if cancelled.
   openFile?(): Promise<string | null>;
+  // Opens a local file/folder with the OS default app (shell.openPath). Resolves to
+  // the error string — "" on success (Electron's shell.openPath contract).
+  openPath?(path: string): Promise<string>;
   // Resolves a File (from a file input) to its absolute disk path (Electron only).
   getPathForFile?(file: File): string;
 }

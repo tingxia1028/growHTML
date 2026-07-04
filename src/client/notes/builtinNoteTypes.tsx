@@ -915,6 +915,11 @@ registerNoteType({
 import "./mistakeNoteType";
 import "../review/gradeNoteType";
 
+// —— SHELL-PRIM core-seed registration ————————————————————————————————————————
+// 链接文件 — the raw shell's third primitive tool (kit-flatten-and-core-review §3):
+// the core `file-link` type registers WITH the built-ins, visible in the palette.
+import "./fileLinkNoteType";
+
 // Exported only so a host can show an inert fallback for an UNKNOWN contentType
 // (one with no registered plugin) instead of nothing.
 export function InertNote({ content }: { content: unknown }) {

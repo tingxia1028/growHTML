@@ -102,6 +102,20 @@ ipcMain.handle("dialog:openFile", async () => {
   return result.filePaths[0];
 });
 
+// Open a LOCAL path with the OS default handler (the file-link note's 打开 action).
+// Guarded: only absolute local file paths are accepted — never URLs/schemes (a note's
+// path is user/vault data, so shell-opening arbitrary strings would be an easy
+// footgun). Mirrors shell.openPath's own contract: resolves to an error string,
+// "" on success.
+ipcMain.handle("shell:openPath", async (_event, target: unknown) => {
+  if (typeof target !== "string") return "Invalid path";
+  const trimmed = target.trim();
+  if (!trimmed || !path.isAbsolute(trimmed) || /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
+    return "Not a local file path";
+  }
+  return shell.openPath(trimmed);
+});
+
 ipcMain.on("window:minimize", (event) => {
   windowForEvent(event)?.minimize();
 });

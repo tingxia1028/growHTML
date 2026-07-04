@@ -17,6 +17,9 @@ contextBridge.exposeInMainWorld("studyVault", {
   pickDirectory: () => ipcRenderer.invoke("dialog:pickDirectory") as Promise<string | null>,
   // Native file picker for "Open File"; resolves to the chosen path or null.
   openFile: () => ipcRenderer.invoke("dialog:openFile") as Promise<string | null>,
+  // Open a local file/folder with the OS default app (file-link note's 打开 action).
+  // Resolves to shell.openPath's error string — "" on success (Electron's contract).
+  openPath: (targetPath: string) => ipcRenderer.invoke("shell:openPath", targetPath) as Promise<string>,
   // Resolve a File (from an <input type=file>) back to its absolute disk path so
   // the terminal can default to the directory of the file being read.
   getPathForFile: (file: File) => webUtils.getPathForFile(file),

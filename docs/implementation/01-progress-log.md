@@ -4,16 +4,25 @@ Use this file as the live status board for implementation work.
 
 ## Current Status
 
+- Date: 2026-07-04
+- Phase: UI-PLUGIN-001 Kit & Plugin top tabs and search
+- Active task: None
+- Overall status: Complete. Kit & Plugin uses top underline tabs, collapsed search, installed/market filtering, and the pattern is captured in `design.md`.
+
+## 2026-07-04 - SHELL-PRIM-001 链接文件 — the core `file-link` note type
+
+- Goal: land the raw shell's third primitive tool (`docs/design/kit-flatten-and-core-review.md` §3): a NEW core built-in `file-link` note type `{ path, title?, note? }` with a 打开 action — NOT a plugin (registered at core seed, not uninstallable, not in the market), NOT a registry bypass (adaptive-note contract: core spec + `registerNoteType` render/edit, one render path).
+- Active plan: (1) core spec `fileLinkSpec` in `src/core/notes/contentTypes.ts` (zod schema, incomplete `{path:""}` seed like the media types, `toSearchText` = title+path+note), registered with the built-ins; (2) client half `src/client/notes/fileLinkNoteType.tsx` (+ scoped `fileLinkNoteType.css` — styles.css is contended) imported from `builtinNoteTypes.tsx`: card = file icon + title (fallback: path basename) + dimmed path + one-line note gist; full = whole note text; both carry the 打开 action; editor (the declared composer form) = path + 选择文件… (existing `dialog:openFile` IPC) + title + note; (3) 打开 = desktop `window.studyVault.openPath(path)` → NEW `shell:openPath` IPC → `shell.openPath` (main validates: absolute local path only, never URLs/schemes; resolves to Electron's error-string contract); web mode (no bridge) the SAME button becomes 复制路径 (navigator.clipboard); detection = bridge-presence, same idiom as `canPickFile`; (4) visible in the slash palette: title 链接文件, aliases 链接/文件/本地文件/file/link.
+- Result: `file-link` registers both halves at core seed (no `pluginId` — never install-gated), appears in the slash palette (`/链接 …` resolves first) and in the composer's visible-type universe; existing behavior untouched (additive spec + one import line in `builtinNoteTypes.tsx`); the electron bridge gains exactly one method (`openPath`) + one main-process handler; `electron.d.ts` updated.
+- Verification: `npm run check` (tsc 0); `npx vitest run` — 158 files / 1531 tests, all green (new `src/client/notes/fileLinkNoteType.test.tsx` — registration/palette/alias, card basename/title/path/note-gist, full note text, desktop openPath dispatch + error surfacing, web clipboard copy, declared-form draft validity, desktop picker fill; extended `src/core/notes/contentTypes.test.ts` + `src/client/slash/adapters.test.tsx`); `npm run build` green; `npm run electron:build:preload` + `electron:build:main` green.
+
 ## 2026-07-04 - UI-PLUGIN-001 Kit & Plugin top tabs and search
 
 - Goal: make the Kit & Plugin panel match the shared sidebar style: 已安装/市场 are top-level tabs, and search is a right-side icon that expands a search input below the tabs.
 - Active plan: refactor `pluginManagerViews.tsx` header structure, make search filter both installed rows and market listings, tune CSS for the top tab/search affordance, and document the rule in `design.md`.
 - Verification target: focused plugin-manager tests, `npm run check`, `npm run build`, and a DOM/style smoke if the dev server is running.
-
-- Date: 2026-07-04
-- Phase: REV-CORE — 复习通用化 + 沉核心 (kit-flatten-and-core-review.md §1)
-- Active task: None
-- Overall status: Complete. The review loop is core: queue eligibility reads registry capabilities, 错题 is the core `mistake` built-in (with a `textbook.mistake` alias, zero migration), and the review plugin is dissolved.
+- Result: Kit & Plugin now uses top underline tabs for 已安装/市场, a collapsed right-side search icon, and an expanded search row under the tabs. The search filters installed plugin rows as well as market listings; the market-only All/Plugins/Kits filter remains inside the market tab. `design.md` now records the pattern.
+- Verification: `npm exec tsc -- --noEmit`; `npm test -- src/client/workspace/pluginManagerViews.test.tsx`; `npm run build`; Playwright DOM/style smoke against `http://127.0.0.1:5173`, screenshot saved to `C:/Users/Jump/AppData/Local/Temp/growte-plugin-manager-tabs-search.png`.
 
 ## 2026-07-04 - REV-CORE-001 复习通用化 + 沉核心
 

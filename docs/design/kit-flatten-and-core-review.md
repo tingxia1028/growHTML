@@ -75,9 +75,11 @@ installable, no longer listed anywhere.
 NOT a bypass of the registries (adaptive-note contract stays mandatory, no second render path).
 - 写文字 = built-in markdown note ✅ exists.
 - 问AI存note = selection toolbar AI operations → generation preview → save ✅ exists.
-- **链接文件 = NEW core built-in `file-link` note type**: `{ path, title?, note? }`, card
-  renders title + 打开 action (shell.openPath via existing electron bridge; web mode shows
-  path copy). Toolbar action alongside the other two.
+- **链接文件 = NEW core built-in `file-link` note type** ✅ (SHELL-PRIM-001): `{ path, title?, note? }`,
+  card renders title (fallback: path basename) + dimmed path + 打开 action (shell.openPath via a
+  new `shell:openPath` IPC on the electron bridge; web mode = 复制路径 clipboard copy). Visible in
+  the slash palette (`/链接` + zh/en aliases) and the composer declared form (path + 选择文件… via
+  the existing dialog:openFile IPC + title + note).
 - 复习队列 + 画像 = core per §1. 备份/导出 (TRUST) + 安装包 (X1) complete the shell.
 
 ## 4. Textbook Kit V1 composition (after flatten)

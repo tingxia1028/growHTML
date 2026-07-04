@@ -1,0 +1,90 @@
+/* file-link (链接文件) — SHELL-PRIM. Scoped styles for the core file-link note type.
+   Lives here (imported by fileLinkNoteType.tsx; Vite bundles it) instead of the
+   contended src/client/styles.css. Only shared classes (link-button / icon-button /
+   note-edit-*) come from the global sheet. */
+
+.sv-file-link {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sv-file-link-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sv-file-link-icon {
+  flex: none;
+  opacity: 0.7;
+}
+
+.sv-file-link-title {
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sv-file-link-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.sv-file-link-feedback {
+  opacity: 0.7;
+}
+
+.sv-file-link-path {
+  font-size: 12px;
+  opacity: 0.6;
+  word-break: break-all;
+}
+
+/* The compact card keeps the path to one line. */
+.sv-file-link-card .sv-file-link-path {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
+}
+
+.sv-file-link-note {
+  margin: 2px 0 0;
+}
+
+.sv-file-link-note-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Editor (the declared composer form). */
+.note-edit-file-link {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.note-edit-file-link-path-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.note-edit-file-link-path-row .file-link-path {
+  flex: 1;
+  min-width: 0;
+}
+
+.note-edit-file-link-path-row .file-link-pick {
+  flex: none;
+  white-space: nowrap;
+}

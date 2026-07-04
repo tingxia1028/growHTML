@@ -76,6 +76,13 @@ describe("slashEntriesFromNoteTypes — registry-derived palette entries", () =>
     expect(byId("textbook.review-pack")).toMatchObject({ title: "复习包", kitId: "review-pack" });
   });
 
+  it("SHELL-PRIM: 链接文件 is the CORE `file-link` type — visible, no provider badge", () => {
+    const entry = byId("file-link");
+    expect(entry).toMatchObject({ title: "链接文件" });
+    expect(entry!.kitId).toBeUndefined(); // core primitive — never gated
+    expect(entry!.aliases).toEqual(expect.arrayContaining(["链接", "文件", "file", "link"]));
+  });
+
   it("REV-CORE: 错题 is the CORE `mistake` type — no provider badge, legacy id not listed", () => {
     expect(byId("mistake")).toMatchObject({ title: "错题" });
     expect(byId("mistake")!.kitId).toBeUndefined(); // core — never gated
@@ -133,6 +140,13 @@ describe("engine × adapter integration — the real table resolves", () => {
     expect(parsed).toEqual({ query: "判断题", instruction: "出三道" });
     const ranked = resolveSlashEntries(parsed.query, slashEntriesFromNoteTypes());
     expect(ranked[0]?.id).toBe("quiz");
+  });
+
+  it('"/链接 我的讲义" resolves to file-link first (SHELL-PRIM)', () => {
+    const parsed = parseSlashInput("/链接 我的讲义")!;
+    expect(parsed).toEqual({ query: "链接", instruction: "我的讲义" });
+    const ranked = resolveSlashEntries(parsed.query, slashEntriesFromNoteTypes());
+    expect(ranked[0]?.id).toBe("file-link");
   });
 
   it('"/练习 五道压强题" resolves to the textbook exercise type first', () => {
