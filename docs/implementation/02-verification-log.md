@@ -760,3 +760,6 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 | 2026-07-05 | N2-001 | directTransport.test.ts | layer style-only PATCH 不 400 + 持久 | Passed |
 | 2026-07-05 | N2-001 | e2e/regions.spec.ts(隔离,重写) | Alt+drag / 转为区域 / image region → `/markdown` floating-editor Save → 带 rect 锚点 + region box;D3a 上色重染 | Passed(7/7,稳定 3×) |
 | 2026-07-05 | N2-001 | npx vitest run(全量) | 236 文件 / 2483 用例(基线 235/2464 + 19) | Passed |
+| 2026-07-05 | R7min-001 | layerViews.test.tsx | `.layer-paint-input`+`.layer-deco-select` 仅 owned 行显示(preset/shared/protected 无);paint-input change→`patchLayer(id,{style:{color}})`(合并既有 style);deco change→`{style:{decoration}}`;两次都调 refreshLayers | Passed(4) |
+| 2026-07-05 | R7min-001 | annotationDom.test.ts | 闭环:持久 style{color,decoration}→resolveAnchorPaintStyle→applyPaintStyle 设 `--sv-anchor-color`+`sv-deco-underline` | Passed(1) |
+| 2026-07-05 | R7min-001 | npx vitest run(全量) | 236 文件 / 2488 用例(基线 236/2483 + 5) | Passed |

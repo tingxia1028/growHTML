@@ -1,0 +1,35 @@
+# N4-D7 — interactive full-mode note rendering — BUILD SPEC
+
+Status: Plan agent produced this (decisive + self-critical; the core unknown is RESOLVED). N4-D7 is
+localized render work (no core-contract change, no provider, no M1) → no separate adversarial round;
+the plan's own flagged items are folded below as build directives. **Build on the CLEAN R7-minimal-landed
+tree** (both file-disjoint, but sequence to avoid the shared-tree concurrent-vitest hazard).
+
+## CORE FACT (resolved — gates everything): renders return REACT, use `useState`
+`NoteTypePlugin.render(input): ReactNode` (noteTypeRegistry.tsx:63); kit mirror `KitNoteTypePlugin.render(): ReactNode` (types.ts:22-23). `useState` already imported + used in builtinNoteTypes.tsx (:21, BookmarkEditor :853). So the sanctioned mechanism = **a small stateful sub-component per interactive type** (e.g. `<QuizFull>` holding `selected`/`revealed` via useState), returned from `render({mode:"full"})`. NOT an HTML string; there is NO imperative wireNoteCard host seam for note interactivity. State-loss is bounded: React reconciles by position/type across host re-renders (FocusOverlay.tsx:131 mounts `plugin.render` at a stable position); state resets only on overlay close/reopen = the intended "start fresh" V1 behavior.
+
+## MANDATORY — adaptive-note contract
+Interactivity lands INSIDE each type's own `render()` `mode:"full"` switch (legal per the in-renderer variant rule, builtinNoteTypes.tsx:601 video precedent); still registers via `registerNoteType(...)`/kit install; `getNoteType().render` stays the ONE entry (ArtifactCard.tsx:66, FocusOverlay.tsx:128). NO new render path, NO host branch on contentType, NO schema change.
+
+## V1 state = EPHEMERAL local useState. No persistence, no store, no schema. Reset-on-remount is intended.
+
+## Shared primitives — NEW `src/client/notes/noteInteractive.tsx`
+- `<FlipCard front back />` — click/Enter/Space toggles `flipped` useState, ONE face at a time (prefer conditional render so the hidden face is genuinely absent), `role="button"`/`aria-pressed`; classes `sv-flip`/`sv-flip-front`/`sv-flip-back`/`data-face`. Used by flashcard + vocab.
+- `<Reveal hidden trigger? />` — "show answer": `revealed` useState; button before, `hidden` after; classes `sv-reveal`/`sv-reveal-btn`/`sv-reveal-shown`. Used by exercise + review-pack.
+- `useChoiceQuiz(optionCount, correctIndex)` → `{selected, revealed, pick(i), correct}` — pick→reveal→mark; V1 score = boolean `correct` (right on first pick), ephemeral. The type owns markup; the primitive owns behavior + a11y (keeps `sv-quiz-*`/`sv-flashcard-*`/`sv-vocab-*`/`tb-*` class names stable so existing CSS/tests keep matching).
+
+## Commit sequence (each compiles + tested; UPDATE the static-pinning tests IN THE SAME COMMIT)
+1. **Primitives + unit test** — NEW `noteInteractive.tsx` + `noteInteractive.test.tsx` (FlipCard front→back on click/Enter; Reveal hides→shows; useChoiceQuiz wrong→correct=false/revealed, right→correct=true). Imported by nobody yet → zero risk. Use the `renderToHtml`+click harness from noteTypeRegistry.test.tsx:29-37.
+2. **Quiz interactive** — `builtinNoteTypes.tsx` QuizRender full branch (:323-350): `card` UNCHANGED; `full` hides answerIndex, options become buttons (useChoiceQuiz), on pick → reveal + `sv-quiz-answer` on correct + `sv-quiz-picked-wrong/correct` + explanation + score line (✓正确/✗). Keep data-letter/data-option/sv-quiz-option/sv-quiz-answer. **UPDATE noteTypeRegistry.test.tsx:201-208**: the answer is now HIDDEN pre-pick → assert no `sv-quiz-answer` initially, then after clicking a wrong option the correct option gains `sv-quiz-answer` + pick marked wrong + score appears. Foreign-content test (:333) still passes.
+3. **Flashcard flip** — `builtinNoteTypes.tsx` FlashcardRender full (:253-267) via `<FlipCard>`; `card` UNCHANGED; `↔` becomes the flip control; keep sv-flashcard classes. **ADJUST noteTypeRegistry.test.tsx:184-190** (currently asserts BOTH faces present — the static bug): assert front visible/back absent initially, back visible after flip (assert on conditional presence or data-face).
+4. **Subject vocab flip** — `src/kits/subject/noteTypes.tsx` VocabRender full (:66-103): wrap front (word/phonetic/pos) + back (senses/synonyms/antonyms) in `<FlipCard>` — resolves the flip half of the deferred siblings-seam comment (:64-65); keep sv-vocab-* classes. **DECK NAV DEFERRED** (render() isn't handed sibling notes — NoteRenderInput is one content+one note, noteTypeRegistry.tsx:44; deck prev/next needs a NEW ctx sibling seam, out of this disjoint footprint). Test (subject/noteTypes.test.tsx): front visible, back hidden; after flip, back visible.
+5. **Textbook exercise reveal + review-pack exercises** — `src/kits/textbook-learning/noteTypes.tsx`: ExerciseRender (:137-162) `full` hides `Answer:` behind `<Reveal>` (keep tb-exercise-answer inside the revealed node; works for all 4 types incl. fill-blank/short-answer; option-picking only if option-vs-answer match is clean, else reveal-only). ReviewPackRender (:239-277) RENDER the parsed `c.exercises` (currently dropped at :235). **VERIFY the string shape first**: schema is `z.array(z.string())` (contentTypes.ts:84) with NO answer sub-structure → render as a `tb-review-exercises` checklist of prompts; add per-exercise `<Reveal>` ONLY if the strings actually carry an encoded answer. Test (noteTypes.test.tsx): exercise hides `Answer:` then reveals; review-pack renders each exercises[] entry (the regression the audit flagged). E2e textbook-kit-review.spec.ts: extend the review-pack checklist to assert the exercises block — but the 2 existing specs are `test.skip` on pre-IA markup (:29,:52); un-skip ONLY if the surrounding markup is current, else add a matching `test.skip` sibling + flag it.
+6. **CSS + docs** — add `sv-flip*`/`sv-reveal*`/quiz picked/score states to the stylesheet that owns sv-quiz-*/sv-flashcard-*/tb-* (locate in build). R7-minimal does NOT touch CSS (its classes already exist) → no collision; still, touch ONLY the new sv-flip*/sv-reveal*/sv-quiz-picked* selectors. (docs = report TEXT blocks, do NOT edit docs/.)
+
+## Disjointness: R7-minimal touches only workspace/layerViews.tsx (+LayerLensManage.tsx, layerViews.test.tsx). N4-D7 touches notes/ + kits/ render files + noteInteractive + their tests + e2e + CSS. Grepped: R7 files import NO note-render module. DISJOINT.
+
+## Risks: (1) render contract — RETIRED (React confirmed). (2) existing tests pin STATIC behavior → update paired assertions per-commit (expected, every commit green). (3) sibling-deck data absent → deck nav deferred; review-pack string[] shape → verify before per-exercise Reveal.
+
+## Deferred: persistent quiz score / flashcard SRS (no store in V1); vocab deck prev/next (needs a ctx sibling seam); per-exercise answer-hide if string[] carries no answer; M1-gated composer create-list/deck.
+
+## Gates: tsc 0 · full vitest green (baseline = post-R7 count) · build · e2e textbook-kit-review (isolation) if un-skipped. Commit N4D7.N own sequence, don't push, don't touch docs (report TEXT blocks).
