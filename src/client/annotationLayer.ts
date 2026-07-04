@@ -517,34 +517,44 @@ export function isAnchorNotesHidden(doc: Document | null | undefined, anchorId: 
 // own toggled/open state is untouched, "打开的打开、关闭还是关闭" is preserved for
 // free — the flag only masks, it never loses per-anchor state.
 //
-// The live value is a module-level (realm-local) store every consumer in this JS
-// realm shares — wireNoteCard (suppress hover/pin), paintMarginNotes (drop the
-// gutter), and MarkerOverlay (hide note-slot chips) all read it and re-render when
-// it flips. The Electron webview guest is a separate bundle/realm: its copy is
-// driven by the host over the sv:anchors payload (electron/webview-preload.ts),
-// exactly like the glyph switch. Persistence (device-local, per the doc — the
-// exported truth is each note's display.open) lives with the caller's storage; this
-// store is only the live value plus subscribers.
-let notesHiddenAll = false;
-const notesHiddenListeners = new Set<() => void>();
+// The live value is a PER-REALM store (F-1 follow-up): keyed by the realm Document
+// exactly like the file's sibling per-realm state (hiddenNoteAnchorsByDoc :494,
+// noteCardControllers, lastMarginItems). Every consumer in a given realm — wireNoteCard
+// (suppress hover/pin), paintMarginNotes (drop the gutter), and MarkerOverlay (hide
+// note-slot chips) — reads it for THAT realm's doc and re-renders when it flips, so
+// two F1 split panes (two iframe realms) no longer share one "hide-all" flag. The
+// Electron webview guest is a separate bundle/realm keyed by its OWN document; the host
+// drives it over the sv:anchors payload (electron/webview-preload.ts), like the glyph
+// switch. Persistence (device-local, per the doc — the exported truth is each note's
+// display.open) lives with the caller's storage; this store is only the live value plus
+// per-realm subscribers.
+const notesHiddenAllByDoc = new WeakMap<Document, boolean>();
+const notesHiddenListenersByDoc = new WeakMap<Document, Set<() => void>>();
 
-export function isAllNotesHidden(): boolean {
-  return notesHiddenAll;
+export function isAllNotesHidden(doc: Document | null | undefined): boolean {
+  if (!doc) return false;
+  return notesHiddenAllByDoc.get(doc) ?? false;
 }
 
-export function setAllNotesHidden(hidden: boolean): void {
-  if (notesHiddenAll === hidden) return;
-  notesHiddenAll = hidden;
-  // Notify subscribers (each wired card dismisses its own open card when hidden turns
-  // on; margins re-pack; overlays re-layout). WeakMap has no iteration, so the card's
-  // OWN subscribe callback handles dismissal rather than a central controller sweep.
-  for (const listener of [...notesHiddenListeners]) listener();
+export function setAllNotesHidden(doc: Document | null | undefined, hidden: boolean): void {
+  if (!doc || (notesHiddenAllByDoc.get(doc) ?? false) === hidden) return;
+  notesHiddenAllByDoc.set(doc, hidden);
+  // Notify this realm's subscribers (each wired card dismisses its own open card when
+  // hidden turns on; margins re-pack; overlays re-layout). The card's OWN subscribe
+  // callback handles dismissal rather than a central controller sweep.
+  const listeners = notesHiddenListenersByDoc.get(doc);
+  if (listeners) for (const listener of [...listeners]) listener();
 }
 
-export function subscribeAllNotesHidden(listener: () => void): () => void {
-  notesHiddenListeners.add(listener);
+export function subscribeAllNotesHidden(doc: Document, listener: () => void): () => void {
+  let listeners = notesHiddenListenersByDoc.get(doc);
+  if (!listeners) {
+    listeners = new Set<() => void>();
+    notesHiddenListenersByDoc.set(doc, listeners);
+  }
+  listeners.add(listener);
   return () => {
-    notesHiddenListeners.delete(listener);
+    listeners?.delete(listener);
   };
 }
 
@@ -573,7 +583,7 @@ export function setAnchorNotesHidden(doc: Document | null | undefined, anchorId:
 // among `keys` (document order), matching the one card the user left open. No-op in a
 // realm without a wired card, or when hide-all masks everything.
 export function restorePinnedNoteCards(doc: Document | null | undefined, keys: readonly string[]): void {
-  if (!doc || !keys.length || isAllNotesHidden()) return;
+  if (!doc || !keys.length || isAllNotesHidden(doc)) return;
   const controller = noteCardControllers.get(doc);
   if (!controller) return;
   for (const key of keys) {
@@ -722,7 +732,7 @@ function wireNoteCard(doc: Document): void {
     // pinned card the user actually left open. Guarded by the same hide/suppress
     // rules: a source with hide-all on, or an anchor toggled off, restores nothing.
     openPinned: (key) => {
-      if (!key || isAllNotesHidden() || isAnchorNotesHidden(doc, key)) return;
+      if (!key || isAllNotesHidden(doc) || isAnchorNotesHidden(doc, key)) return;
       if (marginActive()) return; // margin mode has no floating pinned card
       const target = doc.querySelector(`[data-sv-key="${key.replace(/"/g, '\\"')}"]`);
       if (!target || !target.isConnected) return;
@@ -736,8 +746,8 @@ function wireNoteCard(doc: Document): void {
   // itself drops the gutter while hidden and re-packs it when shown, so ON clears the
   // gutter and OFF restores it. Wired here (the card's home realm) so every wired
   // document reacts to the shared store.
-  subscribeAllNotesHidden(() => {
-    if (isAllNotesHidden() && card.classList.contains("sv-note-card-show")) dismiss();
+  subscribeAllNotesHidden(doc, () => {
+    if (isAllNotesHidden(doc) && card.classList.contains("sv-note-card-show")) dismiss();
     const marginItems = lastMarginItems.get(doc);
     if (marginItems?.length) paintMarginNotes(doc, marginItems);
   });
@@ -746,7 +756,7 @@ function wireNoteCard(doc: Document): void {
   // hover and click-pin are both suppressed until the anchor chip restores them.
   // D11: hide-all suppresses EVERY anchor's card (cards masked source-wide).
   const notesHidden = (target: Element) =>
-    isAllNotesHidden() || isAnchorNotesHidden(doc, target.getAttribute("data-sv-key") ?? "");
+    isAllNotesHidden(doc) || isAnchorNotesHidden(doc, target.getAttribute("data-sv-key") ?? "");
 
   // Remember user resizes (CSS `resize: both`) for the active key.
   const view = doc.defaultView as (Window & { ResizeObserver?: typeof ResizeObserver }) | null;
@@ -1083,7 +1093,7 @@ export function paintMarginNotes(doc: Document, items: MarginItem[]): void {
   clearMarginNotes(doc);
   // D11 hide-all: with the per-source flag on, no gutter cards paint at all (the
   // memo above is still kept, so flipping hide-all back off re-packs the gutter).
-  if (isAllNotesHidden()) return;
+  if (isAllNotesHidden(doc)) return;
   // Margin item filtering (D2 toggle): a toggled-off anchor contributes no gutter
   // card and the column re-packs around it.
   const visible = items.filter((item) => !item.key || !isAnchorNotesHidden(doc, item.key));

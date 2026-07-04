@@ -16,6 +16,7 @@ import { ActionGrid } from "./ActionGrid";
 import { SpeakButton } from "../speech/SpeakButton";
 import { persistAnchorGlyphVisibility, readStoredAnchorGlyphVisibility } from "../annotations";
 import { setAnchorGlyphVisibility } from "../markerOverlay";
+import { getSourceRealmDoc } from "./sourceRealmDoc";
 import { defineMessages, resolveText, t, useLocale } from "../i18n";
 import "./anchorViews.css";
 
@@ -33,19 +34,21 @@ const anchorViewMessages = defineMessages({
   empty: { zh: "选择一段文本来聚焦锚点。", en: "Select a passage to focus an anchor." }
 });
 
-// 显示锚点标记 — the GLOBAL anchor-glyph switch (D2 amendment, 2026-07-04). Off hides
-// every anchor glyph chip across all readers (note-slot chips stay); persisted via
-// the annotations.ts localStorage helper (the annotation-mode idiom) and pushed
-// live through the markerOverlay module store (host realms repaint immediately;
-// webview guests receive it over the sv:anchors payload).
-function AnchorGlyphSwitch() {
+// 显示锚点标记 — the anchor-glyph switch (D2 amendment, 2026-07-04). Off hides every
+// anchor glyph chip (note-slot chips stay); the choice is a GLOBAL user preference
+// persisted via the annotations.ts localStorage helper (the annotation-mode idiom).
+// The LIVE store is now PER-REALM (F-1 follow-up): the switch drives the FOCUSED pane's
+// realm document (resolved from the sourceRealmDoc registry) so two split panes don't
+// share one flag; persistAnchorGlyphVisibility pings the marker-prefs bus so an
+// already-painted webview guest re-reads and re-applies it over the sv:anchors payload.
+function AnchorGlyphSwitch({ sourceId }: { sourceId?: string }) {
   useLocale();
   const [visible, setVisible] = useState(() => readStoredAnchorGlyphVisibility());
   const toggle = () => {
     const next = !visible;
     setVisible(next);
     persistAnchorGlyphVisibility(next);
-    setAnchorGlyphVisibility(next);
+    setAnchorGlyphVisibility(getSourceRealmDoc(sourceId ?? ""), next);
   };
   const label = t(anchorViewMessages.showAnchorMarkers);
   return (
@@ -99,7 +102,7 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
                 {activeSource?.title ?? t(anchorViewMessages.currentSource)}
               </span>
               <span className="anchor-context-actions">
-                <AnchorGlyphSwitch />
+                <AnchorGlyphSwitch sourceId={activeSource?.id} />
                 <button
                   className="anchor-context-jump"
                   type="button"
@@ -184,7 +187,7 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
               context row to host it, the empty state keeps a minimal toolbar. */}
           <div className="anchor-panel-toolbar">
             <span className="anchor-panel-toolbar-spacer" />
-            <AnchorGlyphSwitch />
+            <AnchorGlyphSwitch sourceId={activeSource?.id} />
           </div>
           <p className="anchor-excerpt-empty">{t(anchorViewMessages.empty)}</p>
           {/* The Action Bar still shows in the empty state, but disabled — so the user

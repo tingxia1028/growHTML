@@ -183,10 +183,12 @@ type AnchorPrefsMsg = { anchorGlyphsVisible?: boolean; notesHidden?: boolean };
 
 ipcRenderer.on("sv:anchors", (_event, anchors: WebAnchorMsg[], prefs?: AnchorPrefsMsg) => {
   if (prefs && typeof prefs.anchorGlyphsVisible === "boolean") {
-    setAnchorGlyphVisibility(prefs.anchorGlyphsVisible);
+    // The guest is its OWN realm — key the per-realm glyph store on the guest document.
+    setAnchorGlyphVisibility(document, prefs.anchorGlyphsVisible);
   }
   if (prefs && typeof prefs.notesHidden === "boolean") {
-    setAllNotesHidden(prefs.notesHidden);
+    // The guest is its OWN realm — key the per-realm store on the guest document.
+    setAllNotesHidden(document, prefs.notesHidden);
   }
   ensureGuestSurface().adapter.paint(anchors ?? []);
 });

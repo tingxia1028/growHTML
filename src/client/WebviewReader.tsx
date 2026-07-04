@@ -184,7 +184,7 @@ export function WebviewReader({
       // Shared paint-back wiring: push stored anchors into the guest (highlights +
       // hover note-cards). Handles sv:ready + dom-ready itself; the anchors-changed
       // effect re-pushes via the returned push fn (which reads the live anchorsRef).
-      const anchorsBinding = bindWebviewAnchors(webview, () => anchorsRef.current);
+      const anchorsBinding = bindWebviewAnchors(webview, () => anchorsRef.current, sourceIdRef.current);
       anchorPushers.current.set(tab.id, anchorsBinding.push);
       // Shared selection capture: attaches the guest preload + translates
       // sv:selection into a web quote draft keyed by the page url it was made on.

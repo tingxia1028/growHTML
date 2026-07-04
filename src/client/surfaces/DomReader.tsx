@@ -5,6 +5,7 @@ import { MarkerOverlay, mountRealmMarkerOverlay } from "../markerOverlay";
 import type { AnchorDraft } from "../focus/FocusContext";
 import { publishSelectionRect, rectFromDomRect } from "../selection/selectionRect";
 import { createDomRealmAdapter, type ReaderAnnotationAdapter } from "./readerAnnotationAdapter";
+import { registerSourceRealmDoc, unregisterSourceRealmDoc } from "../workspace/sourceRealmDoc";
 import { anchorsOfKind, type PaintAnchor, type SurfaceReaderProps } from "./types";
 
 // DOM surface adapter — the imported-HTML / markdown reader.
@@ -229,6 +230,10 @@ export function DomReader({
     adapterRef.current = adapter;
     markerOverlayRef.current = overlay;
     markerOverlayDocRef.current = doc;
+    // Register this iframe realm for the host controls (HideAllNotesToggle / anchor-glyph
+    // switch) to resolve sourceId → realm doc (F-1 follow-up per-realm bridge). A srcDoc
+    // reload swaps contentDocument, so re-register the fresh doc; last write wins.
+    registerSourceRealmDoc(sourceIdRef.current, doc);
     return { adapter, overlay };
   }
 
@@ -309,6 +314,7 @@ export function DomReader({
   // Tear the surface down when the reader unmounts.
   useEffect(() => {
     return () => {
+      unregisterSourceRealmDoc(sourceIdRef.current, markerOverlayDocRef.current ?? undefined);
       markerOverlayRef.current?.destroy();
       markerOverlayRef.current = null;
       markerOverlayDocRef.current = null;

@@ -12,6 +12,7 @@ import { MarkerOverlay } from "./markerOverlay";
 import type { AnchorDraft } from "./focus/FocusContext";
 import { createDomRealmAdapter, type ReaderAnnotationAdapter } from "./surfaces/readerAnnotationAdapter";
 import { anchorsOfKind, type PaintAnchor, type SurfaceReaderProps } from "./surfaces/types";
+import { registerSourceRealmDoc, unregisterSourceRealmDoc } from "./workspace/sourceRealmDoc";
 import { isRealRegion, normalizeDragRect, type NormalizedRect } from "./surfaces/overlay";
 
 type ImageReaderProps = SurfaceReaderProps & {
@@ -86,8 +87,12 @@ export function ImageReader({ src, sourceId, anchors, onSelect, onMarkerAction, 
       adapter
     });
     markerOverlayRef.current = overlay;
+    // The image reader paints into the HOST document — register the host document as this
+    // source's realm for the host controls' sourceId → realm-doc lookup (F-1 follow-up).
+    registerSourceRealmDoc(sourceIdRef.current, document);
     return () => {
       overlay.destroy();
+      unregisterSourceRealmDoc(sourceIdRef.current, document);
       if (markerOverlayRef.current === overlay) markerOverlayRef.current = null;
       if (adapterRef.current === adapter) adapterRef.current = null;
     };

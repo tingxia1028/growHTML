@@ -22,6 +22,7 @@ import {
   type ReaderAnnotationAdapter
 } from "./surfaces/readerAnnotationAdapter";
 import { anchorsOfKind, type PaintAnchor, type SurfaceReaderProps } from "./surfaces/types";
+import { registerSourceRealmDoc, unregisterSourceRealmDoc } from "./workspace/sourceRealmDoc";
 import { isRealRegion, normalizeDragRect, placeRegionBox } from "./surfaces/overlay";
 import { formatZoomPct, nextZoom } from "./surfaces/pdfZoom";
 import { selectorFromPdfRange, spansForPdfQuote } from "./surfaces/pdfTextLayer";
@@ -259,6 +260,9 @@ export function PdfReader({
       adapter
     });
     markerOverlayRef.current = markerOverlay;
+    // The PDF reader paints into the HOST document, so its realm IS the host document —
+    // register it for the host controls' sourceId → realm-doc lookup (F-1 follow-up).
+    registerSourceRealmDoc(sourceIdRef.current, document);
 
     // Fit each page to the container width; 'page-width' is a dynamic value, so
     // pdf.js keeps it fit as the pane is resized.
@@ -444,6 +448,7 @@ export function PdfReader({
       resizeFrames.forEach((id) => cancelAnimationFrame(id));
       resizeFrames.clear();
       markerOverlay.destroy();
+      unregisterSourceRealmDoc(sourceIdRef.current, document);
       layoutListeners.clear();
       if (markerOverlayRef.current === markerOverlay) markerOverlayRef.current = null;
       if (adapterRef.current === adapter) adapterRef.current = null;

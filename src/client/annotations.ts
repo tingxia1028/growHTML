@@ -66,6 +66,28 @@ export function persistAnchorGlyphVisibility(visible: boolean): void {
   } catch {
     // storage unavailable — the in-memory overlay store still drives the paint.
   }
+  notifyMarkerPrefsChanged();
+}
+
+// —— Realm-agnostic "marker prefs changed" bus (F-1 follow-up) ————————————————
+// The live glyph/hide-all stores are now PER-REALM (keyed by the reader's document),
+// so the host controls flip a SPECIFIC realm's store — there's no module-global flip
+// event for the webview host-push (bindWebviewAnchors) to subscribe to, and the guest
+// lives in a realm the host can't reach. Instead the host controls persist the choice
+// (glyph = global, hide-all = per-source) and fire THIS bus; the webview push reads the
+// freshest value straight from the persisted stores and re-sends it to the guest. This
+// is a pure "something changed, re-read storage" ping — it carries no value.
+const markerPrefsListeners = new Set<() => void>();
+
+export function notifyMarkerPrefsChanged(): void {
+  for (const listener of [...markerPrefsListeners]) listener();
+}
+
+export function subscribeMarkerPrefsChanged(listener: () => void): () => void {
+  markerPrefsListeners.add(listener);
+  return () => {
+    markerPrefsListeners.delete(listener);
+  };
 }
 
 // D11 hide-all — a PER-SOURCE "hide all notes" view flag (note-presentation-unified
@@ -93,6 +115,9 @@ export function persistNotesHidden(sourceId: string, hidden: boolean): void {
   } catch {
     // storage unavailable — the in-memory store still drives the paint.
   }
+  // Wake the webview host-push (bindWebviewAnchors) so an already-painted guest re-reads
+  // this source's hide-all flag and re-sends it (F-1 follow-up per-realm bus).
+  notifyMarkerPrefsChanged();
 }
 
 // Minimal structural shapes so the registry doesn't couple to the full schemas;

@@ -83,33 +83,44 @@ export type MarkerOverlayOptions = {
   adapter?: AnnotationRectSource;
 };
 
-// --- Global anchor-glyph visibility (the Anchor panel's 显示锚点标记 switch) -----
-// Module-level store, REALM-LOCAL: every overlay constructed in this JS realm
-// (the host document's PDF/image overlays AND the DomReader iframe overlays —
-// they're built by host code) shares it and re-lays-out when it flips. The
-// Electron webview guest is a separate bundle/realm: its copy lazily seeds from
-// the guest page's storage (practically always the "visible" default) and is then
+// --- Anchor-glyph visibility (the Anchor panel's 显示锚点标记 switch) -------------
+// PER-REALM store (F-1 follow-up): keyed by the reader's realm Document, mirroring the
+// annotationLayer hide-all conversion, so two F1 split panes (two iframe realms) don't
+// share one glyph-visibility flag. Each overlay reads/subscribes for its OWN document.
+// The glyph switch is a GLOBAL user preference, so a realm's live value lazily seeds
+// from the shared localStorage default (readStoredAnchorGlyphVisibility — practically
+// always "visible") and is then driven per-realm by the host control for the focused
+// pane. The Electron webview guest is a separate bundle/realm keyed by its own document,
 // driven by the host over the sv:anchors payload (electron/webview-preload.ts).
-// Persistence lives in annotations.ts (readStored/persistAnchorGlyphVisibility —
-// the annotation-mode localStorage idiom); this store is only the live value.
-let anchorGlyphsVisible: boolean | null = null;
-const anchorGlyphListeners = new Set<() => void>();
+const anchorGlyphsVisibleByDoc = new WeakMap<Document, boolean>();
+const anchorGlyphListenersByDoc = new WeakMap<Document, Set<() => void>>();
 
-export function getAnchorGlyphVisibility(): boolean {
-  if (anchorGlyphsVisible === null) anchorGlyphsVisible = readStoredAnchorGlyphVisibility();
-  return anchorGlyphsVisible;
+export function getAnchorGlyphVisibility(doc: Document | null | undefined): boolean {
+  if (!doc) return readStoredAnchorGlyphVisibility();
+  let visible = anchorGlyphsVisibleByDoc.get(doc);
+  if (visible === undefined) {
+    visible = readStoredAnchorGlyphVisibility();
+    anchorGlyphsVisibleByDoc.set(doc, visible);
+  }
+  return visible;
 }
 
-export function setAnchorGlyphVisibility(visible: boolean): void {
-  if (getAnchorGlyphVisibility() === visible) return;
-  anchorGlyphsVisible = visible;
-  for (const listener of [...anchorGlyphListeners]) listener();
+export function setAnchorGlyphVisibility(doc: Document | null | undefined, visible: boolean): void {
+  if (!doc || getAnchorGlyphVisibility(doc) === visible) return;
+  anchorGlyphsVisibleByDoc.set(doc, visible);
+  const listeners = anchorGlyphListenersByDoc.get(doc);
+  if (listeners) for (const listener of [...listeners]) listener();
 }
 
-export function subscribeAnchorGlyphVisibility(listener: () => void): () => void {
-  anchorGlyphListeners.add(listener);
+export function subscribeAnchorGlyphVisibility(doc: Document, listener: () => void): () => void {
+  let listeners = anchorGlyphListenersByDoc.get(doc);
+  if (!listeners) {
+    listeners = new Set<() => void>();
+    anchorGlyphListenersByDoc.set(doc, listeners);
+  }
+  listeners.add(listener);
   return () => {
-    anchorGlyphListeners.delete(listener);
+    listeners?.delete(listener);
   };
 }
 
@@ -219,15 +230,17 @@ export class MarkerOverlay {
     if (this.adapter?.onLayoutChange) {
       this.unsubscribes.push(this.adapter.onLayoutChange(() => this.reposition()));
     }
-    // The global anchor-glyph switch re-runs layout (anchor chips hide/show).
-    this.unsubscribes.push(subscribeAnchorGlyphVisibility(() => this.reposition()));
-    // D11 hide-all re-runs layout too (note-slot chips hide/show; anchor glyphs stay).
-    this.unsubscribes.push(subscribeAllNotesHidden(() => this.reposition()));
+    // The per-realm anchor-glyph switch re-runs layout (anchor chips hide/show), keyed
+    // on THIS overlay's realm document (F-1 follow-up).
+    const doc = hostEl.ownerDocument;
+    this.unsubscribes.push(subscribeAnchorGlyphVisibility(doc, () => this.reposition()));
+    // D11 hide-all re-runs layout too (note-slot chips hide/show; anchor glyphs stay) —
+    // per-realm, keyed on the same document.
+    this.unsubscribes.push(subscribeAllNotesHidden(doc, () => this.reposition()));
     // Card-open suppression (D2): wireNoteCard flips data-sv-card-open on the realm
     // body as the shared card shows/hides an anchor — watch that ONE attribute and
     // re-layout so the open anchor's chips hide (and restore on close). The observer
     // lives on the realm body (the card's home), cross-realm-safe via defaultView.
-    const doc = hostEl.ownerDocument;
     const body = doc?.body;
     const MO = (doc?.defaultView as (Window & { MutationObserver?: typeof MutationObserver }) | null)?.MutationObserver;
     if (body && typeof MO === "function") {
@@ -370,11 +383,11 @@ export class MarkerOverlay {
     const overlayRect = this.overlay.getBoundingClientRect();
     const origin = { left: overlayRect.left, top: overlayRect.top };
     const doc = this.hostEl.ownerDocument;
-    const glyphsVisible = getAnchorGlyphVisibility();
+    const glyphsVisible = getAnchorGlyphVisibility(doc);
     // D11 hide-all: the per-source flag masks EVERY note-slot chip (the CARDS/notes),
     // while anchor glyphs stay so passages remain findable — the inverse split of the
     // N1a global switch (which hides glyphs and keeps note slots).
-    const notesAllHidden = isAllNotesHidden();
+    const notesAllHidden = isAllNotesHidden(doc);
     // Card-open suppression (D2): the anchor whose card the shared #sv-note-card is
     // currently showing (hover or pinned) hides BOTH its chips — wireNoteCard stamps
     // the id on the realm body; the constructor's MutationObserver re-ran us here.

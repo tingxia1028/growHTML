@@ -103,7 +103,7 @@ export function LocalHtmlReader({ src, sourceId, anchors, onSelect, onMarkerActi
     // Shared paint-back wiring: push stored anchors into the guest so it highlights
     // them + shows hover note-cards. Sends on sv:ready and dom-ready; the effect
     // below re-pushes whenever the anchor set changes.
-    const anchorsBinding = bindWebviewAnchors(view, () => anchorsRef.current);
+    const anchorsBinding = bindWebviewAnchors(view, () => anchorsRef.current, sourceIdRef.current);
     pushAnchorsRef.current = anchorsBinding.push;
     view.addEventListener("dom-ready", () => {
       readyRef.current = true;

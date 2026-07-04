@@ -26,8 +26,9 @@ beforeEach(() => {
   document.body.innerHTML = "";
   document.head.innerHTML = "";
   window.localStorage.clear();
-  // D11 store is module-level (realm-local) — reset so one test never leaks into the next.
-  setAllNotesHidden(false);
+  // D11 store is now PER-REALM (F-1 follow-up) — reset the main document's flag so one
+  // test never leaks into the next. Per-iframe realms are fresh each test (new iframe).
+  setAllNotesHidden(document, false);
 });
 
 function freshReaderDocument(): Document {
@@ -353,10 +354,10 @@ describe("card open-state persistence (D10)", () => {
     expect(card.classList.contains("sv-note-card-show")).toBe(false);
     setAnchorNotesHidden(doc, "k-guard", false);
 
-    setAllNotesHidden(true);
+    setAllNotesHidden(doc, true);
     restorePinnedNoteCards(doc, ["k-guard"]);
     expect(card.classList.contains("sv-note-card-show")).toBe(false);
-    setAllNotesHidden(false);
+    setAllNotesHidden(doc, false);
   });
 });
 
@@ -374,17 +375,68 @@ describe("setAllNotesHidden (D11 hide-all)", () => {
     applyHighlight(b, "n2", "ha-b", { noteHtml: "<div>Body B</div>", noteCount: 1 });
     const card = doc.getElementById("sv-note-card")!;
 
-    setAllNotesHidden(true);
-    expect(isAllNotesHidden()).toBe(true);
+    setAllNotesHidden(doc, true);
+    expect(isAllNotesHidden(doc)).toBe(true);
     a.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
     expect(card.classList.contains("sv-note-card-show")).toBe(false);
     b.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(card.classList.contains("sv-note-card-show")).toBe(false);
 
-    setAllNotesHidden(false);
+    setAllNotesHidden(doc, false);
     a.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
     expect(card.classList.contains("sv-note-card-show")).toBe(true);
     expect(card.querySelector(".sv-note-card-body")!.innerHTML).toContain("Body A");
+  });
+
+  // F-1 follow-up: the hide-all flag is PER-REALM. Setting it on realm A must NOT hide
+  // realm B's notes — the leak the F1 multi-doc split otherwise produced.
+  it("is scoped PER-REALM: hide-all in docA leaves docB unhidden and still painting", () => {
+    const docA = freshReaderDocument();
+    const docB = freshReaderDocument();
+    docA.body.innerHTML = '<p id="a">alpha</p>';
+    docB.body.innerHTML = '<p id="b">beta</p>';
+    ensureAnnotationLayer(docA);
+    ensureAnnotationLayer(docB);
+    const a = docA.getElementById("a")!;
+    const b = docB.getElementById("b")!;
+    applyHighlight(a, "n1", "ra-a", { noteHtml: "<div>Body A</div>", noteCount: 1 });
+    applyHighlight(b, "n2", "rb-b", { noteHtml: "<div>Body B</div>", noteCount: 1 });
+    const cardA = docA.getElementById("sv-note-card")!;
+    const cardB = docB.getElementById("sv-note-card")!;
+
+    // Hide-all in A only.
+    setAllNotesHidden(docA, true);
+    expect(isAllNotesHidden(docA)).toBe(true);
+    expect(isAllNotesHidden(docB)).toBe(false); // B independent
+
+    // A's card is suppressed; B still paints on hover.
+    a.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    expect(cardA.classList.contains("sv-note-card-show")).toBe(false);
+    b.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    expect(cardB.classList.contains("sv-note-card-show")).toBe(true);
+    expect(cardB.querySelector(".sv-note-card-body")!.innerHTML).toContain("Body B");
+
+    setAllNotesHidden(docA, false);
+  });
+
+  // Margin gutters in two realms are independent too — hide-all in A drops A's gutter
+  // while B's stays.
+  it("PER-REALM margin gutters: hide-all in docA drops A's gutter, docB's stays", () => {
+    const docA = freshReaderDocument();
+    const docB = freshReaderDocument();
+    docA.body.innerHTML = '<p id="a">alpha</p>';
+    docB.body.innerHTML = '<p id="b">beta</p>';
+    ensureAnnotationLayer(docA);
+    ensureAnnotationLayer(docB);
+    paintMarginNotes(docA, [{ element: docA.getElementById("a")!, noteText: "a", noteHtml: "<p>a</p>", key: "ma" }]);
+    paintMarginNotes(docB, [{ element: docB.getElementById("b")!, noteText: "b", noteHtml: "<p>b</p>", key: "mb" }]);
+    expect(docA.getElementById("sv-margin-layer")).not.toBeNull();
+    expect(docB.getElementById("sv-margin-layer")).not.toBeNull();
+
+    setAllNotesHidden(docA, true);
+    expect(docA.getElementById("sv-margin-layer")).toBeNull(); // A dropped
+    expect(docB.getElementById("sv-margin-layer")).not.toBeNull(); // B stays
+    setAllNotesHidden(docA, false);
   });
 
   it("dismisses an OPEN pinned card the instant hide-all turns on", () => {
@@ -397,9 +449,9 @@ describe("setAllNotesHidden (D11 hide-all)", () => {
     const card = doc.getElementById("sv-note-card")!;
     expect(card.classList.contains("sv-note-card-show")).toBe(true);
 
-    setAllNotesHidden(true);
+    setAllNotesHidden(doc, true);
     expect(card.classList.contains("sv-note-card-show")).toBe(false);
-    setAllNotesHidden(false);
+    setAllNotesHidden(doc, false);
   });
 
   it("drops the margin gutter while on and re-packs it on off (composing with N1a filtering)", () => {
@@ -413,12 +465,12 @@ describe("setAllNotesHidden (D11 hide-all)", () => {
     ]);
     expect(document.querySelectorAll("#sv-margin-layer .sv-margin-note")).toHaveLength(2);
 
-    setAllNotesHidden(true);
+    setAllNotesHidden(document, true);
     expect(document.getElementById("sv-margin-layer")).toBeNull();
 
     // N1a toggle applied WHILE hidden: on restore, m-a stays filtered, only m-b returns.
     setAnchorNotesHidden(document, "hm-a", true);
-    setAllNotesHidden(false);
+    setAllNotesHidden(document, false);
     const cards = document.querySelectorAll("#sv-margin-layer .sv-margin-note");
     expect(cards).toHaveLength(1);
     expect(cards[0].getAttribute("data-sv-key")).toBe("hm-b");

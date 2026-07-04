@@ -7,6 +7,7 @@ import type { AnyAnchor, NoteRecord, WorkspaceNode } from "../data/entityClient"
 import type { FocusContextValue } from "../focus/FocusContext";
 import { setLocale } from "../i18n";
 import { getAnchorGlyphVisibility, setAnchorGlyphVisibility } from "../markerOverlay";
+import { registerSourceRealmDoc, unregisterSourceRealmDoc } from "./sourceRealmDoc";
 import { getView } from "./viewRegistry";
 import type { WorkspaceContext } from "./viewRegistry";
 import "./anchorViews";
@@ -108,14 +109,19 @@ describe("anchor.excerpt linked notes", () => {
 describe("anchor panel 显示锚点标记 switch", () => {
   beforeEach(() => {
     setLocale("zh");
+    // The switch now drives the FOCUSED source's REALM store (F-1 follow-up) resolved
+    // from the sourceRealmDoc registry — register the jsdom document as source_1's realm
+    // so the flip is observable via getAnchorGlyphVisibility(document).
+    registerSourceRealmDoc("source_1", document);
   });
 
   afterEach(() => {
     window.localStorage.removeItem("sv-anchor-glyph-markers");
-    setAnchorGlyphVisibility(true);
+    setAnchorGlyphVisibility(document, true);
+    unregisterSourceRealmDoc("source_1", document);
   });
 
-  it("renders in the panel, flips the live glyph store, and persists the choice", () => {
+  it("renders in the panel, flips the focused pane's realm glyph store, and persists the choice", () => {
     const plugin = getView("anchor.excerpt");
     expect(plugin).toBeTruthy();
     const { ctx } = ctxWithLinkedNote();
@@ -134,12 +140,12 @@ describe("anchor panel 显示锚点标记 switch", () => {
 
     act(() => button.click());
     expect(button.getAttribute("aria-pressed")).toBe("false");
-    expect(getAnchorGlyphVisibility()).toBe(false);
+    expect(getAnchorGlyphVisibility(document)).toBe(false);
     expect(window.localStorage.getItem("sv-anchor-glyph-markers")).toBe("hidden");
 
     act(() => button.click());
     expect(button.getAttribute("aria-pressed")).toBe("true");
-    expect(getAnchorGlyphVisibility()).toBe(true);
+    expect(getAnchorGlyphVisibility(document)).toBe(true);
     expect(window.localStorage.getItem("sv-anchor-glyph-markers")).toBe("shown");
     cleanup();
   });

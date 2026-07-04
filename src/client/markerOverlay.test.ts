@@ -30,10 +30,11 @@ function flushFrame(): Promise<void> {
 }
 
 afterEach(() => {
-  // The glyph-visibility + hide-all stores are module-level (realm-local); restore
-  // the defaults so one test never leaks its state into the next.
-  setAnchorGlyphVisibility(true);
-  setAllNotesHidden(false);
+  // The glyph-visibility + hide-all stores are PER-REALM now (F-1 follow-up); the hosts
+  // in this file live in the jsdom main `document`, so restore that realm's defaults so
+  // one test never leaks its state into the next.
+  setAnchorGlyphVisibility(document, true);
+  setAllNotesHidden(document, false);
 });
 
 describe("rectToOverlayLocal", () => {
@@ -366,16 +367,153 @@ describe("MarkerOverlay", () => {
     expect(anchorChips).toHaveLength(2);
     for (const chip of anchorChips) expect(chip.style.display).not.toBe("none");
 
-    setAnchorGlyphVisibility(false); // the overlay subscribed — no manual reposition
+    setAnchorGlyphVisibility(document, false); // the overlay subscribed — no manual reposition
     await flushFrame();
-    expect(getAnchorGlyphVisibility()).toBe(false);
+    expect(getAnchorGlyphVisibility(document)).toBe(false);
     for (const chip of anchorChips) expect(chip.style.display).toBe("none");
     for (const chip of noteChips) expect(chip.style.display).not.toBe("none");
 
-    setAnchorGlyphVisibility(true);
+    setAnchorGlyphVisibility(document, true);
     await flushFrame();
     for (const chip of anchorChips) expect(chip.style.display).not.toBe("none");
     overlay.destroy();
+  });
+
+  // —— F-1 follow-up: the glyph switch is PER-REALM — two overlays in two iframe realms
+  //    flip independently (the leak the F1 multi-doc split otherwise produced). ——
+  it("glyph switch is PER-REALM: flipping docA hides only docA's anchor chips, docB stays", async () => {
+    function iframeDoc(): Document {
+      const frame = document.createElement("iframe");
+      document.body.appendChild(frame);
+      const doc = frame.contentDocument!;
+      doc.body.innerHTML = "";
+      return doc;
+    }
+    function hostIn(doc: Document): HTMLElement {
+      const host = doc.createElement("div");
+      Object.defineProperty(host, "getBoundingClientRect", {
+        value: () => ({ left: 100, top: 50, right: 900, bottom: 650, width: 800, height: 600 }),
+        configurable: true
+      });
+      doc.body.appendChild(host);
+      return host;
+    }
+    function stubAnchorIn(doc: Document, host: HTMLElement, key: string): void {
+      const anchor = doc.createElement("span");
+      anchor.setAttribute("data-sv-key", key);
+      Object.defineProperty(anchor, "getBoundingClientRect", {
+        value: () => ({ left: 200, top: 120, right: 260, bottom: 138, width: 60, height: 18 }),
+        configurable: true
+      });
+      host.appendChild(anchor);
+    }
+    function stubOverlayRectIn(host: HTMLElement): void {
+      const overlayDiv = host.querySelector(".sv-marker-overlay") as HTMLElement;
+      Object.defineProperty(overlayDiv, "getBoundingClientRect", {
+        value: () => ({ left: 100, top: 50, right: 900, bottom: 650, width: 800, height: 600 }),
+        configurable: true
+      });
+    }
+
+    const docA = iframeDoc();
+    const docB = iframeDoc();
+    const hostA = hostIn(docA);
+    const hostB = hostIn(docB);
+    stubAnchorIn(docA, hostA, "ra-1");
+    stubAnchorIn(docB, hostB, "rb-1");
+    const overlayA = new MarkerOverlay(hostA);
+    const overlayB = new MarkerOverlay(hostB);
+    overlayA.setMarkers([{ anchorId: "ra-1", ...slots({ noteTypes: ["markdown"], noteCount: 1 }) }]);
+    overlayB.setMarkers([{ anchorId: "rb-1", ...slots({ noteTypes: ["markdown"], noteCount: 1 }) }]);
+    stubOverlayRectIn(hostA);
+    stubOverlayRectIn(hostB);
+    overlayA.reposition();
+    overlayB.reposition();
+    await flushFrame();
+
+    const anchorChipA = hostA.querySelector('[data-sv-slot="anchor"]') as HTMLElement;
+    const anchorChipB = hostB.querySelector('[data-sv-slot="anchor"]') as HTMLElement;
+    expect(anchorChipA.style.display).not.toBe("none");
+    expect(anchorChipB.style.display).not.toBe("none");
+
+    // Flip glyphs OFF for docA's realm only.
+    setAnchorGlyphVisibility(docA, false);
+    await flushFrame();
+    expect(getAnchorGlyphVisibility(docA)).toBe(false);
+    expect(getAnchorGlyphVisibility(docB)).toBe(true); // docB independent
+    expect(anchorChipA.style.display).toBe("none"); // docA hidden
+    expect(anchorChipB.style.display).not.toBe("none"); // docB unaffected
+
+    setAnchorGlyphVisibility(docA, true);
+    overlayA.destroy();
+    overlayB.destroy();
+  });
+
+  // —— F-1 follow-up: hide-all is PER-REALM too — note-slot chips hide only in the
+  //    flipped realm. ——
+  it("hide-all is PER-REALM: flipping docA hides only docA's note chips, docB stays", async () => {
+    function iframeDoc(): Document {
+      const frame = document.createElement("iframe");
+      document.body.appendChild(frame);
+      const doc = frame.contentDocument!;
+      doc.body.innerHTML = "";
+      return doc;
+    }
+    function hostIn(doc: Document): HTMLElement {
+      const host = doc.createElement("div");
+      Object.defineProperty(host, "getBoundingClientRect", {
+        value: () => ({ left: 100, top: 50, right: 900, bottom: 650, width: 800, height: 600 }),
+        configurable: true
+      });
+      doc.body.appendChild(host);
+      return host;
+    }
+    function stubAnchorIn(doc: Document, host: HTMLElement, key: string): void {
+      const anchor = doc.createElement("span");
+      anchor.setAttribute("data-sv-key", key);
+      Object.defineProperty(anchor, "getBoundingClientRect", {
+        value: () => ({ left: 200, top: 120, right: 260, bottom: 138, width: 60, height: 18 }),
+        configurable: true
+      });
+      host.appendChild(anchor);
+    }
+    function stubOverlayRectIn(host: HTMLElement): void {
+      const overlayDiv = host.querySelector(".sv-marker-overlay") as HTMLElement;
+      Object.defineProperty(overlayDiv, "getBoundingClientRect", {
+        value: () => ({ left: 100, top: 50, right: 900, bottom: 650, width: 800, height: 600 }),
+        configurable: true
+      });
+    }
+
+    const docA = iframeDoc();
+    const docB = iframeDoc();
+    const hostA = hostIn(docA);
+    const hostB = hostIn(docB);
+    stubAnchorIn(docA, hostA, "na-1");
+    stubAnchorIn(docB, hostB, "nb-1");
+    const overlayA = new MarkerOverlay(hostA);
+    const overlayB = new MarkerOverlay(hostB);
+    overlayA.setMarkers([{ anchorId: "na-1", ...slots({ noteTypes: ["markdown"], noteCount: 1 }) }]);
+    overlayB.setMarkers([{ anchorId: "nb-1", ...slots({ noteTypes: ["markdown"], noteCount: 1 }) }]);
+    stubOverlayRectIn(hostA);
+    stubOverlayRectIn(hostB);
+    overlayA.reposition();
+    overlayB.reposition();
+    await flushFrame();
+
+    const noteChipA = hostA.querySelector('[data-sv-slot="note"]') as HTMLElement;
+    const noteChipB = hostB.querySelector('[data-sv-slot="note"]') as HTMLElement;
+    expect(noteChipA.style.display).not.toBe("none");
+    expect(noteChipB.style.display).not.toBe("none");
+
+    setAllNotesHidden(docA, true);
+    await flushFrame();
+    expect(noteChipA.style.display).toBe("none"); // docA note chip hidden
+    expect(noteChipB.style.display).not.toBe("none"); // docB unaffected
+
+    setAllNotesHidden(docA, false);
+    overlayA.destroy();
+    overlayB.destroy();
   });
 
   // —— D11 hide-all (INVERSE split of the glyph switch): hides NOTE-slot chips, keeps
@@ -396,12 +534,12 @@ describe("MarkerOverlay", () => {
     const anchorChips = Array.from(host.querySelectorAll('[data-sv-slot="anchor"]')) as HTMLElement[];
     const noteChips = Array.from(host.querySelectorAll('[data-sv-slot="note"]')) as HTMLElement[];
 
-    setAllNotesHidden(true); // the overlay subscribed — no manual reposition
+    setAllNotesHidden(document, true); // the overlay subscribed — no manual reposition
     await flushFrame();
     for (const chip of noteChips) expect(chip.style.display).toBe("none"); // CARDS/notes hidden
     for (const chip of anchorChips) expect(chip.style.display).not.toBe("none"); // glyphs STAY
 
-    setAllNotesHidden(false);
+    setAllNotesHidden(document, false);
     await flushFrame();
     for (const chip of noteChips) expect(chip.style.display).not.toBe("none");
     overlay.destroy();
@@ -413,8 +551,8 @@ describe("MarkerOverlay", () => {
     const overlay = new MarkerOverlay(host);
     overlay.setMarkers([{ anchorId: "ho-1", ...slots({ noteTypes: ["markdown"], noteCount: 1 }) }]);
     stubOverlayRect(host);
-    setAllNotesHidden(true);
-    setAnchorGlyphVisibility(false);
+    setAllNotesHidden(document, true);
+    setAnchorGlyphVisibility(document, false);
     overlay.reposition();
     await flushFrame();
 
@@ -812,7 +950,7 @@ describe("MarkerOverlay — same-line clustering + card-open suppression", () =>
     const overlay = new MarkerOverlay(host);
     overlay.setMarkers([{ anchorId: "cg-a1", ...slots({ noteTypes: ["markdown"], noteCount: 1 }) }]);
     stubOverlayRect(host);
-    setAnchorGlyphVisibility(false);
+    setAnchorGlyphVisibility(document, false);
     overlay.reposition();
     await flushFrame();
 

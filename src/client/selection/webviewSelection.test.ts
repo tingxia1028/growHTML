@@ -13,8 +13,7 @@ import {
   type WebAnchorMsg,
   type WebviewIpcMessage
 } from "./webviewSelection";
-import { setAnchorGlyphVisibility } from "../markerOverlay";
-import { setAllNotesHidden } from "../annotationLayer";
+import { persistAnchorGlyphVisibility, persistNotesHidden } from "../annotations";
 import type { PaintAnchor } from "../surfaces/types";
 
 // A minimal stand-in for an Electron <webview>: a real EventTarget (so the shared
@@ -50,9 +49,10 @@ function fakeWebview(url = "https://example.test/page"): FakeWebview {
 afterEach(() => {
   // Remove any preload url injected onto the shared bridge surface.
   delete (window as { studyVault?: unknown }).studyVault;
-  // Restore the module-level defaults (flip tests change them).
-  setAnchorGlyphVisibility(true);
-  setAllNotesHidden(false);
+  // The host-push now reads the PERSISTED prefs (F-1 follow-up) — restore the localStorage
+  // defaults (flip tests change them) so one test never leaks into the next.
+  persistAnchorGlyphVisibility(true);
+  window.localStorage.clear();
 });
 
 // The prefs object every sv:anchors push now carries alongside the anchors
@@ -325,7 +325,8 @@ describe("bindWebviewAnchors", () => {
     expect(webview.send).not.toHaveBeenCalled();
   });
 
-  // —— The global 显示锚点标记 switch reaching an already-painted guest ——
+  // —— The 显示锚点标记 switch reaching an already-painted guest (via the marker-prefs
+  //    bus + persisted store, F-1 follow-up) ——
 
   it("re-pushes with the new flag when the anchor-glyph switch flips (connected webview)", () => {
     const webview = fakeWebview();
@@ -333,12 +334,13 @@ describe("bindWebviewAnchors", () => {
     const anchors = [anchor("a1")];
     const { dispose } = bindWebviewAnchors(webview, () => anchors);
 
-    setAnchorGlyphVisibility(false);
+    // A host control persisting the GLOBAL glyph pref pings the marker-prefs bus.
+    persistAnchorGlyphVisibility(false);
     expect(webview.send).toHaveBeenCalledTimes(1);
     expect(webview.send).toHaveBeenCalledWith("sv:anchors", anchors, { anchorGlyphsVisible: false, notesHidden: false });
 
     dispose();
-    setAnchorGlyphVisibility(true);
+    persistAnchorGlyphVisibility(true);
     expect(webview.send).toHaveBeenCalledTimes(1); // unsubscribed by dispose
     webview.remove();
   });
@@ -349,14 +351,15 @@ describe("bindWebviewAnchors", () => {
     const webview = fakeWebview();
     document.body.appendChild(webview); // connected — the subscription stays live
     const anchors = [anchor("a1")];
-    const { dispose } = bindWebviewAnchors(webview, () => anchors);
+    // Bound to a source so the per-source hide-all store is keyed and pinged.
+    const { dispose } = bindWebviewAnchors(webview, () => anchors, "src-hide");
 
-    setAllNotesHidden(true);
+    persistNotesHidden("src-hide", true);
     expect(webview.send).toHaveBeenCalledTimes(1);
     expect(webview.send).toHaveBeenCalledWith("sv:anchors", anchors, { anchorGlyphsVisible: true, notesHidden: true });
 
     dispose();
-    setAllNotesHidden(false);
+    persistNotesHidden("src-hide", false);
     expect(webview.send).toHaveBeenCalledTimes(1); // unsubscribed by dispose
     webview.remove();
   });
@@ -365,8 +368,8 @@ describe("bindWebviewAnchors", () => {
     const webview = fakeWebview(); // never appended → isConnected is false
     bindWebviewAnchors(webview, () => [anchor("a1")]);
 
-    setAnchorGlyphVisibility(false); // first flip: detects the dead webview, no send
-    setAnchorGlyphVisibility(true);
+    persistAnchorGlyphVisibility(false); // first flip: detects the dead webview, no send
+    persistAnchorGlyphVisibility(true);
     expect(webview.send).not.toHaveBeenCalled();
   });
 });

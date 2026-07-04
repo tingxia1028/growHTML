@@ -15,8 +15,11 @@
 // guest protocol stays an implementation detail of the webview surface.
 
 import type { AnchorDraft } from "../focus/FocusContext";
-import { isAllNotesHidden, subscribeAllNotesHidden } from "../annotationLayer";
-import { getAnchorGlyphVisibility, subscribeAnchorGlyphVisibility } from "../markerOverlay";
+import {
+  readStoredAnchorGlyphVisibility,
+  readStoredNotesHidden,
+  subscribeMarkerPrefsChanged
+} from "../annotations";
 import type { PaintAnchor } from "../surfaces/types";
 
 export type WebSelection = { exact: string; prefix: string; suffix: string };
@@ -134,16 +137,20 @@ export function bindWebviewSelection(
 // calling the returned `push` — typically from a React effect keyed on the anchors.
 export function bindWebviewAnchors(
   webview: SelectionWebview,
-  getAnchors: () => WebAnchorMsg[]
+  getAnchors: () => WebAnchorMsg[],
+  sourceId = ""
 ): { dispose: () => void; push: () => void } {
   const push = () => {
     try {
       // The prefs ride ALONGSIDE the anchors (additive payload extension): the guest
       // realm mirrors the host's 显示锚点标记 switch AND the D11 hide-all flag from
-      // here, since its own module stores can't see the host's live state.
+      // here, since its own module store can't see the host's live state. The host's
+      // live glyph/hide-all stores are now PER-REALM (F-1 follow-up) and the guest is a
+      // realm the host can't reach, so we read the PERSISTED truth: the glyph switch is
+      // a GLOBAL localStorage preference; hide-all is per-source (keyed by sourceId).
       const prefs: WebAnchorPrefs = {
-        anchorGlyphsVisible: getAnchorGlyphVisibility(),
-        notesHidden: isAllNotesHidden()
+        anchorGlyphsVisible: readStoredAnchorGlyphVisibility(),
+        notesHidden: readStoredNotesHidden(sourceId)
       };
       webview.send("sv:anchors", getAnchors(), prefs);
     } catch {
@@ -155,28 +162,24 @@ export function bindWebviewAnchors(
   };
   webview.addEventListener("ipc-message", onReady);
   webview.addEventListener("dom-ready", push);
-  // The global anchor-glyph switch AND the D11 hide-all flag must reach an ALREADY-
-  // painted guest: re-push (with the new prefs) whenever either flips. Self-cleaning:
-  // a webview removed without dispose() (tab close in WebviewReader) unsubscribes on
-  // the next flip.
-  const repushIfConnected = (unsubscribe: () => void) => () => {
+  // The 显示锚点标记 switch AND the D11 hide-all flag must reach an ALREADY-painted guest:
+  // re-push (re-reading the persisted prefs) whenever a host control flips one and pings
+  // the realm-agnostic marker-prefs bus. Self-cleaning: a webview removed without
+  // dispose() (tab close in WebviewReader) unsubscribes on the next ping.
+  let unsubscribePrefs: () => void = () => {};
+  unsubscribePrefs = subscribeMarkerPrefsChanged(() => {
     if (!webview.isConnected) {
-      unsubscribe();
+      unsubscribePrefs();
       return;
     }
     push();
-  };
-  let unsubscribeGlyphs: () => void = () => {};
-  let unsubscribeNotesHidden: () => void = () => {};
-  unsubscribeGlyphs = subscribeAnchorGlyphVisibility(repushIfConnected(() => unsubscribeGlyphs()));
-  unsubscribeNotesHidden = subscribeAllNotesHidden(repushIfConnected(() => unsubscribeNotesHidden()));
+  });
   return {
     push,
     dispose: () => {
       webview.removeEventListener("ipc-message", onReady);
       webview.removeEventListener("dom-ready", push);
-      unsubscribeGlyphs();
-      unsubscribeNotesHidden();
+      unsubscribePrefs();
     }
   };
 }
