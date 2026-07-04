@@ -1,19 +1,17 @@
 // TopBar (R1) — the full-width chrome bar above the dock. Three segments:
 //   • Left: anchor logo + "Growte" wordmark (the brand moved here from LibraryView).
-//   • Center: a 3-way segmented control — Document / Notes Overlay / Anchor Focus —
-//     wired to the EXISTING WorkspaceContext state (annotationMode + focus.anchor), so
-//     this is the primary annotation-mode control (the old reader-header toggle is gone).
-//       - Document      → annotationMode "floating" (normal inline reading).
-//       - Notes Overlay → annotationMode "margin"   (the gutter / margin cards).
-//       - Anchor Focus  → highlights the currently-focused anchor (re-reveals it); shows
-//         a count badge of 1 when an anchor is focused (the only focus state that exists).
+//   • Center: a 2-way segmented control — Notes Overlay / Anchor Focus. The overlay IS
+//     the document (user decision 2026-07-04): the old "Document" tab (annotationMode
+//     "floating", a notes-less reading mode) is gone; annotationMode stays "margin".
+//       - Notes Overlay → the default reading surface (gutter / margin cards).
+//       - Anchor Focus  → re-reveals the currently-focused anchor (scrolls the passage
+//         into view) without changing the presentation mode.
 //   • Right: native desktop window controls only.
 
 import { useState } from "react";
 import {
   Anchor,
   Crosshair,
-  FileText,
   Minus,
   PanelRight,
   Square,
@@ -27,20 +25,17 @@ export type TopBarProps = {
 
 export function TopBar({ ctx }: TopBarProps) {
   const {
-    annotationMode,
     setAnnotationMode,
     focus
   } = ctx;
 
-  // The three tabs map onto TWO existing states: annotationMode ("floating"|"margin") for
-  // Document/Notes-Overlay, and an EXPLICIT "Anchor Focus" selection within floating mode
-  // (a transient choice, not derived from focus.anchor — having a focused anchor is the
-  // normal reading state, so it must NOT silently flip the active tab). Notes-Overlay
-  // (margin) always wins when set; otherwise the last-chosen floating tab is active.
-  const [floatingTab, setFloatingTab] = useState<"document" | "anchor">("document");
-  const overlayActive = annotationMode === "margin";
-  const documentActive = !overlayActive && floatingTab === "document";
-  const focusActive = !overlayActive && floatingTab === "anchor";
+  // Two tabs, one presentation mode: the overlay (annotationMode "margin") is the
+  // document. Anchor Focus is a transient selection (an explicit click, not derived
+  // from focus.anchor — having a focused anchor is the normal reading state, so it
+  // must NOT silently flip the active tab) that re-reveals the focused passage.
+  const [tab, setTab] = useState<"overlay" | "anchor">("overlay");
+  const overlayActive = tab === "overlay";
+  const focusActive = tab === "anchor";
 
   const windowControls = typeof window !== "undefined" ? window.studyVault?.windowControls : undefined;
 
@@ -57,22 +52,14 @@ export function TopBar({ ctx }: TopBarProps) {
         <button
           type="button"
           role="tab"
-          aria-selected={documentActive}
-          className={`topbar-tab${documentActive ? " active" : ""}`}
-          onClick={() => {
-            setFloatingTab("document");
-            setAnnotationMode("floating");
-          }}
-        >
-          <FileText size={15} aria-hidden="true" />
-          Document
-        </button>
-        <button
-          type="button"
-          role="tab"
           aria-selected={overlayActive}
           className={`topbar-tab${overlayActive ? " active" : ""}`}
-          onClick={() => setAnnotationMode("margin")}
+          onClick={() => {
+            setTab("overlay");
+            // The overlay is the document; keep the presentation mode pinned to margin
+            // (self-heals any stale "floating" state left by the removed Document tab).
+            setAnnotationMode("margin");
+          }}
         >
           <PanelRight size={15} aria-hidden="true" />
           Notes Overlay
@@ -84,11 +71,9 @@ export function TopBar({ ctx }: TopBarProps) {
           className={`topbar-tab${focusActive ? " active" : ""}`}
           title="Focus the current anchor"
           onClick={() => {
-            // Anchor Focus = floating reading centered on the focused anchor. Switch to
-            // floating, mark this tab chosen, and re-reveal the focused anchor (bumps
-            // revealSeq → the reader scrolls the passage into view).
-            setFloatingTab("anchor");
-            setAnnotationMode("floating");
+            // Re-reveal the focused anchor (bumps revealSeq → the reader scrolls the
+            // passage into view). Presentation mode is untouched — overlay stays on.
+            setTab("anchor");
             if (focus.anchor) focus.setAnchor(focus.anchor);
           }}
         >
