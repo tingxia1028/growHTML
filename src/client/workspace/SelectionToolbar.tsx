@@ -9,6 +9,7 @@ import type { ToolbarAction } from "./WorkspaceContext";
 import { ActionMoreMenu } from "./ActionMoreMenu";
 import { actionIcon } from "./actionIcons";
 import { SpeakButton } from "../speech/SpeakButton";
+import { PinyinButton } from "../speech/usePinyinPopover";
 
 export type SelectionToolbarProps = {
   /** Show only when there's a passage to act on (a saved anchor or a fresh draft). */
@@ -25,9 +26,13 @@ export type SelectionToolbarProps = {
   /** Opt-in 朗读 (SPEECH-1): when set (even ""), a SpeakButton for this text joins the
       row — the host passes the focused passage's quote. Undefined → no speech button. */
   speakText?: string;
+  /** Opt-in 注音 (SPEECH-3): when set, a 拼 button joins the row beside 朗读 whenever
+      `speakText` contains CJK (the gate lives in PinyinButton) and opens the host's
+      hoisted PinyinPopover with that text. Undefined → no 注音 affordance. */
+  onPinyin?(text: string): void;
 };
 
-export function SelectionToolbar({ visible, items, onRun, busy, onCustomize, speakText }: SelectionToolbarProps) {
+export function SelectionToolbar({ visible, items, onRun, busy, onCustomize, speakText, onPinyin }: SelectionToolbarProps) {
   if (!visible || items.length === 0) return null;
 
   return (
@@ -57,6 +62,9 @@ export function SelectionToolbar({ visible, items, onRun, busy, onCustomize, spe
           becomes 停止 while speaking), so it is its own component beside the
           ToolbarAction row rather than a dispatched command. */}
       {speakText !== undefined ? <SpeakButton text={speakText} /> : null}
+      {/* 注音 (SPEECH-3): the second capability of selected TEXT, same universality
+          law as 朗读 — rendered only when the passage actually contains CJK. */}
+      {speakText !== undefined && onPinyin ? <PinyinButton text={speakText} onOpen={onPinyin} /> : null}
       {/* The grouped overflow twin (R6.2): the primary `.selection-toolbar-btn` row stays
           as-is; this trailing menu mirrors the full list bucketed by group + a Customize
           footer. Same items, same onRun — actions trigger, results render elsewhere. */}

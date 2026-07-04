@@ -113,12 +113,30 @@ transcript back in 1.1s. Still open from this section: BYOK audio-model lane (�
   content (preview-gate principle, and kids' recognition errors are common).
 
 ## 3. 注音 (SPEECH-3) — the implied third leg
-- `pinyin-pro` (offline js lib, ⚠️ verify bundle size + polyphone quality in-task) → ruby
-  annotations (`<ruby>字<rt>zì</rt></ruby>`) as a RENDER-LAYER decoration over CJK text.
-- **注音模式 toggle**: per-source or global (Settings Hub); rendering hooks in the note render
-  path are clean; reader-body annotation rides the reader-gated batch (D-track files).
-- Kit default: 小学-grade kits ship `young: {pinyin: true, autoRead: true}` kit config
-  (F5 kit-level config slot) — experience in the kit, mechanism in core.
+
+**Status: ✅ shipped (SPEECH-3-001, 2026-07-04)** — the universal V1, riding the SPEECH-1b
+universality law (注音 is a capability of TEXT, offered wherever text is selected — a second
+affordance on the SAME two surfaces as 朗读, never per-view bolt-ons):
+- **Engine:** `src/client/speech/pinyin.ts` — pure `annotate(text)` (per-char tone-marked
+  pinyin via `pinyin-pro@3.28`, whose built-in dict does WORD-level segmentation so 多音字
+  resolve from context: 长大→zhǎng / 长度→cháng in the same sentence; non-CJK chars map to
+  null) + `containsCjk(text)` (the affordance gate). Polyphone quality verified in-task ✅.
+- **Popover:** `src/client/speech/PinyinPopover.tsx` — centered small dialog (the modal
+  idiom, deliberately NOT selection-anchored: selections live in scrolling panes; centered
+  is the robust kid-friendly V1) rendering the text BIG (~28px) as real
+  `<ruby>字<rt>zì</rt></ruby>` runs, plain runs for latin; header carries a compact 朗读
+  SpeakButton (reading and pinyin belong together) + ✕; Escape/backdrop dismiss; input
+  capped at 200 chars with an honest truncation note.
+- **The two universal mounts** (state hoisted in `usePinyinPopover` so the dialog outlives
+  the selection that opened it; the shared `PinyinButton` carries the CJK gate): the
+  `GlobalSpeakSelection` chip gains a 拼/注音 button beside 朗读 for any CJK host selection
+  (latin-only → 朗读 alone), and the reader's `SelectionFloatingToolbar` row gains the same
+  button via `SelectionToolbar`'s `onPinyin` slot.
+- Still open from this section (deferred, not regressions): **reader-body INLINE ruby**
+  (注音模式 toggle over the reader render path — a future N-batch enhancement; the popover
+  is the universal V1), Settings Hub 注音模式 global toggle, kit `young: {pinyin: true,
+  autoRead: true}` defaults (F5 kit-level config slot) — experience in the kit, mechanism
+  in core.
 
 ## 4. 低龄复习环 (the payoff scenario)
 Review runner + speech = 听题 (auto TTS) → 语音作答 (STT lane) → transcript confirm →

@@ -27,6 +27,7 @@ import { createPortal } from "react-dom";
 import { useWorkspace } from "./WorkspaceContext";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { draftQuoteText } from "../focus/FocusContext";
+import { usePinyinPopover } from "../speech/usePinyinPopover";
 import {
   getSelectionRect,
   publishSelectionRect,
@@ -64,6 +65,9 @@ function readHostSelectionRect(): SelectionRect | null {
 
 export function SelectionFloatingToolbar() {
   const { selectionActions, runAction, generating, openOperationManager, focus } = useWorkspace();
+  // 注音 (SPEECH-3): hoisted popover state — clicking anything (the popover included)
+  // collapses the selection, which hides this toolbar; the dialog must outlive it.
+  const pinyinPopover = usePinyinPopover();
   // The current selection rect in HOST viewport coords (null = no live selection → hide).
   const [rect, setRect] = useState<SelectionRect | null>(() => getSelectionRect());
   // The computed fixed position for the toolbar (top/left), set after measuring.
@@ -132,30 +136,41 @@ export function SelectionFloatingToolbar() {
     };
   }, [rect]);
 
-  // Nothing selected, or no action to offer → render nothing (the toolbar disappears).
-  if (!rect || selectionActions.length === 0) return null;
+  // Nothing selected, or no action to offer → no toolbar (it disappears). The 注音
+  // popover still renders — it must survive the selection collapsing under a click.
+  const toolbar =
+    rect && selectionActions.length > 0
+      ? createPortal(
+          <div
+            ref={wrapRef}
+            className="selection-floating-toolbar"
+            style={{ position: "fixed", top: pos.top, left: pos.left }}
+            // Don't steal the selection: clicking a button must not collapse the range before
+            // the button's onClick fires. preventDefault on mousedown keeps the selection live
+            // (so runAction's passage materialization still sees it).
+            onMouseDown={(event) => event.preventDefault()}
+          >
+            <SelectionToolbar
+              visible
+              items={selectionActions}
+              onRun={runAction}
+              busy={generating}
+              onCustomize={openOperationManager}
+              // 朗读 (SPEECH-1): the selected passage's text — the shared focus draft/anchor
+              // is the realm-safe source (an iframe selection isn't readable from the host).
+              speakText={focus.anchor?.quote ?? draftQuoteText(focus.draft)}
+              // 注音 (SPEECH-3): same text, second affordance — CJK-gated in the button.
+              onPinyin={pinyinPopover.open}
+            />
+          </div>,
+          document.body
+        )
+      : null;
 
-  return createPortal(
-    <div
-      ref={wrapRef}
-      className="selection-floating-toolbar"
-      style={{ position: "fixed", top: pos.top, left: pos.left }}
-      // Don't steal the selection: clicking a button must not collapse the range before
-      // the button's onClick fires. preventDefault on mousedown keeps the selection live
-      // (so runAction's passage materialization still sees it).
-      onMouseDown={(event) => event.preventDefault()}
-    >
-      <SelectionToolbar
-        visible
-        items={selectionActions}
-        onRun={runAction}
-        busy={generating}
-        onCustomize={openOperationManager}
-        // 朗读 (SPEECH-1): the selected passage's text — the shared focus draft/anchor
-        // is the realm-safe source (an iframe selection isn't readable from the host).
-        speakText={focus.anchor?.quote ?? draftQuoteText(focus.draft)}
-      />
-    </div>,
-    document.body
+  return (
+    <>
+      {toolbar}
+      {pinyinPopover.popover}
+    </>
   );
 }

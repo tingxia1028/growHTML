@@ -85,7 +85,11 @@ NOT a bypass of the registries (adaptive-note contract stays mandatory, no secon
 ## 4. Textbook Kit V1 composition (after flatten)
 
 Capability groups: 学科类型 (per-subject: english/math/history-geo + base textbook types) ·
-AI 操作 (讲解/出题/批改) · **语音 (SPEECH group)**: 拼音标注 (pinyin-pro, pure JS) + **TTS 朗读
+AI 操作 (讲解/出题/批改) · **语音 (SPEECH group)**: **拼音标注 ✅ shipped (SPEECH-3-001,
+2026-07-04)** (pinyin-pro, pure JS — shipped as a CORE text capability like 朗读:
+`src/client/speech/pinyin.ts` engine + centered `PinyinPopover` ruby dialog + 拼 button on the
+GlobalSpeakSelection chip and the reader SelectionFloatingToolbar, CJK-gated; FLAT can later
+group its VISIBILITY under this kit's speech group without moving code) + **TTS 朗读
 ✅ shipped (SPEECH-1-001, 2026-07-04)** (edge-tts lane via `msedge-tts`, keyless, server-side —
 `src/server/services/speech.ts` + `POST /api/speech/tts` / `GET /api/speech/status`, shared
 `SpeakButton` on the selection toolbar / Anchor bar / note-list rows — roundtable tts.py

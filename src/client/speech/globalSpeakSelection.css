@@ -2,8 +2,16 @@
    (styles.css untouched — contended). Metrics mirror the .selection-floating-toolbar
    family: small pill, card surface, accent while speaking. */
 
-.global-speak-chip {
+/* SPEECH-3: the chip became a two-button ROW (朗读 + 拼/注音 when the selection has
+   CJK) — the fixed positioning + stratum moved here; the buttons stay dumb pills. */
+.global-speak-chip-row {
   z-index: 260; /* above panes/overlays, same stratum as the floating toolbar */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.global-speak-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;

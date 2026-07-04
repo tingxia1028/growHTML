@@ -49,6 +49,7 @@
     "msedge-tts": "^2.0.6",
     "node-pty": "^1.1.0",
     "pdfjs-dist": "^6.0.227",
+    "pinyin-pro": "^3.28.1",
     "react": "latest",
     "react-dom": "latest",
     "ulid": "^3.0.2",

@@ -12,16 +12,22 @@
 // the chip stays hidden there. Reader iframes/webview guests never reach the host
 // selection anyway (separate realm/WebContents), so they're excluded by construction.
 //
-// Kept deliberately dumb (entity/registry law): TEXT-TO-SPEECH ONLY — no anchor
-// materialization, no persistence, no focus writes. The chip reads selection.toString()
-// and hands it to the shared useSpeakText; while speaking it flips to 停止 and survives
-// a cleared selection so the stop affordance stays reachable. Escape stops + dismisses;
-// scrolling hides an idle chip; the shared speech status gates rendering entirely.
+// Kept deliberately dumb (entity/registry law): no anchor materialization, no
+// persistence, no focus writes. The chip reads selection.toString() and hands it to the
+// shared useSpeakText; while speaking it flips to 停止 and survives a cleared selection
+// so the stop affordance stays reachable. Escape stops + dismisses; scrolling hides an
+// idle chip; the shared speech status gates rendering entirely.
+//
+// 注音 (SPEECH-3) rides the SAME chip: when the selection contains CJK, a second 拼
+// button opens the centered PinyinPopover (state hoisted via usePinyinPopover so the
+// dialog survives the chip disappearing). Same universality law as 朗读 — a capability
+// of TEXT, offered wherever text is selected.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Square, Volume2 } from "lucide-react";
 import { useSpeakText } from "./useSpeakText";
+import { PinyinButton, usePinyinPopover } from "./usePinyinPopover";
 import "./globalSpeakSelection.css";
 
 /** The source-viewer pane container — selections in there belong to the reader's own
@@ -76,9 +82,12 @@ function readGlobalSelection(): SelectionSnapshot | null {
 
 export function GlobalSpeakSelection() {
   const { speak, stop, speaking, available } = useSpeakText();
+  // 注音 (SPEECH-3): the second capability of selected TEXT — hoisted popover state so
+  // the dialog survives the chip disappearing (opening it collapses the selection).
+  const pinyinPopover = usePinyinPopover();
   const [snap, setSnap] = useState<SelectionSnapshot | null>(null);
   const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
-  const chipRef = useRef<HTMLButtonElement | null>(null);
+  const chipRef = useRef<HTMLDivElement | null>(null);
   // Live `speaking` for the document-level listeners without re-subscribing per change.
   const speakingRef = useRef(speaking);
   speakingRef.current = speaking;
@@ -147,26 +156,46 @@ export function GlobalSpeakSelection() {
     return () => cancelAnimationFrame(raf);
   }, [snap]);
 
-  // Lane unavailable (server probe said no) or nothing selected → render nothing.
-  if (!available || !snap) return null;
+  // Lane unavailable (server probe said no) → render nothing at all (V1 keeps the
+  // whole chip behind the speech-status gate; the popover can't have been opened).
+  if (!available) return null;
 
-  return createPortal(
-    <button
-      ref={chipRef}
-      type="button"
-      className="global-speak-chip"
-      data-speaking={speaking || undefined}
-      style={{ position: "fixed", top: pos.top, left: pos.left }}
-      aria-label={speaking ? "停止" : "朗读"}
-      title={speaking ? "停止朗读" : "朗读选中的文字"}
-      // Don't steal the selection: preventDefault on mousedown keeps the range live so
-      // onClick still sees the text (the SelectionFloatingToolbar idiom).
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={() => (speaking ? stop() : void speak(snap.text))}
-    >
-      {speaking ? <Square size={12} /> : <Volume2 size={14} />}
-      <span className="global-speak-chip-label">{speaking ? "停止" : "朗读"}</span>
-    </button>,
-    document.body
+  // The chip row floats only while there's a selection; the 注音 popover (hoisted)
+  // renders regardless — it must outlive the selection that opened it.
+  const chipRow = snap
+    ? createPortal(
+        <div
+          ref={chipRef}
+          className="global-speak-chip-row"
+          style={{ position: "fixed", top: pos.top, left: pos.left }}
+          // Don't steal the selection: preventDefault on mousedown keeps the range live
+          // so the buttons' onClick still see the text (the SelectionFloatingToolbar
+          // idiom) — on the ROW so 朗读 and 拼 both benefit.
+          onMouseDown={(event) => event.preventDefault()}
+        >
+          <button
+            type="button"
+            className="global-speak-chip"
+            data-speaking={speaking || undefined}
+            aria-label={speaking ? "停止" : "朗读"}
+            title={speaking ? "停止朗读" : "朗读选中的文字"}
+            onClick={() => (speaking ? stop() : void speak(snap.text))}
+          >
+            {speaking ? <Square size={12} /> : <Volume2 size={14} />}
+            <span className="global-speak-chip-label">{speaking ? "停止" : "朗读"}</span>
+          </button>
+          {/* 注音 (SPEECH-3): renders only when the selection contains CJK (the gate
+              lives inside PinyinButton) — latin-only selections show 朗读 alone. */}
+          <PinyinButton text={snap.text} onOpen={pinyinPopover.open} showLabel />
+        </div>,
+        document.body
+      )
+    : null;
+
+  return (
+    <>
+      {chipRow}
+      {pinyinPopover.popover}
+    </>
   );
 }
