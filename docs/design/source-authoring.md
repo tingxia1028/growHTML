@@ -86,7 +86,7 @@ ordinary sources.
   颜色/对齐, all toggle-off); serialize = light blacklist sanitize (editing artifacts/on*/
   javascript: out; user markup + data-study-id kept; fragment/document shape preserved) → the
   SAME SRC-2 save pipeline; 源码 raw editor kept as a sub-toggle.
-- **SRC-4 — rich editing:** GrapesJS decision for html pages; templates.
+- **SRC-4 — rich editing + templates:** ✅ 2026-07-05 (SRC-4-001) — verdict: extend SRC-2b (zero-dep in-place), NOT GrapesJS/TipTap (bundle-heavy + lossy over study HTML/study-ids). A `丰富` html view adds a block-insert toolbar (heading/subheading/paragraph/bullet/number/quote/callout/divider/table/image) on the SAME in-place frame as 页面编辑, plus a template gallery (空白 + 课堂笔记/复习提纲/生词表/对比表/自测卷) that replaces an empty page or inserts after the caret. Pure DOM (`richEditor.ts`/`sourceTemplates.ts`) → SAME SRC-2b sanitize → SRC-2 save pipeline. GrapesJS stays unwired (absent from the bundle).
 
 ## 5. Tests
 Create: + entries → source appears with origin/revision, guard existing imports unchanged.

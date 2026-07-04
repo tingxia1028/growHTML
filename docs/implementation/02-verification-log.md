@@ -708,3 +708,10 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 | 2026-07-05 | F1-001 | e2e/multi-doc.spec.ts | (a) 单文档不变 (b+c) 两 iframe 面板独立上色(既断在场也断另一面板 count 0)+ 焦点双向跟随 (d) host-realm 门槛 | 3 passed |
 | 2026-07-05 | F1-001 | e2e/layer-as-lens.spec.ts | 单文档切换语义无回归 | 4 passed |
 | 2026-07-05 | F1-001 | 对抗实现审查(独立 agent) | 单文档字节不变=YES;零 blocker;F-1 SHOULD-FIX(iframe 分屏共享 notesHiddenAll)记 follow-up | SAFE TO PUSH |
+| 2026-07-05 | SRC-4-001 | richEditor.test.ts | 块插入(heading/list/quote/callout/divider/table/image 落在光标块后或追加;过 SRC-2b sanitizer 不变)+ applyTemplate(空页替换 vs 光标后插;仅 body;空 no-op) | Passed |
+| 2026-07-05 | SRC-4-001 | sourceTemplates.test.ts | 6 双语布局各自 well-formed、无 script/js-URL/on*、sanitizer 稳定 | Passed |
+| 2026-07-05 | SRC-4-001 | richEditorBundle.test.ts | SRC-4 源 + 整个 src/ 树不 import grapesjs/tiptap/prosemirror/lexical(主包缺席守卫) | Passed |
+| 2026-07-05 | SRC-4-001 | sourceEditor.test.tsx(SRC-4) | 丰富 toggle 显隐块条且保内容;块插入→sanitized 保存;模板库 replace vs insert | Passed |
+| 2026-07-05 | SRC-4-001 | e2e/rich-edit.spec.ts | 新建 HTML 页 → 从模板(lessonNotes)开始 → 丰富 callout 插入 → 保存 → 阅读经服务端管道渲染模板+callout | Passed |
+| 2026-07-05 | SRC-4-001 | npm run build | 主入口 2,528.78→2,543.58 kB(gzip 798.41→803.12);grapesjs 不在 dist/;katex/mermaid 仍懒分块 | Passed |
+| 2026-07-05 | SRC-4-001 | npx vitest run(全量) | 219 文件 / 2313 用例(基线 216/2291 + SRC-4 3 文件 22 测试) | Passed |
