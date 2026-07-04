@@ -1,0 +1,155 @@
+/* VoiceInputButton (SPEECH-2) — scoped styles. The mic mirrors .speak-btn's metrics
+   so it sits flush beside existing action buttons; the popovers (transcript confirm /
+   setup guide) float above the field. Nothing here touches the shared styles.css. */
+
+.voice-input {
+  position: relative;
+  display: inline-flex;
+}
+
+.voice-input-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface-card);
+  color: var(--sv-text-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.voice-input-btn:hover:not(:disabled) {
+  background: var(--sv-surface-muted);
+  border-color: var(--sv-accent-border);
+  color: var(--sv-accent);
+}
+
+.voice-input-btn:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+/* While recording the mic is the 停止 affordance — pulse so it's findable. */
+.voice-input-btn[data-recording] {
+  border-color: var(--sv-accent-border);
+  color: var(--sv-accent);
+  animation: voice-input-pulse 1.4s ease-in-out infinite;
+}
+
+/* Unavailable ≠ disabled: the click opens the setup guide, so keep the cursor. */
+.voice-input-btn[data-unavailable] {
+  opacity: 0.6;
+}
+
+@keyframes voice-input-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(59, 130, 246, 0);
+  }
+}
+
+.voice-input-spin {
+  animation: voice-input-rotate 0.9s linear infinite;
+}
+
+@keyframes voice-input-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* —— popovers (confirm + guide) ————————————————————————————————————————————— */
+
+.voice-input-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: 60;
+  width: 260px;
+  padding: 10px 12px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface-card);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--sv-text);
+  text-align: left;
+}
+
+.voice-input-transcript {
+  margin: 0 0 8px;
+  max-height: 120px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.voice-input-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.voice-input-action {
+  padding: 3px 10px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface);
+  color: var(--sv-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.voice-input-action:hover {
+  border-color: var(--sv-accent-border);
+  color: var(--sv-accent);
+}
+
+.voice-input-action-primary {
+  border-color: var(--sv-accent-border);
+  background: var(--sv-accent);
+  color: #fff;
+}
+
+.voice-input-action-primary:hover {
+  color: #fff;
+  filter: brightness(1.05);
+}
+
+.voice-input-guide strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.voice-input-guide p {
+  margin: 0 0 6px;
+  color: var(--sv-text-muted);
+}
+
+.voice-input-guide ol {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+
+.voice-input-guide li {
+  margin-bottom: 2px;
+}
+
+.voice-input-guide code {
+  font-size: 11.5px;
+  background: var(--sv-surface-muted);
+  padding: 0 3px;
+  border-radius: 3px;
+}
+
+.voice-input-guide-path {
+  color: var(--sv-text-muted);
+}

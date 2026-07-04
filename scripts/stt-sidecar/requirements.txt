@@ -1,0 +1,4 @@
+# GrowNote 本地语音识别 sidecar（SPEECH-2 local lane）
+# faster-whisper 自带 PyAV（解码 webm/opus 录音）与 CTranslate2（CPU int8 推理）。
+# GPU 加速是可选的：另装匹配 CUDA 的 PyTorch 后自动启用（没有也能跑，CPU int8 较慢）。
+faster-whisper>=1.0

@@ -39,6 +39,10 @@ import "../notes/builtinNoteTypes";
 import "../notes/tableViewer";
 import { ChatMessageBody } from "./ChatMessageBody";
 import { GenerationPreview } from "./GenerationPreview";
+// 语音输入 (SPEECH-2): the mic on the chat composer — which is ALSO the slash
+// composer's main text field ("Type / for commands"), so one mount covers both.
+// The confirmed transcript appends to the SAME chatInput state the keyboard edits.
+import { VoiceInputButton } from "../speech/VoiceInputButton";
 // Side-effect import: installs the Product Kits (Textbook Learning Kit, …), which
 // register their note types + domain language into the same registries.
 import "../../kits/clientKits";
@@ -502,6 +506,11 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
                 submitComposer();
               }
             }}
+          />
+          {/* 语音输入 → transcript confirm popover → appends to chatInput (SPEECH-2). */}
+          <VoiceInputButton
+            className="chat-voice-input"
+            onInsert={(text) => setChatInput(chatInput ? `${chatInput}${text}` : text)}
           />
           <button className="chat-submit" type="submit" disabled={composerDisabled} aria-label="Send message" title="Send">
             <CornerDownLeft size={16} />

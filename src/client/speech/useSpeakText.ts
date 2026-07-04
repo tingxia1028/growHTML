@@ -2,46 +2,21 @@
 // half of the 朗读 action. POSTs the text to the server's edge TTS lane, plays the
 // returned mp3 via an Audio element + blob URL, and enforces ONE utterance at a time
 // (a new speak stops the old; stop() also cancels an in-flight fetch via the seq
-// guard). Availability comes from GET /api/speech/status — fetched ONCE per session
-// and cached module-wide, so N mounted 朗读 buttons cost one request.
+// guard). Availability comes from the SHARED speech status cache (speechStatus.ts) —
+// fetched ONCE per session, so N mounted 朗读 buttons + mics cost one request.
 //
 // UI-only state (entity/registry law): no new entities, no vault writes — the audio
 // lives and dies in the blob URL.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getSpeechStatus, type SpeechTtsStatus } from "./speechStatus";
 
-export type SpeechTtsStatus = {
-  available: boolean;
-  lane: string;
-  defaultVoice?: string;
-  voices?: { id: string; label: string; locale: string }[];
-};
+export type { SpeechTtsStatus } from "./speechStatus";
+export { resetSpeechStatusCacheForTests } from "./speechStatus";
 
-const UNAVAILABLE: SpeechTtsStatus = { available: false, lane: "edge" };
-
-// Session-wide status cache. A FAILED probe resets the cache so a later mount retries
-// (the server may simply not be up yet in dev), but resolves unavailable for now.
-let statusPromise: Promise<SpeechTtsStatus> | null = null;
-
+/** The tts half of the shared status (kept for existing callers of SPEECH-1 vintage). */
 export function getSpeechTtsStatus(): Promise<SpeechTtsStatus> {
-  if (!statusPromise) {
-    statusPromise = fetch("/api/speech/status")
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`speech status ${response.status}`);
-        const body = (await response.json()) as { tts?: SpeechTtsStatus };
-        return body.tts ?? UNAVAILABLE;
-      })
-      .catch(() => {
-        statusPromise = null;
-        return UNAVAILABLE;
-      });
-  }
-  return statusPromise;
-}
-
-/** Tests only: drop the module-level status cache between cases. */
-export function resetSpeechStatusCacheForTests(): void {
-  statusPromise = null;
+  return getSpeechStatus().then((status) => status.tts);
 }
 
 export type SpeakTextControls = {
@@ -70,7 +45,7 @@ export function useSpeakText(): SpeakTextControls {
 
   useEffect(() => {
     let alive = true;
-    void getSpeechTtsStatus().then((tts) => {
+    void getSpeechStatus().then(({ tts }) => {
       if (alive) setAvailable(!!tts.available);
     });
     return () => {

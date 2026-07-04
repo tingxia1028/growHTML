@@ -43,6 +43,25 @@ Microsoft Edge read-aloud neural voices over wss, free, keyless, VERY natural zh
   Settings Hub (registerSettingsSection — the seam keeps paying).
 
 ## 2. 语音输入 STT (SPEECH-2) — honest China/Electron reality
+
+**Status: ✅ V1 local lane shipped (SPEECH-2-001, 2026-07-04)** — the desktop faster-whisper
+lane is live end-to-end. Sidecar: `scripts/stt-sidecar/` (stdlib-http `server.py` adapted from
+roundtable stt.py — GPU float16 → CPU int8 fallback, single-flight infer lock, zh-biased
+decode; `GET /health` + `POST /transcribe`; 127.0.0.1:8765, `WHISPER_MODEL`/`STT_PORT` env;
+zh 3-step README). Server: the SPEECH-1 `SpeechService` gained `transcribe()` + a per-lane stt
+status (REAL /health probe, 800ms timeout, cached 30s, injectable probe/proxy seams) +
+`POST /api/speech/stt` (raw audio ≤15MB → `{text, language, durationMs}`; sidecar down →
+friendly 502 `{error, code:"stt_unavailable"}` whose message IS the setup pointer) and
+`GET /api/speech/status` now carries `stt:{available, lane:"local", model?, setupHint?}`;
+base URL via `STUDY_VAULT_STT_URL`. Client: `useVoiceInput` (MediaRecorder webm/opus+fallbacks,
+idle→recording→transcribing, seq-guarded cancel) + `VoiceInputButton` (mic 点亮 from the shared
+status cache — one fetch serves it AND useSpeakText; **transcript-confirm popover** 确认插入/
+重录/取消 before ANY insert; unavailable → in-place 3-step setup-guide panel, not a settings
+surface), mounted on the chat composer — which IS the slash composer's main text field, so one
+mount covers both. Real check 2026-07-04: edge-TTS mp3 → sidecar large-v3 (GPU) → verbatim
+transcript back in 1.1s. Still open from this section: BYOK audio-model lane (①), managed lane
+(②), note-editor dictation + review-runner 语音作答 mounts, sherpa-onnx consolidation (V1.1).
+
 - **Web Speech `SpeechRecognition` is NOT viable here**: in Chromium it proxies Google servers
   (blocked/unreliable in China, needs API keys in Electron). Do not build on it.
 - **The THREE-LANE pattern again (same as vision/OCR — this is now a named recurring

@@ -89,9 +89,13 @@ AI 操作 (讲解/出题/批改) · **语音 (SPEECH group)**: 拼音标注 (pin
 ✅ shipped (SPEECH-1-001, 2026-07-04)** (edge-tts lane via `msedge-tts`, keyless, server-side —
 `src/server/services/speech.ts` + `POST /api/speech/tts` / `GET /api/speech/status`, shared
 `SpeakButton` on the selection toolbar / Anchor bar / note-list rows — roundtable tts.py
-reference) + 语音输入 STT (LOCAL lane:
-detect a local engine/sidecar — reuse roundtable's faster-whisper stt.py as the V1 sidecar;
-点亮 when detected, one-click setup guide when not; sherpa-onnx embedded Node engine = V1.1) ·
+reference) + **语音输入 STT ✅ shipped (SPEECH-2-001, 2026-07-04)** (LOCAL lane: the
+faster-whisper sidecar `scripts/stt-sidecar/` — roundtable stt.py adapted, 127.0.0.1:8765,
+zero-cost offline recognition — behind the same lane-seamed `SpeechService`
+(`transcribe()` + real cached /health probe in `GET /api/speech/status`) +
+`POST /api/speech/stt`; client `useVoiceInput` + `VoiceInputButton` (transcript-CONFIRM
+popover before insert) on the chat/slash composer; 点亮 when detected, in-place 3-step
+setup guide panel when not; sherpa-onnx embedded Node engine = V1.1) ·
 导入导出入口 (svpack, already core — the kit only surfaces entry points).
 
 ## 5. Phasing (V1 minimal set order)

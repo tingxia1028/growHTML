@@ -75,13 +75,18 @@ export type CreateAppOptions = {
     detectCliAgent?: (specId: aiProvidersService.CliAgentSpecId) => Promise<CliAgentDetectResult>;
   };
   /**
-   * Speech / TTS lane seam (SPEECH-1, docs/design/speech-and-young-learners.md §1):
-   * `synthesizeEdge` overrides the edge lane's synthesizer — tests inject a mock
-   * (same seam style as the injected modelProvider); default = msedge-tts over wss
-   * to Microsoft (keyless but ONLINE — offline degrades to a friendly 502).
+   * Speech lane seams (SPEECH-1/2, docs/design/speech-and-young-learners.md §1–2):
+   * `synthesizeEdge` overrides the TTS edge lane's synthesizer; `probeSttHealth` /
+   * `transcribeStt` override the STT local lane's sidecar probe/proxy — tests inject
+   * mocks (same seam style as the injected modelProvider). Defaults: msedge-tts over
+   * wss to Microsoft (keyless but ONLINE) and the faster-whisper sidecar on
+   * STUDY_VAULT_STT_URL (default 127.0.0.1:8765). Down lanes degrade to friendly 502s.
    */
   speech?: {
     synthesizeEdge?: speechService.EdgeTtsSynthesizer;
+    probeSttHealth?: speechService.SttHealthProbe;
+    transcribeStt?: speechService.SttTranscriber;
+    sttBaseUrl?: string;
   };
 };
 
@@ -274,16 +279,28 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
     }
   });
 
-  // —— Speech / TTS (SPEECH-1, docs/design/speech-and-young-learners.md §1) ————————
-  // One service instance per app; the edge lane is the only V1 lane. The client's
-  // 朗读 action POSTs selected text here and plays back the mp3 — server-side because
-  // the edge-tts wss handshake (custom Sec-WebSocket-Version) only works in Node.
-  const speechSvc = speechService.createSpeechService({ synthesizeEdge: speech?.synthesizeEdge });
+  // —— Speech (SPEECH-1 TTS + SPEECH-2 STT, speech-and-young-learners.md §1–2) ——————
+  // One service instance per app. TTS: the client's 朗读 action POSTs selected text
+  // here and plays back the mp3 — server-side because the edge-tts wss handshake
+  // (custom Sec-WebSocket-Version) only works in Node. STT: the mic's recorded blob
+  // is proxied to the LOCAL faster-whisper sidecar (scripts/stt-sidecar) — free,
+  // offline, no LLM in the loop; the transcript feeds existing flows as plain text.
+  const speechSvc = speechService.createSpeechService({
+    synthesizeEdge: speech?.synthesizeEdge,
+    probeSttHealth: speech?.probeSttHealth,
+    transcribeStt: speech?.transcribeStt,
+    sttBaseUrl: speech?.sttBaseUrl
+  });
 
   // Which lanes/voices exist — the client fetches this once and caches it to decide
-  // whether the 朗读 buttons are enabled at all.
-  app.get("/api/speech/status", (_req, res) => {
-    res.json(speechSvc.status());
+  // whether the 朗读 buttons / the mic are enabled at all. The stt half is a REAL
+  // (cached ~30s) sidecar health probe; `setupHint` points at the one-click guide.
+  app.get("/api/speech/status", async (_req, res, next) => {
+    try {
+      res.json(await speechSvc.status());
+    } catch (error) {
+      next(error);
+    }
   });
 
   // Synthesize one utterance → audio/mpeg bytes. Zod guards shape (empty / too-long
@@ -297,6 +314,58 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
     } catch (error) {
       if (error instanceof speechService.SpeechSynthesisFailedError) {
         res.status(502).json({ error: error.message, code: "tts_unavailable" });
+        return;
+      }
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  // STT audio body: raw bytes (the MediaRecorder blob POSTed as-is), capped at 15MB.
+  // The parser is wrapped so its PayloadTooLargeError becomes an honest 413 instead
+  // of falling through to the generic 500 middleware.
+  const sttRawParser = express.raw({
+    type: ["audio/*", "video/webm", "application/octet-stream"],
+    limit: speechService.STT_MAX_AUDIO_BYTES
+  });
+  const sttAudioBody: express.RequestHandler = (req, res, next) => {
+    sttRawParser(req, res, (error?: unknown) => {
+      if (!error) {
+        next();
+        return;
+      }
+      if ((error as { status?: number }).status === 413) {
+        res.status(413).json({
+          error: `音频超过 ${Math.floor(speechService.STT_MAX_AUDIO_BYTES / (1024 * 1024))}MB 上限 — 请分段录音`,
+          code: "stt_audio_too_large"
+        });
+        return;
+      }
+      next(error);
+    });
+  };
+
+  // Transcribe one recorded utterance via the LOCAL lane → { text, language }. The
+  // sidecar missing/down → 502 { error, code: "stt_unavailable" } whose message IS
+  // the setup guide pointer (the client renders the same steps as a small panel).
+  app.post("/api/speech/stt", sttAudioBody, async (req, res, next) => {
+    try {
+      const { language } = speechService.sttQuerySchema.parse(req.query);
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+        res.status(400).json({
+          error: "请求体必须是录音的音频字节（Content-Type: audio/webm 等）",
+          code: "stt_bad_audio"
+        });
+        return;
+      }
+      const result = await speechSvc.transcribe({
+        audio: req.body,
+        mimeType: req.get("content-type") ?? "application/octet-stream",
+        language
+      });
+      res.json(result);
+    } catch (error) {
+      if (error instanceof speechService.SpeechTranscriptionFailedError) {
+        res.status(502).json({ error: error.message, code: "stt_unavailable" });
         return;
       }
       if (!handleServiceError(res, error)) next(error);
