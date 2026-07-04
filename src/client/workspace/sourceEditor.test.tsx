@@ -196,7 +196,7 @@ describe("AuthoredSourceView — kid-first markdown editing", () => {
     expect(editorTextarea().value.startsWith("# ")).toBe(true);
   });
 
-  it("an authored HTML page gets the plain source editor (no markdown toolbar) + live preview", async () => {
+  it("an authored HTML page defaults to the in-place page editor, 源码 stays reachable", async () => {
     setSourceAuthoringIoForTests({
       fetchContent: vi.fn().mockResolvedValue("<h1>Hi</h1>"),
       fetchShareStatus: vi.fn().mockResolvedValue({ shared: false, publishedPackCount: 0, importedLayerCount: 0 })
@@ -204,7 +204,12 @@ describe("AuthoredSourceView — kid-first markdown editing", () => {
     await mount(<AuthoredSourceView source={authoredSource("html", "src_html")} reader={<div />} />);
     // Non-blank content → starts in 阅读 mode; enter 编辑 explicitly.
     await click(container.querySelectorAll(".source-editor-mode-btn")[1]);
+    // SRC-2b: 所见即改 is the default — no markdown toolbar, no raw textarea.
     expect(container.querySelector(".source-editor-toolbar")).toBeNull();
+    expect(container.querySelector(".source-editor-inplace-frame")).toBeTruthy();
+    expect(container.querySelector(".source-editor-input-html")).toBeNull();
+    // The 源码 escape hatch: raw source editor + sandboxed live preview.
+    await click(container.querySelector('[data-html-view="source"]'));
     expect(container.querySelector(".source-editor-input-html")).toBeTruthy();
     expect(container.querySelector(".source-editor-html-preview")).toBeTruthy();
   });
@@ -265,6 +270,118 @@ describe("AuthoredSourceView — kid-first markdown editing", () => {
     await click(container.querySelectorAll(".source-editor-mode-btn")[1]);
     expect(confirmSpy).not.toHaveBeenCalled();
     expect(container.querySelector(".source-editor-host")?.getAttribute("data-mode")).toBe("edit");
+  });
+});
+
+// —— SRC-2b: HTML 所见即改 (in-place page editing) ————————————————————————————————————
+
+describe("AuthoredSourceView — HTML in-place editing (SRC-2b)", () => {
+  async function mountHtmlInEdit(content: string): Promise<{
+    frame: HTMLIFrameElement;
+    doc: Document;
+    saveContent: ReturnType<typeof vi.fn>;
+  }> {
+    const saveContent = vi.fn().mockResolvedValue(saveOutcome([]));
+    setSourceAuthoringIoForTests({
+      fetchContent: vi.fn().mockResolvedValue(content),
+      fetchShareStatus: vi
+        .fn()
+        .mockResolvedValue({ shared: false, publishedPackCount: 0, importedLayerCount: 0 }),
+      saveContent
+    });
+    await mount(<AuthoredSourceView source={authoredSource("html", "src_html")} reader={<div />} />);
+    await click(container.querySelectorAll(".source-editor-mode-btn")[1]);
+    const frame = container.querySelector(".source-editor-inplace-frame") as HTMLIFrameElement;
+    expect(frame).toBeTruthy();
+    const doc = frame.contentDocument!;
+    expect(doc).toBeTruthy();
+    return { frame, doc, saveContent };
+  }
+
+  /** Dispatch inside the FRAME's realm (its own window's Event constructor). */
+  function fireInFrame(doc: Document, target: Node, type: string): void {
+    const win = doc.defaultView!;
+    target.dispatchEvent(new win.Event(type, { bubbles: true }));
+  }
+
+  it("arms the page for editing: contenteditable body + the loaded content", async () => {
+    const { doc } = await mountHtmlInEdit('<h1 data-study-id="html-1">Hi</h1>');
+    expect(doc.body.getAttribute("contenteditable")).toBe("true");
+    expect(doc.querySelector('h1[data-study-id="html-1"]')?.textContent).toBe("Hi");
+  });
+
+  it("typing in place marks dirty and 保存 sends the SANITIZED html through the SRC-2 pipeline", async () => {
+    const { doc, saveContent } = await mountHtmlInEdit('<p data-study-id="html-1">原文</p>');
+    doc.querySelector("p")!.textContent = "改过的文字";
+    await act(async () => fireInFrame(doc, doc.body, "input"));
+    expect(container.querySelector(".source-editor-dirty")).toBeTruthy();
+
+    await click(container.querySelector(".source-editor-save"));
+    expect(saveContent).toHaveBeenCalledWith("src_html", {
+      // Sanitized fragment: the edit kept, contenteditable/editing-style artifacts gone.
+      content: '<p data-study-id="html-1">改过的文字</p>',
+      title: undefined
+    });
+    expect(workspaceCtx.reloadActiveSource).toHaveBeenCalledTimes(1);
+    expect(container.querySelector(".source-editor-dirty")).toBeNull();
+  });
+
+  it("页面编辑 ⇄ 源码 round-trips the content BOTH ways", async () => {
+    const { doc } = await mountHtmlInEdit("<h2>题</h2><p>身</p>");
+    expect(doc.querySelector("p")?.textContent).toBe("身");
+
+    // Page → source: the textarea shows the serialized page.
+    await click(container.querySelector('[data-html-view="source"]'));
+    const textarea = container.querySelector(".source-editor-input-html") as HTMLTextAreaElement;
+    expect(textarea.value).toBe("<h2>题</h2><p>身</p>");
+
+    // Hand-edit the source, then back to the page: the frame shows the change.
+    await act(async () => typeInTextarea(textarea, "<h2>题</h2><p>新的身</p>"));
+    await click(container.querySelector('[data-html-view="page"]'));
+    const frame = container.querySelector(".source-editor-inplace-frame") as HTMLIFrameElement;
+    expect(frame.contentDocument!.querySelector("p")?.textContent).toBe("新的身");
+
+    // And back to source once more — nothing was lost on the way through.
+    await click(container.querySelector('[data-html-view="source"]'));
+    expect((container.querySelector(".source-editor-input-html") as HTMLTextAreaElement).value).toBe(
+      "<h2>题</h2><p>新的身</p>"
+    );
+  });
+
+  it("leaving 编辑 for 阅读 pulls unsaved in-place edits into the draft (nothing lost)", async () => {
+    const { doc } = await mountHtmlInEdit("<p>原文</p>");
+    doc.querySelector("p")!.textContent = "没保存的修改";
+    await act(async () => fireInFrame(doc, doc.body, "input"));
+
+    await click(container.querySelectorAll(".source-editor-mode-btn")[0]); // 阅读
+    await click(container.querySelectorAll(".source-editor-mode-btn")[1]); // 编辑 again
+    const frame = container.querySelector(".source-editor-inplace-frame") as HTMLIFrameElement;
+    expect(frame.contentDocument!.querySelector("p")?.textContent).toBe("没保存的修改");
+    expect(container.querySelector(".source-editor-dirty")).toBeTruthy();
+  });
+
+  it("selecting text floats the style bar and 加粗 bolds in place (then saves that way)", async () => {
+    const { doc, saveContent } = await mountHtmlInEdit("<p>要加粗的字</p>");
+    const text = doc.querySelector("p")!.firstChild!;
+    const selection = (doc.defaultView ?? window).getSelection?.() ?? doc.getSelection();
+    expect(selection).toBeTruthy();
+    const range = doc.createRange();
+    range.setStart(text, 0);
+    range.setEnd(text, 2);
+    selection!.removeAllRanges();
+    selection!.addRange(range);
+    await act(async () => fireInFrame(doc, doc, "selectionchange"));
+
+    const bar = container.querySelector(".source-editor-stylebar");
+    expect(bar).toBeTruthy();
+    await click(bar!.querySelector('[data-style-action="bold"]'));
+    expect(doc.querySelector("p")!.innerHTML).toBe("<b>要加</b>粗的字");
+
+    await click(container.querySelector(".source-editor-save"));
+    expect(saveContent).toHaveBeenCalledWith("src_html", {
+      content: "<p><b>要加</b>粗的字</p>",
+      title: undefined
+    });
   });
 });
 

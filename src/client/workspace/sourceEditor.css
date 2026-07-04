@@ -217,6 +217,127 @@
   background: #fff;
 }
 
+/* —— SRC-2b: html 所见即改 (in-place page editing + the 源码 sub-toggle) —— */
+
+.source-editor-html-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--sv-border, #ececef);
+  flex-wrap: wrap;
+}
+
+.source-editor-html-views {
+  display: inline-flex;
+  border: 1px solid var(--sv-border, #d9d9de);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.source-editor-html-view-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--sv-text, #333);
+}
+
+.source-editor-html-view-btn.active {
+  background: var(--sv-accent-weak, #e8f0fe);
+  color: var(--sv-accent, #2456c9);
+  font-weight: 600;
+}
+
+.source-editor-html-head .source-editor-html-hint {
+  padding: 0;
+}
+
+.source-editor-inplace {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.source-editor-inplace-frame {
+  flex: 1;
+  width: 100%;
+  border: none;
+  background: #fff;
+}
+
+/* The floating style bar — absolute inside the wrapper, centered on the selection. */
+.source-editor-stylebar {
+  position: absolute;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  border: 1px solid var(--sv-border, #d9d9de);
+  border-radius: 10px;
+  background: var(--sv-panel, #fff);
+  box-shadow: 0 6px 20px rgba(20, 24, 40, 0.14);
+  z-index: 6;
+}
+
+.source-editor-stylebar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--sv-text, #333);
+  cursor: pointer;
+}
+
+.source-editor-stylebar-btn:hover {
+  background: var(--sv-accent-weak, #eef4ff);
+  color: var(--sv-accent, #2456c9);
+}
+
+.source-editor-stylebar-divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--sv-border, #e3e3e6);
+}
+
+.source-editor-swatch {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.source-editor-swatch:hover {
+  transform: scale(1.15);
+}
+
+/* 默认颜色: a "no color" swatch — white with a diagonal strike. */
+.source-editor-swatch-default {
+  background:
+    linear-gradient(
+      to top right,
+      transparent 44%,
+      #c33 46%,
+      #c33 54%,
+      transparent 56%
+    )
+    #fff;
+}
+
 /* Narrow center column: stack the editor above the preview. */
 @media (max-width: 900px) {
   .source-editor-split {

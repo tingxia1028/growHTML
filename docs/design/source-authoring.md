@@ -74,8 +74,13 @@ ordinary sources.
   revert) + imported-source fork. The chat's existing patch records become real. (Noted for
   SRC-3: the IMPORT rematch path still matches markdown sources against raw markdown text —
   quotes spanning formatting could miss; the edit pipeline already projects to HTML first.)
-- **SRC-4 — rich editing:** GrapesJS decision for html pages; templates. SRC-2b (HTML 所见即改:
-  contenteditable in-place + style bar, authored only) is queued ahead of it.
+- **SRC-2b — HTML 所见即改:** ✅ 2026-07-04 (SRC-2B-001) — authored html 编辑 mode defaults to
+  in-place page editing (contenteditable same-doc iframe, sandboxed WITHOUT allow-scripts; zero
+  new deps, pure-DOM style engine — no execCommand) + floating style bar (加粗/斜体/标题/字号/
+  颜色/对齐, all toggle-off); serialize = light blacklist sanitize (editing artifacts/on*/
+  javascript: out; user markup + data-study-id kept; fragment/document shape preserved) → the
+  SAME SRC-2 save pipeline; 源码 raw editor kept as a sub-toggle.
+- **SRC-4 — rich editing:** GrapesJS decision for html pages; templates.
 
 ## 5. Tests
 Create: + entries → source appears with origin/revision, guard existing imports unchanged.

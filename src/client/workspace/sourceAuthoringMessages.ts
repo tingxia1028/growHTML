@@ -43,12 +43,35 @@ export const sourceAuthoringMessages = defineMessages({
   previewTitle: { zh: "效果预览", en: "Preview" },
   previewEmpty: { zh: "右边会实时显示你写的效果。", en: "What you write shows up here live." },
 
-  // —— html source editing (rich editing is SRC-4) ——
+  // —— html editing (SRC-2b: 所见即改 in-place page editing + the 源码 escape hatch) ——
+  htmlViewPage: { zh: "页面编辑", en: "Edit page" },
+  htmlViewSource: { zh: "源码", en: "Source" },
+  inPlaceHint: {
+    zh: "直接点进页面修改文字;选中文字可调整样式。",
+    en: "Click into the page and type; select text to style it."
+  },
   htmlEditorHint: {
-    zh: "HTML 源码编辑;可视化编辑在后续版本提供。",
-    en: "HTML source editing; visual editing arrives in a later version."
+    zh: "HTML 源码;切回「页面编辑」直接改页面。",
+    en: "Raw HTML source; switch back to “Edit page” to edit in place."
   },
   htmlEditorPlaceholder: { zh: "<h1>标题</h1>\n<p>正文…</p>", en: "<h1>Title</h1>\n<p>Body…</p>" },
+
+  // —— the floating style bar (in-place mode) ——
+  styleBarLabel: { zh: "样式", en: "Style" },
+  styleBold: { zh: "加粗", en: "Bold" },
+  styleItalic: { zh: "斜体", en: "Italic" },
+  styleHeading: { zh: "大标题", en: "Heading" },
+  styleSubheading: { zh: "小标题", en: "Subheading" },
+  styleTextLarge: { zh: "大字", en: "Bigger text" },
+  styleTextSmall: { zh: "小字", en: "Smaller text" },
+  styleAlignLeft: { zh: "左对齐", en: "Align left" },
+  styleAlignCenter: { zh: "居中", en: "Center" },
+  styleAlignRight: { zh: "右对齐", en: "Align right" },
+  styleColorRed: { zh: "红色", en: "Red" },
+  styleColorBlue: { zh: "蓝色", en: "Blue" },
+  styleColorGreen: { zh: "绿色", en: "Green" },
+  styleColorOrange: { zh: "橙色", en: "Orange" },
+  styleColorDefault: { zh: "默认颜色", en: "Default color" },
 
   // —— save pipeline surfacing ——
   affectedTitle: { zh: "受影响的锚点", en: "Affected anchors" },
