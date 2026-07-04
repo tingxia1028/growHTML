@@ -4,6 +4,8 @@ import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { makeGradientPng } from "../e2e/fixtures/image";
 import { openLibraryMenu } from "../e2e/helpers";
+// Canonical zh/en dict — the 文件 picker button's aria-label (self-updating selector).
+import { libraryMessages } from "../src/client/workspace/libraryMessages";
 import { closeApp, launchApp, type LaunchedApp } from "./harness";
 
 // DESKTOP-ONLY native-dialog seam (E2E-ELECTRON-001). The original spec drove the
@@ -45,9 +47,14 @@ test("Library + → 文件… : native open dialog (stubbed) → local HTML impo
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [picked] });
   }, htmlPath);
 
-  // Drive today's UI: the ONE Library `+` add menu → 文件… (enabled on desktop only).
+  // Drive today's UI: the ONE Library `+` add menu → the 本地文件/文件夹… block
+  // (LIB layout: the old standalone core.import-file entry became the
+  // core.import-local block hosting the 文件 + 文件夹 native pickers, enabled on
+  // desktop only — its aria-label is libraryMessages.importFile).
   await openLibraryMenu(page);
-  const pick = page.locator('[data-add-action="core.import-file"]');
+  const pick = page
+    .locator('[data-add-action="core.import-local"]')
+    .getByRole("button", { name: libraryMessages.importFile.zh, exact: true });
   await expect(pick).toBeEnabled();
   await pick.click();
 

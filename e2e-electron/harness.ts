@@ -2,7 +2,7 @@ import { mkdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { _electron as electron, expect, type ElectronApplication, type Page } from "@playwright/test";
-import { openRightTab } from "../e2e/helpers";
+import { openAnchorTab } from "../e2e/helpers";
 
 // E2E-ELECTRON-001 harness — the single source of truth for how the Electron e2e
 // suite boots the desktop app. Mirrors the web suite's e2e/harness.ts ephemeral-vault
@@ -217,16 +217,14 @@ export async function selectUntilFocused(
   await expect(page.locator(".workspace-status-dot.status-idle")).toBeVisible({ timeout: 15_000 });
   // The top tab group may sit on Notes (focusing a saved note auto-switches it);
   // make sure the Anchor sub-page is showing before polling its excerpt.
-  await openRightTab(page, "Anchor", ".anchor-panel");
+  await openAnchorTab(page);
   const excerpt = page.locator(".anchor-excerpt-quote");
-  // Reset any lingering focus first (⋯ → Clear anchor): a previous test's focused
-  // anchor may carry the SAME passage text, and a stale excerpt would satisfy the
-  // poll below without the guest selection ever reaching the host.
-  if (await excerpt.isVisible().catch(() => false)) {
-    await page.getByRole("button", { name: "Anchor actions", exact: true }).click();
-    await page.locator(".panel-menu-popover").getByRole("button", { name: "Clear anchor" }).click();
-    await expect(excerpt).toHaveCount(0);
-  }
+  // A previous test's focused anchor may carry the SAME passage text, and a stale
+  // excerpt would satisfy the poll below without the guest selection ever reaching
+  // the host. Every call site opens a FRESH source first, and loadSourceData runs
+  // focus.clear() when that load settles — so wait the self-clear out. (The old reset
+  // drove the anchor pane's ⋯ → Clear-anchor menu, which today's pane no longer has.)
+  await expect(excerpt).toHaveCount(0);
   await expect
     .poll(
       async () => {

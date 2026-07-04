@@ -63,14 +63,15 @@ function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-// Open a source by its globally-unique id. Layers and Notes are now TABS in the SAME
+// Open a source by its per-run-unique TITLE (the LIB row's visible text is the title
+// only; the id rides the row's tooltip). Layers and Notes are now TABS in the SAME
 // right-sidebar group (RightSidebarTabs) — only one shows at a time, so each step below
 // activates the tab it needs (setLayerFilter → Layers; the note-row expectations → Notes)
 // instead of the old two-always-on-panes assumption.
 async function openSource(page: Page, source: { id: string; title: string }) {
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
+  await page.locator(".source-item-open").filter({ hasText: source.title }).first().click();
   await expect(page.locator(".reader-tab-title")).toHaveText(source.title);
 }
 
@@ -142,7 +143,7 @@ test("layer-as-lens: create a CUSTOM layer; it appears in the custom group and f
 
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
+  await page.locator(".source-item-open").filter({ hasText: source.title }).first().click();
   await expect(page.locator(".reader-tab-title")).toHaveText(source.title);
   await openLayers(page);
 

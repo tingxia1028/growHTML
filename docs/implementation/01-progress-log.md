@@ -2,6 +2,13 @@
 
 Use this file as the live status board for implementation work.
 
+## 2026-07-04 - LEFT-COLLAPSE-001 Left sidebar collapse
+
+- Goal: support explicitly collapsing the left content sidebar without reintroducing global pane rails or narrow-viewport auto-collapse.
+- Result: the active IconRail button now toggles the left sidebar open/closed like VS Code; selecting a different rail icon expands and switches panes. Collapsed dock width is zero, and old dock-local collapse rail/buttons remain hidden.
+- Verification: focused dock/shell tests, type check, and `e2e/layout-engine.spec.ts` passed.
+- Status: Complete.
+
 ## 2026-07-04 - SHELL-4 configuration modal + follow-up batch
 
 - Goal: land the shell modal/configuration batch now that the explicit avoid lines are confirmed.
@@ -464,3 +471,28 @@ In-app multi-tab web reading (B): all link clicks open a new tab; each tab is it
 - Result: POST /api/sources/authored, PATCH /api/sources/:id/content, GET /api/sources/:id/share-status; sourceEditor.tsx/.css + sourceAuthoringIo/Messages + sourcePreview.ts (renders a source BODY outside the §0.5-B-guarded note pipeline — contract guard intact); core updateStoredSourceContent (rewrite → re-hash → revision+1); renderSource markdown projection; WorkspaceContext.reloadActiveSource for the post-save reader refresh; imported sources rejected server-side (400) and never mount the editor. TipTap true-WYSIWYG recorded as the V1.1 follow-up; SRC-3 (patch apply + fork) and SRC-4 (GrapesJS) remain.
 - Landing note (orchestrator): the agent's edits to 3 shared-hot files (WorkspaceContext / libraryBuiltins / libraryView.test) + app.ts interleaved with the parallel UI session's uncommitted UI-LIBRARY-003 + locale work; staged SRC-only via filtered patches (hunk-level split), their hunks remain in the working tree untouched.
 - Verification: agent gates — npm run check 0 errors · full vitest 186 files: 184 passed / 1891 tests (2 failures = parallel session's in-flight locale tests, fail in isolation) · new e2e source-authoring.spec.ts 1 passed · build ✓. Orchestrator gate — isolated worktree (HEAD 12c7d44 + SRC-only staged slice): tsc 0 + 6 suites / 118 tests green (incl. contract.guard, libraryView).
+
+## 2026-07-04 - SRC-2B-001 HTML 所见即改 — in-place editing for authored html (source-authoring.md SRC-2b)
+
+- Goal: authored HTML edits like a page, not like source — click into the rendered page and type; simple text + style edits (contenteditable, ZERO new deps: ContentTools inspiration only, GrapesJS sealed for SRC-4, TipTap rejected as schema-lossy for existing HTML).
+- Landed: htmlInPlace.ts (pure DOM engine: shape detect / prepare / light blacklist sanitize / shape-preserving serialize / style actions as deterministic Range transforms — no execCommand) + HtmlInPlaceEditor.tsx (same-doc iframe, sandbox="allow-same-origin" without allow-scripts, floating style bar: 加粗/斜体/标题×2/字号×2/颜色×5/对齐×3, all toggle-off on re-press); AuthoredSourceView html 编辑 mode now defaults to 页面编辑 with a 源码 sub-toggle (raw editor + sandboxed preview kept); save/阅读/源码 all serialize the live DOM through the sanitizer into the SAME SRC-2 pipeline (PATCH content → re-hash → revision → re-projection → 受影响的锚点). No server changes.
+- Sanitize = blacklist (user's own document): strip data-growhtml-editing elements, contenteditable, on* handlers, javascript:/vbscript: URLs, empty style attrs, attribute-less spans; KEEP data-study-id, user script/style, all other markup. Fragments round-trip as fragments; documents keep head/doctype.
+- Follow-ups: e2e spec (with the e2e agent's suite), style-bar active-format indication, multi-block inline wrap prettiness.
+
+## 2026-07-04 - ACTION-2B-001 一句话新增 action — two-field creator UI (action-v2-auto-context.md §3)
+
+- The operations manager's creator is TWO fields (名字 + 一句话指令): save writes mode:"simple"+instruction via the existing 2a routes (zero server changes); the V1 builder chrome (outputType picker/variables/template/preview) moved into a collapsed 高级 accordion (simple: pin-output/scope/one-way convert-to-template with confirm; template: full V1 editor, auto-opened on edit). Run path closed: operation.run no longer requires outputType — auto-output runs omit contentType, adopt the form-router's routed contentType from the response, and carry autoForm so preview Regenerate re-omits it. Built-in fork relabeled 自定义此动作. Panel fully bilingual (new operationMessages.ts + operationViews.css).
+- Files: operationViews.tsx/.test.tsx, operationMessages.ts, operationViews.css, entityClient.ts, commands/registry.ts(+test), WorkspaceContext.tsx (autoForm regenerate), memory/commandCapture.test.ts.
+- Follow-up (server, tracked): PATCH can't UN-pin an output type (merge drops undefined; null rejected) — needs a nullable/clear convention.
+
+## 2026-07-04 - FLAT-1-001 kit-only flatten (kit-flatten-and-core-review.md §2)
+
+- User-facing unit = KIT ONLY. installState kit-granular (per-kit disabledGroups, absent-key=group defaults, first-touch materialize); migrateCatalogState idempotent + zero-loss (structural detection, no version field; effective-installed parity invariant tested; server write-back in readPluginPrefs). Subject kits merged as per-subject groups of ONE Textbook Kit (8 groups; plugin ids preserved as runtime registration vehicles; legacy pin/detection ids resolve via isKitInstalled group alias). Local CatalogSource lists kits only (+groupCount). pluginManagerViews rewritten as single-screen 套件管理 (kit cards + group toggles + uninstall + ViewerConflicts; NEW kitManager.css; no plugin list). seedBuiltinPlugins→seedBuiltinKits. Search entry 打开套件管理/Open Kits.
+- Decisions: group toggles shipped in V1 (without them the opt-in subject groups would be unreachable — market no longer sells subject kits); standalone plugins demoted to hidden always-on infrastructure; flatten is presentation+install-state ONLY (runtime registration untouched).
+- Follow-up parked (LEFT-COLLAPSE territory): WorkspaceShell.tsx modal title "Kit 与插件"→"套件".
+
+## 2026-07-04 - E2E-LOCALE-001 e2e wave close (locale + SHELL-4 + follow-up slices respec)
+
+- Two-session effort, e2e/** + e2e-electron/** only. Session 1 modernized the suites for zh-default I18N + SHELL-4: helpers.ts rebuilt around today's chrome (zh labels via message-dict imports where exported; openUserMenu/openShellModal/closeShellModal; operations/settings as shell modals), 14 web specs + 3 electron files re-pointed (structural selectors > message-dict text > zh literals with source comments), NEW e2e/locale-flip.spec.ts (zh boot → Settings 语言 → live EN flip no reload → ui-prefs persists across reload → back to 中文). Session 2 re-triaged against the four mid-wave slices: streaming-chat fixed for W1 session resume-on-mount (both tests start 新对话 before counting bubbles); operation-authoring rewritten for ACTION-2b as 2 ACTIVE tests (two-field creator + validation + 试一下→preview→save→anchor-bar run + built-in toggle/param; 高级→编辑为完整模板 convert with live-preview substitution); NEW e2e/html-inplace-edit.spec.ts (SRC-2b real-browser proof: typing in the sandboxed contenteditable iframe + style-bar 加粗 → 源码 → 保存 → 阅读 renders bold); electron note-types re-pointed at the core.import-local block. FLAT-1/LEFT-COLLAPSE needed zero spec changes. All 23 remaining skips carry inline reasons (was 8/24).
+- Final: web 34 passed / 23 skipped / 0 failed (44.5s) · electron 10 passed / 2 skipped / 0 failed (1.1m). Earlier "7 passed" mystery = mid-run product-slice landings restarted the dev server, aborting in-flight test files (reported interrupted, invisible in the tally); cannot recur on a stable tree.
+- Product findings (report-only): useChatSessions resume-vs-新对话 millisecond race (startNew resets the clobber guard, ~line 176/238); markmap open-interactively d3-zoom SVGLength console noise (benign).

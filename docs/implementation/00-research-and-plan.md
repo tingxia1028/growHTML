@@ -1,5 +1,13 @@
 # Research And Implementation Plan
 
+## 2026-07-04 - LEFT-COLLAPSE-001 Left sidebar collapse
+
+Goal: let the left content sidebar collapse/expand on demand so the reader gets more horizontal space, while keeping the icon rail, reader, and right sidebar stable.
+
+| ID | Task | Dependencies | Can Parallelize | Primary Files | Implementation Plan | Verification Method | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| LEFT-COLLAPSE-001 | Explicit left sidebar collapse | Existing dock collapse framework and left-slot layout | No | `src/client/workspace/dock.ts`, `WorkspaceShell.tsx`, `styles.css`, focused dock/shell/e2e tests | Re-enable collapse only for the fixed `library` dock leaf; use persisted explicit user state only, no automatic narrow-viewport collapse; make the active IconRail button toggle the left sidebar like VS Code, with no extra dock-local rail or collapse button. | `npm test -- src/client/workspace/dock.test.ts src/client/workspace/WorkspaceShell.test.tsx`; `npm exec tsc -- --noEmit`; focused `e2e/layout-engine.spec.ts`. | Complete |
+
 ## 2026-07-04 - SHELL-4 configuration modal + settings/concept/speech/help follow-ups
 
 Goal: finish the shell/configuration batch that naturally shares the current chrome files: slim the rail, route configuration surfaces through a centered modal host, complete SettingsHub data/update/speech sections, add concept delete/merge controls, distinguish marker notes in the note list, refresh onboarding, add a shortcut help surface, and keep packaging assets pointed at the Growte anchor icon.

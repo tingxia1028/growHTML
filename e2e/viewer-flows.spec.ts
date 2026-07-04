@@ -51,6 +51,8 @@ async function anchorsFor(request: APIRequestContext, sourceId: string) {
 
 // IMPORTED HTML (DomReader srcDoc iframe): select → chip → note → html_selection anchor
 // → painted highlight.
+// SKIP: manual note-creation composer (select → Save Note) removed in the Growte IA
+// rebuild; note-creation UX is a pending product decision.
 test.skip("imported HTML viewer: select → chip → note → html_selection anchor → highlight", async ({ page, request }) => {
   const title = `Flow HTML ${Date.now()}`;
   const body = "<article><section><p>Imported paragraph about render threads.</p></section></article>";
@@ -83,6 +85,7 @@ test.skip("imported HTML viewer: select → chip → note → html_selection anc
 // PDF TEXT-QUOTE (pdf.js text layer): select text → chip → note → pdf_selection anchor
 // (with the quote) → painted highlight. (regions.spec.ts covers the PDF REGION mode +
 // its rect anchor; this covers the PDF text-QUOTE path's full flow incl. the anchor.)
+// SKIP: same removed manual note-creation flow as above.
 test.skip("PDF viewer (text quote): select → chip → note → pdf_selection anchor → highlight", async ({ page, request }) => {
   const source = await seedPdf(request, `Flow PDF ${Date.now()}`);
 

@@ -24,6 +24,8 @@ async function openSource(page: Page, title: string) {
   await expect(page.locator(".reader-tab-title")).toHaveText(title);
 }
 
+// SKIP: pre-IA markup (`.note-list .tb-*` card classes; Review Pack seat in the chat
+// ⋯ menu has since moved again) — pending the note-card UX decision.
 test.skip("textbook kit: source-level Review Pack action → review-pack Study Block card", async ({ page, request }) => {
   const title = `Textbook Review ${Date.now()}`;
   const body = "<article><section><p>Mitochondria are the powerhouse of the cell.</p></section></article>";
@@ -46,6 +48,7 @@ test.skip("textbook kit: source-level Review Pack action → review-pack Study B
   await expect(page.locator(".note-list .tb-card-kind").first()).toContainText("Review Pack");
 });
 
+// SKIP: same pre-IA markup as above (generation entry + `.note-list` card classes).
 test.skip("textbook kit: exporting a layer strips the student's Mistake block (propagation policy)", async ({ page, request }) => {
   const title = `Textbook Export ${Date.now()}`;
   const body = "<article><section><p>The cell membrane is a selective barrier.</p></section></article>";

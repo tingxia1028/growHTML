@@ -20,6 +20,8 @@ async function openSource(page: Page, title: string) {
   await expect(page.locator(".reader-tab-title")).toHaveText(title);
 }
 
+// SKIP: drives the removed Note-mode composer + its structured kit editor (manual
+// note-creation UX is a pending product decision).
 test.skip("textbook kit: composer creates an Explanation Study Block → renders as a kit card", async ({ page, request }) => {
   const title = `Textbook Kit ${Date.now()}`;
   await seedHtmlSource(request, title, "<article><p>Body about photosynthesis.</p></article>");

@@ -1,5 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { openNotesTab } from "./helpers";
+// Canonical zh/en dict for the W1 chat-session switcher (self-updating selectors).
+import { chatSessionMessages } from "../src/client/chat/chatSessionMessages";
 
 // AI chat streaming (orchestration base · v1). Drives the real app in web mode
 // (deterministic mock provider): open a source, select a passage so the assistant
@@ -24,6 +26,18 @@ async function openSource(page: Page, title: string) {
   await expect(page.locator(".reader-tab-title")).toHaveText(title);
 }
 
+// W1 chat sessions RESUME on mount (useChatSessions: stored id, else the most recent
+// persisted session) — so an EARLIER spec's transcript can legitimately pre-fill this
+// page's chat log (loop.spec's "What is this about?" reply did exactly that). Start a
+// 新对话 via the session switcher so every bubble-count in the test begins at ZERO.
+// (By the time we click, the resume round-trips have long settled — the spec has
+// already done several UI interactions since page load.)
+async function startFreshConversation(page: Page) {
+  await page.getByRole("button", { name: chatSessionMessages.menuLabel.zh, exact: true }).click();
+  await page.locator(".panel-menu-popover .chat-session-new").click();
+  await expect(page.locator(ASSISTANT)).toHaveCount(0);
+}
+
 test("ask AI: reply streams in progressively over SSE with a deterministic final answer", async ({ page, request }) => {
   const title = `Streaming Chat ${Date.now()}`;
   const body = "<article><section><p>Photosynthesis converts light into chemical energy.</p></section></article>";
@@ -37,43 +51,67 @@ test("ask AI: reply streams in progressively over SSE with a deterministic final
   await reader.getByText("Photosynthesis converts", { exact: false }).click();
   await expect(page.locator(".anchor-excerpt-quote")).toContainText("Photosynthesis");
 
-  // The streaming endpoint must be the one that answers (not the /api/chat fallback).
-  const streamResponse = page.waitForResponse(
-    (res) => res.url().includes("/api/chat/stream") && res.status() === 200
-  );
+  // Zero the chat log (a resumed session would offset every count below).
+  await startFreshConversation(page);
 
-  // Ask a question in the default "Ask AI" composer mode.
+  // Ask, recording the LAST assistant bubble's text length on EVERY DOM mutation. A
+  // MutationObserver fires per React commit regardless of the page's timer budget — the
+  // old setTimeout(25)-polling sampler got starved by headless Chromium's background-
+  // timer throttling and routinely woke up only AFTER the ~1.8s mock stream had
+  // finished, observing a single (final) length. Progressiveness is a REAL-TIME
+  // property: when the whole machine stalls mid-suite (event loop frozen while the SSE
+  // chunks queue), even the observer sees ONE commit — so the ask is retried a couple
+  // of times; at least one attempt must render progressively.
   const question = "What is the key idea here?";
-  await page.locator(".composer-input").fill(question);
+  let positive: number[] = [];
+  let observed: number[] = [];
+  for (let attempt = 0; attempt < 3 && positive.length < 2; attempt++) {
+    await page.evaluate(() => {
+      const lengths = new Set<number>();
+      (window as unknown as { __svBubbleLengths: Set<number> }).__svBubbleLengths = lengths;
+      const record = () => {
+        const bubbles = document.querySelectorAll(".chat-log .chat-msg.chat-assistant .note-rendered");
+        const el = bubbles[bubbles.length - 1];
+        if (el) lengths.add((el.textContent ?? "").length);
+      };
+      new MutationObserver(record).observe(document.body, {
+        subtree: true,
+        childList: true,
+        characterData: true
+      });
+    });
 
-  // Sample the assistant bubble's text length over the streaming window. With the
-  // mock's per-chunk delay (set in playwright.config), this captures several growing
-  // lengths, proving the reply arrives in pieces rather than all at once.
-  const sampler = page.evaluate(async () => {
-    const lengths = new Set<number>();
-    const start = performance.now();
-    while (performance.now() - start < 2500) {
-      const el = document.querySelector(".chat-log .chat-msg.chat-assistant .note-rendered");
-      if (el) lengths.add((el.textContent ?? "").length);
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    }
-    return [...lengths].sort((a, b) => a - b);
-  });
+    // The streaming endpoint must be the one that answers (not the /api/chat fallback).
+    const streamResponse = page.waitForResponse(
+      (res) => res.url().includes("/api/chat/stream") && res.status() === 200
+    );
+    await page.locator(".composer-input").fill(question);
+    await page.locator(".composer-input").press("Enter");
+    const response = await streamResponse;
+    expect(response.headers()["content-type"]).toContain("text/event-stream");
 
-  await page.locator(".composer-input").press("Enter");
+    // THIS attempt's bubble exists (a retry must not be satisfied by the previous
+    // attempt's identical completed reply)…
+    await expect(page.locator(ASSISTANT)).toHaveCount(attempt + 1, { timeout: 15_000 });
+    // …and the final answer is the deterministic mock reply referencing question+quote.
+    const assistant = page.locator(ASSISTANT).last();
+    await expect(assistant).toContainText("You asked: What is the key idea here?", { timeout: 15_000 });
+    await expect(assistant).toContainText("Photosynthesis converts light into chemical energy.");
+    // Wait for the request to fully settle (the reply actions re-enable) before
+    // reading the observer — and before any retry re-submits the composer.
+    await expect(page.locator(".chat-msg.chat-assistant .chat-artifact-add").last()).toBeEnabled({
+      timeout: 15_000
+    });
 
-  const response = await streamResponse;
-  expect(response.headers()["content-type"]).toContain("text/event-stream");
+    observed = await page.evaluate(() =>
+      [...(window as unknown as { __svBubbleLengths: Set<number> }).__svBubbleLengths].sort((a, b) => a - b)
+    );
+    positive = observed.filter((n) => n > 0);
+  }
 
-  // Final answer is the deterministic mock reply referencing the question + quote.
-  const assistant = page.locator(ASSISTANT).last();
-  await expect(assistant).toContainText("You asked: What is the key idea here?", { timeout: 15_000 });
-  await expect(assistant).toContainText("Photosynthesis converts light into chemical energy.");
-
-  // Progressive arrival: we observed at least two distinct (growing) lengths > 0.
-  const lengths = await sampler;
-  const positive = lengths.filter((n) => n > 0);
-  expect(positive.length, `observed bubble lengths: ${lengths.join(",")}`).toBeGreaterThan(1);
+  // Progressive arrival: some attempt saw at least two distinct (growing) lengths > 0 —
+  // the reply filled in across multiple commits rather than landing all at once.
+  expect(positive.length, `observed bubble lengths: ${observed.join(",")}`).toBeGreaterThan(1);
 });
 
 // Adaptive note forms (Phase 1a): the chat reply's "Add as note" action routes the text
@@ -97,6 +135,9 @@ test("save a chat reply: a mermaid block is detected and saved as a `mermaid` no
   const reader = page.frameLocator(READER);
   await reader.getByText("Cellular respiration", { exact: false }).click();
   await expect(page.locator(".anchor-excerpt-quote")).toContainText("Cellular respiration");
+
+  // Zero the chat log (run-order independence: `.last()` below must be THIS ask).
+  await startFreshConversation(page);
 
   // Ask a question that IS a bare mermaid source. The mock echoes it verbatim as
   // "You asked: flowchart LR; Start --> End", so that exact diagram text appears in

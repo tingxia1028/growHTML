@@ -32,8 +32,9 @@ test("AI terminal is OFF the default chrome; its entry point sits behind the AI-
   await expect(page.locator(".pty-raw")).toHaveCount(0);
 
   // The relocated entry point: AI Chat ⋯ menu → "AI Terminal" title + Show toggle.
+  // (The PanelMenu popover is PORTALED to <body> — it is not a .chat-box descendant.)
   await openChatMenu(page);
-  const entry = page.locator(".chat-box .panel-menu-popover .terminal-box-title");
+  const entry = page.locator(".panel-menu-popover .terminal-box-title");
   await expect(entry).toBeVisible();
   await expect(entry).toContainText("AI Terminal");
   await expect(entry.getByRole("button", { name: "Show" })).toBeVisible();

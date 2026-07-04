@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { openNotesTab } from "../e2e/helpers";
+import { openNotesTab, RIGHT_TAB_LABELS } from "../e2e/helpers";
 import {
   addLastReplyAsNote,
   askAi,
@@ -35,11 +35,13 @@ test.afterAll(async () => {
 });
 
 test("desktop shell boots today's chrome: R1 topbar (2 tabs) + LIB-2 Library + right tabs + AI chat", async () => {
-  // TopBar — the center segmented control is exactly Notes Overlay + Anchor Focus.
+  // TopBar — the center segmented control is exactly 笔记叠层 (Notes Overlay) +
+  // 锚点聚焦 (Anchor Focus). zh default locale (I18N); TopBar.tsx topBarMessages is
+  // module-private, hence the zh literals.
   const tabs = page.locator(".topbar-center .topbar-tab");
   await expect(tabs).toHaveCount(2);
-  await expect(tabs.nth(0)).toContainText("Notes Overlay");
-  await expect(tabs.nth(1)).toContainText("Anchor Focus");
+  await expect(tabs.nth(0)).toContainText("笔记叠层");
+  await expect(tabs.nth(1)).toContainText("锚点聚焦");
 
   // LIB-2 Library — the three core sections render; the old kebab never resurfaces.
   for (const id of ["core.recent", "core.documents", "core.folders"]) {
@@ -47,8 +49,8 @@ test("desktop shell boots today's chrome: R1 topbar (2 tabs) + LIB-2 Library + r
   }
   await expect(page.getByRole("button", { name: "Library actions" })).toHaveCount(0);
 
-  // Right sidebar — the tabbed panel (Anchor default) + AI Chat in the bottom split.
-  await expect(page.locator(".right-tabs-tab", { hasText: "Anchor" })).toBeVisible();
+  // Right sidebar — the tabbed panel (锚点/Anchor default) + AI Chat in the bottom split.
+  await expect(page.locator(".right-tabs-tab", { hasText: RIGHT_TAB_LABELS.anchor })).toBeVisible();
   await expect(page.locator(".chat-box")).toBeVisible();
 });
 

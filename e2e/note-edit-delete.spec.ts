@@ -44,10 +44,13 @@ async function seedNote(request: APIRequestContext, sourceId: string, content: s
   return (await res.json()).note as { id: string };
 }
 
+// Rows are found by their per-run-unique TITLE — the LIB row's visible text is the
+// title only (the id rides the row's tooltip, so an id-based hasText filter matches
+// nothing).
 async function openSource(page: Page, source: { id: string; title: string }) {
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
+  await page.locator(".source-item-open").filter({ hasText: source.title }).first().click();
   await expect(page.locator(".reader-tab-title")).toHaveText(source.title);
 }
 

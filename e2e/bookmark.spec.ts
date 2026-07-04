@@ -28,11 +28,11 @@ async function seedHtmlSource(request: APIRequestContext, title: string, body: s
   return (await res.json()).source as { id: string; title: string };
 }
 
-// Open a freshly seeded source from the library by its globally-unique id (the row renders
-// "sourceType · id"), so accumulated vault state can't make the row ambiguous across repeats.
+// Open a freshly seeded source from the library by its per-run-unique TITLE — the LIB
+// row's visible text is the title only (the id rides the row's tooltip now).
 async function openSource(page: Page, source: { id: string; title: string }) {
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
+  await page.locator(".source-item-open").filter({ hasText: source.title }).first().click();
   await expect(page.locator(".reader-tab-title")).toHaveText(source.title);
   // R1: the Bookmarks pane is reached via the IconRail (not an always-on column).
   await openBookmarks(page);

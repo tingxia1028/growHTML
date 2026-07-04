@@ -23,6 +23,9 @@ async function openSource(page: Page, title: string) {
   await expect(page.locator(".reader-tab-title")).toHaveText(title);
 }
 
+// SKIP: pre-IA selectors (`.chat-source` chip, text-matched `.selection-toolbar-btn`,
+// `.note-list` card classes) — Explain/Practice now live on the anchor bar
+// (.anchor-action-bar .action-grid-btn[data-action-id]); modernization candidate.
 test.skip("textbook kit: select passage → Explain/Practice toolbar → generated Study Block cards", async ({ page, request }) => {
   const title = `Textbook AI ${Date.now()}`;
   const body = "<article><section><p>Photosynthesis converts light into chemical energy.</p></section></article>";

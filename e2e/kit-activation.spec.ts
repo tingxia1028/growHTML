@@ -34,6 +34,9 @@ async function selectPassage(page: Page) {
   await expect(page.locator(".chat-source")).toContainText("Photosynthesis");
 }
 
+// SKIP: pre-IA selectors (`.chat-source` chip, Note-mode composer picker, text-matched
+// `.selection-toolbar-btn`); the per-source gate check needs a rewrite against the
+// anchor-bar surface + today's FLAT-1 kit chrome. Modernization candidate.
 test.skip("per-source kit activation: default on → switch to Core gates creation (render stays) → back on", async ({
   page,
   request

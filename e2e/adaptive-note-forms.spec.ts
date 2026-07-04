@@ -32,6 +32,8 @@ async function openSource(page: Page, title: string) {
   await expect(page.locator(".reader-tab-title")).toHaveText(title);
 }
 
+// SKIP: drives the removed Note-mode composer (manual note-creation UX is a pending
+// product decision — 02-verification 2026-06-30 e2e reconciliation).
 test.skip("composer 'detected · override' chip: a mermaid source auto-detects mermaid, 'change' reveals the override", async ({
   page,
   request
@@ -101,6 +103,7 @@ test("note viewer → centered overlay: a markmap note renders in its form and o
 
 // —— Phase 2: video (embed + local-asset Range) ————————————————————————————
 
+// SKIP: drives the removed Note-mode composer (manual note-creation UX pending).
 test.skip("composer auto-detects a BARE YouTube link as a video embed, and the saved note renders a provider <iframe>", async ({
   page,
   request
@@ -253,6 +256,8 @@ test("interactive html ESCAPE guard: game runs but cannot reach parent/top, fetc
 // With the deterministic mock returning a MARKMAP form (via the seeded `sample`), the
 // routed note saves + renders AS A MARKMAP (not markdown) through the normal note path.
 
+// SKIP: asserts the removed `.note-list .record-card` note-card UI + the removed
+// "Generate as best form" chat row-action (pre-IA markup; note-creation UX pending).
 test.skip("form router: a markmap form from the model unwraps + saves + renders as a markmap note (not markdown)", async ({
   page,
   request
@@ -307,6 +312,8 @@ test.skip("form router: a markmap form from the model unwraps + saves + renders 
 // via the existing markmap plugin (a live interactive SVG), proving the import lands a
 // real registered form that flows through getNoteType("markmap").render — no bypass.
 
+// SKIP: asserts the removed `.note-list .record-card` note-card UI (the API half —
+// import-xmind → markmap — still holds; only the card markup is pre-IA).
 test.skip(".xmind import: the server converts a .xmind to a markmap outline, and the saved note renders as a markmap", async ({
   page,
   request
@@ -358,6 +365,9 @@ test.skip(".xmind import: the server converts a .xmind to a markmap outline, and
 // response via page.route so the indicator is reliably observable (the mock is otherwise
 // instant), then let it through and assert the preview lands.
 
+// SKIP: pre-IA selectors (`.chat-source` chip + text-matched `.selection-toolbar-btn`)
+// — Explain now lives on the anchor bar (see operation-authoring.spec.ts for the live
+// generation loop). Modernization candidate when the indicator UX settles.
 test.skip("generating indicator: a structured generation shows 'AI 生成中…' then the preview", async ({ page, request }) => {
   const title = `Gen Indicator ${Date.now()}`;
   const body = "<article><section><p>Photosynthesis converts light into chemical energy.</p></section></article>";

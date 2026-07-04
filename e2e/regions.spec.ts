@@ -17,7 +17,7 @@ async function seedPdf(request: APIRequestContext, title: string) {
   const data = makeTextPdf("Region figure self-test page content.").toString("base64");
   const res = await request.post(`${SERVER}/api/sources/pdf`, { data: { title, dataBase64: data } });
   expect(res.ok(), `seed pdf failed: ${res.status()}`).toBeTruthy();
-  return (await res.json()).source as { id: string };
+  return (await res.json()).source as { id: string; title: string };
 }
 
 async function seedImage(request: APIRequestContext, title: string) {
@@ -25,7 +25,14 @@ async function seedImage(request: APIRequestContext, title: string) {
     data: { title, dataBase64: IMAGE_BASE64, mimeType: "image/png" }
   });
   expect(res.ok(), `seed image failed: ${res.status()}`).toBeTruthy();
-  return (await res.json()).source as { id: string };
+  return (await res.json()).source as { id: string; title: string };
+}
+
+// Open a seeded source from the Library by its (per-run unique) TITLE — the LIB row's
+// visible text is the title only; the source id rides the row's tooltip, so an id-based
+// hasText filter no longer matches anything.
+async function openSourceRow(page: import("@playwright/test").Page, title: string) {
+  await page.locator(".source-item-open").filter({ hasText: title }).first().click();
 }
 
 // Drag a rubber-band rectangle inside `target` from a relative start to end point.
@@ -58,14 +65,14 @@ test("pdf scroll: the scroll container scrolls and later pages are present", asy
   // Many pages → the scroll container is taller than the viewport, so it must scroll.
   const texts = Array.from({ length: 8 }, (_, i) => `Scroll regression page ${i + 1} content line.`);
   const data = makeMultiPageTextPdf(texts).toString("base64");
+  const title = `Scroll PDF ${Date.now()}`;
   const res = await request.post(`${SERVER}/api/sources/pdf`, {
-    data: { title: `Scroll PDF ${Date.now()}`, dataBase64: data }
+    data: { title, dataBase64: data }
   });
   expect(res.ok(), `seed pdf failed: ${res.status()}`).toBeTruthy();
-  const source = (await res.json()).source as { id: string };
 
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
+  await openSourceRow(page, title);
 
   // Page 1 renders first.
   const scroller = page.locator(".pdf-reader-canvas");
@@ -90,7 +97,7 @@ test("pdf scroll: the scroll container scrolls and later pages are present", asy
 test.skip("pdf quote: selecting text in the text layer → quote source chip", async ({ page, request }) => {
   const source = await seedPdf(request, `Quote PDF ${Date.now()}`);
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
+  await openSourceRow(page, source.title);
 
   // Wait for the text layer to render some selectable spans on page 1.
   const textLayer = page.locator('.page[data-page-number="1"] .textLayer');
@@ -127,7 +134,7 @@ test.skip("pdf quote: selecting text in the text layer → quote source chip", a
 test("pdf zoom: zoom-in grows the page and Fit width returns it", async ({ page, request }) => {
   const source = await seedPdf(request, `Zoom PDF ${Date.now()}`);
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
+  await openSourceRow(page, source.title);
 
   const pageEl = page.locator('.page[data-page-number="1"]').first();
   await expect(pageEl).toBeVisible({ timeout: 20_000 });
@@ -154,7 +161,7 @@ test("pdf zoom: zoom-in grows the page and Fit width returns it", async ({ page,
 test.skip("pdf region: rubber-band a figure → pdf_selection anchor with rect + region box", async ({ page, request }) => {
   const source = await seedPdf(request, `Region PDF ${Date.now()}`);
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
+  await openSourceRow(page, source.title);
 
   // Wait for the first page to render in the host canvas.
   const pageEl = page.locator('.page[data-page-number="1"]').first();
@@ -187,7 +194,7 @@ test.skip("pdf region: rubber-band a figure → pdf_selection anchor with rect +
 test.skip("image region: rubber-band an area → image_region anchor + region box", async ({ page, request }) => {
   const source = await seedImage(request, `Region IMG ${Date.now()}`);
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
+  await openSourceRow(page, source.title);
 
   const stage = page.locator(".image-reader-stage");
   await expect(stage.locator("img")).toBeVisible({ timeout: 10_000 });
@@ -214,13 +221,13 @@ test("image source uses the host ImageReader, not the native (unselectable) ifra
   // we CAN assert here is the viewer routing invariant that makes region capture
   // possible: an image renders in the overlay-able ImageReader, never the native
   // iframe (which can't be selected or overlaid — see docs/design/selection-architecture.md).
+  const title = `Native ${Date.now()}`;
   const res = await request.post(`${SERVER}/api/sources/image`, {
-    data: { title: `Native ${Date.now()}`, dataBase64: IMAGE_BASE64 }
+    data: { title, dataBase64: IMAGE_BASE64 }
   });
   expect(res.ok()).toBeTruthy();
-  const source = (await res.json()).source as { id: string };
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
+  await openSourceRow(page, title);
   await expect(page.locator(".image-reader-stage")).toBeVisible();
   await expect(page.locator('iframe[title="PDF reader"]')).toHaveCount(0);
 });

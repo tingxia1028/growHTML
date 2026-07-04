@@ -14,14 +14,28 @@ async function expectStudyVaultVisible(page: Page) {
   await expect(page.locator(".anchor-panel")).toBeVisible();
 }
 
-test("dock panes do not expose collapse rails or collapse buttons", async ({ page, request }) => {
-  await seedHtmlSource(request, `Layout No Rails ${Date.now()}`, "<article><p>Body.</p></article>");
+test("active left rail icon toggles the left sidebar", async ({ page, request }) => {
+  await seedHtmlSource(request, `Layout Left Toggle ${Date.now()}`, "<article><p>Body.</p></article>");
   await page.goto("/");
   await expectStudyVaultVisible(page);
 
-  await expect(page.locator(".dock-rail")).toHaveCount(0);
-  await expect(page.locator(".dock-collapse-btn")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /Expand Sources|Collapse Sources/ })).toHaveCount(0);
+  const railButtons = page.locator(".icon-rail-entries .icon-rail-btn");
+  const library = railButtons.first();
+  const concepts = railButtons.nth(2);
+
+  await library.click();
+  await expect(page.locator(".library-panel")).toHaveCount(0);
+  await expect(page.locator(".reader-panel")).toBeVisible();
+  await expect(page.locator(".dock-rail:visible")).toHaveCount(0);
+  await expect(page.locator(".dock-collapse-btn:visible")).toHaveCount(0);
+
+  await library.click();
+  await expect(page.locator(".library-panel")).toBeVisible();
+
+  await library.click();
+  await concepts.click();
+  await expect(page.locator(".concept-panel")).toBeVisible();
+  await expect(page.locator(".library-panel")).toHaveCount(0);
 });
 
 test("narrow viewport keeps panes visible instead of showing collapsed rails", async ({ page, request }) => {
@@ -31,6 +45,6 @@ test("narrow viewport keeps panes visible instead of showing collapsed rails", a
 
   await expect(page.locator(".library-panel")).toBeVisible();
   await expect(page.locator(".reader-panel")).toBeVisible();
-  await expect(page.locator(".dock-rail")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Expand Sources" })).toHaveCount(0);
+  await expect(page.locator(".dock-rail:visible")).toHaveCount(0);
+  await expect(page.locator(".dock-collapse-btn:visible")).toHaveCount(0);
 });

@@ -6,6 +6,9 @@ Record verification evidence here as work proceeds. Include both automated and m
 
 | Task ID | Verification Type | Command Or Method | Expected Result | Actual Result | Status |
 | --- | --- | --- | --- | --- | --- |
+| LEFT-COLLAPSE-001 (2026-07-04) | Focused unit tests | `npm test -- src/client/workspace/dock.test.ts src/client/workspace/WorkspaceShell.test.tsx` | Only the fixed left library pane is explicitly collapsible; active IconRail click toggles collapse/expand; clicking another rail icon expands and switches panes | **2 files / 26 tests passed**; jsdom emitted the known canvas `getContext` warning only | Passed |
+| LEFT-COLLAPSE-001 (2026-07-04) | Type check | `npm exec tsc -- --noEmit` | 0 TypeScript errors | Passed (exit 0) | Passed |
+| LEFT-COLLAPSE-001 (2026-07-04) | Focused browser e2e | `npx playwright test e2e/layout-engine.spec.ts` | Left rail icon toggles the sidebar; narrow viewport does not auto-collapse; old dock-local rail/buttons remain invisible | **2 passed** on the ephemeral-vault harness | Passed |
 | SHELL-4 batch (2026-07-04) | Focused onboarding tests | `npm test -- src/client/onboarding/steps.test.ts src/client/onboarding/OnboardingPanel.test.tsx` | New 11-step checklist order, bilingual copy, completion detection, modal/pane navigation, sample-doc idempotence, and latch persistence remain green | **2 files / 32 tests passed** | Passed |
 | SHELL-4 batch (2026-07-04) | Focused shell/settings/speech tests | `npm test -- src/client/workspace/shellNav.test.ts src/client/workspace/UserMenu.test.tsx src/client/workspace/WorkspaceShell.test.tsx src/client/settings/SettingsHub.test.tsx src/client/speech/speech.test.tsx src/server/speech.test.ts` | Modal target type, slim rail, user-menu modal routing, Settings data/update/speech sections, and TTS rate/voice propagation are green | **6 files / 55 tests passed**; jsdom emitted the known canvas `getContext` warning only | Passed |
 | SHELL-4 batch (2026-07-04) | Focused concept/marker/server tests | `npm test -- src/client/data/entityClient.test.ts src/client/inspectors/conceptInspector.test.tsx src/client/workspace/NoteListPanel.test.tsx src/server/app.test.ts` | Concept delete/merge client/server/view flows and marker-note chip styling are green | **4 files / 78 tests passed** | Passed |
@@ -624,3 +627,40 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 | SRC-12-001 | Isolated gate | worktree (HEAD+staged SRC-only slice): npx tsc --noEmit + 6 suites | 0 errors; sourceAuthoring/sourceEditor/libraryView/contract.guard/app/studyLayer green | tsc 0 · 118 tests passed | Passed |
 | SRC-12-001 | New e2e | npx playwright test e2e/source-authoring.spec.ts | + → 新建 Markdown → auto-编辑 → type+retitle → 保存 (revision 1→2) → 阅读 renders → select → 书签 → real anchor + painted highlight; imported: PATCH → 400, no editor chrome | 1 passed (5.5s) | Passed |
 | SRC-12-001 | Build | npm run build (agent run) | Vite production build | ✓ built | Passed |
+
+## SRC-2B-001 (2026-07-04)
+
+| Task | Type | Command | Expectation | Result | Status |
+|---|---|---|---|---|---|
+| SRC-2B-001 | Unit (engine) | npx vitest run src/client/workspace/htmlInPlace.test.ts | Shape detect; prepare→serialize round trip (artifacts stripped, formatting + data-study-id kept, head/doctype preserved); sanitizer blacklist; style actions incl. toggle-off, heading retag keeps attrs, no-nesting re-size, 默认颜色 removal, align set/replace/clear | 26 tests passed | Passed |
+| SRC-2B-001 | Unit (component) | npx vitest run src/client/workspace/sourceEditor.test.tsx | html 编辑 defaults to in-place frame; typing → dirty → 保存 sends SANITIZED html through the mocked io seam; 页面编辑⇄源码 round-trips both ways; 阅读 exit pulls unsaved edits; selection → style bar → 加粗 → saves with <b> | 21 tests passed | Passed |
+| SRC-2B-001 | Isolated gate | worktree (HEAD+staged slice): npx tsc --noEmit + 2 suites | 0 errors; both suites green | see commit | Passed |
+| SRC-2B-001 | Build | npm run check · npm run build (agent run) | tsc 0; production build | tsc 0 · ✓ built 1.03s | Passed |
+
+## ACTION-2B-001 (2026-07-04)
+
+| Task | Type | Command | Expectation | Result | Status |
+|---|---|---|---|---|---|
+| ACTION-2B-001 | Unit | npx vitest run operationViews.test.tsx registry.test.ts commandCapture.test.ts | Two-field create → createOperation{mode:simple,instruction} w/o template/outputType; appears in manager + passage-surface list; 试一下 dispatches operation.run w/o outputType; run: contentType omitted, envelope on input, routed form + autoForm on draft; edit round-trip; empty name/instruction inline-rejected zh+en; convert one-way w/ confirm; zh/en no-mixing | 3 files / 72 tests passed (re-run green in isolated worktree vs HEAD+slice) | Passed |
+| ACTION-2B-001 | Type+Build | npm run check · npm run build | 0 errors; production build | tsc 0 · ✓ built 1.00s | Passed |
+| ACTION-2B-001 | Full suite | npx vitest run | Scope green; sibling noise attributed | 183/190 files, 1950/1967; 17 failures all FLAT-1/LEFT-COLLAPSE in-flight files, identical across runs, no import edges | Passed (scope) |
+
+## FLAT-1-001 (2026-07-04)
+
+| Task | Type | Command | Expectation | Result | Status |
+|---|---|---|---|---|---|
+| FLAT-1-001 | Isolated gate | worktree (HEAD+staged 17-file slice): tsc + kits/manager/app suites | 0 errors; suites green | tsc 0 · suites green | Passed |
+| FLAT-1-001 | Migration | migrateCatalogState unit (3 legacy shapes, second run = identity) + route test (two GETs identical flat state) | Idempotent, zero-loss, effective-installed parity | Passed | Passed |
+| FLAT-1-001 | Manager | pluginManagerViews.test.tsx | Kit cards, kit enable/disable, group breakdown + toggles, uninstall, user-kit card, market kit-only, zh/en no-mixing | 13/13 | Passed |
+| FLAT-1-001 | Full suite (agent) | npx vitest run | Scope green; sibling noise attributed | 1984/1985 (1 fail = LEFT-COLLAPSE anchorViews pair); FLAT suites re-run post-sibling-commits 311/311 | Passed (scope) |
+| FLAT-1-001 | Build | npm run build | Production build | ✓ built 969ms | Passed |
+
+## E2E-LOCALE-001 (2026-07-04)
+
+| Task | Type | Command | Expectation | Result | Status |
+|---|---|---|---|---|---|
+| E2E-LOCALE-001 | Baseline re-triage (stable HEAD) | npx playwright test | Identify true residue post-slices | 30 passed / 24 skipped / 1 failed (sole red = W1 session resume replaying a prior spec's transcript) | Baseline |
+| E2E-LOCALE-001 | Full web wave close | npm run e2e | 0 failed, documented skips only | 34 passed / 23 skipped / 0 failed (44.5s); statuses sum exactly; prior anomaly = mid-run restarts aborting test files | Passed |
+| E2E-LOCALE-001 | locale-flip.spec.ts (NEW) | in-suite | zh boot → EN live flip no reload → persists across reload → back to 中文 | Passed | Passed |
+| E2E-LOCALE-001 | html-inplace-edit.spec.ts (NEW, SRC-2b) | standalone + in-suite | typing in sandboxed contenteditable iframe → 加粗 <b> → 源码 → 保存 → 阅读 bold | Passed (965ms; no flake ×2) | Passed |
+| E2E-LOCALE-001 | Full Electron | npm run e2e:electron | ≥10 / ≤2 / 0 | 10 passed / 2 skipped / 0 failed (1.1m; note-types fixed for core.import-local) | Passed |

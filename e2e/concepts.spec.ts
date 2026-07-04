@@ -1,4 +1,6 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
+// Canonical dict (pure TS): the concept pane's labels are localized (zh default).
+import { conceptMessages } from "../src/client/workspace/conceptMessages";
 import { openConcepts } from "./helpers";
 
 // FULL manual concept/relation flow against the REAL running app, web mode (concepts
@@ -69,12 +71,12 @@ test.skip("manual concept flow: create → link note → inspector back-ref → 
   // STEP 1 — create concept A in the UI → it appears in the list.
   await pane.locator(".concept-name-input").fill(conceptA);
   await pane.locator(".concept-description-input").fill("The UE render thread.");
-  await pane.getByRole("button", { name: "New concept" }).click();
+  await pane.getByRole("button", { name: conceptMessages.createAction.zh }).click();
   await expect(pane.locator(".concept-item-name", { hasText: conceptA })).toBeVisible();
 
   // Create concept B too (needed for the relation step).
   await pane.locator(".concept-name-input").fill(conceptB);
-  await pane.getByRole("button", { name: "New concept" }).click();
+  await pane.getByRole("button", { name: conceptMessages.createAction.zh }).click();
   await expect(pane.locator(".concept-item-name", { hasText: conceptB })).toBeVisible();
 
   // STEP 3a — focus concept A → its inspector shows the name + description.

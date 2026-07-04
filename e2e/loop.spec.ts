@@ -119,10 +119,11 @@ test("marginalia: Notes Overlay (the default, only mode) lays the note card in t
   // The seeded note paints as a highlight on the passage.
   await expect(reader.locator(".sv-annotated", { hasText: "marginalia passage" }).first()).toBeVisible();
 
-  // The TopBar segmented control is exactly Notes Overlay + Anchor Focus — the removed
-  // "Document" (floating) tab must not resurface.
-  await expect(page.locator(".topbar-tab", { hasText: "Document" })).toHaveCount(0);
-  const overlayTab = page.locator(".topbar-tab", { hasText: "Notes Overlay" });
+  // The TopBar segmented control is exactly 笔记叠层 (Notes Overlay) + 锚点聚焦 —
+  // the count-of-2 keeps the removed "Document" (floating) tab from resurfacing.
+  // zh default locale; TopBar.tsx topBarMessages (module-private): notesOverlay = 笔记叠层.
+  await expect(page.locator(".topbar-center .topbar-tab")).toHaveCount(2);
+  const overlayTab = page.locator(".topbar-tab", { hasText: "笔记叠层" });
   await expect(overlayTab).toHaveClass(/active/);
 
   // Margin IS the default: a persistent card with the note text sits in the gutter,

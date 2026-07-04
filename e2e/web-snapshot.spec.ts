@@ -63,6 +63,8 @@ async function saveNote(page: Page, text: string) {
   await expect(page.locator(".note-list")).toContainText(text);
 }
 
+// SKIP: manual note-creation composer (select → Save Note) removed in the Growte IA
+// rebuild; note-creation UX is a pending product decision.
 test.skip("webpage snapshot: unified shell + select → chip → note → html_selection anchor → highlight", async ({ page, request }) => {
   const source = await seedWebpage(request);
 

@@ -24,9 +24,12 @@ async function seedHtmlSource(request: APIRequestContext, title: string, body: s
   return (await res.json()).source as { id: string; title: string };
 }
 
+// Rows are found by their per-run-unique TITLE — the LIB row's visible text is the
+// title only (the id rides the row's tooltip, so an id-based hasText filter matches
+// nothing).
 async function openSource(page: Page, source: { id: string; title: string }) {
   await page.goto("/");
-  await page.locator(".source-item-open").filter({ hasText: source.id }).first().click();
+  await page.locator(".source-item-open").filter({ hasText: source.title }).first().click();
   await expect(page.locator(".reader-tab-title")).toHaveText(source.title);
 }
 
@@ -69,6 +72,8 @@ async function scrollReaderToBottom(page: Page) {
     });
 }
 
+// SKIP: the `.note-anchor-link/count/jump` note-card affordances are orphaned (not
+// rendered) since the IA rebuild — pending the note-card UX decision.
 test.skip("multi-anchor V1: note on A → link to B → paints at both → 'Anchored at 2 places' → jumps", async ({
   page,
   request
@@ -168,6 +173,7 @@ test.skip("multi-anchor V1: note on A → link to B → paints at both → 'Anch
 // reader: with a tall spacer between two anchors, jumping to the OFF-SCREEN one must
 // bring it into the reader viewport, and RE-clicking the same button (revealSeq) must
 // re-reveal after scrolling away again.
+// SKIP: same orphaned `.note-anchor-jump` card affordance as above.
 test.skip("multi-anchor reveal: jumping to an off-screen anchor scrolls it back into the reader", async ({
   page,
   request

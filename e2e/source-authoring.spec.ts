@@ -5,8 +5,9 @@ import { openLibraryMenu } from "./helpers";
 // real app — `+` → 新建 Markdown → the editor view opens straight into 编辑 mode (blank
 // doc, kid typing in seconds) → type + retitle → 保存 (SRC-2 pipeline: re-hash, revision
 // bump) → 阅读 renders the markdown through the server pipeline (DomReader iframe with
-// study ids) → select the passage like any source (draft quote in .chat-source) →
-// anchor + note materialize and PAINT on the authored source (.sv-annotated).
+// study ids) → select the passage like any source (its quote surfaces in the right
+// Anchor pane) → anchor + note materialize and PAINT on the authored source
+// (.sv-annotated).
 //
 // Run: npx playwright test e2e/source-authoring.spec.ts
 // (Playwright boots its own ephemeral server+client on the e2e ports — e2e/harness.ts.)
@@ -63,8 +64,8 @@ test("新建 Markdown → type → save → read → annotate like any source", 
   expect(seed.ok()).toBeTruthy();
   const imported = (await seed.json()).source as ApiSource;
 
-  // Wide viewport so the secondary right pane (the .chat-source draft chip) stays
-  // expanded — it auto-collapses below the 1280 responsive breakpoint (bookmark.spec).
+  // Wide viewport so the right sidebar (the Anchor pane the focused quote fills)
+  // stays expanded — it auto-collapses below the 1280 responsive breakpoint.
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.goto("/");
 
@@ -113,7 +114,10 @@ test("新建 Markdown → type → save → read → annotate like any source", 
     .getByRole("toolbar", { name: "Actions" })
     .getByRole("button", { name: /^(书签|Bookmark)$/ })
     .click();
-  await expect(page.getByRole("button", { name: "Show bookmark in Notes" })).toBeVisible();
+  // Completion signal: the reader-header BookmarkIndex lists the new bookmark row (its
+  // items render even while the popover is closed — a count needs no visibility). The
+  // old "Show bookmark in Notes" affordance is gone from today's UI.
+  await expect(page.locator(".bookmark-index-item")).toHaveCount(1);
   const uiAnchor = (await listAnchors(request, source.id)).find((a) => (a.quote ?? "").includes(passage));
   expect(uiAnchor, "the UI-created anchor should list with the passage quote").toBeTruthy();
 

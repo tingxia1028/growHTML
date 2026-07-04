@@ -23,6 +23,10 @@ async function openSource(page: Page, title: string) {
   await expect(page.locator(".reader-tab-title")).toHaveText(title);
 }
 
+// SKIP: pre-IA selectors (`.chat-source` chip + text-matched `.selection-toolbar-btn`)
+// — the preview loop itself is exercised live by operation-authoring.spec.ts (试一下 →
+// preview → Save/Discard); the edit-draft + Regenerate legs await a rewrite against
+// the anchor-bar surface. Modernization candidate.
 test.skip("generation preview: Explain → preview (nothing saved) → edit + Save → Regenerate stays pending → Discard", async ({
   page,
   request
