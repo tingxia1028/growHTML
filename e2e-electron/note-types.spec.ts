@@ -1,93 +1,89 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { makeGradientPng } from "../e2e/fixtures/image";
+import { openLibraryMenu } from "../e2e/helpers";
+import { closeApp, launchApp, type LaunchedApp } from "./harness";
 
-// P4 MEDIA NOTE PICK path — desktop-only (it goes through the native file dialog), so
-// it can only run in the real Electron app. We drive the full flow:
-//
-//   1. choose the `image` note type in the composer  → its media editor renders
-//   2. click "Choose file…" → the renderer calls window.studyVault.openFile() which
-//      invokes the main process's `dialog:openFile` IPC. We STUB dialog.showOpenDialog
-//      (via app.evaluate) to return a known temp PNG, the same technique Playwright
-//      uses for native dialogs — so no human interaction is needed.
-//   3. the renderer imports the picked file (POST /api/assets/local-file → copied into
-//      the vault) and stores the returned assetId in the note content.
-//   4. Save Note → the note list renders <img src="/api/assets/<id>"> and the image
-//      actually decodes (naturalWidth > 0), proving the asset bytes round-trip.
-//
-// This is the desktop counterpart to e2e/note-types.spec.ts (which covers the web
-// RENDER path + the structured flashcard/quiz composers). The existing 7 electron e2e
-// keep their original selectors — this only adds to the composer/note-list.
+// DESKTOP-ONLY native-dialog seam (E2E-ELECTRON-001). The original spec drove the
+// composer's `image` note type + "Choose file…" media pick — that UI died with the
+// Growte IA rebuild (the composer is AI-only; see the skip below). The seam it
+// really proved — renderer → window.studyVault.openFile() → main-process
+// `dialog:openFile` IPC → dialog.showOpenDialog (STUBBED via app.evaluate, no human
+// click) → the picked path flows back and is imported — lives on in TODAY'S UX as
+// the Library `+` → 文件… action, so that is what we drive end to end now.
 
-const VAULT = path.resolve(".e2e-electron-vault-note-types");
-
-let app: ElectronApplication;
+let handle: LaunchedApp;
 let page: Page;
 let tmpDir = "";
 
 test.beforeAll(async () => {
-  await rm(VAULT, { recursive: true, force: true });
   tmpDir = await mkdtemp(path.join(tmpdir(), "sv-note-types-"));
-  app = await electron.launch({
-    args: ["dist-electron/main.cjs"],
-    env: { ...process.env, STUDY_VAULT_ROOT: VAULT }
-  });
-  page = await app.firstWindow();
-  await page.waitForLoadState("domcontentloaded");
-  await expect(page.locator(".brand-block h1")).toHaveText("Sources");
+  handle = await launchApp("note-types");
+  page = handle.page;
 });
 
 test.afterAll(async () => {
-  await app?.close();
-  await rm(VAULT, { recursive: true, force: true });
+  await closeApp(handle);
   if (tmpDir) await rm(tmpDir, { recursive: true, force: true });
 });
 
-test("image note (desktop pick): Choose file → native dialog → asset imported → note renders <img>", async () => {
-  // A real PNG on disk for the stubbed dialog to "return".
+test("Library + → 文件… : native open dialog (stubbed) → local HTML imported and opens in its webview", async () => {
+  // A real page on disk for the stubbed dialog to "return".
+  const htmlPath = path.join(tmpDir, "picked-lesson.html");
+  await writeFile(
+    htmlPath,
+    "<!doctype html><html><head><title>Picked Lesson</title></head><body>" +
+      "<p id='para'>The picked lesson paragraph about render threads.</p></body></html>",
+    "utf8"
+  );
+
+  // STUB the native open-file dialog (the function the `dialog:openFile` IPC handler
+  // calls in electron/main.ts) — the same technique Playwright uses for native dialogs.
+  await handle.app.evaluate(({ dialog }, picked) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [picked] });
+  }, htmlPath);
+
+  // Drive today's UI: the ONE Library `+` add menu → 文件… (enabled on desktop only).
+  await openLibraryMenu(page);
+  const pick = page.locator('[data-add-action="core.import-file"]');
+  await expect(pick).toBeEnabled();
+  await pick.click();
+
+  // The picked file round-tripped renderer → IPC → dialog stub → import: the local
+  // HTML source opens in the persistent <webview> with the guest preload attached.
+  const webview = page.locator(".local-webview-host webview.local-webview");
+  await expect(webview).toHaveCount(1, { timeout: 15_000 });
+  await expect(webview).toHaveAttribute("preload", /webview-preload\.cjs$/);
+
+  // And it landed in the vault as a real source (the same local-file ingest seam).
+  const imported = await page.evaluate(async () => {
+    const res = await fetch("/api/sources");
+    const sources = (await res.json()).sources as Array<{ title: string; metadata?: { originalPath?: string } }>;
+    return sources.some((s) => (s.metadata?.originalPath ?? "").includes("picked-lesson.html"));
+  });
+  expect(imported, "expected the picked file to be ingested as a local-file source").toBe(true);
+});
+
+// SKIP (E2E-ELECTRON-001): the P4 media-note PICK flow (composer → `image` note type →
+// media editor → "Choose file…" → asset import → Save Note renders <img>) has no UI
+// today — the Growte IA rebuild made the right-panel composer AI-ONLY (`anchor.ask-ai`;
+// WorkspaceContext.composerCommandId), so `.note-type-select` / `.media-pick` are no
+// longer mounted anywhere. Un-skip when the pending manual note-creation UX product
+// decision lands (the same decision the web suite's loop/viewer-flows skips wait on);
+// the dialog IPC seam itself stays covered by the live test above, and the asset
+// import/render path by the web e2e note-types.spec.ts RENDER coverage.
+test.skip("image note (desktop pick): Choose file → native dialog → asset imported → note renders <img>", async () => {
   const pngPath = path.join(tmpDir, "picked.png");
   await writeFile(pngPath, makeGradientPng(120, 90));
-
-  // Seed + open a source so the note has a home (and the study panel is populated).
-  const title = `Desktop Image ${Date.now()}`;
-  const sourceId = await page.evaluate(async (t) => {
-    const res = await fetch("/api/sources/html", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: t, content: "<article><p>Body with a figure.</p></article>" })
-    });
-    return (await res.json()).source.id as string;
-  }, title);
-  await page.getByRole("button", { name: "Refresh" }).click();
-  await page.locator(".source-item-open").filter({ hasText: sourceId }).click();
-  await expect(page.locator(".reader-header h2")).toHaveText(title);
-
-  // STUB the native open-file dialog to return our PNG (no human click needed). This
-  // is the function the `dialog:openFile` IPC handler calls in electron/main.ts.
-  await app.evaluate(({ dialog }, picked) => {
+  await handle.app.evaluate(({ dialog }, picked) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [picked] });
   }, pngPath);
-
-  // STEP 1 — choose the image note type → the media editor renders with an enabled
-  // "Choose file…" button (desktop has window.studyVault.openFile).
-  await page.locator(".composer-mode .mode-tab", { hasText: "Note" }).click();
+  // Former flow: composer Note mode → .note-type-select "image" → .media-pick →
+  // .media-chosen shows asset_ → Save Note → .note-list card renders .sv-media-img
+  // with src=/api/assets/asset_… and naturalWidth > 0.
   await page.locator(".note-type-select").selectOption("image");
-  const pick = page.locator(".composer-note-editor .media-pick");
-  await expect(pick).toBeEnabled();
-
-  // STEP 2+3 — click it → native dialog (stubbed) → importAsset → assetId stored. The
-  // editor then shows the chosen asset id.
-  await pick.click();
-  await expect(page.locator(".composer-note-editor .media-chosen")).toContainText("asset_", { timeout: 15_000 });
-
-  // STEP 4 — Save Note → the note list renders the image note pointing at the asset.
-  await page.getByRole("button", { name: "Save Note" }).click();
-  const card = page.locator(".note-list .record-card", { hasText: "image" }).first();
-  await expect(card).toBeVisible();
-  const img = card.locator(".sv-media-img");
-  await expect(img).toHaveAttribute("src", /\/api\/assets\/asset_/);
-  // The image actually decodes the seeded bytes (proves the asset was copied + served).
-  await expect.poll(async () => img.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBeGreaterThan(0);
+  await page.locator(".composer-note-editor .media-pick").click();
+  await expect(page.locator(".composer-note-editor .media-chosen")).toContainText("asset_");
 });

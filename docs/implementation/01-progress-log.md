@@ -2,12 +2,34 @@
 
 Use this file as the live status board for implementation work.
 
+## 2026-07-04 - SHELL-4 configuration modal + follow-up batch
+
+- Goal: land the shell modal/configuration batch now that the explicit avoid lines are confirmed.
+- Active plan: work serially because the shell context, settings hub, user menu, and concept client share type surfaces; preserve all existing dirty-tree changes; avoid `markerOverlay`, `annotations`, `anchorViews`, `webview-preload`, `sourceEditor`, `library*`, `readerForSource`, `sources` services, `playwright.electron*`, and e2e infrastructure.
+- Active task: SHELL-4 code reconnaissance.
+- Verification target: focused Vitest suites for changed surfaces, then `npm run check`; run `npm run build` if type/tests are clean within the session.
+
 ## Current Status
 
 - Date: 2026-07-04
-- Phase: SEARCH-1-001 全局搜索 / Cmd+K palette (global-search.md SEARCH-1)
+- Phase: UI-LIBRARY-003 Library compact rows and safe remove
 - Active task: None
-- Overall status: Complete. The user has a cross-vault search surface: `GET /api/search` (services + direct-transport parity) over notes (`toSearchText` + anchor quotes) and sources, plus a Cmd/Ctrl+K palette (shell chrome) with the three families 笔记/文档/命令 and full keyboard flow. SEARCH-2 (pinyin/fuzzy/filters/recents) remains.
+- Overall status: Complete. Library source rows are now compact title-only rows with hover tooltip detail; row `x` actions are non-destructive; the local Library search follows the collapsed magnifier + expanded search-row pattern.
+
+## 2026-07-04 - UI-LIBRARY-003 Library compact rows and safe remove
+
+- Goal: make Library's Recent/Documents lists compact and safe: no visible source ids, one-line rows, non-destructive `x` removal, and Library search aligned with the shared panel search affordance.
+- Active plan: add a recent-list removal seam to `WorkspaceContext`, keep Documents row removal local to the Library panel, switch source rows from `Trash2/deleteSourceItem` to `X`, update row/search CSS, update focused Library tests, and document the Library row/search rule in `design.md`.
+- Result: `SourceRow` no longer renders a visible sourceType/id subtitle and no longer calls `deleteSourceItem`; Recent rows call `removeRecentSourceId`, Documents rows close locally through the Library section context, and both lists are forced to one-line title-only rows in `library.css`. Library search is now a header magnifier that expands a search row. `design.md` records the Library row/search/delete safety rule.
+- Verification: `npm test -- src/client/workspace/libraryView.test.tsx` (21 passed; jsdom canvas warning only), `npm exec tsc -- --noEmit`, and `npm run build` all passed.
+
+## 2026-07-04 - E2E-ELECTRON-001 Electron e2e modernization (the last E2E-DEBT-001 follow-up)
+
+- Goal: repay the catalogued electron-e2e debt — the suite was **8 failed / 1 skipped / 0 passed** on pre-R1 selectors (`.brand-block h1` "Sources" boot gate, `.reader-header h2`, top-level "Refresh", `.terminal-box` Show, `section.url-import-box`) and repo-side `.e2e-electron-vault*` dirs.
+- Vault hygiene first: NEW `e2e-electron/harness.ts` mirrors the web harness pattern — one pid-stamped OS-temp root (`growte-e2e-electron-vault-<pid>`, published via `GROWTE_E2E_ELECTRON_VAULT_ROOT` env), a FRESH per-SPEC vault subdir (each spec file launches its own app instance), and `e2e-electron/global-setup.ts`/`global-teardown.ts` wired into `playwright.electron.config.ts` (stale-sweep scoped to its OWN prefix so it can never delete a live web-suite vault; teardown deletes with retries). Launch env pins `STUDY_VAULT_ROOT` (per spec), `ELECTRON_DEV=0` (never the user's live dev session), `STUDY_VAULT_AI_PROVIDER=mock` + `STUDY_VAULT_MOCK_STREAM_DELAY_MS`, `STUDY_VAULT_AUTO_BACKUP=0`, `STUDY_VAULT_TRASH_AUTO_PURGE=0`. The repo-side vault dirs are gone. Boot gate = `.library-panel` + auto-dismissing the SHELL-2 first-run onboarding (a fresh vault ALWAYS swaps the center slot to 新手引导; the web suite never sees it because it seeds sources before `goto`).
+- All 8 specs reconciled to today's shell (spec-not-product; zero product-code changes): app.spec = R1 chrome smoke (2-tab TopBar, LIB-2 sections, right tabs) + seed → open → select → ask AI (mock, streamed) → "Add as note" → html_selection anchor + `.sv-annotated`; webview + viewer-flows-live entry = Library `+` → 网页 → 实时打开 (url-import-box died with LIB-2); every removed select→"Save Note" step rewritten to select → ask AI → "Add as note" (the AI-only composer's lazy anchor materialization — preserving the live-HTML "no anchor" regression assertion: `web_text_quote` with non-blank `normalizedUrl`); note-types = Library `+` → 文件… with a STUBBED native dialog (the `dialog:openFile` IPC seam lives on; the composer image-pick flow is a documented skip pending the manual note-creation UX decision); terminal = asserts the PTY surface is OFF the default chrome + its entry sits behind the AI-Chat ⋯ menu (deep PTY flow = documented skip — it lives in a transient popover today); local-html / local-html-highlight / web-snapshot keep their electron-only value (guest preload wiring, `sv:anchors` pixel paint, snapshot→Open-Live) on the new plumbing; viewer-flows adds the deterministic in-guest hover-card readback against the clamped card preview.
+- Harness-documented race: `loadSourceData` runs `focus.clear()` when it settles, so a guest selection driven before the load resolves gets wiped — `selectUntilFocused` gates on the status dot reaching idle (plus a Clear-anchor reset so a previous test's same-text excerpt can't satisfy the poll). Concurrency: UI-LIBRARY-003 landed mid-pass (row id subtitle removed, magnifier search) — the open helper matches rows by TITLE and the refresh icon stays the sole `.library-icon-btn`, green against the new markup.
+- Verification: `npm run e2e:electron` → **10 passed / 2 skipped / 0 failed**; stability re-run green; `npm run check` 0 errors; full `npx vitest run` **184 files / 1836 tests green**; `data/vault` byte+mtime identical (64 files); dev servers on 4177/5173 undisturbed; no stray processes or temp dirs.
 
 ## 2026-07-04 - TRUST-3-001 回收站 / soft delete + trash surfaces (data-trust.md TRUST-3)
 

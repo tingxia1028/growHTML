@@ -1,23 +1,21 @@
-import { rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
-import path from "node:path";
-import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import { openLibraryMenu } from "../e2e/helpers";
+import { closeApp, launchApp, type LaunchedApp } from "./harness";
 
-// Drives the REAL Electron app's live-web annotation path: "Open Live" a URL →
-// a web_live source → the reader embeds an <webview> loading that live page with
-// the selection-capture guest preload attached. A local fixture HTTP server
-// keeps it deterministic and offline.
-
-const VAULT = path.resolve(".e2e-electron-vault-web");
+// Drives the real Electron app's live-web annotation path through TODAY'S entry
+// point: the old `section.url-import-box` sidebar block became the LIB-2 Library `+`
+// menu's 网页 action (inline URL input + 抓取网页/实时打开). 实时打开 → a web_live
+// source → the reader embeds an <webview> loading that live page with the
+// selection-capture guest preload attached. A local fixture HTTP server keeps it
+// deterministic and offline.
 
 let fixture: Server;
 let fixtureUrl = "";
-let app: ElectronApplication;
+let handle: LaunchedApp;
 let page: Page;
 
 test.beforeAll(async () => {
-  await rm(VAULT, { recursive: true, force: true });
-
   fixture = createServer((_req, res) => {
     res.setHeader("content-type", "text/html");
     res.end(
@@ -29,23 +27,19 @@ test.beforeAll(async () => {
   const port = typeof address === "object" && address ? address.port : 0;
   fixtureUrl = `http://127.0.0.1:${port}/`;
 
-  app = await electron.launch({
-    args: ["dist-electron/main.cjs"],
-    env: { ...process.env, STUDY_VAULT_ROOT: VAULT }
-  });
-  page = await app.firstWindow();
-  await page.waitForLoadState("domcontentloaded");
+  handle = await launchApp("webview");
+  page = handle.page;
 });
 
 test.afterAll(async () => {
-  await app?.close();
+  await closeApp(handle);
   await new Promise<void>((resolve) => fixture.close(() => resolve()));
-  await rm(VAULT, { recursive: true, force: true });
 });
 
-test("webview: Open Live a URL → embedded <webview> loads it with the guest preload", async () => {
-  await page.locator("section.url-import-box input").fill(fixtureUrl);
-  await page.locator("section.url-import-box").getByRole("button", { name: "Open Live" }).click();
+test("webview: Library + → 网页 → 实时打开 → embedded <webview> loads it with the guest preload", async () => {
+  await openLibraryMenu(page);
+  await page.locator(".library-add-web .panel-menu-input").fill(fixtureUrl);
+  await page.locator(".library-add-web").getByRole("button", { name: "实时打开" }).click();
 
   // The web_live source becomes active and renders a <webview> for live annotation.
   const webview = page.locator(".webview-host webview");
@@ -55,8 +49,9 @@ test("webview: Open Live a URL → embedded <webview> loads it with the guest pr
   await expect(webview).toHaveAttribute("plugins", "");
 
   // A Chrome-ish nav bar wraps the webview: back/forward/reload + address bar.
-  await expect(page.getByRole("button", { name: "Back" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Forward" })).toBeVisible();
+  // (exact: the right sidebar's "Merge AI Chat back into tabs" also substring-matches "Back")
+  await expect(page.getByRole("button", { name: "Back", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Forward", exact: true })).toBeVisible();
   // The address bar reflects the loaded URL once navigation settles.
   await expect(page.getByRole("textbox", { name: "Address" })).toHaveValue(fixtureUrl);
 

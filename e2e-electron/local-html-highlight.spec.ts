@@ -2,7 +2,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
-import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import { closeApp, launchApp, openSourceByTitle, seedLocalFileSource, type LaunchedApp } from "./harness";
 
 type PngImage = { width: number; height: number; data: Buffer };
 
@@ -112,8 +113,6 @@ function decode(buffer: Buffer): PngImage {
 // (the highlight repaints those pixels). The control page is identical HTML with no
 // anchor, so any large diff localized to the passage is the highlight.
 
-const VAULT = path.resolve(".e2e-electron-vault-highlight");
-
 // A page whose passage text is on its own line in a large, predictable spot near
 // the top, with plain white background so the blue highlight stands out. The
 // quote is unique so highlightQuote can't match filler.
@@ -125,7 +124,7 @@ const PAGE_HTML =
   `<body><p id='para'>${QUOTE}.</p>` +
   "<div style='height:1200px'></div></body></html>";
 
-let app: ElectronApplication;
+let handle: LaunchedApp;
 let page: Page;
 let tmpDir = "";
 
@@ -142,19 +141,14 @@ function localFileUrl(absPath: string): string {
 }
 
 // Seed a local-HTML source from a temp file written with the given page html.
-async function seedSource(html: string, name: string): Promise<{ sourceId: string; filePath: string }> {
+async function seedSource(
+  html: string,
+  name: string
+): Promise<{ sourceId: string; title: string; filePath: string }> {
   const filePath = path.join(tmpDir, name);
   await writeFile(filePath, html, "utf8");
-  const sourceId = await page.evaluate(async (p) => {
-    const res = await fetch("/api/sources/local-file", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: p })
-    });
-    const body = await res.json();
-    return body.source.id as string;
-  }, filePath);
-  return { sourceId, filePath };
+  const seeded = await seedLocalFileSource(page, filePath);
+  return { sourceId: seeded.id, title: seeded.title, filePath };
 }
 
 // Seed a web_text_quote anchor (local HTML uses this kind) + a markdown note on it,
@@ -186,10 +180,10 @@ async function seedAnchorWithNote(sourceId: string, normalizedUrl: string, quote
   );
 }
 
-// Open a seeded source by id and wait until its local <webview> has rendered.
-async function openSource(sourceId: string) {
-  await page.getByRole("button", { name: "Refresh" }).click();
-  await page.locator(".source-item-open").filter({ hasText: sourceId }).click();
+// Open a seeded source by title (Library refresh icon + row — today's UI) and wait
+// until its local <webview> has rendered.
+async function openSource(title: string) {
+  await openSourceByTitle(page, title);
   const webview = page.locator(".local-webview-host webview.local-webview");
   await expect(webview).toHaveCount(1);
   // The guest must have attached the selection/paint preload.
@@ -242,20 +236,13 @@ function blueHighlightPixelsInRect(png: PngImage, rect: Rect): number {
 }
 
 test.beforeAll(async () => {
-  await rm(VAULT, { recursive: true, force: true });
   tmpDir = await mkdtemp(path.join(tmpdir(), "sv-hl-"));
-  app = await electron.launch({
-    args: ["dist-electron/main.cjs"],
-    env: { ...process.env, STUDY_VAULT_ROOT: VAULT }
-  });
-  page = await app.firstWindow();
-  await page.waitForLoadState("domcontentloaded");
-  await expect(page.locator(".brand-block h1")).toHaveText("Sources");
+  handle = await launchApp("local-html-highlight");
+  page = handle.page;
 });
 
 test.afterAll(async () => {
-  await app?.close();
-  await rm(VAULT, { recursive: true, force: true });
+  await closeApp(handle);
   if (tmpDir) await rm(tmpDir, { recursive: true, force: true });
 });
 
@@ -273,7 +260,7 @@ test("local HTML: a saved note paints a VISIBLE highlight inside the webview (pi
 
   // 1) Control: identical page, NO anchor. Open it and capture the passage region.
   const control = await seedSource(PAGE_HTML, "control.html");
-  const controlWebview = await openSource(control.sourceId);
+  const controlWebview = await openSource(control.title);
   // Let the guest paint the (un-highlighted) page.
   await expect
     .poll(async () => (await controlWebview.boundingBox())?.width ?? 0, { timeout: 10_000 })
@@ -294,7 +281,7 @@ test("local HTML: a saved note paints a VISIBLE highlight inside the webview (pi
   //    Seed BEFORE opening so the host pushes sv:anchors as soon as the guest is ready.
   const subject = await seedSource(PAGE_HTML, "subject.html");
   await seedAnchorWithNote(subject.sourceId, localFileUrl(subject.filePath), QUOTE, "screenshot note");
-  const subjectWebview = await openSource(subject.sourceId);
+  const subjectWebview = await openSource(subject.title);
   await expect
     .poll(async () => (await subjectWebview.boundingBox())?.width ?? 0, { timeout: 10_000 })
     .toBeGreaterThan(0);
