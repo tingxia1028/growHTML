@@ -33,7 +33,8 @@ import {
   type SourceRecord,
   type StudyLayerRecord
 } from "../data/entityClient";
-import { useFocus, draftQuoteText, type FocusContextValue } from "../focus/FocusContext";
+import { useFocus, draftQuoteText, type FocusContextValue, type AnchorDraft } from "../focus/FocusContext";
+import { selectionRectToPageRect } from "../surfaces/pdfSelectionRect";
 // A4b: the agent-loop transcript — a render-only turn state accumulated from the agent
 // SSE (entityClient.agentStream). Distinct from the persisted chat log; only done.message
 // becomes a real assistant turn (via the existing persistAssistant seam).
@@ -133,8 +134,19 @@ const workspaceActionMessages = defineMessages({
   bookmark: { zh: "书签", en: "Bookmark" },
   createNoteGroup: { zh: "创建笔记", en: "Create Note" },
   bookmarkHint: { zh: "为当前聚焦段落添加书签", en: "Bookmark the focused passage" },
-  customActions: { zh: "我的操作", en: "Custom Actions" }
+  customActions: { zh: "我的操作", en: "Custom Actions" },
+  // 转为区域 (D4a): convert the current PDF text selection into a region rect.
+  convertToRegion: { zh: "转为区域", en: "Convert to Region" },
+  convertToRegionHint: {
+    zh: "把选中的文字转成框选区域（图/公式/扫描件）",
+    en: "Turn the text selection into a region box (figure / formula / scan)"
+  }
 });
+
+// The command id for the 转为区域 action. It is NOT a registry command (it needs the
+// live selection GEOMETRY, which lives in the DOM, not the CommandContext) — runAction
+// special-cases it to the convertSelectionToRegion callback.
+const CONVERT_TO_REGION_ACTION_ID = "region.convert-selection";
 
 /** The surface keys an action list can be configured for. The inline selection toolbar
     and the Anchor bar SHARE one key, `"passage"` (both act on the current passage/anchor),
@@ -1941,6 +1953,41 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const draftQuote = draftQuoteText(focus.draft) || focus.anchor?.quote || "";
   const hasRegionDraft = focus.draft?.mode === "region";
 
+  // 转为区域 (D4a): convert the CURRENT PDF text selection into a region draft. The
+  // selection geometry lives in the DOM (not the CommandContext), so this reads the live
+  // host selection, finds its pdf.js `.page`, measures both boxes, and normalizes the
+  // selection into a page-relative rect (selectionRectToPageRect). It then pushes a region
+  // draft through the SAME focus.setDraft the rubber-band gesture uses — flowing through
+  // buildAnchorInput's region arm → regionTargetToRequest → pdf_selection{page,rect} with
+  // ZERO schema change. No-op unless there is a pdf_selection quote draft with a page and a
+  // live, measurable selection over that page (image regions are already modeless; HTML/web
+  // rect is D4b, deferred).
+  const convertSelectionToRegion = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const draft = focus.draft;
+    if (!draft || draft.mode !== "quote" || draft.kind !== "pdf" || !draft.page) return;
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    const node = range.commonAncestorContainer;
+    const element = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
+    const pageEl = element?.closest(".page") as HTMLElement | null;
+    if (!pageEl) return;
+    const pageRect = pageEl.getBoundingClientRect();
+    const selRect = range.getBoundingClientRect();
+    if (pageRect.width === 0 || pageRect.height === 0 || selRect.width === 0) return;
+    const regionDraft: AnchorDraft = {
+      mode: "region",
+      sourceId: draft.sourceId,
+      kind: "pdf",
+      page: draft.page,
+      rect: selectionRectToPageRect(pageRect, selRect)
+    };
+    // Clear the live text selection so the floating toolbar/quote path doesn't re-fire.
+    selection.removeAllRanges();
+    focus.setDraft(regionDraft);
+  }, [focus]);
+
   // Effective kit ids for the active source (per-source activation). Recomputed from
   // the active source's metadata; rendering is never gated by this.
   const activeKitIds = useMemo(() => activeKitIdsForSource(activeSource), [activeSource]);
@@ -2132,12 +2179,32 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       kind: "builtin",
       scope: "anchor"
     };
+    // 转为区域 (D4a, append-only per delta 6): convert the current PDF TEXT selection into
+    // a region rect. Only offered when the focus is a pdf_selection QUOTE draft with a page
+    // (a live text selection on a pdf.js page) — image regions are already modeless, and
+    // HTML/web rect is D4b (deferred). runAction routes its id to convertSelectionToRegion.
+    const convertAction: ToolbarAction | null =
+      focus.draft?.mode === "quote" && focus.draft.kind === "pdf" && !!focus.draft.page
+        ? {
+            id: CONVERT_TO_REGION_ACTION_ID,
+            title: t(workspaceActionMessages.convertToRegion),
+            icon: operationPrefs.icons?.[CONVERT_TO_REGION_ACTION_ID] ?? "scan-line",
+            group: t(workspaceActionMessages.createNoteGroup),
+            description: t(workspaceActionMessages.convertToRegionHint),
+            kind: "builtin",
+            scope: "anchor"
+          }
+        : null;
     // The core Bookmark + 标为概念 actions lead, then kit selection items, then custom
     // ops. Ordered for the shared "passage" surface — the SINGLE config the inline
     // selection toolbar AND the Anchor bar both render, so the two surfaces always show
     // the identical ordered list + show/hide (its own per-surface prefs, else global).
-    return orderActionsForSurface([bookmark, conceptAction, ...builtin, ...custom], operationPrefs, "passage");
-  }, [activeKitIds, locale, operations, operationPrefs]);
+    return orderActionsForSurface(
+      [bookmark, conceptAction, ...(convertAction ? [convertAction] : []), ...builtin, ...custom],
+      operationPrefs,
+      "passage"
+    );
+  }, [activeKitIds, locale, operations, operationPrefs, focus.draft]);
 
   // The Anchor Action Bar renders the SAME ordered "passage" list as the inline selection
   // toolbar — one shared surface, one config. Aliased to `selectionActions` so there is a
@@ -2183,11 +2250,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           scope: action.scope,
           variables: action.variables
         });
+      } else if (action.id === CONVERT_TO_REGION_ACTION_ID) {
+        // 转为区域 (D4a): not a registry command — it needs the live selection geometry.
+        convertSelectionToRegion();
       } else {
         void dispatch(action.id, {});
       }
     },
-    [dispatch]
+    [dispatch, convertSelectionToRegion]
   );
 
   // —— workspace layout switching ——

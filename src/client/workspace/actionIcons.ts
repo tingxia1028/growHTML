@@ -31,6 +31,7 @@ import {
   MessageSquare,
   Pencil,
   Quote,
+  ScanLine,
   Scissors,
   Sparkles,
   Star,
@@ -63,6 +64,7 @@ export const ICON_CHOICES: { name: string; Icon: LucideIcon }[] = [
   { name: "brain", Icon: Brain },
   { name: "lightbulb", Icon: Lightbulb },
   { name: "scissors", Icon: Scissors },
+  { name: "scan-line", Icon: ScanLine },
   { name: "link", Icon: Link },
   { name: "hash", Icon: Hash },
   { name: "layers", Icon: Layers }
