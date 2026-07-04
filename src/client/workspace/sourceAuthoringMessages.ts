@@ -88,5 +88,39 @@ export const sourceAuthoringMessages = defineMessages({
   sharedEditWarning: {
     zh: "已分享过的文档,编辑会使旧分享包无法绑定。仍要编辑吗?",
     en: "This document has been shared — editing will break the binding of previously shared packs. Edit anyway?"
-  }
+  },
+
+  // —— SRC-4: rich block toolbar (insert whole blocks at the caret) ——
+  htmlViewRich: { zh: "丰富", en: "Rich" },
+  richHint: {
+    zh: "点下面的按钮插入整块内容;选中文字还能调样式。",
+    en: "Click a button below to drop in a whole block; select text to style it."
+  },
+  richInsertHeading: { zh: "大标题", en: "Heading" },
+  richInsertSubheading: { zh: "小标题", en: "Subheading" },
+  richInsertParagraph: { zh: "段落", en: "Paragraph" },
+  richInsertBulletList: { zh: "圆点列表", en: "Bullet list" },
+  richInsertNumberList: { zh: "编号列表", en: "Numbered list" },
+  richInsertQuote: { zh: "引用", en: "Quote" },
+  richInsertCallout: { zh: "提示框", en: "Callout" },
+  richInsertDivider: { zh: "分隔线", en: "Divider" },
+  richInsertTable: { zh: "表格", en: "Table" },
+  richInsertImage: { zh: "图片", en: "Image" },
+  richBlockPlaceholderHeading: { zh: "大标题", en: "Heading" },
+  richBlockPlaceholderSubheading: { zh: "小标题", en: "Subheading" },
+  richBlockPlaceholderParagraph: { zh: "在这里写正文…", en: "Write your text here…" },
+  richBlockPlaceholderListItem: { zh: "列表项", en: "List item" },
+  richBlockPlaceholderQuote: { zh: "引用的话写在这里。", en: "Quoted text goes here." },
+  richBlockPlaceholderCallout: { zh: "重点提示:…", en: "Important note: …" },
+  richBlockPlaceholderTableCell: { zh: "单元格", en: "Cell" },
+  richBlockPlaceholderImageAlt: { zh: "图片说明", en: "Image caption" },
+
+  // —— SRC-4: templates (predefined layouts to start a page from) ——
+  templatesButton: { zh: "从模板开始", en: "Start from a template" },
+  templatesTitle: { zh: "选一个模板", en: "Pick a template" },
+  templatesInsertHint: {
+    zh: "会把模板加到当前内容后面。",
+    en: "The template is added after your current content."
+  },
+  templatesCancel: { zh: "取消", en: "Cancel" }
 });

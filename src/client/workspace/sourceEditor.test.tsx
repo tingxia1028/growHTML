@@ -385,6 +385,105 @@ describe("AuthoredSourceView — HTML in-place editing (SRC-2b)", () => {
   });
 });
 
+// —— SRC-4: rich editing (block toolbar) + templates ————————————————————————————————
+
+describe("AuthoredSourceView — SRC-4 rich mode + templates", () => {
+  async function mountHtmlInEdit(content: string): Promise<{
+    frameOf: () => HTMLIFrameElement;
+    docOf: () => Document;
+    saveContent: ReturnType<typeof vi.fn>;
+  }> {
+    const saveContent = vi.fn().mockResolvedValue(saveOutcome([]));
+    setSourceAuthoringIoForTests({
+      fetchContent: vi.fn().mockResolvedValue(content),
+      fetchShareStatus: vi
+        .fn()
+        .mockResolvedValue({ shared: false, publishedPackCount: 0, importedLayerCount: 0 }),
+      saveContent
+    });
+    await mount(<AuthoredSourceView source={authoredSource("html", "src_html")} reader={<div />} />);
+    if (content.trim()) await click(container.querySelectorAll(".source-editor-mode-btn")[1]);
+    const frameOf = () => container.querySelector(".source-editor-inplace-frame") as HTMLIFrameElement;
+    const docOf = () => frameOf().contentDocument!;
+    return { frameOf, docOf, saveContent };
+  }
+
+  function fireInFrame(doc: Document, target: Node, type: string): void {
+    const win = doc.defaultView!;
+    target.dispatchEvent(new win.Event(type, { bubbles: true }));
+  }
+
+  it("丰富 mode shows the block toolbar; 页面编辑 hides it — content is preserved across the toggle", async () => {
+    const { docOf } = await mountHtmlInEdit("<p>原始内容</p>");
+    // Default 页面编辑: no block bar.
+    expect(container.querySelector(".source-editor-blockbar")).toBeNull();
+    // Switch to 丰富 — the block toolbar appears, the SAME frame keeps the content.
+    await click(container.querySelector('[data-html-view="rich"]'));
+    expect(container.querySelector(".source-editor-blockbar")).toBeTruthy();
+    expect(docOf().querySelector("p")?.textContent).toBe("原始内容");
+    // Back to 页面编辑 — bar gone, content still there (no remount, no loss).
+    await click(container.querySelector('[data-html-view="page"]'));
+    expect(container.querySelector(".source-editor-blockbar")).toBeNull();
+    expect(docOf().querySelector("p")?.textContent).toBe("原始内容");
+  });
+
+  it("a block-toolbar button inserts a real block into the page and 保存 sends the SANITIZED html", async () => {
+    const { docOf, saveContent } = await mountHtmlInEdit("<p>第一段</p>");
+    await click(container.querySelector('[data-html-view="rich"]'));
+    // Put the caret in the paragraph so the block lands after it (deterministic order).
+    const doc = docOf();
+    const p = doc.querySelector("p")!;
+    const range = doc.createRange();
+    range.setStart(p.firstChild!, 1);
+    range.collapse(true);
+    const sel = doc.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    await click(container.querySelector('[data-block-insert="heading"]'));
+    expect(doc.querySelector("h1")).toBeTruthy();
+    await act(async () => fireInFrame(doc, doc.body, "input"));
+
+    await click(container.querySelector(".source-editor-save"));
+    const [, payload] = saveContent.mock.calls[0];
+    expect(payload.content).toContain("<p>第一段</p>");
+    expect(payload.content).toContain("<h1>");
+    expect(payload.content).not.toContain("contenteditable");
+  });
+
+  it("the template gallery opens and picking a layout drops it into the in-place page", async () => {
+    // Blank doc: opens straight into 编辑 with the in-place frame.
+    const { docOf } = await mountHtmlInEdit("");
+    await click(container.querySelector("[data-template-open]"));
+    const gallery = container.querySelector(".source-editor-templates")!;
+    expect(gallery).toBeTruthy();
+    // Pick a real (non-blank) layout — an empty page REPLACES its body with the template.
+    await click(container.querySelector('[data-template-id="lessonNotes"]'));
+    // Gallery closed, and the template's markup is now in the page.
+    expect(container.querySelector(".source-editor-templates")).toBeNull();
+    expect(docOf().querySelector("h1")?.textContent).toContain("课堂标题");
+  });
+
+  it("picking a template on a NON-empty page inserts it AFTER the existing content", async () => {
+    const { docOf } = await mountHtmlInEdit("<p>已有段落</p>");
+    await click(container.querySelector('[data-html-view="rich"]'));
+    // caret in the existing paragraph
+    const doc = docOf();
+    const range = doc.createRange();
+    range.setStart(doc.querySelector("p")!.firstChild!, 1);
+    range.collapse(true);
+    const sel = doc.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    await click(container.querySelector("[data-template-open]"));
+    await click(container.querySelector('[data-template-id="quizSheet"]'));
+    // Original paragraph kept, the quiz template added after it.
+    expect(doc.querySelector("p")?.textContent).toBe("已有段落");
+    expect(doc.querySelector("h1")?.textContent).toContain("自测卷");
+  });
+});
+
 // —— routing (readerForSource) ————————————————————————————————————————————————————
 
 describe("readerForSource — authored routes to the editor view, imported stays a plain reader", () => {

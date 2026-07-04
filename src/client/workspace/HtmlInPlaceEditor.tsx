@@ -25,7 +25,15 @@ import {
   Bold,
   Heading1,
   Heading2,
-  Italic
+  Image,
+  Italic,
+  List,
+  ListOrdered,
+  Minus,
+  Pilcrow,
+  Quote,
+  Table,
+  Type
 } from "lucide-react";
 import { t } from "../i18n";
 import { sourceAuthoringMessages as m } from "./sourceAuthoringMessages";
@@ -40,10 +48,20 @@ import {
   type HtmlDocShape,
   type InPlaceStyleAction
 } from "./htmlInPlace";
+import {
+  insertRichBlock,
+  type RichBlockKind,
+  type RichBlockLabels
+} from "./richEditor";
 
 export type HtmlInPlaceHandle = {
   /** The sanitized source text for the CURRENT edited DOM (null when no frame). */
   serialize(): string | null;
+  /** SRC-4: insert a rich block at the caret (returns false when no frame). */
+  insertBlock(kind: RichBlockKind): boolean;
+  /** SRC-4: run a template apply against the live frame document (returns false when no
+      frame). The transform is supplied by the parent (it owns the template + mode). */
+  runOnDocument(fn: (doc: Document) => boolean): boolean;
 };
 
 type Props = {
@@ -52,6 +70,9 @@ type Props = {
   html: string;
   /** Any in-place change: typing (input events) or a style-bar action. */
   onInput(): void;
+  /** SRC-4: show the rich block-insert toolbar strip above the page (default false —
+      SRC-2b's bare in-place editing is unchanged when off). */
+  rich?: boolean;
 };
 
 /** Gap between the selection rect and the bar; margin from the wrapper edges. */
@@ -68,7 +89,7 @@ const SWATCHES: Array<{ id: string; value: string; label: () => string }> = [
 ];
 
 export const HtmlInPlaceEditor = forwardRef<HtmlInPlaceHandle, Props>(function HtmlInPlaceEditor(
-  { html, onInput },
+  { html, onInput, rich = false },
   ref
 ) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -81,6 +102,20 @@ export const HtmlInPlaceEditor = forwardRef<HtmlInPlaceHandle, Props>(function H
   const onInputRef = useRef(onInput);
   onInputRef.current = onInput;
 
+  // SRC-4 block placeholder copy (localized once per render); the pure inserter reads them.
+  const blockLabels: RichBlockLabels = {
+    heading: t(m.richBlockPlaceholderHeading),
+    subheading: t(m.richBlockPlaceholderSubheading),
+    paragraph: t(m.richBlockPlaceholderParagraph),
+    listItem: t(m.richBlockPlaceholderListItem),
+    quote: t(m.richBlockPlaceholderQuote),
+    callout: t(m.richBlockPlaceholderCallout),
+    tableCell: t(m.richBlockPlaceholderTableCell),
+    imageAlt: t(m.richBlockPlaceholderImageAlt)
+  };
+  const blockLabelsRef = useRef(blockLabels);
+  blockLabelsRef.current = blockLabels;
+
   useImperativeHandle(
     ref,
     () => ({
@@ -88,6 +123,26 @@ export const HtmlInPlaceEditor = forwardRef<HtmlInPlaceHandle, Props>(function H
         const doc = frameRef.current?.contentDocument;
         if (!doc?.documentElement) return null;
         return serializeEditingDocument(doc, shapeRef.current);
+      },
+      insertBlock: (kind) => {
+        const doc = frameRef.current?.contentDocument;
+        if (!doc) return false;
+        const changed = insertRichBlock(doc, kind, blockLabelsRef.current);
+        if (changed) {
+          onInputRef.current();
+          placeBar();
+        }
+        return changed;
+      },
+      runOnDocument: (fn) => {
+        const doc = frameRef.current?.contentDocument;
+        if (!doc) return false;
+        const changed = fn(doc);
+        if (changed) {
+          onInputRef.current();
+          placeBar();
+        }
+        return changed;
       }
     }),
     []
@@ -158,6 +213,31 @@ export const HtmlInPlaceEditor = forwardRef<HtmlInPlaceHandle, Props>(function H
     }
   };
 
+  // SRC-4: drop a whole block at the caret (heading/list/quote/callout/divider/table/…).
+  const insertBlock = (kind: RichBlockKind) => {
+    const doc = frameRef.current?.contentDocument;
+    if (!doc) return;
+    if (insertRichBlock(doc, kind, blockLabelsRef.current)) {
+      onInputRef.current();
+      placeBar();
+    }
+  };
+
+  // The rich block-insert toolbar (SRC-4): each button drops a whole block, unlike the
+  // selection style bar which formats existing text. Kept simple/kid-legible.
+  const blockTools: Array<{ id: string; icon: ReactNode; label: string; kind: RichBlockKind }> = [
+    { id: "heading", icon: <Heading1 size={16} />, label: t(m.richInsertHeading), kind: "heading" },
+    { id: "subheading", icon: <Heading2 size={16} />, label: t(m.richInsertSubheading), kind: "subheading" },
+    { id: "paragraph", icon: <Pilcrow size={16} />, label: t(m.richInsertParagraph), kind: "paragraph" },
+    { id: "bulletList", icon: <List size={16} />, label: t(m.richInsertBulletList), kind: "bulletList" },
+    { id: "numberList", icon: <ListOrdered size={16} />, label: t(m.richInsertNumberList), kind: "numberList" },
+    { id: "quote", icon: <Quote size={16} />, label: t(m.richInsertQuote), kind: "quote" },
+    { id: "callout", icon: <Type size={16} />, label: t(m.richInsertCallout), kind: "callout" },
+    { id: "divider", icon: <Minus size={16} />, label: t(m.richInsertDivider), kind: "divider" },
+    { id: "table", icon: <Table size={16} />, label: t(m.richInsertTable), kind: "table" },
+    { id: "image", icon: <Image size={16} />, label: t(m.richInsertImage), kind: "image" }
+  ];
+
   // Is a tool's action the currently-active format at the selection? (drives pressed
   // state — pressing an active tool un-clicks it, so "pressed" always predicts the toggle.)
   const isActive = (action: InPlaceStyleAction): boolean => {
@@ -200,7 +280,26 @@ export const HtmlInPlaceEditor = forwardRef<HtmlInPlaceHandle, Props>(function H
   ];
 
   return (
-    <div ref={wrapRef} className="source-editor-inplace">
+    <div ref={wrapRef} className={`source-editor-inplace${rich ? " is-rich" : ""}`}>
+      {rich ? (
+        <div className="source-editor-blockbar" role="toolbar" aria-label={t(m.htmlViewRich)}>
+          {blockTools.map((tool) => (
+            <button
+              key={tool.id}
+              type="button"
+              className="source-editor-blockbar-btn"
+              data-block-insert={tool.kind}
+              title={tool.label}
+              // Don't collapse the caret before the click (SelectionFloatingToolbar idiom).
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => insertBlock(tool.kind)}
+            >
+              {tool.icon}
+              <span>{tool.label}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
       <iframe
         ref={frameRef}
         className="source-editor-inplace-frame"

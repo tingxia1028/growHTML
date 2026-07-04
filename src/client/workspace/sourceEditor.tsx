@@ -21,15 +21,17 @@ import {
   Code,
   Heading1,
   Heading2,
+  LayoutTemplate,
   List,
   ListOrdered,
   Pencil,
   Quote,
   Save,
+  Sparkles,
   TextCursorInput
 } from "lucide-react";
 import { renderMarkdownSourcePreview } from "../sourcePreview";
-import { t } from "../i18n";
+import { t, getLocale } from "../i18n";
 import type { SourceRecord } from "../data/entityClient";
 import { useWorkspace } from "./WorkspaceContext";
 import { sourceAuthoringMessages as m } from "./sourceAuthoringMessages";
@@ -38,6 +40,8 @@ import {
   type ReprojectedAnchorInfo
 } from "./sourceAuthoringIo";
 import { HtmlInPlaceEditor, type HtmlInPlaceHandle } from "./HtmlInPlaceEditor";
+import { applyTemplate } from "./richEditor";
+import { listSourceTemplates, templateHtml, type SourceTemplateId } from "./sourceTemplates";
 import "./sourceEditor.css";
 
 // —— the kid-first toolbar transform (pure; unit-tested directly) ————————————————————
@@ -127,8 +131,10 @@ export function resetSharedEditConfirmationsForTests(): void {
 // —— the view ————————————————————————————————————————————————————————————————————————
 
 type EditorMode = "read" | "edit";
-/** How an authored HTML source is edited: in place on the page (default) or as raw source. */
-type HtmlEditView = "page" | "source";
+/** How an authored HTML source is edited: in place on the page (页面编辑, default), the
+    SRC-4 rich block editor (丰富 — in-place + a block-insert toolbar + templates), or as
+    raw source (源码). All three edit the SAME draft and serialize identically. */
+type HtmlEditView = "page" | "rich" | "source";
 
 export function AuthoredSourceView({ source, reader }: { source: SourceRecord; reader: ReactNode }) {
   const ctx = useWorkspace();
@@ -150,6 +156,8 @@ export function AuthoredSourceView({ source, reader }: { source: SourceRecord; r
   const [htmlView, setHtmlView] = useState<HtmlEditView>("page");
   const [inPlaceDirty, setInPlaceDirty] = useState(false);
   const inPlaceRef = useRef<HtmlInPlaceHandle | null>(null);
+  // SRC-4: the template gallery (predefined layouts to start/extend an html page from).
+  const [templatesOpen, setTemplatesOpen] = useState(false);
 
   const isMarkdown = source.sourceType === "markdown";
   const dirty = loaded && (draft !== savedContent || titleDraft !== source.title || inPlaceDirty);
@@ -172,6 +180,7 @@ export function AuthoredSourceView({ source, reader }: { source: SourceRecord; r
     setTitleDraft(source.title);
     setHtmlView("page");
     setInPlaceDirty(false);
+    setTemplatesOpen(false);
     io.fetchContent(source.id)
       .then((content) => {
         if (cancelled) return;
@@ -213,17 +222,55 @@ export function AuthoredSourceView({ source, reader }: { source: SourceRecord; r
     setMode("read");
   };
 
-  // 页面编辑 ⇄ 源码 (SRC-2b): both edit the SAME draft. Into 源码 → serialize the live
-  // DOM; back into 页面编辑 → the frame remounts from the (possibly hand-edited) draft.
+  // 页面编辑 / 丰富 / 源码 all edit the SAME draft. 页面编辑 ⇄ 丰富 share ONE in-place frame
+  // (only the block toolbar shows/hides — no serialize/remount, edits are continuous).
+  // Into 源码 → serialize the live DOM; back into a page view → the frame remounts from
+  // the (possibly hand-edited) draft. Leaving 源码 for 丰富 goes through the same seam.
+  const isInPlaceView = (view: HtmlEditView) => view === "page" || view === "rich";
+
   const showHtmlSource = () => {
     if (htmlView === "source") return;
     syncDraftFromInPlace();
+    setTemplatesOpen(false);
     setHtmlView("source");
   };
 
   const showHtmlPage = () => {
     if (htmlView === "page") return;
+    setTemplatesOpen(false);
     setHtmlView("page");
+  };
+
+  const showHtmlRich = () => {
+    if (htmlView === "rich") return;
+    setHtmlView("rich");
+  };
+
+  // SRC-4: apply a template to the live in-place document. When the page is empty we
+  // REPLACE its body with the layout (starting from the template); otherwise we INSERT
+  // the layout after the caret (adding a section). The in-place handle runs the pure
+  // transform on the frame's document; the change is then serialized on save like any
+  // other edit — SAME SRC-2 pipeline.
+  const pickTemplate = (id: SourceTemplateId) => {
+    setTemplatesOpen(false);
+    const html = templateHtml(id, getLocale());
+    if (id === "blank" || !html.trim()) {
+      // Blank: nothing to insert — just make sure a page frame is showing to type in.
+      if (htmlView === "source") setHtmlView("page");
+      return;
+    }
+    const handle = inPlaceRef.current;
+    if (handle) {
+      // In-place frame is live: run against it. Empty page → replace; else insert.
+      const empty = !draft.replace(/<[^>]*>/g, "").trim();
+      handle.runOnDocument((doc) => applyTemplate(doc, html, empty ? "replace" : "insert"));
+    } else {
+      // 源码 view (no frame): fold the template into the raw draft directly, then the
+      // page view will remount from it. Empty → the template IS the draft.
+      setDraft((current) => (current.trim() ? `${current.trimEnd()}\n${html}` : html));
+      setInPlaceDirty(true);
+      setHtmlView("page");
+    }
   };
 
   const save = async () => {
@@ -431,6 +478,15 @@ export function AuthoredSourceView({ source, reader }: { source: SourceRecord; r
                 {t(m.htmlViewPage)}
               </button>
               <button
+                className={`source-editor-html-view-btn${htmlView === "rich" ? " active" : ""}`}
+                type="button"
+                data-html-view="rich"
+                onClick={showHtmlRich}
+              >
+                <Sparkles size={14} />
+                {t(m.htmlViewRich)}
+              </button>
+              <button
                 className={`source-editor-html-view-btn${htmlView === "source" ? " active" : ""}`}
                 type="button"
                 data-html-view="source"
@@ -440,18 +496,67 @@ export function AuthoredSourceView({ source, reader }: { source: SourceRecord; r
                 {t(m.htmlViewSource)}
               </button>
             </div>
+            <button
+              className="source-editor-template-btn"
+              type="button"
+              data-template-open
+              onClick={() => setTemplatesOpen((open) => !open)}
+            >
+              <LayoutTemplate size={14} />
+              {t(m.templatesButton)}
+            </button>
             <div className="source-editor-html-hint">
-              {htmlView === "page" ? t(m.inPlaceHint) : t(m.htmlEditorHint)}
+              {htmlView === "source"
+                ? t(m.htmlEditorHint)
+                : htmlView === "rich"
+                  ? t(m.richHint)
+                  : t(m.inPlaceHint)}
             </div>
           </div>
-          {htmlView === "page" ? (
-            // Keyed per source AND load generation: a source switch (or its content
-            // fetch landing) always re-arms a fresh editing frame — the component
-            // reads `html` once on mount by design.
+
+          {templatesOpen ? (
+            <div className="source-editor-templates" role="dialog" aria-label={t(m.templatesTitle)}>
+              <div className="source-editor-templates-head">
+                <strong>{t(m.templatesTitle)}</strong>
+                <span className="source-editor-templates-hint">{t(m.templatesInsertHint)}</span>
+                <button
+                  className="source-editor-templates-cancel"
+                  type="button"
+                  onClick={() => setTemplatesOpen(false)}
+                >
+                  {t(m.templatesCancel)}
+                </button>
+              </div>
+              <div className="source-editor-templates-grid">
+                {listSourceTemplates().map((template) => {
+                  const locale = getLocale();
+                  return (
+                    <button
+                      key={template.id}
+                      className="source-editor-template-card"
+                      type="button"
+                      data-template-id={template.id}
+                      onClick={() => pickTemplate(template.id)}
+                    >
+                      <span className="source-editor-template-name">{template.label[locale]}</span>
+                      <span className="source-editor-template-desc">{template.description[locale]}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {isInPlaceView(htmlView) ? (
+            // Keyed per source AND load generation only (NOT per page/rich view): 页面编辑
+            // ⇄ 丰富 keep the SAME frame so edits are continuous — only the block toolbar
+            // toggles via the `rich` prop. A source switch / fetch landing re-arms a fresh
+            // frame — the component reads `html` once on mount by design.
             <HtmlInPlaceEditor
               key={`${source.id}:${loaded ? "loaded" : "loading"}`}
               ref={inPlaceRef}
               html={draft}
+              rich={htmlView === "rich"}
               onInput={() => setInPlaceDirty(true)}
             />
           ) : (
