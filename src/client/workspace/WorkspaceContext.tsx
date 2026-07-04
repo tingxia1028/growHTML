@@ -165,6 +165,38 @@ export type ConceptMarkFeedback = {
   seq: number;
 };
 
+/** D6 auto-materialize feedback: what DraftNoteToast shows + what its undo needs. After
+    an anchor-context AI answer materializes a draft note (materializeAnchor → createNote
+    with status:"draft"), the workspace parks this so the toast shows "已生成笔记 · 撤销"
+    with an undo that dispatches note.delete on the materialized note. */
+export type DraftNoteFeedback = {
+  /** The just-materialized draft note — undo dispatches note.delete on it. */
+  noteId: string;
+  /** The note's contentType (drives the toast's small type label). */
+  contentType: string;
+  /** Monotonic token so a NEW materialization re-arms the auto-dismiss timer. */
+  seq: number;
+};
+
+/**
+ * D6 (note-presentation-unified.md §6): whether a generated draft AUTO-MATERIALIZES as a
+ * draft note (the note exists + paints its chip immediately, plus an undo toast) vs. parks
+ * in the D5 floating-editor preview loop. Pure so it is unit-tested directly and the
+ * `onGenerated` consumer stays a one-line dispatch. It gates on ALL of:
+ *   • `autoMaterialize` — OPT-IN: the direct anchor-context flow explicitly asked for the
+ *     no-Save-click chip. Absent/false keeps the byte-for-byte preview loop, so 试一下 /
+ *     operation.run / kit generate buttons are UNCHANGED (they never set it) — the design's
+ *     "default for direct note-type buttons" is a per-surface opt-in wired incrementally.
+ *   • a real `anchorId` — anchor context existed at generation time (the whole premise).
+ *   • NOT `classified` / NOT `manual` — the note.generate-block / classify-reply / floating-
+ *     editor-seed flows always confirm in the preview editor.
+ * onGenerated's CONTRACT is unchanged — this only routes an opted-in draft to the auto-save
+ * consumer beside the existing preview consumer.
+ */
+export function shouldAutoMaterialize(draft: GeneratedDraft): draft is GeneratedDraft & { anchorId: string } {
+  return !!draft.autoMaterialize && !!draft.anchorId && !draft.classified && !draft.manual;
+}
+
 // Filter + sort an action list by an (order, excluded) pair: excluded ids are dropped,
 // then the rest are sorted by their index in `order` (unlisted ids keep their incoming
 // order after the listed ones). JS sort is stable, so built-in priority + custom
@@ -454,6 +486,21 @@ export type WorkspaceContextValue = {
   /** Dismiss the 标为概念 toast without undoing. */
   dismissConceptMark(): void;
 
+  // —— D6 auto-materialized draft note (anchor-context AI answer → note chip + undo) ——
+  /** Materialize an AI answer as a DRAFT note ON an anchor: createNote with
+      status:"draft" (the note exists + paints immediately), park the undo feedback,
+      and return the new note (null on failure). This is the auto-save consumer that
+      sits BESIDE the preview-loop parkDraft consumer — used only when a generation
+      carried a focused-anchor context. Non-anchor generations keep parking in the
+      floating editor (preview loop unchanged). */
+  materializeAnchor(anchorId: string, contentType: string, content: unknown): Promise<NoteRecord | null>;
+  /** D6 feedback: the pending "已生成笔记 · 撤销" toast payload, null when none. */
+  draftNote: DraftNoteFeedback | null;
+  /** Undo the last auto-materialize: dispatch note.delete on the draft note. */
+  undoDraftNote(): Promise<void>;
+  /** Dismiss the draft-note toast without undoing (the draft note stays). */
+  dismissDraftNote(): void;
+
   // —— study layers (a per-source lens axis: the multi-select filter) ——
   // Same refresh-token pattern as concepts: the layer switcher watches this to
   // re-fetch its list. `refreshLayers` ALSO repaints the reader, because toggling /
@@ -597,6 +644,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // so a rapid second mark re-arms the toast timer (seq changes even on equal names).
   const [conceptMark, setConceptMark] = useState<ConceptMarkFeedback | null>(null);
   const conceptMarkSeqRef = useRef(0);
+  // D6 auto-materialize feedback: the pending "已生成笔记 · 撤销" toast payload + a
+  // monotonic counter so a rapid second materialize re-arms the toast timer.
+  const [draftNote, setDraftNote] = useState<DraftNoteFeedback | null>(null);
+  const draftNoteSeqRef = useRef(0);
+  // D6: a stable bridge so the commandContext's onGenerated (memoized earlier than the
+  // materializeAnchor callback is declared) can route an eligible anchor-context draft
+  // to auto-materialize without a temporal-dead-zone reference. Assigned once below.
+  const materializeAnchorRef = useRef<
+    ((anchorId: string, contentType: string, content: unknown) => Promise<NoteRecord | null>) | null
+  >(null);
   const [activeLayoutId, setActiveLayoutId] = useState<string>(loadActiveLayout);
   const [activeThemeId, setActiveThemeId] = useState<string>(loadActiveTheme);
   // Note-presentation mode for the DOM HTML reader. Seeded from localStorage so the
@@ -1090,10 +1147,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         // Destructive-action gate (note.delete). Desktop/web both have window.confirm;
         // SSR/tests fall through to proceed (tests inject their own confirm).
         confirm: (message) => (typeof window !== "undefined" ? window.confirm(message) : true),
-        // A kit AI action generated content: divert it to the preview stage instead
-        // of auto-saving. The host renders it (in the D5 floating editor, next to
-        // the passage rect parkDraft remembers) and only persists on Save.
-        onGenerated: (draft) => parkDraft(draft),
+        // A kit AI action generated content. D6 (note-presentation-unified.md §6): a
+        // DIRECT note-type button that ran WITH a focused-anchor context (a real
+        // `anchorId`, and NOT a classified/manual draft — those are the 试一下 /
+        // note.generate-block / floating-editor flows) AUTO-MATERIALIZES as a draft note
+        // on that anchor + an undo toast — the chip appears at the passage without a Save
+        // click. Everything else (no anchor context, or classified/manual) keeps parking
+        // in the D5 floating editor (the preview loop is UNCHANGED). onGenerated's
+        // contract doesn't change — the host just gained an auto-save consumer beside it.
+        onGenerated: (draft) => {
+          if (shouldAutoMaterialize(draft) && materializeAnchorRef.current) {
+            void materializeAnchorRef.current(draft.anchorId, draft.contentType, draft.content);
+            return;
+          }
+          parkDraft(draft);
+        },
         onPatchCreated: () => void refreshAnnotations(),
         // W1 chat-session seams (src/client/chat/useChatSessions): the domain module
         // updates the visible transcript AND persists the turns — user message on
@@ -1310,20 +1378,32 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   );
 
   // §10 chat card "Add as note": classify the reply into its registered form (the SAME
-  // pure heuristic the preview path uses) and create the note in ONE step via the normal
-  // add-note command — no preview gate. Respects the user's TEXT SELECTION within the
-  // reply (selectedTextOr → keep just the useful part, e.g. a fenced/bare diagram), like
-  // the old "Save selection as note" flow. anchorIds omitted, so the command materializes
-  // the focused passage if there is one (attaching the note to it), else saves it
-  // unanchored on the active source. onNoteCreated repaints + the note-list refreshes.
+  // pure heuristic the preview path uses) and create the note in ONE step. Respects the
+  // user's TEXT SELECTION within the reply (selectedTextOr → keep just the useful part).
+  //
+  // D6 (note-presentation-unified.md §6): WITH anchor context (a passage is focused when
+  // the reply is kept), the note AUTO-MATERIALIZES as a status:"draft" note on that anchor
+  // + an undo toast — the chip appears at the passage immediately, no Save click. WITHOUT
+  // anchor context (free chat), it stays the one-step add through anchor.add-note (which
+  // saves unanchored on the active source) — chat-only path UNCHANGED.
   const addReplyAsNote = useCallback(
     async (rawContent: string) => {
       const text = selectedTextOr(rawContent ?? "").trim();
       if (!text) return;
       const form = classifyContent(text);
+      // Anchor context = a focused saved anchor or a fresh selection draft. Materialize it
+      // (a saved anchor materializes to itself) so the draft note attaches to the passage.
+      const hasAnchorContext = !!focus.anchor || !!focus.draft;
+      if (hasAnchorContext && materializeAnchorRef.current) {
+        const anchor = await focus.materializeAnchor();
+        if (anchor) {
+          await materializeAnchorRef.current(anchor.id, form.contentType, form.content);
+          return;
+        }
+      }
       await dispatch("anchor.add-note", { content: form.content, contentType: form.contentType });
     },
-    [dispatch, selectedTextOr]
+    [dispatch, selectedTextOr, focus]
   );
 
   // §10 chat card "Regenerate": re-ask the most recent user question, appending a fresh
@@ -1406,6 +1486,52 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [conceptMark, refreshAnnotations]);
 
   const dismissConceptMark = useCallback(() => setConceptMark(null), []);
+
+  // —— D6 auto-materialize (note-presentation-unified.md §6) ——————————————————
+  // Materialize an anchor-context AI answer AS a note ON `anchorId`: create it with
+  // status:"draft" (so it exists + paints immediately, distinguishable as a draft) and
+  // park the undo feedback. This is the auto-save consumer that sits BESIDE the
+  // preview-loop parkDraft consumer; the generation command already materialized the
+  // anchor, so createNote attaches to it directly (no float-and-edit). Repaint on
+  // success (the D2 chip appears at the passage — paint is note-derived, so it's free).
+  const materializeAnchor = useCallback(
+    async (anchorId: string, contentType: string, content: unknown): Promise<NoteRecord | null> => {
+      try {
+        const { note } = await entityClient.createNote({
+          sourceId: activeSourceId || undefined,
+          anchorIds: [anchorId],
+          contentType,
+          content,
+          status: "draft"
+        });
+        draftNoteSeqRef.current += 1;
+        setDraftNote({ noteId: note.id, contentType: note.contentType, seq: draftNoteSeqRef.current });
+        await refreshAnnotations();
+        return note;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to materialize note");
+        return null;
+      }
+    },
+    [activeSourceId, refreshAnnotations]
+  );
+  // Keep the onGenerated bridge pointing at the current callback (render-time assign is
+  // fine — the ref is only read inside async onGenerated handlers, never during render).
+  materializeAnchorRef.current = materializeAnchor;
+
+  // Undo the last auto-materialize: dispatch note.delete on the draft note (painting is
+  // note-derived, so the chip disappears on the delete's onNoteDeleted repaint). Goes
+  // through the SAME command as any delete — no bespoke removal path. The confirm gate
+  // is skipped here: this IS the undo affordance for a note the user never explicitly
+  // saved, so re-confirming would be nonsense (dispatch's confirm covers manual deletes).
+  const undoDraftNote = useCallback(async () => {
+    const feedback = draftNote;
+    if (!feedback) return;
+    setDraftNote(null);
+    await dispatch("note.delete", { noteId: feedback.noteId, skipConfirm: true });
+  }, [draftNote, dispatch]);
+
+  const dismissDraftNote = useCallback(() => setDraftNote(null), []);
 
   // Flip the note-presentation mode and persist the choice (so it survives reload).
   const setAnnotationMode = useCallback((mode: HtmlAnnotationMode) => {
@@ -1837,6 +1963,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       conceptMark,
       undoConceptMark,
       dismissConceptMark,
+      materializeAnchor,
+      draftNote,
+      undoDraftNote,
+      dismissDraftNote,
       layersVersion,
       refreshLayers,
       sourceLayers,
@@ -1939,6 +2069,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       conceptMark,
       undoConceptMark,
       dismissConceptMark,
+      materializeAnchor,
+      draftNote,
+      undoDraftNote,
+      dismissDraftNote,
       layersVersion,
       refreshLayers,
       sourceLayers,

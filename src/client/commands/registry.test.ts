@@ -622,6 +622,22 @@ describe("command: note.delete", () => {
 
     expect(getCommand("note.delete")!.isAvailable(baseCtx({ payload: {} }))).toBe(false);
   });
+
+  it("skips the confirm gate for the D6 undo (skipConfirm) yet still deletes", async () => {
+    const onNoteDeleted = vi.fn();
+    // A confirm IS wired, but skipConfirm must bypass it — the undo toast is the safety net.
+    const confirm = vi.fn(() => false);
+    const ctx = baseCtx({
+      payload: { noteId: "draft_note_1", skipConfirm: true },
+      actions: { onNoteDeleted, confirm }
+    });
+
+    await runCommand("note.delete", ctx);
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(ctx.client.deleteNote).toHaveBeenCalledWith("draft_note_1");
+    expect(onNoteDeleted).toHaveBeenCalledWith("draft_note_1");
+  });
 });
 
 describe("command: note.edit", () => {

@@ -73,6 +73,11 @@ export type NoteRecord = {
   contentType: string;
   content: unknown;
   visibility: string;
+  // D6 (note-presentation-unified.md §6): "draft" marks an auto-materialized
+  // anchor-context AI note (undo toast + a distinguishing chip marker). Optional/
+  // additive; absent = a normal committed note. A flag, NOT a render fork — the note
+  // still renders only through getNoteType().render. Mirrors src/core/schema/note.ts.
+  status?: "draft";
   // Study Layer membership (multi). A note's lens(es); it is visible iff its
   // layerIds intersect the enabled layers (OR). Empty = "always visible" (the
   // server never orphans a note to invisibility).
@@ -680,6 +685,9 @@ export type CreateNoteInput = {
   conceptIds?: string[];
   content: unknown;
   contentType?: string;
+  // D6: send "draft" to auto-materialize an anchor-context AI note flagged draft (the
+  // materializeAnchor path). Omit for a normal committed note.
+  status?: "draft";
   // Optional layer membership. Omit to let the server default a source-attached note
   // to that source's owned layer (never send [] if you want that default).
   layerIds?: string[];

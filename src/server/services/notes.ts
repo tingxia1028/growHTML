@@ -26,6 +26,10 @@ export const createNoteRequestSchema = z.object({
   // that source's owned layer so it is never orphaned to invisibility (spec §5).
   layerIds: z.array(z.string().min(1)).optional(),
   contentType: z.string().min(1).default("markdown"),
+  // D6 (note-presentation-unified.md §6): an auto-materialized anchor-context draft
+  // sends status:"draft" so the note is born flagged (undo toast + draft marker).
+  // Optional/additive; absent = a normal committed note (the byte-for-byte prior path).
+  status: z.literal("draft").optional(),
   // Shape validated per-type by the NoteContentSpec, not here.
   content: z.unknown()
 });
@@ -109,6 +113,8 @@ export async function createNote({ vault }: NotesDeps, input: CreateNoteInput): 
     contentType: input.contentType,
     content,
     visibility: "private",
+    // D6: forward the draft flag when present; omitted status stays a normal note.
+    ...(input.status ? { status: input.status } : {}),
     layerIds
   });
 

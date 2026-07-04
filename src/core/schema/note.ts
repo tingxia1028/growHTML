@@ -33,6 +33,16 @@ export const noteSchema = recordEnvelopeSchema("note", noteIdSchema).extend({
 
   visibility: visibilitySchema.default("private"),
 
+  // Lifecycle status (D6, note-presentation-unified.md §6) — OPTIONAL + additive, so
+  // every pre-existing note parses unchanged (ABSENT = a normal, committed note; zero
+  // migration). "draft" marks a note AUTO-MATERIALIZED from an anchor-context AI answer
+  // (materializeAnchor → createNote): it EXISTS immediately (its D2 chip paints at the
+  // passage) but is flagged draft so the UI can show a distinguishing marker and pair it
+  // with an undo toast. It is NOT a render fork — a draft note still renders ONLY through
+  // getNoteType().render; `status` is a flag the card wrapper reads, never a branch in a
+  // note type. The single literal keeps the field closed to future values at zero cost.
+  status: z.literal("draft").optional(),
+
   // Presentation (D10, note-presentation-unified.md §10) — OPTIONAL + additive, so
   // every pre-existing note parses unchanged (zero migration). A note pinned open at
   // a remembered position carries its own layout here so it travels with the vault

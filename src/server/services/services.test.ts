@@ -106,4 +106,49 @@ describe("service layer direct calls (no HTTP)", () => {
       )
     ).rejects.toBeInstanceOf(ValidationError);
   });
+
+  it("forwards the D6 status:draft flag on create and omits it by default", async () => {
+    const { source } = await sourcesService.ingestHtml(
+      { vault },
+      sourcesService.ingestHtmlRequestSchema.parse({ title: "Draft Doc", content: fixtureHtmlBody })
+    );
+    const anchor = await anchorsService.createAnchor(
+      { vault },
+      anchorsService.createAnchorRequestSchema.parse({
+        sourceId: source.id,
+        studyId: "p-render-thread",
+        selector: '[data-study-id="p-render-thread"]',
+        quote: "Render Thread submits rendering commands."
+      })
+    );
+
+    // An anchor-context AI answer materializes a note flagged draft (the same parsed-
+    // input shape the /api/notes route produces).
+    const draft = await notesService.createNote(
+      { vault },
+      notesService.createNoteRequestSchema.parse({
+        sourceId: source.id,
+        anchorIds: [anchor.id],
+        contentType: "markdown",
+        content: "Auto-materialized answer.",
+        status: "draft"
+      })
+    );
+    expect(draft.status).toBe("draft");
+    // It round-trips through the store (the tombstone/list read model preserves it).
+    const stored = await vault.stores.notes.get(draft.id);
+    expect(stored?.status).toBe("draft");
+
+    // A normal create omits status entirely (zero-migration: not a new required field).
+    const normal = await notesService.createNote(
+      { vault },
+      notesService.createNoteRequestSchema.parse({
+        sourceId: source.id,
+        anchorIds: [anchor.id],
+        contentType: "markdown",
+        content: "A committed note."
+      })
+    );
+    expect(normal.status).toBeUndefined();
+  });
 });

@@ -66,6 +66,16 @@ export type GeneratedDraft = {
    * creates-or-matches + links them. Absent/empty = no chips, nothing linked.
    */
   concepts?: string[];
+  /**
+   * D6 (note-presentation-unified.md §6): this draft should AUTO-MATERIALIZE as a note
+   * with status:"draft" + an undo toast instead of parking in the D5 preview editor.
+   * OPT-IN: absent/false = the existing preview loop (the byte-for-byte prior path), so
+   * 试一下 / operation.run / kit generate buttons are UNCHANGED. Set by the direct
+   * anchor-context flows that want the no-Save-click chip (e.g. an anchor-focused chat
+   * reply). Auto-materialize additionally requires a real `anchorId` and NOT
+   * classified/manual (see shouldAutoMaterialize in WorkspaceContext).
+   */
+  autoMaterialize?: boolean;
 };
 
 export type CommandActions = {
@@ -167,6 +177,13 @@ export type CommandContext = {
     conceptDescription?: string;
     /** The note to (un)link (concept.link-note) / attach an anchor to (note.link-anchor). */
     noteId?: string;
+    /**
+     * note.delete only — skip the destructive-action confirm gate (D6 undo). The
+     * D6 undo toast IS the safety net for an auto-materialized draft the user never
+     * explicitly saved, so re-confirming its removal would be nonsense. Absent/false =
+     * the normal confirm-first delete (manual deletes stay gated).
+     */
+    skipConfirm?: boolean;
     /** Its current concept links, so link-note can append without dropping others. */
     noteConceptIds?: string[];
     /** The note's current anchor links, so link-anchor can append without dropping others. */
@@ -623,9 +640,11 @@ const deleteNote: Command = {
   group: "anchor",
   isAvailable: (ctx) => !!ctx.payload.noteId,
   run: async (ctx) => {
-    const { noteId } = ctx.payload;
+    const { noteId, skipConfirm } = ctx.payload;
     if (!noteId) return;
-    const ok = ctx.actions.confirm ? await ctx.actions.confirm("Delete this note? This cannot be undone.") : true;
+    // D6 undo skips the confirm gate (the undo toast is itself the safety net); manual
+    // deletes stay confirm-first.
+    const ok = skipConfirm || !ctx.actions.confirm ? true : await ctx.actions.confirm("Delete this note? This cannot be undone.");
     if (!ok) return;
     await ctx.client.deleteNote(noteId);
     ctx.actions.onNoteDeleted?.(noteId);

@@ -108,11 +108,16 @@ export function ArtifactCard({ block }: { block: FocusOverlayBlock }) {
   const displayBlock = { ...block, title, extra: block.extra ?? meta.extra };
   const body = cardBody(block, ws?.pluginPrefs);
   const Icon = noteTypeIcon(block.contentType);
+  // D6: a DRAFT note (auto-materialized from an anchor-context AI answer) gets a
+  // distinguishing wrapper marker. This is a WRAPPER FLAG — the body still comes through
+  // cardBody → getNoteType().render UNCHANGED; `status` never branches the render path.
+  const isDraft = block.note?.status === "draft";
 
   return (
     <>
       <div
-        className={`sv-artifact-card sv-preview-card sv-artifact-card-${block.contentType}`}
+        className={`sv-artifact-card sv-preview-card sv-artifact-card-${block.contentType}${isDraft ? " sv-note-draft" : ""}`}
+        data-note-status={block.note?.status}
         role="button"
         tabIndex={0}
         aria-haspopup="dialog"

@@ -72,6 +72,7 @@ import { IconRail } from "./IconRail";
 import { SelectionFloatingToolbar } from "./SelectionFloatingToolbar";
 import { FloatingNoteEditor } from "./FloatingNoteEditor";
 import { ConceptMarkToast } from "./ConceptMarkToast";
+import { DraftNoteToast } from "./DraftNoteToast";
 import { GlobalSpeakSelection } from "../speech/GlobalSpeakSelection";
 import { GlobalSearch } from "../search/GlobalSearch";
 // N6/§D12: the Anchor Focus board overlay — mounted once here (like the floating editor /
@@ -445,6 +446,10 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
       {/* 标为概念 feedback (CONCEPT-UX-1): the brief toast + 撤销 after
           concept.mark-selection — host chrome like the floating toolbar above. */}
       <ConceptMarkToast />
+      {/* D6 auto-materialize feedback (note-presentation-unified.md §6): "已生成笔记 · 撤销"
+          after an anchor-context AI answer materializes a draft note — 撤销 dispatches
+          note.delete. Host chrome like the toast above. */}
+      <DraftNoteToast />
       {/* SPEECH-1b 朗读通用化: the host-level 朗读 chip for ANY text selection OUTSIDE
           the reader pane (chat replies, note lists, panels — 读=所有文本的可读能力).
           Reader selections keep their own toolbar above; this never double-serves. */}

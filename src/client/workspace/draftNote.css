@@ -1,0 +1,74 @@
+/* D6 auto-materialize (note-presentation-unified.md §6) — scoped styles for the
+   draft-note toast (styles.css untouched). Mirrors the concept-mark toast so both
+   host-level feedback chips read the same; the shared --sv-* tokens skin it per theme.
+   The `.sv-note-draft` marker distinguishes a DRAFT note's chip/card wrapper without
+   forking the render path — it is a wrapper flag, applied by the card host, never a
+   branch inside a note type's render. */
+
+/* —— the toast (bottom-center, portaled to <body>) —— */
+.draft-note-toast {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(480px, calc(100vw - 32px));
+  padding: 8px 14px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius, 8px);
+  background: var(--sv-surface-card);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font-size: 13px;
+}
+
+.draft-note-toast-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--sv-surface-muted);
+  color: var(--sv-text-muted);
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+}
+
+.draft-note-toast-type {
+  margin-left: 5px;
+  color: var(--sv-text-muted);
+}
+
+.draft-note-undo,
+.draft-note-dismiss {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 0;
+  background: transparent;
+  color: var(--sv-accent);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.draft-note-dismiss {
+  color: var(--sv-text-muted);
+}
+
+/* —— the draft marker on a note's chip / card wrapper (a FLAG, not a render fork) —— */
+.sv-note-draft {
+  position: relative;
+}
+
+/* A small dashed accent ring hints "unconfirmed draft" on the note card wrapper. */
+.sv-note-draft::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px dashed var(--sv-accent-border, var(--sv-accent));
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.7;
+}

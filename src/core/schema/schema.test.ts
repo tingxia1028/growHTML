@@ -65,6 +65,22 @@ describe("vault entity schemas", () => {
     expect(noteSchema.parse({ ...fixtureNote, contentType: "mindmap" }).contentType).toBe("mindmap");
   });
 
+  it("accepts an optional D6 draft status and omits it by default (zero-migration round-trip)", () => {
+    // ABSENT status = a normal committed note: a pre-existing note parses with status
+    // undefined and does NOT gain the field (zero migration).
+    const normal = noteSchema.parse(fixtureNote);
+    expect(normal.status).toBeUndefined();
+    expect("status" in normal).toBe(false);
+
+    // status:"draft" (the auto-materialize flag) round-trips.
+    const draft = noteSchema.parse({ ...fixtureNote, status: "draft" });
+    expect(draft.status).toBe("draft");
+
+    // The field is CLOSED to the single literal — any other value is rejected.
+    expect(() => noteSchema.parse({ ...fixtureNote, status: "published" })).toThrow();
+    expect(() => noteSchema.parse({ ...fixtureNote, status: "" })).toThrow();
+  });
+
   it("treats note layerIds as a multi-membership array (defaults empty, validates ids)", () => {
     expect(noteSchema.parse({ ...fixtureNote, layerIds: undefined }).layerIds).toEqual([]);
     const layerId = "layer_01ARZ3NDEKTSV4RRFFQ69G5FAX";
