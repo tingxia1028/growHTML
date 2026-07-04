@@ -1106,6 +1106,13 @@ export const entityClient = {
   chat(input: { messages: ChatMessage[]; context?: ChatContext }) {
     return sendJson<{ message: ChatMessage; provider: string }>("POST", "/api/chat", input);
   },
+  // W3 (ai-workspace §W3): synthesize a chat transcript (+ its W2 attachments) into a
+  // NEW markdown source (headings = TOC), returned as a first-class source. `sample`
+  // forces a deterministic {title, markdown} against the offline mock (the e2e seeds
+  // it). HTTP-only like chat — the server holds the provider.
+  synthesize(input: { messages: ChatMessage[]; context?: ChatContext; instruction?: string; sample?: unknown }) {
+    return sendJson<{ source: SourceRecord }>("POST", "/api/chat/synthesize", input);
+  },
   // Streaming chat over SSE. Invokes `onDelta` for each incremental chunk and
   // resolves with the full assistant message + provider once the `done` event
   // arrives. Falls back to the non-streaming `chat()` when the stream endpoint
