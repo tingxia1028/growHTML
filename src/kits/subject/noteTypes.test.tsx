@@ -120,13 +120,30 @@ describe("生词卡 render — flashcard-isomorphic front/back", () => {
     expect(html).not.toContain("transient"); // chips are full-mode only
   });
 
-  it("full: front (word + phonetic/pos) and back (senses + examples) + synonym/antonym chips", () => {
-    const html = renderToHtml(getNoteType("subject.vocab")!.render({ content, mode: "full" }));
-    expect(html).toContain("/ɪˈfemərəl/");
-    expect(html).toContain("Fame is ephemeral.");
-    expect(html).toContain("transient");
-    expect(html).toContain("permanent");
-    expect(html).toContain("sv-flashcard-face"); // the flashcard layout, reused not reinvented
+  // N4-D7: the FULL vocab is now an INTERACTIVE flip card (front word/phonetic shows first;
+  // the back senses/examples/chips appear only after a flip — one face at a time). Was
+  // static (both faces rendered at once). Deck nav across siblings stays deferred.
+  it("full: flip card — front (word + phonetic) first; back (senses + chips) only after a flip", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(getNoteType("subject.vocab")!.render({ content, mode: "full" }) as React.ReactElement));
+
+    expect(container.innerHTML).toContain("sv-flashcard-face"); // the flashcard layout, reused not reinvented
+    const card = container.querySelector(".sv-flip") as HTMLElement;
+    expect(card.getAttribute("data-face")).toBe("front");
+    expect(container.textContent).toContain("/ɪˈfemərəl/"); // front phonetic visible
+    expect(container.textContent).not.toContain("Fame is ephemeral."); // back example hidden
+    expect(container.textContent).not.toContain("transient");
+
+    act(() => card.click());
+    expect(card.getAttribute("data-face")).toBe("back");
+    expect(container.textContent).toContain("Fame is ephemeral."); // back example revealed
+    expect(container.textContent).toContain("transient");
+    expect(container.textContent).toContain("permanent");
+
+    act(() => root.unmount());
+    container.remove();
   });
 });
 

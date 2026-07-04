@@ -6,6 +6,7 @@
 // throw on a bad/foreign shape (they coerce defensively, like every other plugin).
 
 import type { NoteEditInput, NoteRenderInput } from "../../client/notes/noteTypeRegistry";
+import { FlipCard } from "../../client/notes/noteInteractive";
 import { Latex } from "../../client/notes/Latex";
 import type { KitNoteTypePlugin } from "../types";
 import type {
@@ -60,45 +61,57 @@ function VocabRender({ content, mode }: NoteRenderInput) {
       </div>
     );
   }
-  // FULL: the flip-card layout the flashcard full mode uses (front face ↔ back face),
-  // plus synonym/antonym chips. Deck nav across sibling vocab notes rides the D7
-  // siblings seam (N4) — not reinvented here.
+  // FULL is INTERACTIVE (N4-D7): the flip-card the flashcard full mode uses — the front
+  // (word + phonetic/pos) shows until the user flips it to the back (senses + examples +
+  // synonym/antonym chips), one face at a time via the shared <FlipCard>. This resolves
+  // the flip half of the old deferred siblings-seam comment; DECK NAV across sibling
+  // vocab notes stays DEFERRED (render() isn't handed sibling notes — that needs a new
+  // ctx sibling seam). Keeps the sv-vocab-* / sv-flashcard-* classes so CSS still matches.
   return (
     <div className="note-rendered sv-vocab sv-flashcard sv-flashcard-expanded">
-      <section className="sv-flashcard-face sv-vocab-front">
-        <span className="sv-flashcard-face-label">Front</span>
-        <p className="sv-vocab-word">{c.word || "(empty vocab)"}</p>
-        {c.phonetic || c.pos ? (
-          <p className="sv-vocab-meta">
-            {c.phonetic ? <span className="sv-vocab-phonetic">{c.phonetic}</span> : null}
-            {c.pos ? <span className="sv-vocab-pos">{c.pos}</span> : null}
-          </p>
-        ) : null}
-      </section>
-      <span className="sv-flashcard-swap" aria-hidden="true">
-        ↔
-      </span>
-      <section className="sv-flashcard-face sv-vocab-back">
-        <span className="sv-flashcard-face-label">Back</span>
-        <ol className="sv-vocab-senses">
-          {(c.senses.length ? c.senses : [{ definition: "(no senses)" }]).map((sense, i) => (
-            <li key={i} className="sv-vocab-sense">
-              <p className="sv-vocab-sense-def">{sense.definition}</p>
-              {"example" in sense && sense.example ? <p className="sv-vocab-sense-example">{sense.example}</p> : null}
-            </li>
-          ))}
-        </ol>
-        {c.synonyms?.length ? (
-          <p className="sv-vocab-chips sv-vocab-synonyms">
-            近义 {c.synonyms.map((w, i) => <span key={i} className="sv-vocab-chip">{w}</span>)}
-          </p>
-        ) : null}
-        {c.antonyms?.length ? (
-          <p className="sv-vocab-chips sv-vocab-antonyms">
-            反义 {c.antonyms.map((w, i) => <span key={i} className="sv-vocab-chip">{w}</span>)}
-          </p>
-        ) : null}
-      </section>
+      <FlipCard
+        className="sv-vocab-flip"
+        front={
+          <section className="sv-flashcard-face sv-vocab-front">
+            <span className="sv-flashcard-face-label">Front</span>
+            <p className="sv-vocab-word">{c.word || "(empty vocab)"}</p>
+            {c.phonetic || c.pos ? (
+              <p className="sv-vocab-meta">
+                {c.phonetic ? <span className="sv-vocab-phonetic">{c.phonetic}</span> : null}
+                {c.pos ? <span className="sv-vocab-pos">{c.pos}</span> : null}
+              </p>
+            ) : null}
+            <span className="sv-flashcard-swap" aria-hidden="true">
+              ↔
+            </span>
+          </section>
+        }
+        back={
+          <section className="sv-flashcard-face sv-vocab-back">
+            <span className="sv-flashcard-face-label">Back</span>
+            <ol className="sv-vocab-senses">
+              {(c.senses.length ? c.senses : [{ definition: "(no senses)" }]).map((sense, i) => (
+                <li key={i} className="sv-vocab-sense">
+                  <p className="sv-vocab-sense-def">{sense.definition}</p>
+                  {"example" in sense && sense.example ? (
+                    <p className="sv-vocab-sense-example">{sense.example}</p>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
+            {c.synonyms?.length ? (
+              <p className="sv-vocab-chips sv-vocab-synonyms">
+                近义 {c.synonyms.map((w, i) => <span key={i} className="sv-vocab-chip">{w}</span>)}
+              </p>
+            ) : null}
+            {c.antonyms?.length ? (
+              <p className="sv-vocab-chips sv-vocab-antonyms">
+                反义 {c.antonyms.map((w, i) => <span key={i} className="sv-vocab-chip">{w}</span>)}
+              </p>
+            ) : null}
+          </section>
+        }
+      />
     </div>
   );
 }
