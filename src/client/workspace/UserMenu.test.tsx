@@ -86,7 +86,7 @@ describe("UserMenu", () => {
     await openMenu();
 
     const ids = Array.from(container.querySelectorAll(".shell-menu-item")).map((el) => el.getAttribute("data-entry-id"));
-    expect(ids).toEqual(["settings", "plugins", "profile", "share", "account", "onboarding", "about"]);
+    expect(ids).toEqual(["settings", "plugins", "profile", "share", "account", "onboarding", "feedback", "about"]);
 
     const account = container.querySelector<HTMLButtonElement>('[data-entry-id="account"]')!;
     expect(account.disabled).toBe(true);
@@ -122,6 +122,29 @@ describe("UserMenu", () => {
       { type: "onboarding", open: true },
       { type: "pane", kind: "settings.hub" }
     ]);
+  });
+
+  it("反馈问题 opens the GitHub issues URL in a new tab/external browser and closes the menu", async () => {
+    const opened: Array<{ url: string; target: string | undefined }> = [];
+    const originalOpen = window.open;
+    (window as { open: unknown }).open = (url?: string | URL, target?: string) => {
+      opened.push({ url: String(url), target });
+      return null;
+    };
+    try {
+      await renderMenu();
+      await openMenu();
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>('[data-entry-id="feedback"]')!.click();
+      });
+      expect(opened).toEqual([
+        { url: "https://github.com/tingxia1028/growHTML/issues", target: "_blank" }
+      ]);
+      expect(container.querySelector(".shell-menu-pop")).toBeNull(); // closed after acting
+      expect(targets).toEqual([]); // no shell-nav dispatch — it is an external link
+    } finally {
+      window.open = originalOpen;
+    }
   });
 
   it("Esc closes the popover and restores focus to the trigger", async () => {

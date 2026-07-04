@@ -19,3 +19,21 @@ export function resolveStartUrl(env: NodeJS.ProcessEnv, serverUrl: string): stri
 export function resolveClientDir(env: NodeJS.ProcessEnv, dirname: string, join: (...parts: string[]) => string): string | undefined {
   return isDevMode(env) ? undefined : join(dirname, "..", "dist");
 }
+
+// Where the study vault lives (X1). Returns an EXPLICIT override root, or
+// undefined to keep openVault's default resolution:
+//   - STUDY_VAULT_ROOT env always wins (openVault already resolves it) → undefined
+//   - unpackaged (dev / `npm run electron` from the repo) → undefined, which keeps
+//     the historical cwd-relative `data/vault`
+//   - packaged install → `<userData>/vault` — the install dir is not writable and
+//     is not where a user's study data belongs.
+export function resolveVaultRoot(
+  env: NodeJS.ProcessEnv,
+  isPackaged: boolean,
+  userDataDir: string,
+  join: (...parts: string[]) => string
+): string | undefined {
+  if (env.STUDY_VAULT_ROOT) return undefined;
+  if (!isPackaged) return undefined;
+  return join(userDataDir, "vault");
+}

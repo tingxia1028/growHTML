@@ -8,6 +8,8 @@
 //                   分享/导入 dialogs (svpackViews) — the identity/roster surfaces
 //   账户/积分     → DISABLED with tooltip until G-A3b (managed login + balance)
 //   帮助/新手引导 → reopen the SHELL-2 onboarding checklist (center view)
+//   反馈问题      → GitHub issues via window.open (desktop's window-open handler
+//                   routes _blank to shell.openExternal; web opens a tab) (X1)
 //   关于          → the Settings Hub (its 关于 section carries version + 检查更新 stub)
 // Display name = the local Tier-A svpack identity when present, else 本地用户.
 // Accessible: Esc closes, focus enters the menu on open (minimal trap: Tab cycles),
@@ -18,6 +20,7 @@ import { navigateShell } from "./shellNav";
 import { getUserMenuIo } from "./userMenuIo";
 
 const LOCAL_USER_NAME = "本地用户";
+const FEEDBACK_ISSUES_URL = "https://github.com/tingxia1028/growHTML/issues";
 
 type MenuEntry = {
   id: string;
@@ -107,6 +110,14 @@ export function UserMenu() {
     },
     { id: "account", label: "账户/积分", disabled: true, title: "等待托管上线" },
     { id: "onboarding", label: "帮助/新手引导", action: () => navigateShell({ type: "onboarding", open: true }) },
+    {
+      id: "feedback",
+      label: "反馈问题",
+      title: "在 GitHub 上提交 issue(浏览器打开)",
+      action: () => {
+        window.open(FEEDBACK_ISSUES_URL, "_blank", "noopener");
+      }
+    },
     {
       id: "about",
       label: version ? `关于 · v${version}` : "关于",

@@ -12,6 +12,12 @@ export type StartServerOptions = {
   /** Directory of the built client to serve (single-origin app). */
   clientDir?: string;
   /**
+   * Vault root override. Default (undefined) keeps openVault's resolution:
+   * STUDY_VAULT_ROOT env, else cwd-relative data/vault. The packaged desktop
+   * app passes `<userData>/vault` here (X1) — an install dir is not writable.
+   */
+  vaultRoot?: string;
+  /**
    * App-level AI provider config home (ai-providers.json + key blobs). Defaults
    * to ~/.growte — the real entry points (CLI server, Electron main) always get
    * stored provider config; unit tests build createApp directly and inject.
@@ -30,7 +36,7 @@ export type StartedServer = {
 // Reused by the CLI entry (`src/server/index.ts`) and the Electron main process.
 export async function startServer(options: StartServerOptions = {}): Promise<StartedServer> {
   const host = options.host ?? "127.0.0.1";
-  const vault = await openVault();
+  const vault = await openVault({ rootDir: options.vaultRoot });
   // Backfill the owned-layer membership for any pre-Study-Layer anchors/notes.
   await migrateStudyLayers(vault);
   // MEM-2 app-start consolidation pass (learner-memory §4): roll captured events into

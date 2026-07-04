@@ -1,7 +1,9 @@
 import path from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell } from "electron";
+import log from "electron-log/main";
 import { startServer, type StartedServer } from "../src/server/start";
-import { DEV_SERVER_URL, isDevMode } from "./shell";
+import { getDefaultVaultRoot } from "../src/core/vault";
+import { DEV_SERVER_URL, isDevMode, resolveVaultRoot } from "./shell";
 import { registerPtyBridge } from "./pty-bridge";
 
 let started: StartedServer | null = null;
@@ -9,6 +11,11 @@ let mainWindow: BrowserWindow | null = null;
 
 app.setName("Growte");
 if (process.platform === "win32") app.setAppUserModelId("com.growte.desktop");
+
+// Main-process file log (X1): <userData>/logs/main.log — the packaged app has no
+// console, so boot info (server URL, vault root) and updater events land here.
+log.initialize();
+log.errorHandler.startCatching();
 
 function loadAppIcon() {
   const iconPath = app.isPackaged
@@ -28,8 +35,27 @@ async function resolveStartUrl(): Promise<string> {
     return process.env.ELECTRON_DEV_URL ?? DEV_SERVER_URL;
   }
   // Prod: boot the single-origin server that also serves the bundled client.
-  started = await startServer({ port: 0, clientDir: path.join(__dirname, "..", "dist") });
+  // Vault root: packaged → <userData>/vault; unpackaged (repo) → data/vault as
+  // before; STUDY_VAULT_ROOT env always wins (resolved inside openVault).
+  const vaultRoot =
+    resolveVaultRoot(process.env, app.isPackaged, app.getPath("userData"), path.join) ?? getDefaultVaultRoot();
+  started = await startServer({ port: 0, clientDir: path.join(__dirname, "..", "dist"), vaultRoot });
+  log.info(`[boot] Growte ${app.getVersion()} server ${started.url} vault ${vaultRoot}`);
   return started.url;
+}
+
+// electron-updater against GitHub Releases (X1): packaged builds only — the dev
+// tree has no app-update.yml. checkForUpdatesAndNotify shows the native toast
+// when a release is downloaded; every failure is logged and NEVER blocks boot.
+async function checkForUpdates() {
+  if (!app.isPackaged) return;
+  try {
+    const { autoUpdater } = await import("electron-updater");
+    autoUpdater.logger = log;
+    await autoUpdater.checkForUpdatesAndNotify();
+  } catch (error) {
+    log.warn("[updater] check failed (non-fatal):", error);
+  }
 }
 
 async function createWindow() {
@@ -138,8 +164,12 @@ app
     registerPtyBridge(() => mainWindow);
     return createWindow();
   })
+  .then(() => {
+    // Fire-and-forget: the window is already up; update errors only log.
+    void checkForUpdates();
+  })
   .catch((error) => {
-    console.error("Failed to start AI Study Vault:", error);
+    log.error("Failed to start AI Study Vault:", error);
     app.quit();
   });
 

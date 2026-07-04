@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { DEV_SERVER_URL, isDevMode, resolveClientDir, resolveStartUrl } from "./shell";
+import { DEV_SERVER_URL, isDevMode, resolveClientDir, resolveStartUrl, resolveVaultRoot } from "./shell";
 
 describe("electron shell helpers", () => {
   it("detects dev mode from ELECTRON_DEV or a --dev argv flag", () => {
@@ -22,5 +22,16 @@ describe("electron shell helpers", () => {
   it("serves the bundled client dir in prod and nothing in dev", () => {
     expect(resolveClientDir({}, "/app/dist-electron", path.posix.join)).toBe("/app/dist");
     expect(resolveClientDir({ ELECTRON_DEV: "1" }, "/app/dist-electron", path.posix.join)).toBeUndefined();
+  });
+
+  it("puts the vault under userData when packaged; env override and dev keep the default resolution", () => {
+    // Packaged install → <userData>/vault (the install dir is not for user data).
+    expect(resolveVaultRoot({}, true, "/Users/a/AppData/Roaming/Growte", path.posix.join)).toBe(
+      "/Users/a/AppData/Roaming/Growte/vault"
+    );
+    // STUDY_VAULT_ROOT always wins — undefined defers to openVault's env resolution.
+    expect(resolveVaultRoot({ STUDY_VAULT_ROOT: "D:/my-vault" }, true, "/x", path.posix.join)).toBeUndefined();
+    // Unpackaged (dev / repo `npm run electron`) keeps the cwd-relative data/vault.
+    expect(resolveVaultRoot({}, false, "/x", path.posix.join)).toBeUndefined();
   });
 });

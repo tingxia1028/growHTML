@@ -13,7 +13,7 @@ One dependency-ordered plan over the six design docs written this cycle. Purpose
 | `ai-workspace.md` | AI chat sessions + file/note attachments + doc synthesis | W1 · W2 · W3 |
 | `multi-provider-ai-agent.md` (+§9) | BYOK 多厂商 + `cli-agent` kind (claude/codex 官方 SDK) + agent loop | A1 · A2 · A3 · A4 |
 | `managed-ai-credits.md` (+§10) | 托管网关 + 积分 + 月费/AI Group 档位 | G-A · G-B · G-C (external-gated) |
-| `multi-platform.md` | macOS/Android/iOS + 打包发布流水线 (Capacitor 共享核心) | X0 · X1 · X2 · X3 · X4 |
+| `multi-platform.md` | macOS/Android/iOS + 打包发布流水线 (Capacitor 共享核心) | X0 · X1 ✅(Win) · X2 · X3 · X4 |
 | `learner-memory.md` | 分级记忆(短/中长/长期+画像): 机制=core, taxonomy=kit 注册 | MEM-1 · MEM-2 · MEM-3 |
 | `slash-composer.md` | `/类型` 通用生成入口(chat+toolbar, AI/手敲双模, 类型注册表驱动) | SC-0 · SC-1 · SC-2 · SC-3 |
 | `source-authoring.md` | Library "+"新建(md/html/…)+ 源编辑 + 纯编辑模式 + 补丁 apply 引擎 | SRC-1 · SRC-2 · SRC-3 · SRC-4 |
@@ -113,7 +113,7 @@ Concept P-C1 (aggregation page, additive to existing API) ──> P-C2 (graph vi
 - **Reader-gated batch** (when the concurrent reader session settles, as ONE coordinated window): **F3 (D1 adapter) ✅ shipped (F3-D1-001) → N1 (D2+D5 — fixes "AI note 丢右栏"; still pending, now sits directly on the landed adapter's `rectsFor.first/.last`) → N5 (D10+D11 note 钉住+导出) → N2 (D4+D3, F6 rides D4b)** · SC-1/SC-2 · **M-A chip mount** (`KitForegroundChipHost` one-liner in the reader toolbar — subject-kits.md §7) · A3b/A4b · G-A3b · SRC-2 · MEM 的 source-open capture.
 
 **P3 — platform & business (necessary; never ahead of the loop):**
-- **X1** desktop packaging (needs the user's Apple Developer account) → **X2** mobile shell → **X3** distribution (软著/ICP ride the license track) → **X4** release train.
+- **X1 ✅ (Win)** desktop packaging shipped 2026-07-04 (X1-001 — NSIS x64 installer via electron-builder; server fully esbuild-bundled into main.cjs, shipped node_modules = node-pty + claude-agent-sdk only; packaged vault at `userData/vault`; electron-updater GitHub-Releases feed + electron-log file log + UserMenu 反馈问题; see docs/design/packaging.md. **macOS deferred** pending the Apple Developer account) → **X2** mobile shell → **X3** distribution (软著/ICP ride the license track) → **X4** release train.
 - **G real adapters** (WeChat Native/aliyun SMS/moderation/备案 — the 个体工商户 chain).
 - **W2/W3** · **M3** · **F1≡P-A1 → P-A2 → P-B** · **P-C1** · **MCP** (server = thin exporter over the A4a tool registry, privacy-gated; client = external tools — interop/reach, NOT a generation improver).
 - **MH-1 → MH-3 hosted marketplace** (marketplace-hosted.md): web storefront + catalog API + entitlements over the G-gateway; 笔记市场 = the deferred svpack server tier; 插件市场 = data-only plugins (no code sandbox). Client side needs only M1's `CatalogSource` seam (MH-0 ✅ shipped `cfcc48c`).

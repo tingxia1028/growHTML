@@ -1,0 +1,68 @@
+# X1 — Windows desktop packaging (docs/design/packaging.md).
+# Strategy: the main process (dist-electron/main.cjs) is a FULL esbuild bundle of
+# electron/main.ts + the Express server + all pure-JS deps, so the package ships
+# almost no node_modules. `dependencies` in package.json is deliberately reduced
+# to the ONLY packages that must exist as real on-disk modules at runtime:
+#   - node-pty                      native N-API binaries (lazy-imported; terminal
+#                                   feature is hidden/deferred — a load failure
+#                                   degrades that feature only, never boot)
+#   - @anthropic-ai/claude-agent-sdk spawns its vendored cli.js relative to its own
+#                                   package dir (bundling would break that path)
+# electron-builder ships exactly the production deps + transitives; everything
+# else (react/express/mermaid/…) is a devDependency consumed by vite/esbuild.
+# NOT shipped: @openai/codex-sdk — its @openai/codex dependency vendors a 308MB
+# codex.exe; the codex provider degrades to a clear import error if selected.
+appId: com.growte.desktop
+productName: Growte
+directories:
+  output: release
+asar: true
+# Native .node binaries cannot load from inside an asar, and the claude SDK
+# spawns a real file (cli.js) — both must live unpacked.
+asarUnpack:
+  - node_modules/node-pty/**
+  - node_modules/@anthropic-ai/claude-agent-sdk/**
+# node-pty 1.x ships N-API prebuilds (ABI-stable across Node/Electron) under
+# prebuilds/<platform>-<arch>; its loader falls back to them when build/ is
+# absent. No toolchain needed at package time.
+npmRebuild: false
+# Package from a local, version-pinned electron dist instead of downloading a
+# zip: the extract→rename step EPERMs on this machine (a directory-handle
+# holder), a plain copy is reliable. scripts/prep-electron-dist.cjs stages a
+# clean copy of node_modules/electron/dist here (minus the dev launcher's
+# Growte.exe branding cache) before every dist run.
+electronDist: node_modules/.cache/growte-electron/dist-stage
+files:
+  - dist/**
+  - dist-electron/**
+  - package.json
+  # node-pty: keep lib/ + the win32-x64 prebuilds; drop sources, gyp build
+  # artifacts (~140MB of obj/pdb), other-platform prebuilds and debug symbols.
+  - "!node_modules/node-pty/{build,deps,src,scripts,third_party,typings}/**"
+  - "!node_modules/node-pty/lib/*.test.js"
+  - "!node_modules/node-pty/lib/*.map"
+  - "!node_modules/node-pty/prebuilds/{darwin-x64,darwin-arm64,linux-x64,linux-arm64,win32-arm64}/**"
+  - "!node_modules/node-pty/prebuilds/**/*.pdb"
+# The window icon load in electron/main.ts expects <resources>/assets/… when
+# packaged; the exe/installer icon below is embedded separately by the builder.
+extraResources:
+  - from: electron/assets
+    to: assets
+win:
+  icon: electron/assets/growte-anchor.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+# Update feed for electron-updater (checked on boot in packaged builds).
+# Publishing is MANUAL for now: `npx electron-builder --win --x64 --publish always`
+# with GH_TOKEN set, or upload release/*.exe + release/latest.yml to a GitHub
+# Release by hand. See docs/design/packaging.md.
+publish:
+  provider: github
+  owner: tingxia1028
+  repo: growHTML
