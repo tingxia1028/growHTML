@@ -1,0 +1,160 @@
+/* Library pane redesign (LIB-2) — scoped styles for the NEW chrome only (header
+   search/refresh/+, collapsible registry sections, count badges, type filter chips,
+   + menu groups). Row/tree/popover styling reuses the existing `.source-item`,
+   `.folder-tree-host`, `.panel-menu-*` rules; styles.css is contended by the parallel
+   UI session, so everything LIB-2 adds lives here. */
+
+/* —— header: title · search (SEARCH-1 seam) · refresh · the one + ————————————— */
+
+.library-head .library-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid #e3e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--sv-text);
+  font-size: 12px;
+  line-height: 24px;
+}
+
+.library-head .library-search:focus {
+  outline: none;
+  border-color: #c8d8f2;
+}
+
+.library-head .library-search::placeholder {
+  color: var(--sv-text-faint);
+}
+
+.library-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #596373;
+  cursor: pointer;
+}
+
+.library-icon-btn:hover {
+  background: var(--sv-surface-muted);
+  color: var(--sv-text);
+}
+
+/* —— body: stacked collapsible sections —————————————————————————————————————— */
+
+.library-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.library-sections .library-section {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+.library-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.library-section-toggle:hover {
+  color: var(--sv-text);
+}
+
+.library-section-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--sv-surface-muted);
+  color: var(--sv-text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.library-section.collapsed .library-section-head {
+  padding-bottom: 0;
+}
+
+.library-empty {
+  padding: 2px 2px 4px;
+  font-size: 12px;
+  color: var(--sv-text-faint);
+}
+
+/* —— 文档: type filter chips ————————————————————————————————————————————————— */
+
+.library-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 0 2px 8px;
+}
+
+.library-chip {
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid #e3e8f0;
+  border-radius: 11px;
+  background: #ffffff;
+  color: #596373;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.library-chip:hover {
+  border-color: #d8e4f8;
+  background: #f7faff;
+}
+
+.library-chip.active {
+  border-color: var(--sv-accent-text);
+  background: var(--sv-accent-text);
+  color: #ffffff;
+}
+
+/* —— the + menu: registry groups ————————————————————————————————————————————— */
+
+.library-add-group {
+  display: grid;
+  gap: 2px;
+}
+
+.library-add-group + .library-add-group {
+  margin-top: 4px;
+}
+
+.library-add-web {
+  display: grid;
+  gap: 4px;
+}

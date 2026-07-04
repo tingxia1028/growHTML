@@ -850,10 +850,43 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [loadSources]
   );
 
+  // The path half of the .xmind import (server unzip+parse → markmap outline parked in
+  // the generation preview). Split from the dialog so the ONE Library 文件… picker can
+  // route an already-picked path here (LIB-2 folds .xmind into the unified file import).
+  const importXmindFromPath = useCallback(
+    async (filePath: string) => {
+      setStatus("saving");
+      setError("");
+      try {
+        const anchor = await focus.materializeAnchor();
+        const result = await entityClient.importXmind(filePath);
+        setPendingDraft({
+          promptId: "",
+          contentType: result.contentType,
+          input: {},
+          content: result.content,
+          anchorId: anchor?.id,
+          sourceId: activeSourceId || undefined,
+          classified: true
+        });
+        setStatus("idle");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to import .xmind");
+        setStatus("error");
+      }
+    },
+    [focus, activeSourceId]
+  );
+
+  // ONE file picker for every importable file (LIB-2): .xmind routes to the mind-map
+  // import above, everything else ingests as a source. The native dialog has no
+  // extension filter, so the split happens here by extension.
   const openFileDialog = useCallback(async () => {
     const filePath = await window.studyVault?.openFile?.();
-    if (filePath) await openLocalFile(filePath);
-  }, [openLocalFile]);
+    if (!filePath) return;
+    if (/\.xmind$/i.test(filePath)) await importXmindFromPath(filePath);
+    else await openLocalFile(filePath);
+  }, [openLocalFile, importXmindFromPath]);
 
   const openFolderDialog = useCallback(async () => {
     const dir = await window.studyVault?.pickDirectory?.();
@@ -1157,35 +1190,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     void dispatch("anchor.ask-ai", { text: lastUser.content });
   }, [chatMessages, dispatch]);
 
-  // .xmind import (adaptive-note-forms Phase 4 item 3). Open a native file dialog,
-  // ask the server to unzip+parse the .xmind into a markmap OUTLINE, and park the
-  // result in the SAME preview/save loop every other generated note uses — so the
-  // user previews the interactive mind-map (rendered via the existing `markmap`
-  // plugin) before saving. The contentType comes from the SERVER response (the
-  // already-registered `markmap`), never a host literal — no new renderer, no bypass.
+  // .xmind import (adaptive-note-forms Phase 4 item 3). Open a native file dialog and
+  // delegate to importXmindFromPath (defined next to openFileDialog above, which also
+  // routes picked .xmind paths there — LIB-2's ONE 文件… picker). The parsed markmap
+  // parks in the SAME preview/save loop every other generated note uses; contentType
+  // comes from the SERVER response, never a host literal — no new renderer, no bypass.
   const importXmindFile = useCallback(async () => {
     const filePath = await window.studyVault?.openFile?.();
     if (!filePath) return;
-    setStatus("saving");
-    setError("");
-    try {
-      const anchor = await focus.materializeAnchor();
-      const result = await entityClient.importXmind(filePath);
-      setPendingDraft({
-        promptId: "",
-        contentType: result.contentType,
-        input: {},
-        content: result.content,
-        anchorId: anchor?.id,
-        sourceId: activeSourceId || undefined,
-        classified: true
-      });
-      setStatus("idle");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to import .xmind");
-      setStatus("error");
-    }
-  }, [focus, activeSourceId]);
+    await importXmindFromPath(filePath);
+  }, [importXmindFromPath]);
 
   const changePatchStatus = useCallback(
     async (patch: PatchRecord, nextStatus: "applied" | "reverted" | "rejected") => {

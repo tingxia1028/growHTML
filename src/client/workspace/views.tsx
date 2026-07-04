@@ -9,25 +9,36 @@
 // Client-backed) — never with each other. Importing the plugins module runs the
 // `registerView` calls below.
 
+import { useState } from "react";
 import {
+  ChevronDown,
+  ChevronRight,
   CornerDownLeft,
-  File,
   FileText,
-  FilePlus2,
-  FolderOpen,
   ListRestart,
   Loader2,
+  Plus,
   RefreshCcw,
   RotateCcw,
   Sparkles,
   TerminalSquare,
-  Trash2,
   X
 } from "lucide-react";
 import { TerminalPanel } from "../TerminalPanel";
-import { FileTree } from "../FileTree";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 import { PanelMenu } from "./PanelMenu";
+import { resolveText, t } from "../i18n";
+import { libraryMessages } from "./libraryMessages";
+import {
+  listLibraryAddActions,
+  listLibrarySections,
+  type LibraryAddGroup,
+  type LibrarySectionContext
+} from "./librarySections";
+// Side-effect import: seeds the core Library sections (最近/文档/文件夹) + the built-in
+// `+` actions into the Library registries (the same idiom as builtinNoteTypes below).
+import "./libraryBuiltins";
+import "./library.css";
 import { readerForSource } from "./readerForSource";
 import { BookmarkIndex } from "./BookmarkIndex";
 // Side-effect import: registers the 12 built-in client NoteType plugins so the note
@@ -47,169 +58,162 @@ import { VoiceInputButton } from "../speech/VoiceInputButton";
 // register their note types + domain language into the same registries.
 import "../../kits/clientKits";
 
-// —— library → the `.library-panel` aside. Reference IA: a clean header (`Library` +
-// a ⋯ actions menu) over the body. The body is the styled FileTree when a folderRoot is
-// set, else the restyled source list (web/e2e fallback). All the OLD chrome controls
-// (Refresh, Open File, Open Folder, Import .xmind, Import from URL/Open Live) are
-// relocated into the ⋯ menu — reachable, never removed.
+// —— library → the `.library-panel` aside, rebuilt per docs/design/library-redesign.md
+// (LIB-2, user-blessed layout): header = 资料库 title · a search input that filters
+// section items (the SEARCH-1 seam) · ONE unified `+` menu (registry-backed 导入/新建
+// groups); body = the registered LibrarySections (core seeds 最近/文档/文件夹; kits may
+// add views over the same sources). Every section is collapsible (persisted), shows a
+// count badge, and renders one guidance line when empty. Refresh lives as a subtle icon
+// next to search. All strings go through the I18N seed — no hardcoded literals.
+
+const LIBRARY_COLLAPSED_KEY = "sv-library-collapsed";
+
+function readCollapsedSections(): Record<string, boolean> {
+  try {
+    const raw = globalThis.localStorage?.getItem(LIBRARY_COLLAPSED_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, boolean>) : {};
+  } catch {
+    return {};
+  }
+}
+
+// The ONE `+`: renders the LibraryAddAction registry as its two groups. A group header
+// renders only when the group has actions (新建 disappears if nothing registered one).
+// Custom-bodied actions (网页's inline URL input) render their own node; plain actions
+// are one-shot `.panel-menu-item` buttons (PanelMenu closes after them). Desktop-only
+// items grey out on web with the registered hint, plus the existing pane-level hint line.
+function LibraryAddMenu({ ctx }: { ctx: WorkspaceContext }) {
+  const actions = listLibraryAddActions();
+  const groups: Array<{ id: LibraryAddGroup; title: string }> = [
+    { id: "import", title: t(libraryMessages.groupImport) },
+    { id: "create", title: t(libraryMessages.groupCreate) }
+  ];
+  const visibleGroups = groups
+    .map((group) => ({ ...group, items: actions.filter((action) => action.group === group.id) }))
+    .filter((group) => group.items.length > 0);
+
+  return (
+    <PanelMenu label={t(libraryMessages.add)} icon={<Plus size={16} />}>
+      {visibleGroups.map((group, index) => (
+        <div key={group.id} className="library-add-group" data-add-group={group.id}>
+          {index > 0 ? <div className="panel-menu-sep" /> : null}
+          <div className="panel-menu-label">{group.title}</div>
+          {group.items.map((action) => {
+            if (action.render) {
+              return (
+                <div key={action.id} className="library-add-custom" data-add-action={action.id}>
+                  {action.render(ctx)}
+                </div>
+              );
+            }
+            const disabled = action.disabled?.(ctx) ?? false;
+            return (
+              <button
+                key={action.id}
+                className="panel-menu-item"
+                type="button"
+                data-add-action={action.id}
+                disabled={disabled}
+                title={disabled && action.disabledHint ? resolveText(action.disabledHint) : resolveText(action.title)}
+                onClick={() => void action.run(ctx)}
+              >
+                {action.icon}
+                {resolveText(action.title)}
+              </button>
+            );
+          })}
+        </div>
+      ))}
+      {!ctx.canOpenLocal ? <div className="panel-menu-hint">{t(libraryMessages.desktopOnlyHint)}</div> : null}
+    </PanelMenu>
+  );
+}
+
 function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
-  const {
-    loadSources,
-    canOpenLocal,
-    openFileDialog,
-    openFolderDialog,
-    folderRoots,
-    closeFolderRoot,
-    openLocalFile,
-    activeFilePath,
-    recentSources,
-    activeSourceId,
-    setActiveSourceId,
-    deleteSourceItem,
-    importUrl,
-    setImportUrl,
-    importFromUrl,
-    openLiveUrl,
-    importXmindFile
-  } = ctx;
+  const [query, setQuery] = useState("");
+  const [collapsedMap, setCollapsedMap] = useState<Record<string, boolean>>(readCollapsedSections);
+
+  const toggleSection = (id: string) => {
+    setCollapsedMap((previous) => {
+      const next = { ...previous, [id]: !previous[id] };
+      try {
+        globalThis.localStorage?.setItem(LIBRARY_COLLAPSED_KEY, JSON.stringify(next));
+      } catch {
+        // Persistence is best-effort; the in-memory toggle still applies.
+      }
+      return next;
+    });
+  };
+
+  const sectionCtx: LibrarySectionContext = { workspace: ctx, query: query.trim().toLowerCase() };
 
   return (
     <aside className="library-panel">
       <div className="library-head">
-        <h1 className="library-title">Library</h1>
-        <PanelMenu label="Library actions">
-          <button className="panel-menu-item" type="button" onClick={() => void loadSources()}>
-            <RefreshCcw size={15} />
-            Refresh
-          </button>
-          <button
-            className="panel-menu-item"
-            type="button"
-            onClick={() => void openFileDialog()}
-            disabled={!canOpenLocal}
-            title={canOpenLocal ? "Open a local file" : "Desktop app only"}
-          >
-            <File size={15} />
-            Open File
-          </button>
-          <button
-            className="panel-menu-item"
-            type="button"
-            onClick={() => void openFolderDialog()}
-            disabled={!canOpenLocal}
-            title={canOpenLocal ? "Open a folder as a file tree" : "Desktop app only"}
-          >
-            <FolderOpen size={15} />
-            Open Folder
-          </button>
-          <button
-            className="panel-menu-item"
-            type="button"
-            onClick={() => void importXmindFile()}
-            disabled={!canOpenLocal}
-            title={canOpenLocal ? "Import a .xmind mind map (→ markmap note)" : "Desktop app only"}
-          >
-            <FilePlus2 size={15} />
-            Import .xmind
-          </button>
-          {!canOpenLocal ? <div className="panel-menu-hint">File/folder open is desktop-only.</div> : null}
-          <div className="panel-menu-sep" />
-          <div className="panel-menu-label">Import from URL</div>
-          <input
-            className="panel-menu-input"
-            value={importUrl}
-            placeholder="https://…"
-            onChange={(event) => setImportUrl(event.target.value)}
-          />
-          <button className="panel-menu-item" type="button" onClick={() => void importFromUrl()}>
-            <FilePlus2 size={15} />
-            Fetch URL
-          </button>
-          <button className="panel-menu-item" type="button" onClick={() => void openLiveUrl()}>
-            <FilePlus2 size={15} />
-            Open Live
-          </button>
-        </PanelMenu>
+        <h1 className="library-title">{t(libraryMessages.title)}</h1>
+        {/* SEARCH-1 mounts here — the Cmd+K palette will replace/feed this input. */}
+        <input
+          className="library-search"
+          type="search"
+          value={query}
+          placeholder={t(libraryMessages.searchPlaceholder)}
+          aria-label={t(libraryMessages.searchPlaceholder)}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <button
+          className="library-icon-btn"
+          type="button"
+          title={t(libraryMessages.refresh)}
+          aria-label={t(libraryMessages.refresh)}
+          onClick={() => void ctx.loadSources()}
+        >
+          <RefreshCcw size={14} />
+        </button>
+        <LibraryAddMenu ctx={ctx} />
       </div>
 
-      <div className="library-body library-body-split">
-        <section
-          className={`library-section library-section-open${folderRoots.length > 0 ? " has-folders" : ""}`}
-          aria-label="Folders"
-        >
-          <div className="library-section-head">
-            <span>Folders</span>
-            <button
-              className="library-section-action"
-              type="button"
-              onClick={() => void openFolderDialog()}
-              disabled={!canOpenLocal}
-              title={canOpenLocal ? "Open a folder as a file tree" : "Desktop app only"}
+      <div className="library-body library-sections">
+        {listLibrarySections().map((section) => {
+          const count = section.count(sectionCtx);
+          const isCollapsed = !!collapsedMap[section.id];
+          return (
+            <section
+              key={section.id}
+              className={`library-section${isCollapsed ? " collapsed" : ""}`}
+              data-section-id={section.id}
+              aria-label={resolveText(section.title)}
             >
-              <FolderOpen size={14} />
-              <span>Open</span>
-            </button>
-          </div>
-
-          <div className="open-folder-list">
-            {folderRoots.length > 0 ? (
-              folderRoots.map((root) => (
-                <div className="folder-tree-host" key={root}>
-                  <button
-                    className="folder-tree-close"
-                    type="button"
-                    onClick={() => closeFolderRoot(root)}
-                    title="Close folder"
-                    aria-label="Close folder"
-                  >
-                    <X size={14} />
-                  </button>
-                  <FileTree root={root} onOpenFile={(filePath) => void openLocalFile(filePath)} activePath={activeFilePath} />
-                </div>
-              ))
-            ) : null}
-          </div>
-        </section>
-
-        <section className="library-section library-section-recent" aria-label="Recent Read">
-          <div className="library-section-head">
-            <span>Recent Read</span>
-          </div>
-
-          <div className="source-list recent-source-list">
-            {recentSources.map((source) => (
-              <div
-                key={source.id}
-                className={`source-item${source.id === activeSourceId ? " active" : ""}`}
-                title={[
-                  source.title,
-                  `Type: ${source.sourceType}`,
-                  source.metadata?.originalPath ? `Path: ${source.metadata.originalPath}` : `ID: ${source.id}`
-                ].join("\n")}
-              >
-                <button className="source-item-open" type="button" onClick={() => setActiveSourceId(source.id)}>
-                  <File size={15} className="source-item-icon" />
-                  <span className="source-item-text">
-                    <span>{source.title}</span>
-                    <small>{source.sourceType} · {source.id}</small>
-                  </span>
-                </button>
+              <div className="library-section-head">
                 <button
-                  className="source-item-delete"
+                  className="library-section-toggle"
                   type="button"
-                  title="Remove this document"
-                  aria-label="Remove this document"
-                  onClick={() => void deleteSourceItem(source.id, source.title)}
+                  aria-expanded={!isCollapsed}
+                  title={t(isCollapsed ? libraryMessages.expandSection : libraryMessages.collapseSection)}
+                  onClick={() => toggleSection(section.id)}
                 >
-                  <Trash2 size={15} />
+                  {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                  <span>{resolveText(section.title)}</span>
+                  <span className="library-section-count">{count}</span>
                 </button>
               </div>
-            ))}
-            {recentSources.length === 0 ? <div className="empty-state">No recent reads yet.</div> : null}
-          </div>
-        </section>
+              {!isCollapsed
+                ? count === 0
+                  ? (
+                      <div className="empty-state library-empty">
+                        {sectionCtx.query
+                          ? t(libraryMessages.noMatches)
+                          : section.emptyText
+                            ? resolveText(section.emptyText)
+                            : t(libraryMessages.noMatches)}
+                      </div>
+                    )
+                  : section.render(sectionCtx)
+                : null}
+            </section>
+          );
+        })}
       </div>
-
     </aside>
   );
 }

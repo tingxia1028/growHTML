@@ -1,5 +1,15 @@
 # Library Redesign — 统一加号 + 内容分区 (LIB-2)
 
+> **Status: ✅ SHIPPED (LIB-2-001, 2026-07-04).** LibraryView rebuilt per §1–§3: registry pair
+> `src/client/workspace/librarySections.tsx` (`LibrarySection` + `LibraryAddAction`, core-seeded
+> from `libraryBuiltins.tsx` via side-effect import), scoped `library.css`, minimal typed I18N
+> seed `src/client/i18n` (zh default + full en; provider/persistence = I18N-1). **新建 resolved
+> to:** 文档… wired MINIMALLY over the EXISTING `POST /api/sources/html` ingest (seeded HTML doc,
+> opens on create) — the markdown blank-create templates + 纯编辑模式 remain SRC-1/2
+> (source-authoring.md) and will ride this same registry-backed 新建 group. **.xmind folded into
+> the ONE 文件… picker** (extension routing inside `openFileDialog`; no separate menu item).
+> Search input = client-side section-title filter with the SEARCH-1 mount seam commented.
+
 User decision (2026-07-04, layout blessed): the Library pane holds many content kinds now —
 give it ONE unified `+` entry for adding anything, and partition the list into content
 sections instead of the current Folders-only body. Current state (`views.tsx` LibraryView):
