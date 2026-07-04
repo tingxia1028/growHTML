@@ -23,8 +23,8 @@ export const kitContentSpecs: NoteContentSpec[] = [
 ];
 export const kitPrompts: KitPrompt[] = [...textbookPrompts, ...subjectPrompts];
 export const kitLayerPolicies: KitLayerPolicy[] = [textbookLayerPolicy];
-// Subject Auto-Switch tables (M-A) — one per kit; M-B adds the shipped subject kits'
-// (英语/数学/史地 — subject-kits.md §3.3); 语文/理化生 follow with M-C.
+// Subject Auto-Switch tables (M-A) — one per kit; M-B adds 英语/数学/史地, M-C adds
+// 语文/理化生 (subject-kits.md §3.3). All five ride `subjectDetectionTables`.
 export const kitDetectionTables: KitDetectionTable[] = [textbookDetection, ...subjectDetectionTables];
 
 export type { ProductKit, KitInstallContext, KitLanguage } from "./types";

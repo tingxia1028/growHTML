@@ -230,6 +230,96 @@ const BUNDLED_CATALOG: CatalogEntry[] = [
     defaultInstalled: false,
     source: "bundled"
   },
+  // (b) subject M-C plugins (subject-kits.md M-C). Group-owned by the Textbook Kit's
+  // per-subject groups; `provides` powers providerOf() import prompts (§8.7).
+  {
+    id: "subject-derivation",
+    kind: "plugin",
+    name: "推导步骤 Derivation",
+    icon: "list-ordered",
+    description: "推导步骤:逐步 LaTeX 推导,每步可展开理由,结果高亮.",
+    author: "growte",
+    provides: ["subject.derivation"],
+    defaultInstalled: false,
+    source: "bundled"
+  },
+  {
+    id: "subject-theorem",
+    kind: "plugin",
+    name: "定理卡 Theorem",
+    icon: "scroll-text",
+    description: "定理卡:定理内容(LaTeX)+ 条件 + 证明(可折叠)+ 用法 + 用例.",
+    author: "growte",
+    provides: ["subject.theorem"],
+    defaultInstalled: false,
+    source: "bundled"
+  },
+  {
+    id: "subject-grammar",
+    kind: "plugin",
+    name: "语法点 Grammar",
+    icon: "languages",
+    description: "语法点:结构 + 含义 + 模板 + 例句 + 易错点(警示样式).",
+    author: "growte",
+    provides: ["subject.grammar"],
+    defaultInstalled: false,
+    source: "bundled"
+  },
+  {
+    id: "subject-excerpt",
+    kind: "plugin",
+    name: "摘抄赏析 Excerpt",
+    icon: "quote",
+    description: "摘抄赏析:名句引用 + 出处 + 修辞手法 + 主题 + 赏析.",
+    author: "growte",
+    provides: ["subject.excerpt"],
+    defaultInstalled: false,
+    source: "bundled"
+  },
+  {
+    id: "subject-argument",
+    kind: "plugin",
+    name: "论证结构 Argument",
+    icon: "scale",
+    description: "论证结构:图尔敏式论点/论据/推理/证据/反驳/结论树.",
+    author: "growte",
+    provides: ["subject.argument"],
+    defaultInstalled: false,
+    source: "bundled"
+  },
+  {
+    id: "subject-figure",
+    kind: "plugin",
+    name: "人物卡 Figure",
+    icon: "user-round",
+    description: "人物卡:时代/身份 + 事迹 + 作品 + 意义 + 人物关系.",
+    author: "growte",
+    provides: ["subject.figure"],
+    defaultInstalled: false,
+    source: "bundled"
+  },
+  {
+    id: "subject-cause-effect",
+    kind: "plugin",
+    name: "因果链 Cause-Effect",
+    icon: "waypoints",
+    description: "因果链:起因(按类别)→ 核心事件 → 结果(短期/长期).",
+    author: "growte",
+    provides: ["subject.cause-effect"],
+    defaultInstalled: false,
+    source: "bundled"
+  },
+  {
+    id: "subject-experiment",
+    kind: "plugin",
+    name: "实验记录 Experiment",
+    icon: "flask-conical",
+    description: "实验记录:目的/材料/编号步骤/现象/结论 + 安全提示(警示样式).",
+    author: "growte",
+    provides: ["subject.experiment"],
+    defaultInstalled: false,
+    source: "bundled"
+  },
   // (c) THE kit (FLAT §2 + §4): ONE Textbook Kit. The old 5 member plugins re-declare
   // as 5 capability groups; the old subject kits (english/math/history-geo — separate
   // kits only because of the old model) merge in as per-subject groups, opt-in like the
@@ -248,9 +338,20 @@ const BUNDLED_CATALOG: CatalogEntry[] = [
       "mistake",
       "review-pack",
       "textbook-language",
+      // subject M-B + M-C member plugins (the 11 subject types). Shared plugins
+      // (subject-excerpt/-figure/-formula) appear once here; group membership below
+      // encodes the multi-subject overlap (§8.5.2 refcount).
       "subject-vocab",
       "subject-formula",
-      "subject-timeline"
+      "subject-timeline",
+      "subject-derivation",
+      "subject-theorem",
+      "subject-grammar",
+      "subject-excerpt",
+      "subject-argument",
+      "subject-figure",
+      "subject-cause-effect",
+      "subject-experiment"
     ],
     groups: [
       { id: "explanation", name: { zh: "讲解", en: "Explanation" }, members: ["explanation"] },
@@ -262,25 +363,64 @@ const BUNDLED_CATALOG: CatalogEntry[] = [
         name: { zh: "教材词汇", en: "Textbook language" },
         members: ["textbook-language"]
       },
+      // Per-subject groups (subject-kits.md PART 2). members[] follow the doc's kit
+      // rows; shared plugins list under EVERY subject that includes them (groupOwnerOf
+      // resolves to the first — the plugin's "home" — for the detail page).
       {
         id: "subject-english",
         name: { zh: "英语", en: "English" },
-        description: { zh: "生词卡(音标/词性/释义/例句)", en: "Vocab cards (phonetics, senses, examples)" },
-        members: ["subject-vocab"],
+        description: {
+          zh: "生词卡 / 语法点 / 摘抄赏析",
+          en: "Vocab, grammar, and excerpt cards"
+        },
+        members: ["subject-vocab", "subject-grammar", "subject-excerpt"],
         defaultEnabled: false
       },
       {
         id: "subject-math",
         name: { zh: "数学", en: "Math" },
-        description: { zh: "公式卡(LaTeX + 变量表)", en: "Formula cards (LaTeX + variable table)" },
-        members: ["subject-formula"],
+        description: {
+          zh: "公式卡 / 推导步骤 / 定理卡 (LaTeX)",
+          en: "Formula, derivation, and theorem cards (LaTeX)"
+        },
+        members: ["subject-formula", "subject-derivation", "subject-theorem"],
         defaultEnabled: false
       },
       {
         id: "subject-history-geo",
         name: { zh: "史地", en: "History & Geo" },
-        description: { zh: "时间线(时间/事件/意义)", en: "Timelines (date, event, significance)" },
-        members: ["subject-timeline"],
+        description: {
+          zh: "时间线 / 人物卡 / 因果链",
+          en: "Timelines, figures, and cause-effect chains"
+        },
+        members: ["subject-timeline", "subject-figure", "subject-cause-effect"],
+        defaultEnabled: false
+      },
+      {
+        id: "subject-chinese",
+        name: { zh: "语文", en: "Chinese" },
+        description: {
+          zh: "论证结构 (+ 摘抄赏析/人物卡)",
+          en: "Argument structure (+ shared excerpt/figure)"
+        },
+        // FLAT install-state law: a shared plugin belongs to ONE capability group (its
+        // HOME) so enabling a group never over-activates a sibling subject. 语文's shared
+        // types — 摘抄赏析 (home 英语) + 人物卡 (home 史地) — render globally and carry 语文
+        // language, but their CREATE affordance follows their home group. Only the 语文-
+        // owned member (论证结构) gates on THIS group.
+        members: ["subject-argument"],
+        defaultEnabled: false
+      },
+      {
+        id: "subject-science",
+        name: { zh: "理化生", en: "Science" },
+        description: {
+          zh: "实验记录 (+ 公式卡/概念图)",
+          en: "Experiment records (+ shared formula/diagrams)"
+        },
+        // 公式卡 is home to 数学 (shared, §8.5.2 refcount) — it stays out of THIS group's
+        // membership so enabling 理化生 lights only 实验记录, not 公式卡's siblings.
+        members: ["subject-experiment"],
         defaultEnabled: false
       }
     ],

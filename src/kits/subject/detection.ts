@@ -41,8 +41,33 @@ export const historyGeoDetection: KitDetectionTable = {
   weight: 1
 };
 
+// —— M-C: the two remaining subject kits' tables (§3.3 rows verbatim) ——————————
+
+export const chineseDetection: KitDetectionTable = {
+  kitId: "subject-chinese",
+  titleKeywords: ["语文", "古文", "文言文", "诗词", "作文", "阅读", "chinese"],
+  titlePatterns: [/语文|文言|诗词/],
+  sourceTypes: ["pdf"],
+  // §3.3 classical-Chinese markers (之乎者也…) — the weakest signal, low by design.
+  contentSignals: { keywords: ["之", "乎", "者", "也", "兮", "曰"] },
+  weight: 1
+};
+
+export const scienceDetection: KitDetectionTable = {
+  kitId: "subject-science",
+  titleKeywords: ["物理", "化学", "生物", "实验", "physics", "chemistry", "biology"],
+  titlePatterns: [/\b(physics|chemistry|biology)\b/i, /物理|化学|生物/],
+  sourceTypes: ["pdf"],
+  // §3.3: latexDensity≥2/1k AND element/科学 markers. Math + science both fire on
+  // latexDensity — the kitId-ASC tie-break decides (subject-math < subject-science).
+  contentSignals: { latexDensity: 2, keywords: ["H₂O", "NaCl", "mol", "细胞", "分子", "原子"] },
+  weight: 1
+};
+
 export const subjectDetectionTables: KitDetectionTable[] = [
   mathDetection,
   englishDetection,
-  historyGeoDetection
+  historyGeoDetection,
+  chineseDetection,
+  scienceDetection
 ];

@@ -57,9 +57,18 @@ describe("bundled catalog invariants (§8.1 × FLAT)", () => {
       "mistake",
       "review-pack",
       "textbook-language",
+      // subject M-B + M-C member plugins (the 11 subject types).
       "subject-vocab",
       "subject-formula",
-      "subject-timeline"
+      "subject-timeline",
+      "subject-derivation",
+      "subject-theorem",
+      "subject-grammar",
+      "subject-excerpt",
+      "subject-argument",
+      "subject-figure",
+      "subject-cause-effect",
+      "subject-experiment"
     ]);
   });
 
@@ -74,7 +83,9 @@ describe("bundled catalog invariants (§8.1 × FLAT)", () => {
       "textbook-language",
       "subject-english",
       "subject-math",
-      "subject-history-geo"
+      "subject-history-geo",
+      "subject-chinese",
+      "subject-science"
     ]);
     for (const group of groups) {
       expect(group.name.zh.length, `${group.id} zh name`).toBeGreaterThan(0);
@@ -86,13 +97,22 @@ describe("bundled catalog invariants (§8.1 × FLAT)", () => {
     expect(defaultDisabledGroupIds("textbook-learning")).toEqual([
       "subject-english",
       "subject-math",
-      "subject-history-geo"
+      "subject-history-geo",
+      "subject-chinese",
+      "subject-science"
     ]);
   });
 
   it("groupOwnerOf: member plugins are group-owned; standalone plugins are not", () => {
     expect(groupOwnerOf("explanation")).toEqual({ kitId: "textbook-learning", groupId: "explanation" });
     expect(groupOwnerOf("subject-vocab")).toEqual({ kitId: "textbook-learning", groupId: "subject-english" });
+    // Shared plugins resolve to their FIRST (home) group: excerpt→英语, figure→史地,
+    // formula→数学 (§8.5.2 refcount — one detail page per shared plugin).
+    expect(groupOwnerOf("subject-excerpt")).toEqual({ kitId: "textbook-learning", groupId: "subject-english" });
+    expect(groupOwnerOf("subject-figure")).toEqual({ kitId: "textbook-learning", groupId: "subject-history-geo" });
+    expect(groupOwnerOf("subject-formula")).toEqual({ kitId: "textbook-learning", groupId: "subject-math" });
+    expect(groupOwnerOf("subject-argument")).toEqual({ kitId: "textbook-learning", groupId: "subject-chinese" });
+    expect(groupOwnerOf("subject-experiment")).toEqual({ kitId: "textbook-learning", groupId: "subject-science" });
     for (const id of ["flashcard", "quiz", "bookmark", "diagrams", "table-viewer", "unknown"]) {
       expect(groupOwnerOf(id), id).toBeUndefined();
     }
@@ -134,6 +154,15 @@ describe("providerOf — the contentType → plugin index (§8.2/§8.7)", () => 
     expect(providerOf("textbook.explanation")?.id).toBe("explanation");
     expect(providerOf("textbook.exercise")?.id).toBe("practice");
     expect(providerOf("subject.vocab")?.id).toBe("subject-vocab");
+    // M-C subject types → their provider plugin (the §8.7 import-prompt index).
+    expect(providerOf("subject.derivation")?.id).toBe("subject-derivation");
+    expect(providerOf("subject.theorem")?.id).toBe("subject-theorem");
+    expect(providerOf("subject.grammar")?.id).toBe("subject-grammar");
+    expect(providerOf("subject.excerpt")?.id).toBe("subject-excerpt");
+    expect(providerOf("subject.argument")?.id).toBe("subject-argument");
+    expect(providerOf("subject.figure")?.id).toBe("subject-figure");
+    expect(providerOf("subject.cause-effect")?.id).toBe("subject-cause-effect");
+    expect(providerOf("subject.experiment")?.id).toBe("subject-experiment");
     // "always available, nothing to install":
     expect(providerOf("markdown")).toBeUndefined();
     expect(providerOf("html-sandbox")).toBeUndefined();

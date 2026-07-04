@@ -1108,7 +1108,10 @@ describe("vault server API", () => {
       "review-pack",
       "textbook-language",
       "subject-english",
-      "subject-history-geo"
+      "subject-history-geo",
+      // M-C 语文/理化生 groups start disabled — no legacy state enabled them.
+      "subject-chinese",
+      "subject-science"
     ]);
 
     // Idempotent: a second load returns the identical, already-flat state.

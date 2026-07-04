@@ -97,9 +97,19 @@ describe("F5 — the textbook kit decomposes into member plugins (members[] reso
     // members still register under their per-subject kit ids, which now resolve
     // through the legacy group aliases for foregrounding/detection.
     const runtimeKitOf: Record<string, string> = {
+      // M-B
       "subject-vocab": "subject-english",
       "subject-formula": "subject-math",
-      "subject-timeline": "subject-history-geo"
+      "subject-timeline": "subject-history-geo",
+      // M-C — each member installs under its HOME kit (shared members install once):
+      "subject-derivation": "subject-math",
+      "subject-theorem": "subject-math",
+      "subject-grammar": "subject-english",
+      "subject-excerpt": "subject-english", // shared with 语文 (home = 英语)
+      "subject-argument": "subject-chinese",
+      "subject-figure": "subject-history-geo", // shared with 语文 (home = 史地)
+      "subject-cause-effect": "subject-history-geo",
+      "subject-experiment": "subject-science" // shared formula stays home in 数学
     };
     for (const memberId of catalogKitMembers("textbook-learning")) {
       const member = record(memberId);

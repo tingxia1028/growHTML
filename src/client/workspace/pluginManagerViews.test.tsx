@@ -330,7 +330,7 @@ describe("市场 (browse) tab — kits only", () => {
     // kit-a is installed → badge; the bundled Textbook Kit is not (in this state) → install.
     expect(container.querySelector('.market-card[data-entry-id="kit-a"] .market-installed-badge')).toBeTruthy();
     const textbook = container.querySelector('.market-card[data-entry-id="textbook-learning"]');
-    expect(textbook!.textContent).toContain("8 个能力组");
+    expect(textbook!.textContent).toContain("10 个能力组");
     await click(textbook!.querySelector(".market-install-btn"));
     expect(writes).toHaveLength(1);
     expect(writes[0].installedKits).toEqual(["kit-a", "textbook-learning"]);

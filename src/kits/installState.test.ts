@@ -34,7 +34,8 @@ import {
 
 const TEXTBOOK = "textbook-learning";
 const BASE_GROUPS = ["explanation", "practice", "mistake", "review-pack", "textbook-language"];
-const SUBJECT_GROUPS = ["subject-english", "subject-math", "subject-history-geo"];
+// M-C added 语文/理化生 as two more per-subject groups (subject-kits.md PART 2).
+const SUBJECT_GROUPS = ["subject-english", "subject-math", "subject-history-geo", "subject-chinese", "subject-science"];
 const STANDALONE_PLUGINS = ["flashcard", "quiz", "bookmark", "diagrams", "table-viewer"];
 // The pre-FLAT materialized default direct list (what old vaults' plugin-prefs carry).
 const LEGACY_DEFAULT_PLUGINS = [...STANDALONE_PLUGINS, ...BASE_GROUPS];
@@ -111,12 +112,23 @@ describe("capability groups (FLAT §2)", () => {
   it("group toggles materialize the per-kit key and are idempotent set ops", () => {
     const base: CatalogState = { installedPlugins: [], installedKits: [TEXTBOOK] };
     const on = withKitGroupEnabled(base, TEXTBOOK, "subject-english");
-    // Materialized from the defaults minus the enabled group.
-    expect(on.disabledGroups?.[TEXTBOOK]).toEqual(["subject-math", "subject-history-geo"]);
+    // Materialized from the defaults (all 5 subject groups off) minus the enabled group.
+    expect(on.disabledGroups?.[TEXTBOOK]).toEqual([
+      "subject-math",
+      "subject-history-geo",
+      "subject-chinese",
+      "subject-science"
+    ]);
     expect(effectiveInstalledPluginIds(on).has("subject-vocab")).toBe(true);
     expect(withKitGroupEnabled(on, TEXTBOOK, "subject-english")).toEqual(on);
     const off = withKitGroupDisabled(on, TEXTBOOK, "subject-english");
-    expect(off.disabledGroups?.[TEXTBOOK]).toEqual(["subject-math", "subject-history-geo", "subject-english"]);
+    expect(off.disabledGroups?.[TEXTBOOK]).toEqual([
+      "subject-math",
+      "subject-history-geo",
+      "subject-chinese",
+      "subject-science",
+      "subject-english"
+    ]);
     expect(withKitGroupDisabled(off, TEXTBOOK, "subject-english")).toEqual(off);
   });
 
@@ -177,7 +189,7 @@ describe("holds + kit-removal outcome (§8.5.2, over the flattened members)", ()
     expect(holdsOf("quiz", state)).toEqual({ direct: false, viaKits: [] });
   });
 
-  it("kitRemovalOutcome: removed vs kept-with-reason per member (8 members post-merge)", () => {
+  it("kitRemovalOutcome: removed vs kept-with-reason per member (16 members post-merge)", () => {
     const userKits = [{ id: "user:second", name: "Second", members: ["explanation"] }];
     const state = {
       installedPlugins: ["practice"],
@@ -188,8 +200,8 @@ describe("holds + kit-removal outcome (§8.5.2, over the flattened members)", ()
     expect(byId["practice"]).toEqual({ pluginId: "practice", kept: true, keptBy: ["direct"] });
     expect(byId["explanation"]).toEqual({ pluginId: "explanation", kept: true, keptBy: ["user:second"] });
     expect(byId["mistake"]).toEqual({ pluginId: "mistake", kept: false, keptBy: [] });
-    // 5 base members + the 3 merged subject exemplars.
-    expect(rows).toHaveLength(8);
+    // 5 base members + the 11 subject exemplars (M-B 3 + M-C 8).
+    expect(rows).toHaveLength(16);
   });
 });
 
@@ -228,21 +240,27 @@ describe("FLAT migration — per-plugin installState → per-kit (§2)", () => {
     const { state, changed } = migrateCatalogState(old);
     expect(changed).toBe(true);
     expect(state.installedKits).toEqual([TEXTBOOK]);
-    // Old effective was {subject-formula, mistake, quiz}: the formula + mistake groups
+    // Old effective was {subject-formula, mistake, quiz}: the math + mistake groups
     // enable; every other group starts DISABLED (previously uninstalled member → off).
+    // subject-formula is now HOME to 数学 only (FLAT one-group-per-plugin), so enabling
+    // 数学 never drags the 理化生 group — both M-C groups start disabled.
     expect(state.disabledGroups?.[TEXTBOOK]).toEqual([
       "explanation",
       "practice",
       "review-pack",
       "textbook-language",
       "subject-english",
-      "subject-history-geo"
+      "subject-history-geo",
+      "subject-chinese",
+      "subject-science"
     ]);
     // quiz was a shared legacy ref with no owning group — it survives as a direct hold.
     expect(state.installedPlugins).toEqual(["quiz"]);
     const effective = effectiveInstalledPluginIds(state);
     for (const id of ["subject-formula", "mistake", "quiz"]) expect(effective.has(id), id).toBe(true);
     expect(effective.has("explanation")).toBe(false);
+    // The 理化生-only member (subject-experiment) does NOT leak in via shared formula.
+    expect(effective.has("subject-experiment")).toBe(false);
   });
 
   it("kit installed iff any member installed: an old kit-less vault with direct member holds re-derives the kit", () => {
@@ -286,7 +304,13 @@ describe("FLAT migration — per-plugin installState → per-kit (§2)", () => {
     };
     const { state } = migrateCatalogState(old);
     expect(state.installedKits).toEqual([TEXTBOOK]);
-    expect(state.disabledGroups?.[TEXTBOOK]).toEqual(["subject-math", "subject-history-geo"]);
+    // 英语 enabled by the legacy install; math/史地 + the M-C 语文/理化生 groups stay off.
+    expect(state.disabledGroups?.[TEXTBOOK]).toEqual([
+      "subject-math",
+      "subject-history-geo",
+      "subject-chinese",
+      "subject-science"
+    ]);
     expect(state.installedPlugins).toEqual(STANDALONE_PLUGINS); // flashcard already direct
     expect(effectiveInstalledPluginIds(state).has("subject-vocab")).toBe(true);
   });

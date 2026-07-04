@@ -81,9 +81,12 @@ describe("composeAutoContext — selection + doc", () => {
       { vault, provider: providerOf("mock") },
       { input: { sourceTitle: "高一物理 必修一" } }
     );
-    // 必修 is a textbook-learning title keyword; the detected (installed) kit
-    // auto-foregrounds through the SAME pin > detected > default resolver.
-    expect(context.doc).toEqual({ title: "高一物理 必修一", subject: "textbook-learning", kit: "textbook-learning" });
+    // "物理" is a subject-science title keyword AND "必修" is a textbook keyword — both
+    // score 0.6, so the kitId-ASC tie-break names subject-science the RAW detected winner
+    // (subject < textbook). But 理化生 is opt-in / uninstalled, so the pin>detected∧installed
+    // >default resolver FOREGROUNDS the installed textbook kit. subject = raw winner,
+    // kit = resolved foreground (M-C: science detection now fires on 物理 titles).
+    expect(context.doc).toEqual({ title: "高一物理 必修一", subject: "subject-science", kit: "textbook-learning" });
   });
 
   it("doc prefers the stored source record (title + sourceType), looked up by input.sourceId", async () => {
@@ -107,7 +110,9 @@ describe("composeAutoContext — selection + doc", () => {
     expect(context.doc).toEqual({
       title: "高二物理 选修三",
       sourceType: "pdf",
-      subject: "textbook-learning",
+      // "物理" fires subject-science (raw winner via kitId-ASC tie); science is uninstalled,
+      // so the foreground stays the installed textbook kit (M-C science detection).
+      subject: "subject-science",
       kit: "textbook-learning"
     });
   });

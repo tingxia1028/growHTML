@@ -55,3 +55,69 @@ export const generateTimelineCommand: Command = {
   isAvailable: hasPassage,
   run: (ctx) => generateSubjectNote(ctx, "subject.generate-timeline", "subject.timeline")
 };
+
+// —— M-C commands (one per remaining type) ————————————————————————————————————
+
+export const generateDerivationCommand: Command = {
+  id: "subject.generate-derivation",
+  title: "推导步骤",
+  group: "subject",
+  isAvailable: hasPassage,
+  run: (ctx) => generateSubjectNote(ctx, "subject.generate-derivation", "subject.derivation")
+};
+
+export const generateTheoremCommand: Command = {
+  id: "subject.generate-theorem",
+  title: "定理卡",
+  group: "subject",
+  isAvailable: hasPassage,
+  run: (ctx) => generateSubjectNote(ctx, "subject.generate-theorem", "subject.theorem")
+};
+
+export const generateGrammarCommand: Command = {
+  id: "subject.generate-grammar",
+  title: "语法点",
+  group: "subject",
+  isAvailable: hasPassage,
+  run: (ctx) => generateSubjectNote(ctx, "subject.generate-grammar", "subject.grammar")
+};
+
+export const generateExcerptCommand: Command = {
+  id: "subject.generate-excerpt",
+  title: "摘抄赏析",
+  group: "subject",
+  isAvailable: hasPassage,
+  run: (ctx) => generateSubjectNote(ctx, "subject.generate-excerpt", "subject.excerpt")
+};
+
+export const generateArgumentCommand: Command = {
+  id: "subject.generate-argument",
+  title: "论证结构",
+  group: "subject",
+  isAvailable: hasPassage,
+  run: (ctx) => generateSubjectNote(ctx, "subject.generate-argument", "subject.argument")
+};
+
+export const generateFigureCommand: Command = {
+  id: "subject.generate-figure",
+  title: "人物卡",
+  group: "subject",
+  isAvailable: hasPassage,
+  run: (ctx) => generateSubjectNote(ctx, "subject.generate-figure", "subject.figure")
+};
+
+export const generateCauseEffectCommand: Command = {
+  id: "subject.generate-cause-effect",
+  title: "因果链",
+  group: "subject",
+  isAvailable: hasPassage,
+  run: (ctx) => generateSubjectNote(ctx, "subject.generate-cause-effect", "subject.cause-effect")
+};
+
+export const generateExperimentCommand: Command = {
+  id: "subject.generate-experiment",
+  title: "实验记录",
+  group: "subject",
+  isAvailable: hasPassage,
+  run: (ctx) => generateSubjectNote(ctx, "subject.generate-experiment", "subject.experiment")
+};

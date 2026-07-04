@@ -10585,6 +10585,295 @@ select {
   color: var(--sv-text-muted);
 }
 
+/* ═══ M-C subject types (subject-kits.md PART 1 §1.2–1.11) ═══ */
+
+/* shared section label + warn callout (grammar pitfalls / experiment safety) */
+.sv-section-label {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sv-text-muted);
+  margin-right: 6px;
+}
+
+.sv-section.sv-warn {
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--sv-warn-region, #3474e6);
+  background: var(--sv-warn-bg, #eef5ff);
+  border-radius: var(--sv-radius-xs);
+  font-size: 12.5px;
+}
+
+.sv-section.sv-warn strong {
+  color: var(--sv-warn-text, #2f67d7);
+}
+
+.sv-section.sv-warn ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+/* —— 推导步骤 —— */
+.sv-card-derivation .sv-derivation-goal,
+.sv-card-derivation .sv-derivation-count {
+  margin: 1px 0;
+  font-size: 12.5px;
+  color: var(--sv-text-muted);
+}
+
+.sv-derivation-steps {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+
+.sv-derivation-step {
+  margin: 6px 0;
+}
+
+.sv-derivation-why > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--sv-text-muted);
+}
+
+.sv-derivation-rationale {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--sv-text-muted);
+}
+
+.sv-derivation-result {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--sv-border, #e9edf3);
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface-muted, #f7f9fc);
+}
+
+.sv-derivation-result-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sv-text-muted);
+  margin-bottom: 2px;
+}
+
+/* —— 定理卡 —— */
+.sv-theorem-statement {
+  margin: 0 0 6px;
+  font-weight: 500;
+}
+
+.sv-theorem-conditions ul,
+.sv-theorem-examples ul {
+  margin: 2px 0 6px;
+  padding-left: 18px;
+}
+
+.sv-theorem-proof > summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--sv-text-muted);
+}
+
+.sv-theorem-usage {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+
+/* —— 语法点 —— */
+.sv-grammar-pattern {
+  margin: 0;
+  font-weight: 600;
+}
+
+.sv-grammar-meaning,
+.sv-grammar-structure {
+  margin: 2px 0;
+  font-size: 12.5px;
+  color: var(--sv-text-muted);
+}
+
+.sv-grammar-examples {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.sv-grammar-example {
+  margin: 2px 0;
+}
+
+.sv-grammar-note {
+  color: var(--sv-text-muted);
+  font-size: 12.5px;
+}
+
+/* —— 摘抄赏析 —— */
+.sv-card-excerpt,
+.sv-excerpt-quote {
+  margin: 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--sv-border, #e9edf3);
+  color: var(--sv-text-quote, #4a515c);
+  font-style: italic;
+}
+
+.sv-excerpt-attribution {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--sv-text-muted);
+  display: flex;
+  gap: 8px;
+}
+
+.sv-excerpt-comment {
+  margin: 6px 0 0;
+}
+
+.sv-excerpt-devices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0 0;
+}
+
+.sv-excerpt-device {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--sv-surface-tag, #eef0f4);
+  font-size: 12px;
+}
+
+.sv-excerpt-theme {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+}
+
+/* —— 论证结构 —— */
+.sv-argument-claim {
+  margin: 0 0 6px;
+  font-weight: 500;
+}
+
+.sv-argument-grounds ul,
+.sv-argument-evidence ul,
+.sv-argument-counter ul {
+  margin: 2px 0 6px;
+  padding-left: 18px;
+}
+
+.sv-argument-warrant,
+.sv-argument-conclusion {
+  margin: 4px 0;
+  font-size: 12.5px;
+}
+
+/* —— 人物卡 —— */
+.sv-card-figure .sv-figure-role,
+.sv-card-figure .sv-figure-era {
+  margin: 1px 0;
+  font-size: 12.5px;
+  color: var(--sv-text-muted);
+}
+
+.sv-figure-header {
+  display: flex;
+  gap: 10px;
+  margin: 0 0 6px;
+  color: var(--sv-text-muted);
+  font-size: 12.5px;
+}
+
+.sv-figure-facts {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+
+.sv-figure-works ul,
+.sv-figure-relations ul {
+  margin: 2px 0 6px;
+  padding-left: 18px;
+}
+
+.sv-figure-significance {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+
+/* —— 因果链 —— */
+.sv-card-cause-effect .sv-cause-effect-event {
+  margin: 0;
+  font-weight: 500;
+}
+
+.sv-card-cause-effect .sv-cause-effect-count {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--sv-text-muted);
+}
+
+.sv-cause-effect-flow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sv-cause-effect-causes,
+.sv-cause-effect-effects {
+  flex: 1;
+  min-width: 120px;
+}
+
+.sv-cause-effect-causes ul,
+.sv-cause-effect-effects ul {
+  margin: 2px 0;
+  padding-left: 18px;
+}
+
+.sv-cause-effect-pivot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  padding-top: 18px;
+}
+
+.sv-cause-effect-arrow {
+  color: var(--sv-accent, #2563eb);
+}
+
+.sv-cause-effect-category,
+.sv-cause-effect-term {
+  color: var(--sv-text-muted);
+  font-size: 11px;
+  margin-right: 4px;
+}
+
+/* —— 实验记录 —— */
+.sv-card-experiment .sv-experiment-line {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--sv-text-muted);
+}
+
+.sv-experiment-purpose,
+.sv-experiment-conclusion {
+  margin: 4px 0;
+}
+
+.sv-experiment-materials ul,
+.sv-experiment-observations ul {
+  margin: 2px 0 6px;
+  padding-left: 18px;
+}
+
+.sv-experiment-procedure ol {
+  margin: 2px 0 6px;
+  padding-left: 20px;
+}
+
 /* —— subject editors: compact repeatable rows —— */
 .sv-edit-row {
   display: flex;

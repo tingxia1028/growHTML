@@ -30,9 +30,20 @@ afterEach(() => resetInstallState());
 describe("F5 member registration — one PluginRecord per exemplar member, grouped under its kit", () => {
   it("each member owns its loop (noteType + command + surface) under the kit", () => {
     for (const [memberId, kitId, contentType] of [
+      // M-B
       ["subject-vocab", "subject-english", "subject.vocab"],
       ["subject-formula", "subject-math", "subject.formula"],
-      ["subject-timeline", "subject-history-geo", "subject.timeline"]
+      ["subject-timeline", "subject-history-geo", "subject.timeline"],
+      // M-C — installed under their HOME kit (shared plugins install once, §8.5.2):
+      // excerpt home 英语, figure home 史地, formula home 数学.
+      ["subject-derivation", "subject-math", "subject.derivation"],
+      ["subject-theorem", "subject-math", "subject.theorem"],
+      ["subject-grammar", "subject-english", "subject.grammar"],
+      ["subject-excerpt", "subject-english", "subject.excerpt"],
+      ["subject-argument", "subject-chinese", "subject.argument"],
+      ["subject-figure", "subject-history-geo", "subject.figure"],
+      ["subject-cause-effect", "subject-history-geo", "subject.cause-effect"],
+      ["subject-experiment", "subject-science", "subject.experiment"]
     ] as const) {
       const member = record(memberId);
       expect(member, memberId).toBeTruthy();
@@ -47,22 +58,49 @@ describe("F5 member registration — one PluginRecord per exemplar member, group
   });
 
   it("the kit records keep only kit-level config (language) and stay foreground choices", () => {
-    for (const kitId of ["subject-english", "subject-math", "subject-history-geo"]) {
+    for (const kitId of [
+      "subject-english",
+      "subject-math",
+      "subject-history-geo",
+      "subject-chinese",
+      "subject-science"
+    ]) {
       expect(record(kitId)?.contributions.map((c) => c.kind), kitId).toEqual(["language"]);
       expect(installedKits.some((k) => k.id === kitId), kitId).toBe(true);
     }
   });
 
   it("kit language config lands: per-type display names resolve for the ACTIVE kit", () => {
+    // M-B
     expect(kitContentTypeLabel("subject.vocab", ["subject-english"])).toBe("生词卡");
     expect(kitContentTypeLabel("subject.formula", ["subject-math"])).toBe("公式卡");
     expect(kitContentTypeLabel("subject.timeline", ["subject-history-geo"])).toBe("时间线");
+    // M-C
+    expect(kitContentTypeLabel("subject.derivation", ["subject-math"])).toBe("推导步骤");
+    expect(kitContentTypeLabel("subject.theorem", ["subject-math"])).toBe("定理卡");
+    expect(kitContentTypeLabel("subject.grammar", ["subject-english"])).toBe("语法点");
+    expect(kitContentTypeLabel("subject.argument", ["subject-chinese"])).toBe("论证结构");
+    expect(kitContentTypeLabel("subject.experiment", ["subject-science"])).toBe("实验记录");
+    // Shared types name under EVERY owning kit's language (§8.5.2): excerpt in 英语 & 语文,
+    // figure in 史地 & 语文, formula in 数学 & 理化生.
+    expect(kitContentTypeLabel("subject.excerpt", ["subject-english"])).toBe("摘抄赏析");
+    expect(kitContentTypeLabel("subject.excerpt", ["subject-chinese"])).toBe("摘抄赏析");
+    expect(kitContentTypeLabel("subject.figure", ["subject-history-geo"])).toBe("人物卡");
+    expect(kitContentTypeLabel("subject.figure", ["subject-chinese"])).toBe("人物卡");
+    expect(kitContentTypeLabel("subject.formula", ["subject-science"])).toBe("公式卡");
   });
 
   it("detection tables register through the client install (the M-A seam, per kit)", () => {
     const ids = listKitDetections().map((t) => t.kitId);
     expect(ids).toEqual(
-      expect.arrayContaining(["textbook-learning", "subject-math", "subject-english", "subject-history-geo"])
+      expect.arrayContaining([
+        "textbook-learning",
+        "subject-math",
+        "subject-english",
+        "subject-history-geo",
+        "subject-chinese",
+        "subject-science"
+      ])
     );
   });
 });
@@ -73,9 +111,25 @@ describe("MH-0 × FLAT — the 市场 lists ONE Textbook Kit; subjects ride it a
     expect(kits.map((l) => l.id)).toEqual(["textbook-learning"]);
     const textbook = kits[0];
     expect(textbook.contentTypes).toEqual(
-      expect.arrayContaining(["subject.vocab", "subject.formula", "subject.timeline"])
+      expect.arrayContaining([
+        // M-B
+        "subject.vocab",
+        "subject.formula",
+        "subject.timeline",
+        // M-C
+        "subject.derivation",
+        "subject.theorem",
+        "subject.grammar",
+        "subject.excerpt",
+        "subject.argument",
+        "subject.figure",
+        "subject.cause-effect",
+        "subject.experiment"
+      ])
     );
-    expect(textbook.groupCount).toBe(8);
+    // 5 fixed groups (explanation/practice/mistake/review-pack/textbook-language) +
+    // 5 per-subject groups (英语/数学/史地/语文/理化生 — M-C adds the last two).
+    expect(textbook.groupCount).toBe(10);
   });
 
   it("plugins are internal now — the local source never lists them", async () => {

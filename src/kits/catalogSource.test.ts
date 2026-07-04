@@ -35,17 +35,25 @@ describe("CatalogSource('local') — the MH-0 seam", () => {
     const kit = await localCatalogSource.get("textbook-learning");
     expect(kit).toBeTruthy();
     expect(kit!.kind).toBe("kit");
-    expect(kit!.memberCount).toBe(8); // 5 base members + 3 merged subject exemplars
-    expect(kit!.groupCount).toBe(8); // FLAT capability groups
+    expect(kit!.memberCount).toBe(16); // 5 base members + 11 subject exemplars (M-B 3 + M-C 8)
+    expect(kit!.groupCount).toBe(10); // FLAT capability groups (5 base + 5 per-subject)
     expect(kit!.contentTypes).toEqual(
       expect.arrayContaining([
         "textbook.explanation",
         "textbook.exercise",
         "textbook.review-pack",
-        // the merged per-subject groups' types ride the same union
+        // the merged per-subject groups' types ride the same union (M-B + M-C)
         "subject.vocab",
         "subject.formula",
-        "subject.timeline"
+        "subject.timeline",
+        "subject.derivation",
+        "subject.theorem",
+        "subject.grammar",
+        "subject.excerpt",
+        "subject.argument",
+        "subject.figure",
+        "subject.cause-effect",
+        "subject.experiment"
       ])
     );
     // REV-CORE: the mistake TYPE is core now — the kit's union no longer carries it.
