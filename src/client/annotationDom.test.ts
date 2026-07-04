@@ -436,6 +436,57 @@ describe("setAnchorNotesHidden (per-anchor notes toggle)", () => {
   });
 });
 
+describe("card-open suppression attribute (D2 — data-sv-card-open)", () => {
+  it("stamps the shown anchor's id on the realm body (hover), and clears it on mouse-out", () => {
+    const doc = freshReaderDocument();
+    doc.body.innerHTML = '<p id="t">hello</p>';
+    ensureAnnotationLayer(doc);
+    const el = doc.getElementById("t")!;
+    applyHighlight(el, "note", "k-open", { noteHtml: "<div>Body</div>", noteCount: 1 });
+
+    expect(doc.body.getAttribute("data-sv-card-open")).toBeNull();
+    el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    expect(doc.body.getAttribute("data-sv-card-open")).toBe("k-open");
+    el.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
+    expect(doc.body.getAttribute("data-sv-card-open")).toBeNull();
+  });
+
+  it("keeps the attribute while PINNED (mouse-out included); dismiss and unpin clear it", () => {
+    const doc = freshReaderDocument();
+    doc.body.innerHTML = '<p id="t">hello</p>';
+    ensureAnnotationLayer(doc);
+    const el = doc.getElementById("t")!;
+    applyHighlight(el, "note", "k-pin2", { noteHtml: "<div>Body</div>", noteCount: 1 });
+
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true })); // pin
+    expect(doc.body.getAttribute("data-sv-card-open")).toBe("k-pin2");
+    el.dispatchEvent(new MouseEvent("mouseout", { bubbles: true })); // pinned survives hover-out
+    expect(doc.body.getAttribute("data-sv-card-open")).toBe("k-pin2");
+
+    doc.body.dispatchEvent(new MouseEvent("click", { bubbles: true })); // outside click dismisses
+    expect(doc.body.getAttribute("data-sv-card-open")).toBeNull();
+
+    // Pin again, then UNPIN by clicking the same target — the attribute clears too.
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(doc.body.getAttribute("data-sv-card-open")).toBe("k-pin2");
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(doc.body.getAttribute("data-sv-card-open")).toBeNull();
+  });
+
+  it("a notes-hidden anchor (N1a toggle) opens no card, so no attribute ever appears", () => {
+    const doc = freshReaderDocument();
+    doc.body.innerHTML = '<p id="t">hello</p>';
+    ensureAnnotationLayer(doc);
+    const el = doc.getElementById("t")!;
+    applyHighlight(el, "note", "k-hid", { noteHtml: "<div>Body</div>", noteCount: 1 });
+    setAnchorNotesHidden(doc, "k-hid", true);
+    el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(doc.body.getAttribute("data-sv-card-open")).toBeNull();
+    setAnchorNotesHidden(doc, "k-hid", false);
+  });
+});
+
 describe("decorateAnnotations (HTML renderer)", () => {
   it("highlights the study-id element when it still exists", () => {
     document.body.innerHTML = '<p data-study-id="s1">Hello world</p>';

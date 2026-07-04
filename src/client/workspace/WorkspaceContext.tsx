@@ -41,6 +41,10 @@ import { createDefaultContent, isTextContentType } from "../notes/noteTypeRegist
 import { getSourceViewer, type SourceViewer } from "../viewers";
 import { getCommand, runCommand, type CommandContext, type GeneratedDraft } from "../commands/registry";
 import type { PaintAnchor } from "../surfaces/types";
+// D5 floating editor: a parked draft remembers WHERE its passage was (the live
+// selection rect in host coords) so the editor floats next to it, not at a pane
+// bottom. Best-effort — null falls back to a reader-panel-anchored position.
+import { getSelectionRect, type SelectionRect } from "../selection/selectionRect";
 import {
   persistAnnotationMode,
   readStoredAnnotationMode,
@@ -372,6 +376,14 @@ export type WorkspaceContextValue = {
   // renders this draft; only `savePendingDraft` persists it as a note (attaching to
   // the anchor the generation already created). Null when nothing is pending.
   pendingDraft: GeneratedDraft | null;
+  /** Where the pending draft's passage was (host-viewport selection rect) when the
+      draft was parked — the D5 floating editor anchors next to it. Null = unknown
+      (the editor falls back to a reader-panel-anchored position). */
+  pendingDraftRect: SelectionRect | null;
+  /** D5 manual creation (slash bare-`/type` / note-type buttons): open the floating
+      editor seeded with the type's createDefault(). Save materializes the focused
+      passage (anchor.add-note's normal fallback) or lands unanchored on the source. */
+  openManualEditor(contentType: string): void;
   /** Whether a regenerate request is in flight (the preview disables its buttons). */
   regenerating: boolean;
   /**
@@ -383,8 +395,10 @@ export type WorkspaceContextValue = {
    * busy state every command sets) and `regenerating` (the preview's re-run).
    */
   generating: boolean;
-  /** Persist the (possibly edited) draft content as a note, then clear the preview. */
-  savePendingDraft(content: unknown): void;
+  /** Persist the (possibly edited) draft content as a note, then clear the preview.
+      `conceptNames` (CG-2): the surviving AI-suggested concept chips — add-note
+      creates-or-matches + links them (omit/empty = no tagging). */
+  savePendingDraft(content: unknown, conceptNames?: string[]): void;
   /** Re-run the same generation; replaces the pending draft's content in place. */
   regeneratePendingDraft(): Promise<void>;
   /** Drop the pending draft without saving. */
@@ -585,7 +599,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // The AI draft awaiting preview/edit/save (null = nothing pending), plus a flag for
   // an in-flight regenerate so the preview can show/disable while it re-runs.
   const [pendingDraft, setPendingDraft] = useState<GeneratedDraft | null>(null);
+  // Where the pending draft's passage was (D5): the selection rect snapshotted when
+  // the draft parks. `lastGenerationRectRef` remembers the rect at DISPATCH time —
+  // generation is async and the selection may have collapsed by the time the draft
+  // arrives, so park-time falls back to that snapshot.
+  const [pendingDraftRect, setPendingDraftRect] = useState<SelectionRect | null>(null);
+  const lastGenerationRectRef = useRef<SelectionRect | null>(null);
   const [regenerating, setRegenerating] = useState(false);
+  // Park a NEW draft (generation / classification / import / manual): remember the
+  // passage rect alongside it so the D5 floating editor opens next to the passage.
+  // The live selection rect wins; a collapsed selection falls back to the rect
+  // snapshotted when the generation dispatched.
+  const parkDraft = useCallback((draft: GeneratedDraft) => {
+    setPendingDraftRect(getSelectionRect() ?? lastGenerationRectRef.current);
+    setPendingDraft(draft);
+  }, []);
   // Whether an AI structured-generation request is in flight (see `generating` in the
   // context type). Set true around a generation command/flow, cleared on done/error.
   const [generating, setGenerating] = useState(false);
@@ -922,7 +950,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       try {
         const anchor = await focus.materializeAnchor();
         const result = await entityClient.importXmind(filePath);
-        setPendingDraft({
+        parkDraft({
           promptId: "",
           contentType: result.contentType,
           input: {},
@@ -937,7 +965,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setStatus("error");
       }
     },
-    [focus, activeSourceId]
+    [focus, activeSourceId, parkDraft]
   );
 
   // ONE file picker for every importable file (LIB-2): .xmind routes to the mind-map
@@ -1056,8 +1084,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         // SSR/tests fall through to proceed (tests inject their own confirm).
         confirm: (message) => (typeof window !== "undefined" ? window.confirm(message) : true),
         // A kit AI action generated content: divert it to the preview stage instead
-        // of auto-saving. The host renders it and only persists on Save.
-        onGenerated: (draft) => setPendingDraft(draft),
+        // of auto-saving. The host renders it (in the D5 floating editor, next to
+        // the passage rect parkDraft remembers) and only persists on Save.
+        onGenerated: (draft) => parkDraft(draft),
         onPatchCreated: () => void refreshAnnotations(),
         // W1 chat-session seams (src/client/chat/useChatSessions): the domain module
         // updates the visible transcript AND persists the turns — user message on
@@ -1095,7 +1124,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
       }
     }),
-    [focus, activeSourceId, chatMessages, chatDomain, buildChatContext, refreshAnnotations]
+    [focus, activeSourceId, chatMessages, chatDomain, buildChatContext, refreshAnnotations, parkDraft]
   );
 
   const dispatch = useCallback(
@@ -1105,7 +1134,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const isGen = isGenerationCommand(commandId);
       setStatus("saving");
       setError("");
-      if (isGen) setGenerating(true);
+      if (isGen) {
+        // Snapshot the passage rect NOW (the selection is still live under the
+        // toolbar click) — parkDraft falls back to it when the async generation
+        // finishes after the selection has collapsed (D5 editor placement).
+        lastGenerationRectRef.current = getSelectionRect();
+        setGenerating(true);
+      }
       try {
         await runCommand(commandId, commandContext(payload));
         setStatus("idle");
@@ -1127,17 +1162,27 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // as explicit anchorIds so the command SKIPs materializing a duplicate). Clear the
   // preview afterward.
   const savePendingDraft = useCallback(
-    (content: unknown) => {
+    (content: unknown, conceptNames?: string[]) => {
       const draft = pendingDraft;
       if (!draft) return;
       // Clear the draft BEFORE the async dispatch so a rapid double-click on Save
       // sees a null draft and early-returns — otherwise two `anchor.add-note`
       // dispatches fire while the draft is still set, creating a duplicate note.
       setPendingDraft(null);
+      // A MANUAL draft (D5 floating editor) has no pre-materialized anchor — OMIT
+      // anchorIds entirely so anchor.add-note materializes the focused passage
+      // (its normal fallback). Generated drafts keep the explicit list ([] when the
+      // generation ran without a passage) so no duplicate anchor is materialized.
+      // CG-2 auto-tag: an EXPLICIT conceptNames (the preview's surviving chips —
+      // possibly [] after removals) wins; a caller that doesn't pass one falls back
+      // to the draft's own AI suggestions, so suggested concepts link on save even
+      // before a host mounts the removable-chips row.
+      const names = conceptNames ?? draft.concepts;
       void dispatch("anchor.add-note", {
         content,
         contentType: draft.contentType,
-        anchorIds: draft.anchorId ? [draft.anchorId] : []
+        ...(names && names.length > 0 ? { conceptNames: names } : {}),
+        ...(draft.manual ? {} : { anchorIds: draft.anchorId ? [draft.anchorId] : [] })
       });
     },
     [pendingDraft, dispatch]
@@ -1174,6 +1219,26 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   // Drop the pending draft without persisting anything.
   const discardPendingDraft = useCallback(() => setPendingDraft(null), []);
+
+  // D5 manual creation: park a MANUAL draft (createDefault-seeded, no promptId) so
+  // the floating editor opens next to the current passage in EDIT mode. Save goes
+  // through savePendingDraft → anchor.add-note with NO anchorIds, which materializes
+  // the focused passage if there is one (else saves unanchored on the source) —
+  // exactly the composer path this replaces. `classified` makes Regenerate a no-op.
+  const openManualEditor = useCallback(
+    (contentType: string) => {
+      parkDraft({
+        promptId: "",
+        contentType,
+        input: {},
+        content: createDefaultContent(contentType),
+        sourceId: activeSourceId || undefined,
+        classified: true,
+        manual: true
+      });
+    },
+    [activeSourceId, parkDraft]
+  );
 
   // The user's current text selection within a reply, or the full reply if they
   // haven't highlighted anything — lets them keep just the useful part.
@@ -1217,7 +1282,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       try {
         const anchor = await focus.materializeAnchor();
         const form = await resolveFormAsync({ text: trimmed }, { classify: aiClassify });
-        setPendingDraft({
+        parkDraft({
           promptId: "",
           contentType: form.contentType,
           input: {},
@@ -1234,7 +1299,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setGenerating(false);
       }
     },
-    [focus, activeSourceId, aiClassify]
+    [focus, activeSourceId, aiClassify, parkDraft]
   );
 
   // §10 chat card "Add as note": classify the reply into its registered form (the SAME
@@ -1722,6 +1787,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       submitComposer,
       dispatch,
       pendingDraft,
+      pendingDraftRect,
+      openManualEditor,
       regenerating,
       generating,
       savePendingDraft,
@@ -1820,6 +1887,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       submitComposer,
       dispatch,
       pendingDraft,
+      pendingDraftRect,
+      openManualEditor,
       regenerating,
       generating,
       savePendingDraft,

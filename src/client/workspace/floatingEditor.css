@@ -1,0 +1,85 @@
+/* FloatingNoteEditor (D5) — the floating card editor that replaced the bottom-parked
+   GenerationPreview stage. The inner `.generation-preview` structural classes keep
+   their styles.css look (tinted grid card, .gen-preview-* buttons); this sheet only
+   adds the FLOATING container behavior: fixed positioning next to the passage,
+   PreviewCard-ish sizing (§10.5), CSS resize with persisted geometry, and a small
+   header row (type icon + status + close). z-index sits BELOW the shell modal (1100)
+   — a draft parked while a modal is open stays behind it — and above the readers. */
+
+.floating-note-editor {
+  position: fixed;
+  z-index: 1050;
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  min-width: 260px;
+  max-width: min(92vw, 560px);
+  min-height: 120px;
+  max-height: 70vh;
+  margin: 0; /* override .generation-preview's chat-pane margin */
+  resize: both;
+  overflow: hidden;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.2);
+}
+
+/* The head row: icon + (新建|Preview) label + contentType + close, single line. */
+.floating-note-editor-head {
+  flex: 0 0 auto;
+}
+
+.floating-note-editor-icon {
+  color: var(--sv-accent);
+  flex: 0 0 auto;
+}
+
+.floating-note-editor-close {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--sv-radius-sm);
+  background: transparent;
+  color: var(--sv-text-muted);
+  cursor: pointer;
+}
+
+.floating-note-editor-close:hover {
+  background: var(--sv-accent-weak);
+  color: var(--sv-accent-text);
+}
+
+/* The draft body scrolls inside the resizable card; actions stay pinned below. */
+.floating-note-editor .generation-preview-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.floating-note-editor .generation-preview-actions {
+  flex: 0 0 auto;
+}
+
+/* —— Slash palette mount (SC-1, chat composer) ————————————————————————————
+   The palette drops ABOVE the composer input (the bar is the positioning context);
+   row styles come from styles.css (.slash-palette-*, shipped with SC-0). */
+.chat-composer-bar {
+  position: relative;
+}
+
+.chat-slash-palette {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: calc(100% + 6px);
+  z-index: 30;
+}
+
+.chat-slash-palette .slash-palette {
+  max-height: 260px;
+  overflow: auto;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16);
+}

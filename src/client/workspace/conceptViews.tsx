@@ -17,7 +17,7 @@
 // (the node-ify guardrail), so the 16 existing e2e keep their original selectors.
 // Like every view it reads/writes only through the WorkspaceContext + entity client.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import { Network, Plus } from "lucide-react";
 import { entityClient, type ConceptRecord } from "../data/entityClient";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
@@ -26,8 +26,14 @@ import "../inspectors/views";
 import { renderInspector } from "../inspectors/registry";
 import { normalizeConceptName } from "./conceptName";
 import { conceptMessages } from "./conceptMessages";
+import { graphMessages } from "./graphMessages";
 import { t } from "../i18n";
 import "./conceptUx.css";
+import "./conceptGraph.css";
+
+// CG-3: the graph view is a LAZY CHUNK (concept-light-and-graph §2) — the shell
+// pays nothing until 图谱 is first opened; vite emits it as a separate file.
+const ConceptGraphView = lazy(() => import("./ConceptGraphView"));
 
 // The client ConceptRecord type omits the envelope timestamps, but the server sends
 // them — read updatedAt loosely for the secondary sort (missing → "" sorts last).
@@ -72,7 +78,7 @@ export function filterConceptsByName(
   );
 }
 
-function ConceptListView({ ctx }: { ctx: WorkspaceContext }) {
+function ConceptListView({ ctx, initialMode = "list" }: { ctx: WorkspaceContext; initialMode?: "list" | "graph" }) {
   const { focus, dispatch, conceptsVersion } = ctx;
   const [concepts, setConcepts] = useState<ConceptRecord[]>([]);
   const [noteCounts, setNoteCounts] = useState<Map<string, number>>(new Map());
@@ -80,6 +86,9 @@ function ConceptListView({ ctx }: { ctx: WorkspaceContext }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [filter, setFilter] = useState("");
+  // CG-3: 列表 ⇄ 图谱. The graph body is a LAZY chunk — nothing loads until the
+  // first flip (or a layout node mounts the registered concept.graph view).
+  const [mode, setMode] = useState<"list" | "graph">(initialMode);
 
   const load = useCallback(async () => {
     setError("");
@@ -121,10 +130,37 @@ function ConceptListView({ ctx }: { ctx: WorkspaceContext }) {
       <div className="panel-title">
         <Network size={16} />
         {t(conceptMessages.title)}
+        {/* CG-3 mode toggle — 图谱 lazy-loads the core graph view. */}
+        <div className="concept-pane-modes" role="group" aria-label={t(conceptMessages.title)}>
+          <button
+            type="button"
+            className="concept-pane-mode"
+            data-mode="list"
+            aria-pressed={mode === "list"}
+            onClick={() => setMode("list")}
+          >
+            {t(graphMessages.listMode)}
+          </button>
+          <button
+            type="button"
+            className="concept-pane-mode"
+            data-mode="graph"
+            aria-pressed={mode === "graph"}
+            onClick={() => setMode("graph")}
+          >
+            {t(graphMessages.graphMode)}
+          </button>
+        </div>
       </div>
 
       {error ? <div className="error-box">{error}</div> : null}
 
+      {mode === "graph" ? (
+        <Suspense fallback={<div className="empty-state">{t(graphMessages.loading)}</div>}>
+          <ConceptGraphView ctx={ctx} />
+        </Suspense>
+      ) : (
+        <>
       {/* New concept form. */}
       <section className="concept-create">
         <input
@@ -190,8 +226,11 @@ function ConceptListView({ ctx }: { ctx: WorkspaceContext }) {
           <div className="empty-state">{t(conceptMessages.noMatches)}</div>
         ) : null}
       </div>
+        </>
+      )}
 
-      {/* The inspector for whatever is focused (concept / relation), via the registry. */}
+      {/* The inspector for whatever is focused (concept / relation), via the registry.
+          Rendered in BOTH modes: a graph-node click focuses the concept here. */}
       <section className="concept-inspector-host">
         {focus.focus?.type === "concept" || focus.focus?.type === "relation" ? (
           renderInspector(focus.focus, ctx)
@@ -204,3 +243,8 @@ function ConceptListView({ ctx }: { ctx: WorkspaceContext }) {
 }
 
 registerView({ kind: "concept.list", render: (_node, ctx) => <ConceptListView ctx={ctx} /> });
+
+// CG-3: the graph as a REGISTERED VIEW (concept-light-and-graph §2 — `concept.graph`,
+// lazy chunk). Same pane component, graph-first: a layout node of this kind opens
+// straight into 图谱 (the toggle still allows flipping back to the list).
+registerView({ kind: "concept.graph", render: (_node, ctx) => <ConceptListView ctx={ctx} initialMode="graph" /> });

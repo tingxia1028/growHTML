@@ -161,7 +161,9 @@ export function PdfReader({
         markers.push({
           anchorId: anchor.id,
           anchorSlotHtml: buildAnchorSlotHtml(),
-          noteSlotHtml: buildNoteSlotHtml(annotationPayload(anchor))
+          noteSlotHtml: buildNoteSlotHtml(annotationPayload(anchor)),
+          // Cluster mini-list snippet (D2 same-line clustering).
+          quote: anchor.quote
         });
     }
     markerOverlayRef.current?.setMarkers(markers);

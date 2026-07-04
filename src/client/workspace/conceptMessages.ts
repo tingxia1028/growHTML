@@ -37,6 +37,10 @@ export const conceptMessages = defineMessages({
   // —— 关联到… (ConceptInspector's one-step relation) ——
   relateToPlaceholder: { zh: "关联到…", en: "Relate to…" },
 
+  // —— CG-2 AI 顺手挂 (GenerationPreview suggestion chips) ——
+  suggestedConcepts: { zh: "AI 建议的知元", en: "AI-suggested concepts" },
+  removeSuggested: { zh: "移除该知元建议", en: "Remove this concept suggestion" },
+
   // —— concept list usability (conceptViews) ——
   filterPlaceholder: { zh: "筛选知元…", en: "Filter concepts…" },
   linkedNoteCount: { zh: "关联笔记数", en: "Linked note count" },

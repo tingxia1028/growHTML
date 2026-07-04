@@ -27,6 +27,7 @@ import * as anchorsService from "./services/anchors";
 import * as notesService from "./services/notes";
 import * as layersService from "./services/layers";
 import * as conceptsService from "./services/concepts";
+import * as graphService from "./services/graph";
 import * as operationsService from "./services/operations";
 import * as patchesService from "./services/patches";
 import * as assetsService from "./services/assets";
@@ -1016,6 +1017,24 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
       res.json({ ok: true });
     } catch (error) {
       next(error);
+    }
+  });
+
+  // —— Concept graph (CG-1) — the CORE engine's read model, derived from vault
+  // truth on every call (concepts + notes + relations; sealed notes merged like
+  // listNotes). ?conceptId&depth = the inspector's neighborhood query; ?sourceId =
+  // this-document scope. Plugins get GraphLens (client-side style), never a second
+  // graph or a different assembly (user law 2026-07-04). ——
+  app.get("/api/graph", async (req, res, next) => {
+    try {
+      const input = graphService.graphQuerySchema.parse({
+        conceptId: typeof req.query.conceptId === "string" ? req.query.conceptId : undefined,
+        depth: typeof req.query.depth === "string" ? req.query.depth : undefined,
+        sourceId: typeof req.query.sourceId === "string" ? req.query.sourceId : undefined
+      });
+      res.json(await graphService.getConceptGraph({ vault, sealed }, input));
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
     }
   });
 

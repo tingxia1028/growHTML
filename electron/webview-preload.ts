@@ -154,7 +154,9 @@ function paintGuestAnchors(anchors: WebAnchorMsg[]): void {
           noteHtml: anchor.noteHtml,
           noteCount: anchor.noteCount,
           noteTypes: anchor.noteTypes
-        })
+        }),
+        // Cluster mini-list snippet (D2 same-line clustering — same modules, guest realm).
+        quote: anchor.quote
       });
     }
   }

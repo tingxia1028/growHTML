@@ -23,8 +23,22 @@
 // scoped); clicking the RIGHT slot keeps today's behavior (synthesizes the anchor
 // click that opens the shared grouped note card). Both still report through
 // onAction (the host focus bridge / the guest's sv:marker-action channel).
+//
+// D2 completion (this pass):
+//   • CARD-OPEN SUPPRESSION — while the shared #sv-note-card shows an anchor
+//     (hover or pinned), wireNoteCard stamps `data-sv-card-open="<anchorId>"` on
+//     the realm body; layout() hides BOTH of that anchor's chips so chip and card
+//     never collide, and a MutationObserver on that attribute re-runs layout when
+//     the card opens/closes. No new state store — the card already knows its key.
+//   • SAME-LINE CLUSTERING — two+ anchors whose slot chips land within one
+//     line-height collapse into ONE cluster chip carrying a count; clicking it
+//     expands a mini-list (anchor glyph + quote snippet per row) and a row click
+//     opens that anchor's card (the note-slot click path). The bucketing math is
+//     pure (clusterSlotPlacements) and unit-tested next to this file.
 
 import {
+  ANCHOR_GLYPH,
+  CARD_OPEN_ATTR,
   isAnchorNotesHidden,
   rectToOverlayLocal,
   setAnchorNotesHidden,
@@ -46,6 +60,9 @@ export interface MarkerItem {
   anchorSlotHtml: string;
   /** RIGHT slot content — buildNoteSlotHtml(payload); "" ⇒ no note chip. */
   noteSlotHtml: string;
+  /** The anchor's passage text — the cluster mini-list row snippet (D2 clustering).
+   *  Optional: a quote-less anchor (image region) rows as its anchor id. */
+  quote?: string;
 }
 
 export type MarkerAction = {
@@ -94,6 +111,71 @@ export function subscribeAnchorGlyphVisibility(listener: () => void): () => void
   };
 }
 
+// —— Same-line clustering (D2) — pure y-bucketing of slot placements ——————————
+// One slot chip's target position in overlay-local coords, plus the line height
+// its rect reported (the bucketing tolerance basis). Plain literals → jsdom-testable
+// without live layout.
+export type SlotPlacement = {
+  anchorId: string;
+  x: number;
+  y: number;
+  /** The measured line (rect) height — 0/absent falls back to a 16px line. */
+  h: number;
+};
+
+export type SlotCluster = {
+  /** Member anchor ids in INPUT (document) order. length 1 = no clustering. */
+  anchorIds: string[];
+  x: number;
+  y: number;
+};
+
+const FALLBACK_LINE_HEIGHT = 16;
+
+/**
+ * Bucket slot placements by line: a placement joins the current bucket iff its y
+ * is within ONE line-height of the bucket's topmost member (tolerance = that first
+ * member's own height, min 16px fallback) — two chips on the same text line have
+ * ~equal y, while adjacent lines differ by at least the line advance (≥ glyph
+ * height), so a strict `< lineHeight` split separates them. Cluster position:
+ * y = the topmost member's y; x = the LEFTMOST member x for the left/anchor side
+ * (the chip pulls into the margin) and the RIGHTMOST for the right/note side (the
+ * chip hangs off the passage end). Member ids keep input (document) order.
+ */
+export function clusterSlotPlacements(placements: SlotPlacement[], side: "anchor" | "note"): SlotCluster[] {
+  if (!placements.length) return [];
+  const byY = placements
+    .map((placement, index) => ({ placement, index }))
+    .sort((a, b) => a.placement.y - b.placement.y || a.index - b.index);
+  const clusters: SlotCluster[] = [];
+  let bucket: { top: number; tolerance: number; members: { placement: SlotPlacement; index: number }[] } | null = null;
+  const flush = () => {
+    if (!bucket) return;
+    const members = [...bucket.members].sort((a, b) => a.index - b.index);
+    const xs = members.map((m) => m.placement.x);
+    clusters.push({
+      anchorIds: members.map((m) => m.placement.anchorId),
+      x: side === "anchor" ? Math.min(...xs) : Math.max(...xs),
+      y: bucket.top
+    });
+    bucket = null;
+  };
+  for (const entry of byY) {
+    if (bucket && entry.placement.y - bucket.top < bucket.tolerance) {
+      bucket.members.push(entry);
+      continue;
+    }
+    flush();
+    bucket = {
+      top: entry.placement.y,
+      tolerance: entry.placement.h > 0 ? entry.placement.h : FALLBACK_LINE_HEIGHT,
+      members: [entry]
+    };
+  }
+  flush();
+  return clusters;
+}
+
 // Escape a double-quote in an anchor id the same way annotationLayer/DomReader do,
 // so an exotic id can't break the attribute selector.
 function escapeId(id: string): string {
@@ -113,6 +195,13 @@ export class MarkerOverlay {
   private readonly adapter: AnnotationRectSource | null;
   private overlay: HTMLElement | null = null;
   private readonly chips = new Map<string, AnchorChips>();
+  /** Per-anchor quote snippets (from setMarkers) — the cluster mini-list rows. */
+  private readonly quotes = new Map<string, string>();
+  /** Live cluster chips keyed by `${side}:${ids.join("|")}` (rebuilt by layout). */
+  private readonly clusterChips = new Map<string, HTMLElement>();
+  /** The cluster whose mini-list is currently expanded (null = closed). */
+  private openClusterKey: string | null = null;
+  private clusterList: HTMLElement | null = null;
   private rafId: number | null = null;
   private readonly unsubscribes: (() => void)[] = [];
 
@@ -130,6 +219,27 @@ export class MarkerOverlay {
     }
     // The global anchor-glyph switch re-runs layout (anchor chips hide/show).
     this.unsubscribes.push(subscribeAnchorGlyphVisibility(() => this.reposition()));
+    // Card-open suppression (D2): wireNoteCard flips data-sv-card-open on the realm
+    // body as the shared card shows/hides an anchor — watch that ONE attribute and
+    // re-layout so the open anchor's chips hide (and restore on close). The observer
+    // lives on the realm body (the card's home), cross-realm-safe via defaultView.
+    const doc = hostEl.ownerDocument;
+    const body = doc?.body;
+    const MO = (doc?.defaultView as (Window & { MutationObserver?: typeof MutationObserver }) | null)?.MutationObserver;
+    if (body && typeof MO === "function") {
+      const observer = new MO(() => this.reposition());
+      observer.observe(body, { attributes: true, attributeFilter: [CARD_OPEN_ATTR] });
+      this.unsubscribes.push(() => observer.disconnect());
+    }
+    // Dismiss an expanded cluster mini-list on any outside click (realm-local).
+    const onDocClick = (event: Event) => {
+      if (!this.openClusterKey) return;
+      const target = event.target as (Element & { closest?: Element["closest"] }) | null;
+      if (target?.closest?.(".sv-cluster-list, .sv-cluster-chip")) return;
+      this.closeClusterList();
+    };
+    doc?.addEventListener("click", onDocClick, true);
+    this.unsubscribes.push(() => doc?.removeEventListener("click", onDocClick, true));
   }
 
   // Lazily create the overlay div (appended to the host, which must be a positioning
@@ -155,6 +265,7 @@ export class MarkerOverlay {
       const anchor = this.createChip(overlay, item.anchorId, "anchor", item.anchorSlotHtml);
       const note = item.noteSlotHtml ? this.createChip(overlay, item.anchorId, "note", item.noteSlotHtml) : null;
       this.chips.set(item.anchorId, { anchor, note });
+      if (item.quote) this.quotes.set(item.anchorId, item.quote);
     }
     this.reposition();
   }
@@ -194,17 +305,24 @@ export class MarkerOverlay {
     if (role === "anchor") {
       // LEFT slot (user-amended D2): toggle this anchor's notes.
       this.toggleAnchorNotes(anchorId);
+      this.onAction?.({ anchorId, role });
     } else {
-      // RIGHT slot: today's behavior — synthesize the anchor click that opens the
-      // shared grouped note card in this realm.
-      const anchor = this.anchorFor(anchorId);
-      if (anchor) {
-        const view = this.hostEl.ownerDocument.defaultView;
-        const EventCtor = view?.MouseEvent ?? MouseEvent;
-        anchor.dispatchEvent(new EventCtor("click", { bubbles: true, cancelable: true }));
-      }
+      // RIGHT slot: today's behavior — open the anchor's card (+ report the action).
+      this.openAnchorCard(anchorId);
     }
-    this.onAction?.({ anchorId, role });
+  }
+
+  // Synthesize the anchor click that opens the shared grouped note card in this
+  // realm, and report a "note" action to the host bridge. Shared by the note-slot
+  // chip AND the cluster mini-list rows.
+  private openAnchorCard(anchorId: string): void {
+    const anchor = this.anchorFor(anchorId);
+    if (anchor) {
+      const view = this.hostEl.ownerDocument.defaultView;
+      const EventCtor = view?.MouseEvent ?? MouseEvent;
+      anchor.dispatchEvent(new EventCtor("click", { bubbles: true, cancelable: true }));
+    }
+    this.onAction?.({ anchorId, role: "note" });
   }
 
   // Flip the per-anchor "notes hidden" state. The store lives in annotationLayer
@@ -249,9 +367,19 @@ export class MarkerOverlay {
     const origin = { left: overlayRect.left, top: overlayRect.top };
     const doc = this.hostEl.ownerDocument;
     const glyphsVisible = getAnchorGlyphVisibility();
+    // Card-open suppression (D2): the anchor whose card the shared #sv-note-card is
+    // currently showing (hover or pinned) hides BOTH its chips — wireNoteCard stamps
+    // the id on the realm body; the constructor's MutationObserver re-ran us here.
+    const cardOpenId = doc?.body?.getAttribute(CARD_OPEN_ATTR) ?? "";
+
+    // Pass 1 — resolve each anchor's slots to overlay-local placements, applying the
+    // per-anchor visibility rules (missing rects / card-open / notes-toggle / the
+    // global glyph switch). Suppressed slots hide immediately and never cluster.
+    const anchorSlots: SlotPlacement[] = [];
+    const noteSlots: SlotPlacement[] = [];
     for (const [anchorId, chips] of this.chips) {
       const rects = this.rectsFor(anchorId);
-      if (!rects) {
+      if (!rects || anchorId === cardOpenId) {
         chips.anchor.style.display = "none";
         if (chips.note) chips.note.style.display = "none";
         continue;
@@ -263,9 +391,12 @@ export class MarkerOverlay {
       if (notesHidden) chips.anchor.setAttribute("data-sv-notes-hidden", "1");
       else chips.anchor.removeAttribute("data-sv-notes-hidden");
       if (glyphsVisible) {
-        chips.anchor.style.left = `${rects.first.left - origin.left}px`;
-        chips.anchor.style.top = `${rects.first.top - origin.top}px`;
-        chips.anchor.style.display = "";
+        anchorSlots.push({
+          anchorId,
+          x: rects.first.left - origin.left,
+          y: rects.first.top - origin.top,
+          h: rects.first.height
+        });
       } else {
         chips.anchor.style.display = "none";
       }
@@ -277,21 +408,151 @@ export class MarkerOverlay {
           chips.note.style.display = "none";
         } else {
           const local = rectToOverlayLocal(rects.last, origin);
-          chips.note.style.left = `${local.x}px`;
-          chips.note.style.top = `${local.y}px`;
-          chips.note.style.display = "";
+          noteSlots.push({ anchorId, x: local.x, y: local.y, h: rects.last.height });
         }
       }
     }
+
+    // Pass 2 — same-line clustering per slot side: singleton clusters place the
+    // anchor's own chip; multi clusters hide the member chips behind ONE cluster chip.
+    const nextClusters = new Map<string, SlotCluster & { side: "anchor" | "note" }>();
+    this.placeSide("anchor", anchorSlots, nextClusters);
+    this.placeSide("note", noteSlots, nextClusters);
+    this.syncClusterChips(nextClusters);
   }
 
-  // Remove all chips (keeps the overlay div for reuse).
+  // Place one side's slots after clustering. Singletons position the member's own
+  // chip (same math as before clustering existed); multi-member clusters hide the
+  // member chips and register a cluster chip for syncClusterChips.
+  private placeSide(
+    side: "anchor" | "note",
+    slots: SlotPlacement[],
+    nextClusters: Map<string, SlotCluster & { side: "anchor" | "note" }>
+  ): void {
+    const chipFor = (anchorId: string): HTMLElement | null => {
+      const chips = this.chips.get(anchorId);
+      return side === "anchor" ? (chips?.anchor ?? null) : (chips?.note ?? null);
+    };
+    for (const cluster of clusterSlotPlacements(slots, side)) {
+      if (cluster.anchorIds.length === 1) {
+        const chip = chipFor(cluster.anchorIds[0]);
+        if (!chip) continue;
+        chip.style.left = `${cluster.x}px`;
+        chip.style.top = `${cluster.y}px`;
+        chip.style.display = "";
+        continue;
+      }
+      for (const anchorId of cluster.anchorIds) {
+        const chip = chipFor(anchorId);
+        if (chip) chip.style.display = "none";
+      }
+      nextClusters.set(`${side}:${cluster.anchorIds.join("|")}`, { ...cluster, side });
+    }
+  }
+
+  // Reconcile the cluster-chip pool against this layout's clusters: create missing
+  // chips, position all, drop stale ones. An expanded mini-list follows its chip and
+  // closes when its cluster dissolves (members scrolled apart / suppressed).
+  private syncClusterChips(nextClusters: Map<string, SlotCluster & { side: "anchor" | "note" }>): void {
+    const overlay = this.ensureOverlay();
+    const doc = this.hostEl.ownerDocument;
+    for (const [key, chip] of this.clusterChips) {
+      if (!nextClusters.has(key)) {
+        chip.remove();
+        this.clusterChips.delete(key);
+      }
+    }
+    for (const [key, cluster] of nextClusters) {
+      let chip = this.clusterChips.get(key);
+      if (!chip) {
+        chip = doc.createElement("div");
+        chip.className = `sv-anchor-markers sv-slot-${cluster.side} sv-cluster-chip`;
+        chip.setAttribute("data-sv", "1");
+        chip.setAttribute("data-sv-cluster", cluster.side);
+        chip.setAttribute("data-sv-cluster-ids", cluster.anchorIds.join(","));
+        const label = `${cluster.anchorIds.length} anchors on this line`;
+        chip.innerHTML =
+          `<button type="button" class="sv-anchor-marker" title="${label}" aria-label="${label}">` +
+          `${ANCHOR_GLYPH}<sup class="sv-anchor-marker-count">${cluster.anchorIds.length}</sup></button>`;
+        chip.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          this.toggleClusterList(key);
+        });
+        overlay.appendChild(chip);
+        this.clusterChips.set(key, chip);
+      }
+      chip.style.left = `${cluster.x}px`;
+      chip.style.top = `${cluster.y}px`;
+      chip.style.display = "";
+      if (this.openClusterKey === key && this.clusterList) {
+        this.clusterList.style.left = `${cluster.x}px`;
+        this.clusterList.style.top = `${cluster.y + 20}px`;
+      }
+    }
+    if (this.openClusterKey && !nextClusters.has(this.openClusterKey)) this.closeClusterList();
+  }
+
+  // Expand/collapse a cluster chip's mini-list: one row per member anchor (anchor
+  // glyph + quote snippet, text-only via textContent so an exotic quote can't
+  // inject); a row click opens that anchor's card (the note-slot click path).
+  private toggleClusterList(key: string): void {
+    if (this.openClusterKey === key) {
+      this.closeClusterList();
+      return;
+    }
+    this.closeClusterList();
+    const chip = this.clusterChips.get(key);
+    if (!chip) return;
+    const doc = this.hostEl.ownerDocument;
+    const list = doc.createElement("div");
+    list.className = "sv-cluster-list";
+    list.setAttribute("data-sv", "1");
+    const anchorIds = (chip.getAttribute("data-sv-cluster-ids") ?? "").split(",").filter(Boolean);
+    for (const anchorId of anchorIds) {
+      const row = doc.createElement("button");
+      row.type = "button";
+      row.className = "sv-cluster-row";
+      row.setAttribute("data-anchor-id", anchorId);
+      row.innerHTML = ANCHOR_GLYPH;
+      const snippet = doc.createElement("span");
+      snippet.className = "sv-cluster-row-quote";
+      const quote = (this.quotes.get(anchorId) ?? "").replace(/\s+/g, " ").trim();
+      snippet.textContent = quote ? quote.slice(0, 60) : anchorId;
+      row.appendChild(snippet);
+      row.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.closeClusterList();
+        this.openAnchorCard(anchorId);
+      });
+      list.appendChild(row);
+    }
+    list.style.left = chip.style.left;
+    list.style.top = `${Number.parseFloat(chip.style.top || "0") + 20}px`;
+    this.ensureOverlay().appendChild(list);
+    this.clusterList = list;
+    this.openClusterKey = key;
+  }
+
+  private closeClusterList(): void {
+    this.clusterList?.remove();
+    this.clusterList = null;
+    this.openClusterKey = null;
+  }
+
+  // Remove all chips — slot chips, cluster chips, an expanded mini-list — and the
+  // quote memo (keeps the overlay div for reuse).
   clear(): void {
     for (const chips of this.chips.values()) {
       chips.anchor.remove();
       chips.note?.remove();
     }
     this.chips.clear();
+    for (const chip of this.clusterChips.values()) chip.remove();
+    this.clusterChips.clear();
+    this.closeClusterList();
+    this.quotes.clear();
   }
 
   // Tear down: remove the overlay div and disconnect the observers/listeners

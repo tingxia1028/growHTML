@@ -1,0 +1,174 @@
+/* Concept graph (CG-3) — scoped styles for the core 图谱 view + the pane-mode
+   toggle + the GenerationPreview suggestion chips (CG-2). Rides the app's CSS
+   variables with local fallbacks; no global selectors. */
+
+/* —— pane mode toggle (Concepts pane header) —— */
+.concept-pane-modes {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: auto;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
+}
+
+.concept-pane-mode {
+  border: 0;
+  background: transparent;
+  padding: 2px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-2, #6b7280);
+}
+
+.concept-pane-mode[aria-pressed="true"] {
+  background: var(--surface-0, #fff);
+  color: var(--text-1, #111827);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+/* —— graph body —— */
+.concept-graph {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.concept-graph-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.concept-graph-search {
+  flex: 1 1 120px;
+  min-width: 100px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-1, rgba(127, 127, 127, 0.3));
+  border-radius: 6px;
+  background: var(--surface-0, transparent);
+  font-size: 12px;
+}
+
+.concept-graph-lens {
+  font-size: 12px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border-1, rgba(127, 127, 127, 0.3));
+  background: var(--surface-0, transparent);
+}
+
+.concept-graph-stats {
+  font-size: 11px;
+  color: var(--text-2, #6b7280);
+  white-space: nowrap;
+}
+
+.concept-graph-expand {
+  font-size: 11px;
+}
+
+.concept-graph-svg {
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border-1, rgba(127, 127, 127, 0.2));
+  border-radius: 10px;
+  background: var(--surface-0, transparent);
+}
+
+.concept-graph-edge {
+  stroke: var(--graph-edge-stored, #6b7280);
+}
+
+.concept-graph-edge.edge-cooccurrence {
+  stroke: var(--graph-edge-derived, #9ca3af);
+}
+
+.concept-graph-node {
+  cursor: pointer;
+}
+
+.concept-graph-node circle {
+  fill: var(--graph-node, #3b82f6);
+  stroke: var(--surface-0, #fff);
+  stroke-width: 1.5;
+}
+
+.concept-graph-node:hover circle {
+  filter: brightness(1.15);
+}
+
+.concept-graph-node.active circle {
+  stroke: var(--accent, #f59e0b);
+  stroke-width: 3;
+}
+
+.concept-graph-label {
+  font-size: 10px;
+  text-anchor: middle;
+  fill: var(--text-1, #374151);
+  pointer-events: none;
+  user-select: none;
+}
+
+.concept-graph-legend {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-2, #6b7280);
+}
+
+.concept-graph-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.concept-graph-legend-swatch {
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+/* —— CG-2: AI-suggested concept chips in the GenerationPreview —— */
+.generation-preview-concepts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.generation-preview-concepts-label {
+  color: var(--text-2, #6b7280);
+  font-size: 11px;
+}
+
+.generation-concept-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface-2, rgba(59, 130, 246, 0.12));
+  border: 1px solid var(--border-1, rgba(59, 130, 246, 0.35));
+}
+
+.generation-concept-chip .concept-chip-remove {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-2, #6b7280);
+}
+
+.generation-concept-chip .concept-chip-remove:hover {
+  color: var(--text-1, #111827);
+}

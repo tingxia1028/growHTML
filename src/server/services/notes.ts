@@ -3,6 +3,7 @@
 // carry the svpack sealed read-model (merge + read-only guard), so their deps
 // include the SealedRuntime.
 import { z } from "zod";
+import { WIKI_LINK_CONTENT_TYPES, extractWikiLinks } from "../../core/concepts/wikiLinks";
 import { createEntityId } from "../../core/ids";
 import { getNoteContentSpec, parseNoteContent } from "../../core/notes/contentTypes";
 import { noteSchema, type NoteRecord } from "../../core/schema";
@@ -11,6 +12,7 @@ import { withTombstone } from "../../core/store/trash";
 import type { StudyVault } from "../../core/vault";
 import type { SealedRuntime } from "../svpack";
 import { deleteAnchorsWithoutNotes } from "./anchors";
+import { ensureConceptsByName } from "./concepts";
 import { ForbiddenError, NotFoundError, ValidationError } from "./errors";
 
 export type NotesDeps = { vault: StudyVault };
@@ -56,6 +58,26 @@ export const updateNoteRequestSchema = z
   );
 export type UpdateNoteInput = z.infer<typeof updateNoteRequestSchema>;
 
+// —— [[双链]] wiki-links (CG-2, concept-light-and-graph §1.2) ——————————————————
+// `[[名词]]` in a text note's content IS a concept link: on create/update the text
+// is parsed and each name is create-or-matched (the shared normalizeConceptName
+// identity), then UNIONED into the note's conceptIds — writing IS linking, and the
+// graph derives the rest. ADDITIVE by design: removing `[[x]]` from the text does
+// NOT unlink (unlinking stays an explicit act, so an edit can't silently drop a
+// manually-made link).
+async function conceptIdsWithWikiLinks(
+  vault: StudyVault,
+  contentType: string,
+  content: unknown,
+  conceptIds: readonly string[]
+): Promise<string[]> {
+  if (!WIKI_LINK_CONTENT_TYPES.has(contentType) || typeof content !== "string") return [...conceptIds];
+  const names = extractWikiLinks(content);
+  if (names.length === 0) return [...conceptIds];
+  const linked = await ensureConceptsByName({ vault }, names);
+  return Array.from(new Set([...conceptIds, ...linked.map((concept) => concept.id)]));
+}
+
 /** Create a note; content is validated against its contentType's NoteContentSpec. */
 export async function createNote({ vault }: NotesDeps, input: CreateNoteInput): Promise<NoteRecord> {
   // Unknown content type → typed 400 (a plain Error here would otherwise be 500).
@@ -64,6 +86,8 @@ export async function createNote({ vault }: NotesDeps, input: CreateNoteInput): 
   }
   // Validate content against its type's spec (ZodError → 400 at the transport edge).
   const content = parseNoteContent(input.contentType, input.content);
+  // [[双链]]: text notes link their wiki-named concepts as a save byproduct.
+  const conceptIds = await conceptIdsWithWikiLinks(vault, input.contentType, content, input.conceptIds);
   const now = new Date().toISOString();
   // Membership: explicit layerIds win; else a source-attached note defaults to that
   // source's "owned" layer (never orphan it to invisibility, spec §5); else empty.
@@ -81,7 +105,7 @@ export async function createNote({ vault }: NotesDeps, input: CreateNoteInput): 
     createdBy: "user",
     sourceId: input.sourceId,
     anchorIds: input.anchorIds,
-    conceptIds: input.conceptIds,
+    conceptIds,
     contentType: input.contentType,
     content,
     visibility: "private",
@@ -150,9 +174,16 @@ export async function updateNote(
   const content =
     input.content !== undefined ? parseNoteContent(existing.contentType, input.content) : existing.content;
   const previousAnchorIds = existing.anchorIds;
+  // [[双链]] on edit: re-parse EDITED text content so newly-typed links land (the
+  // union keeps every existing link — additive, never a silent unlink).
+  const baseConceptIds = input.conceptIds ?? existing.conceptIds;
+  const conceptIds =
+    input.content !== undefined
+      ? await conceptIdsWithWikiLinks(vault, existing.contentType, content, baseConceptIds)
+      : baseConceptIds;
   const note = noteSchema.parse({
     ...existing,
-    conceptIds: input.conceptIds ?? existing.conceptIds,
+    conceptIds,
     anchorIds: input.anchorIds ?? existing.anchorIds,
     layerIds: input.layerIds ?? existing.layerIds,
     content,

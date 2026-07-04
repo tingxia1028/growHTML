@@ -73,7 +73,9 @@ export function ImageReader({ src, sourceId, anchors, onSelect, onMarkerAction, 
             anchorId: anchor.id,
             // Single box ⇒ first === last: both D2 slots hang off the same rect.
             anchorSlotHtml: buildAnchorSlotHtml(),
-            noteSlotHtml: buildNoteSlotHtml(annotationPayload(anchor))
+            noteSlotHtml: buildNoteSlotHtml(annotationPayload(anchor)),
+            // A region has no quote — the cluster mini-list rows fall back to the id.
+            quote: anchor.quote
           }))
         );
       }

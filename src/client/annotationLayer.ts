@@ -82,6 +82,59 @@ export const ANNOTATION_CSS = `
 .sv-anchor-markers[data-sv-notes-hidden="1"] {
   opacity: 0.55;
 }
+/* D2 same-line clustering: 2+ anchors whose slot chips land on one text line
+   collapse into ONE cluster chip (anchor glyph + count). Clicking it expands the
+   mini-list below — one row per member anchor (glyph + quote snippet); a row click
+   opens that anchor's card. Both live inside the overlay, literal-colored like
+   everything else in this realm-injected sheet. */
+.sv-cluster-chip .sv-anchor-marker {
+  cursor: pointer;
+}
+.sv-cluster-list {
+  position: absolute;
+  z-index: 7;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 160px;
+  max-width: 300px;
+  padding: 4px;
+  border: 1px solid #c9dcff;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #202124;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font: 12px/1.4 Inter, "Segoe UI", Arial, sans-serif;
+}
+.sv-cluster-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #202124;
+  text-align: left;
+  cursor: pointer;
+}
+.sv-cluster-row:hover,
+.sv-cluster-row:focus-visible {
+  background: #eef5ff;
+  outline: none;
+}
+.sv-cluster-row svg {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  stroke: #3474e6;
+}
+.sv-cluster-row-quote {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .sv-anchor-marker {
   position: relative;
   flex: 0 0 auto;
@@ -398,6 +451,15 @@ export function clampGeom(geom: CardGeom, viewW: number, viewH: number): CardGeo
 
 const wiredDocs = new WeakSet<Document>();
 
+// —— Card-open suppression (D2) ————————————————————————————————————————————
+// While the shared #sv-note-card shows an anchor (hover OR pinned), wireNoteCard
+// stamps that anchor's id on the realm body under this attribute; MarkerOverlay
+// watches it (MutationObserver) and hides the open anchor's two slot chips so chip
+// and card never collide. Cleared on hide/dismiss. No new state store — the card
+// already tracks currentKey. Margin-gutter cards don't suppress (they live in the
+// reserved right padding and never overlap the passage chips).
+export const CARD_OPEN_ATTR = "data-sv-card-open";
+
 // --- Per-anchor notes-visibility toggle (D2, user-amended 2026-07-04) ---------
 // Clicking an anchor's LEFT glyph chip toggles that anchor's notes: the note-slot
 // chip AND every card presentation (hover, pinned, margin) hide; a second click
@@ -486,11 +548,21 @@ function wireNoteCard(doc: Document): void {
     });
   };
 
+  // D2 card-open suppression: publish/clear the shown anchor's id on the realm body
+  // so MarkerOverlay hides that anchor's chips while its card is visible.
+  const setCardOpenAttr = (key: string) => {
+    const bodyEl = doc.body;
+    if (!bodyEl) return;
+    if (key) bodyEl.setAttribute(CARD_OPEN_ATTR, key);
+    else bodyEl.removeAttribute(CARD_OPEN_ATTR);
+  };
+
   const placeCardAtTarget = (target: Element) => {
     if (!target.isConnected) {
       pinned = false;
       currentTarget = null;
       card.classList.remove("sv-note-card-show");
+      setCardOpenAttr("");
       return;
     }
     const rect = target.getBoundingClientRect();
@@ -537,15 +609,22 @@ function wireNoteCard(doc: Document): void {
       anchorOffset = { x: 0, y: 6 };
     }
     card.classList.add("sv-note-card-show");
+    // The card is now visible for this anchor — suppress its chips (D2). show()'s
+    // disconnected-target branch (placeCardAtTarget) clears the attr again.
+    setCardOpenAttr(currentKey);
     placeCardAtTarget(target);
   };
   const hide = () => {
-    if (!pinned) card.classList.remove("sv-note-card-show");
+    if (!pinned) {
+      card.classList.remove("sv-note-card-show");
+      setCardOpenAttr("");
+    }
   };
   const dismiss = () => {
     pinned = false;
     currentTarget = null;
     card.classList.remove("sv-note-card-show");
+    setCardOpenAttr("");
   };
 
   // The notes-visibility toggle (setAnchorNotesHidden) dismisses an open card for
@@ -596,6 +675,7 @@ function wireNoteCard(doc: Document): void {
         pinned = false;
         currentTarget = null;
         card.classList.remove("sv-note-card-show");
+        setCardOpenAttr("");
       } else {
         pinned = true;
         show(target);

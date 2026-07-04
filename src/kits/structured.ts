@@ -18,7 +18,11 @@ import type { SnapshotStore } from "../core/store/snapshotStore";
 import type { AutoContext } from "../ai/autoContext";
 import { FORM_ROUTER_CONTENT_TYPE } from "../ai/mockProvider";
 import type { ChatContext, ModelProvider } from "../ai/provider";
-import { generateStructured, StructuredGenerationError } from "../ai/structured";
+import {
+  generateStructuredWithConcepts,
+  StructuredGenerationError,
+  type StructuredWithConcepts
+} from "../ai/structured";
 import { resolvePrompt, type ResolvedPrompt } from "./resolvePrompt";
 
 // Re-export so existing importers (and tests) keep their import path.
@@ -36,13 +40,15 @@ export type GenerateStructuredRequest = {
   autoContext?: AutoContext;
 };
 
-// Run the classic schema-targeted loop for an already-resolved prompt.
+// Run the classic schema-targeted loop for an already-resolved prompt. Returns the
+// validated output PLUS the CG-2 concepts side-channel (AI 顺手挂 — the model tags
+// the key concepts beside the content; empty under the deterministic mock).
 async function generateForPrompt(
   provider: ModelProvider,
   prompt: ResolvedPrompt,
   request: GenerateStructuredRequest,
   maxAttempts: number
-): Promise<unknown> {
+): Promise<StructuredWithConcepts> {
   const contentType = request.contentType ?? prompt.outputType;
   const spec = getNoteContentSpec(contentType);
   if (!spec) throw new StructuredGenerationError(`Unknown contentType: ${contentType}`);
@@ -54,14 +60,15 @@ async function generateForPrompt(
 
   const input = request.input ?? {};
   const sample = prompt.mockContent ? prompt.mockContent(input) : spec.createDefault();
-  return generateStructured(
+  return generateStructuredWithConcepts(
     provider,
     {
       messages: [{ role: "user", content: prompt.build(input) }],
       schema: spec.schema,
       sample,
       contentType,
-      context: request.context
+      context: request.context,
+      suggestConcepts: true
     },
     maxAttempts
   );
@@ -79,10 +86,15 @@ export async function generateStructuredContent(
   // Unify built-in code prompts and custom data operations at this one step.
   const prompt = await resolvePrompt(request.promptId, store, request.autoContext);
   if (!prompt) throw new StructuredGenerationError(`Unknown promptId: ${request.promptId}`);
-  return generateForPrompt(provider, prompt, request, maxAttempts);
+  return (await generateForPrompt(provider, prompt, request, maxAttempts)).output;
 }
 
-export type GeneratedOperationContent = { contentType: string; content: unknown };
+export type GeneratedOperationContent = {
+  contentType: string;
+  content: unknown;
+  /** CG-2 side-channel: AI-suggested concept names for this content (absent = none). */
+  concepts?: string[];
+};
 
 /**
  * The ACTION-2a superset path (used by the server's generateKitContent): handles
@@ -112,24 +124,32 @@ export async function generateOperationContent(
     }
     // No sample: real providers generate; the mock synthesizes the deterministic
     // first router member (a markdown note) — see MockModelProvider.
-    const output = (await generateStructured(
+    const routerResult = await generateStructuredWithConcepts(
       provider,
       {
         messages: [{ role: "user", content: prompt.build(request.input ?? {}) }],
         schema: formRouterSchema,
         contentType: FORM_ROUTER_CONTENT_TYPE,
-        context: request.context
+        context: request.context,
+        suggestConcepts: true
       },
       maxAttempts
-    )) as FormRouterOutput;
-    const routed = routerOutputToNote(output);
+    );
+    const routed = routerOutputToNote(routerResult.output as FormRouterOutput);
     const spec = getNoteContentSpec(routed.contentType);
     return {
       contentType: routed.contentType,
-      content: spec ? spec.schema.parse(routed.content) : routed.content
+      content: spec ? spec.schema.parse(routed.content) : routed.content,
+      // Key absent when empty so pre-CG-2 response-shape assertions stay exact.
+      ...(routerResult.concepts.length > 0 ? { concepts: routerResult.concepts } : {})
     };
   }
 
   const contentType = request.contentType ?? prompt.outputType;
-  return { contentType, content: await generateForPrompt(provider, prompt, request, maxAttempts) };
+  const generated = await generateForPrompt(provider, prompt, request, maxAttempts);
+  return {
+    contentType,
+    content: generated.output,
+    ...(generated.concepts.length > 0 ? { concepts: generated.concepts } : {})
+  };
 }

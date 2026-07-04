@@ -54,16 +54,64 @@ export type StructuredGenerateRequest = {
   /** Optional: lets a provider shape output; passed through to `completeStructured`. */
   contentType?: string;
   context?: ChatContext;
+  /**
+   * CG-2 "AI 顺手挂" (concept-light-and-graph §1.1): ask the model to ALSO emit an
+   * optional top-level `concepts: string[]` side-channel beside the schema output.
+   * The field is CAPTURED AND STRIPPED before schema validation (strict schemas
+   * never see it), so any target schema rides the same seam untouched. Off by
+   * default — legacy callers are byte-identical.
+   */
+  suggestConcepts?: boolean;
 };
 
-// Generate + validate structured content against `schema`. On a schema mismatch it
-// re-prompts (up to `maxAttempts`) with the validation error, then throws.
-export async function generateStructured(
+/** The engine result when the concepts side-channel is in play. */
+export type StructuredWithConcepts = {
+  /** The schema-validated output (exactly what `generateStructured` returns). */
+  output: unknown;
+  /** Side-channel concept names (empty when the model omitted them / mock echoes). */
+  concepts: string[];
+};
+
+// The side-channel ask, appended to the JSON-only system message when requested.
+const CONCEPTS_SIDE_CHANNEL =
+  "Additionally, the JSON object MAY include one extra top-level field `concepts`: " +
+  "an array of 1-5 SHORT names of the key concepts/terms central to the content, in " +
+  "the content's own language. It rides beside the requested schema; omit it when unsure.";
+
+/** Max side-channel names honored per generation (mirrors the wiki-link cap idea). */
+const CONCEPTS_SIDE_CHANNEL_MAX = 8;
+
+// Pull the `concepts` side-channel off a raw model object (when asked for): capture
+// the string entries, return the object WITHOUT the key so schema.parse never
+// chokes on — or silently keeps — the extra field.
+function splitConceptsSideChannel(value: unknown): { concepts: string[]; rest: unknown } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { concepts: [], rest: value };
+  const record = value as Record<string, unknown>;
+  if (!("concepts" in record)) return { concepts: [], rest: value };
+  const { concepts: raw, ...rest } = record;
+  const concepts = Array.isArray(raw)
+    ? raw
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((entry) => entry.replace(/\s+/g, " ").trim())
+        .filter(Boolean)
+        .slice(0, CONCEPTS_SIDE_CHANNEL_MAX)
+    : [];
+  return { concepts, rest };
+}
+
+/**
+ * Generate + validate structured content against `schema`, returning the validated
+ * output AND the optional `concepts` side-channel (empty unless `suggestConcepts`
+ * asked for it and the model volunteered names). On a schema mismatch it re-prompts
+ * (up to `maxAttempts`) with the validation error, then throws.
+ */
+export async function generateStructuredWithConcepts(
   provider: ModelProvider,
   request: StructuredGenerateRequest,
   maxAttempts = 3
-): Promise<unknown> {
-  const messages: ChatMessage[] = [{ role: "system", content: JSON_ONLY }, ...request.messages];
+): Promise<StructuredWithConcepts> {
+  const system = request.suggestConcepts ? `${JSON_ONLY}\n${CONCEPTS_SIDE_CHANNEL}` : JSON_ONLY;
+  const messages: ChatMessage[] = [{ role: "system", content: system }, ...request.messages];
 
   let lastError: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -81,7 +129,11 @@ export async function generateStructured(
       raw = (await provider.complete({ messages, context: request.context })).message.content;
     }
     try {
-      return request.schema.parse(extractJson(raw));
+      const parsed = extractJson(raw);
+      const { concepts, rest } = request.suggestConcepts
+        ? splitConceptsSideChannel(parsed)
+        : { concepts: [] as string[], rest: parsed };
+      return { output: request.schema.parse(rest), concepts };
     } catch (error) {
       lastError = error;
       messages.push({
@@ -93,4 +145,15 @@ export async function generateStructured(
   throw new StructuredGenerationError(
     `Could not produce valid structured content: ${lastError instanceof Error ? lastError.message : "unknown"}`
   );
+}
+
+// Generate + validate structured content against `schema`. On a schema mismatch it
+// re-prompts (up to `maxAttempts`) with the validation error, then throws. (The
+// output-only view over generateStructuredWithConcepts — the pre-CG-2 contract.)
+export async function generateStructured(
+  provider: ModelProvider,
+  request: StructuredGenerateRequest,
+  maxAttempts = 3
+): Promise<unknown> {
+  return (await generateStructuredWithConcepts(provider, request, maxAttempts)).output;
 }

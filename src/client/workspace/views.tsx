@@ -9,7 +9,7 @@
 // Client-backed) — never with each other. Importing the plugins module runs the
 // `registerView` calls below.
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -49,7 +49,14 @@ import "../notes/builtinNoteTypes";
 // it so the viewer is registered wherever a card renders; both are idempotent.)
 import "../notes/tableViewer";
 import { ChatMessageBody } from "./ChatMessageBody";
-import { GenerationPreview } from "./GenerationPreview";
+// SC-1 slash composer (`/类型`): parse the chat input, drop the SC-0 palette above
+// it, and route a pick — bare `/type` opens the D5 floating editor in manual mode;
+// `/type + instruction` dispatches the form-router generation whose draft lands in
+// the same floating editor. The engine/palette are the shipped SC-0 modules.
+import { parseSlashInput, resolveSlashEntries } from "../slash/engine";
+import { slashEntriesFromNoteTypes } from "../slash/adapters";
+import { SlashPalette, slashPaletteKeyDown } from "../slash/SlashPalette";
+import type { SlashEntry } from "../slash/engine";
 // W1 (ai-workspace §2.1): the compact session switcher in the chat panel title row —
 // 新对话 + history (select to resume, delete with confirm). State lives in the chat
 // session domain (src/client/chat); StudyView only passes the bundled api through.
@@ -389,8 +396,41 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
     changePatchStatus,
     showTerminal,
     setShowTerminal,
-    activeFileDir
+    activeFileDir,
+    openManualEditor
   } = ctx;
+
+  // —— SC-1 slash composer state ——————————————————————————————————————————
+  // The palette derives entirely from the input: "/…" parses into {query,
+  // instruction}; entries re-rank as the query grows. Escape dismisses the palette
+  // for the CURRENT input only (any edit re-opens it); the row index resets with
+  // the input so the top match is always the Enter target.
+  const slashParsed = parseSlashInput(chatInput);
+  const [slashIndex, setSlashIndex] = useState(0);
+  const [slashDismissedFor, setSlashDismissedFor] = useState<string | null>(null);
+  const slashEntries = useMemo(
+    () => (slashParsed ? resolveSlashEntries(slashParsed.query, slashEntriesFromNoteTypes()) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- entries follow the raw input
+    [chatInput]
+  );
+  useEffect(() => setSlashIndex(0), [chatInput]);
+  const slashOpen = !!slashParsed && slashDismissedFor !== chatInput;
+
+  // A palette pick (Enter on the active row, or a click): bare `/type` = MANUAL —
+  // open the D5 floating editor seeded with the type's createDefault(); with an
+  // instruction = AI — dispatch the form-router generation carrying the picked
+  // type as an explicit hint (the draft parks in the same floating editor).
+  const pickSlashEntry = (entry: SlashEntry) => {
+    const instruction = slashParsed?.instruction ?? "";
+    setChatInput("");
+    setSlashDismissedFor(null);
+    if (entry.kind !== "noteType") return;
+    if (!instruction) {
+      openManualEditor(entry.id);
+      return;
+    }
+    void dispatch("note.generate-block", { text: `以「${entry.title}」(${entry.id}) 的形式：${instruction}` });
+  };
 
   // Bookmarks are notes too, but they surface in the dedicated Bookmarks pane (and as
   // inline anchor markers), NOT as cards here — so they read as markers, not content.
@@ -524,18 +564,31 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
           ) : null}
         </div>
 
-        {/* Command-driven generation (kit Explain/Practice, operation.run, classify-
-            reply) parks its draft here — preview → edit → Save/Regenerate/Discard.
-            Renders nothing until a draft is pending. */}
-        <GenerationPreview />
+        {/* D5: command-driven generation drafts NO LONGER park here — they open in
+            the FloatingNoteEditor next to the passage (mounted once in the shell
+            chrome). The chat pane keeps only chat + the slash entry below. */}
 
         <form
           className="chat-composer-bar"
           onSubmit={(event) => {
             event.preventDefault();
+            if (slashOpen) return; // Enter belongs to the palette while it is open
             submitComposer();
           }}
         >
+          {/* SC-1: the palette drops above the input while the draft parses as a
+              slash command ("/", "/quiz", "/判断题 出三道"…). */}
+          {slashOpen ? (
+            <div className="chat-slash-palette">
+              <SlashPalette
+                query={slashParsed?.query ?? ""}
+                entries={slashEntries}
+                activeIndex={slashIndex}
+                onPick={pickSlashEntry}
+                onNavigate={setSlashIndex}
+              />
+            </div>
+          ) : null}
           <textarea
             className="composer-input chat-composer-input"
             rows={1}
@@ -543,6 +596,27 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
             placeholder="Type / for commands"
             onChange={(event) => setChatInput(event.target.value)}
             onKeyDown={(event) => {
+              // Palette first: arrows/Enter drive the row selection while the input
+              // keeps focus (the exported SC-0 key mapping); Escape dismisses it for
+              // this draft only.
+              if (slashOpen) {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setSlashDismissedFor(chatInput);
+                  return;
+                }
+                if (
+                  slashPaletteKeyDown(event.key, {
+                    entries: slashEntries,
+                    activeIndex: slashIndex,
+                    onPick: pickSlashEntry,
+                    onNavigate: setSlashIndex
+                  })
+                ) {
+                  event.preventDefault();
+                  return;
+                }
+              }
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
                 submitComposer();

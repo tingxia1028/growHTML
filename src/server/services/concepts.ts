@@ -2,6 +2,7 @@
 // and delete routes stay one-liners over the entity stores in app.ts; these carry
 // the envelope assembly (id/type/timestamps) and the concept back-reference join.
 import { z } from "zod";
+import { normalizeConceptName } from "../../core/concepts/conceptName";
 import { createEntityId } from "../../core/ids";
 import {
   conceptSchema,
@@ -52,6 +53,43 @@ export async function createConcept({ vault }: ConceptsDeps, input: CreateConcep
   });
   await vault.stores.concepts.upsert(concept);
   return concept;
+}
+
+/**
+ * Create-or-match a batch of concept NAMES (CG-2 capture-as-byproduct: wiki-links,
+ * AI auto-tag). Identity is the shared normalizeConceptName rule — the same
+ * create-vs-link decision the client's 标为概念 dedupe makes — so a name that
+ * matches an existing concept LINKS it instead of duplicating. Returns the concepts
+ * in input order (deduped case/whitespace-insensitively).
+ */
+export async function ensureConceptsByName(
+  { vault }: ConceptsDeps,
+  names: readonly string[]
+): Promise<ConceptRecord[]> {
+  const wanted: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of names) {
+    const key = normalizeConceptName(raw);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    wanted.push(raw.replace(/\s+/g, " ").trim());
+  }
+  if (wanted.length === 0) return [];
+
+  const byKey = new Map(
+    (await vault.stores.concepts.list()).map((concept) => [normalizeConceptName(concept.name), concept])
+  );
+  const out: ConceptRecord[] = [];
+  for (const name of wanted) {
+    const key = normalizeConceptName(name);
+    let concept = byKey.get(key);
+    if (!concept) {
+      concept = await createConcept({ vault }, { name, aliases: [], description: "", tags: [] });
+      byKey.set(key, concept);
+    }
+    out.push(concept);
+  }
+  return out;
 }
 
 /** Concept detail with back-references: which notes link it and which relations touch it. */

@@ -52,6 +52,20 @@ export type GeneratedDraft = {
    * to a different form.
    */
   autoForm?: boolean;
+  /**
+   * A MANUAL draft (D5 floating editor / slash bare-`/type`): content was seeded
+   * from the type's createDefault(), not generated. The editor opens straight in
+   * edit mode and offers no Regenerate (there is nothing to re-run; `classified`
+   * is also set so the shared regenerate path no-ops defensively).
+   */
+  manual?: boolean;
+  /**
+   * CG-2 "AI 顺手挂": concept names the model suggested beside the content (the
+   * generation contract's side-channel). The preview shows them as REMOVABLE chips;
+   * Save passes the survivors as payload.conceptNames — anchor.add-note then
+   * creates-or-matches + links them. Absent/empty = no chips, nothing linked.
+   */
+  concepts?: string[];
 };
 
 export type CommandActions = {
@@ -116,7 +130,8 @@ export type CommandContext = {
     // the context; `askAi` feature-detects it and falls back to `chat`. `concepts` is
     // optional for the same reason: concept.mark-selection uses it to DEDUPE by name
     // and simply skips deduping when a host/test doesn't wire the list read.
-    Partial<Pick<EntityClient, "chatStream" | "concepts">>;
+    // `relations` backs the AI auto-tag's same_topic dedupe (skipped when unwired).
+    Partial<Pick<EntityClient, "chatStream" | "concepts" | "relations">>;
   /** The source the user is currently reading, if any. */
   sourceId?: string;
   /** Per-invocation inputs (composer text, patch body, concept/relation fields…). */
@@ -137,6 +152,12 @@ export type CommandContext = {
      * present (even as []) it OVERRIDES the materialize-from-focus path.
      */
     anchorIds?: string[];
+    /**
+     * CG-2 auto-tag: concept NAMES to create-or-match and link onto the created
+     * note (the generation-preview Save passes the surviving suggestion chips).
+     * Also creates pairwise same_topic relations among them, confidence-marked.
+     */
+    conceptNames?: string[];
     newContent?: string;
     oldText?: string;
     // —— concept / relation ——
@@ -243,6 +264,63 @@ const askAi: Command = {
 const hasNoteContent = (payload: CommandContext["payload"]): boolean =>
   payload.content !== undefined || !!payload.text?.trim();
 
+// —— CG-2 "AI 顺手挂" save half (concept-light-and-graph §1.1) ————————————————
+// The confidence stamped on AI-suggested same_topic edges (relationSchema's field,
+// finally used): below a human-made edge (1.0-by-absence), above a wild guess.
+export const AI_TAG_CONFIDENCE = 0.6;
+
+// Create-or-match the suggested concept names (the SAME normalized-name identity
+// 标为概念 dedupes with — via matchConceptByName) and return the records in order.
+// Skips deduping when the host didn't wire the `concepts` list read (bare tests).
+async function resolveConceptNames(ctx: CommandContext, names: string[]): Promise<ConceptRecord[]> {
+  const known: ConceptRecord[] = ctx.client.concepts ? (await ctx.client.concepts()).concepts.slice() : [];
+  const out: ConceptRecord[] = [];
+  for (const raw of names) {
+    const name = collapseConceptText(raw);
+    if (!name) continue;
+    // Dedupe within the batch too: match against known + already-resolved.
+    let concept = matchConceptByName([...known, ...out], name);
+    if (!concept) {
+      concept = (await ctx.client.createConcept({ name })).concept;
+    }
+    if (!out.some((existing) => existing.id === concept!.id)) out.push(concept);
+  }
+  return out;
+}
+
+// Pairwise same_topic edges among the co-suggested concepts (the doc's "AI 顺手挂"
+// third act), confidence-marked so the graph can style AI-emitted edges. Existing
+// same_topic edges between a pair (either direction) are never duplicated — the
+// relations read is optional (unwired host ⇒ create without the dedupe check).
+async function createSameTopicEdges(ctx: CommandContext, concepts: ConceptRecord[]): Promise<void> {
+  if (concepts.length < 2) return;
+  let existing: RelationRecord[] = [];
+  if (ctx.client.relations) {
+    try {
+      existing = (await ctx.client.relations()).relations;
+    } catch {
+      // Dedupe is best-effort; creation below still runs.
+    }
+  }
+  const hasEdge = (a: string, b: string) =>
+    existing.some(
+      (relation) =>
+        relation.relationKind === "same_topic" &&
+        ((relation.from.id === a && relation.to.id === b) || (relation.from.id === b && relation.to.id === a))
+    );
+  for (let i = 0; i < concepts.length; i += 1) {
+    for (let j = i + 1; j < concepts.length; j += 1) {
+      if (hasEdge(concepts[i].id, concepts[j].id)) continue;
+      await ctx.client.createRelation({
+        from: conceptRef(concepts[i].id),
+        to: conceptRef(concepts[j].id),
+        relationKind: "same_topic",
+        confidence: AI_TAG_CONFIDENCE
+      });
+    }
+  }
+}
+
 const addNote: Command = {
   id: "anchor.add-note",
   title: "Add Note",
@@ -266,12 +344,24 @@ const addNote: Command = {
       const anchor = await ctx.focus.materializeAnchor();
       anchorIds = anchor ? [anchor.id] : [];
     }
+    // CG-2 auto-tag: suggested concept names (the preview's surviving chips) are
+    // create-or-matched BEFORE the note lands, so the note is born linked — plus
+    // pairwise same_topic edges among them (confidence-marked). Zero names = the
+    // pre-CG-2 path byte-for-byte.
+    const taggedConcepts = ctx.payload.conceptNames?.length
+      ? await resolveConceptNames(ctx, ctx.payload.conceptNames)
+      : [];
     const { note } = await ctx.client.createNote({
       sourceId: ctx.sourceId,
       anchorIds,
+      conceptIds: taggedConcepts.length ? taggedConcepts.map((concept) => concept.id) : undefined,
       contentType: ctx.payload.contentType ?? "markdown",
       content
     });
+    if (taggedConcepts.length) {
+      await createSameTopicEdges(ctx, taggedConcepts);
+      ctx.actions.onConceptChanged?.();
+    }
     ctx.actions.onNoteCreated?.(note);
   }
 };
@@ -638,17 +728,26 @@ const runOperation: Command = {
         anchorId: anchor?.id,
         sourceId: ctx.sourceId,
         // Mark auto-output drafts so Regenerate omits contentType again.
-        autoForm: !outputType
+        autoForm: !outputType,
+        // CG-2 AI 顺手挂: suggested concepts ride into the preview as chips.
+        concepts: generated.concepts
       });
       return;
     }
     // Legacy auto-save fallback (no preview host wired) — mirrors the kit commands.
+    // Suggested concepts still link (create-or-match + same_topic), sans chips.
+    const taggedConcepts = generated.concepts?.length ? await resolveConceptNames(ctx, generated.concepts) : [];
     const { note } = await ctx.client.createNote({
       sourceId: ctx.sourceId,
       anchorIds: anchor ? [anchor.id] : [],
+      conceptIds: taggedConcepts.length ? taggedConcepts.map((concept) => concept.id) : undefined,
       contentType,
       content: generated.content
     });
+    if (taggedConcepts.length) {
+      await createSameTopicEdges(ctx, taggedConcepts);
+      ctx.actions.onConceptChanged?.();
+    }
     ctx.actions.onNoteCreated?.(note);
   }
 };

@@ -11,6 +11,7 @@ import {
   setAnchorNotesHidden
 } from "./annotationLayer";
 import {
+  clusterSlotPlacements,
   getAnchorGlyphVisibility,
   MarkerOverlay,
   mountRealmMarkerOverlay,
@@ -484,6 +485,333 @@ describe("MarkerOverlay", () => {
     overlay.destroy();
     expect(unsubscribe).toHaveBeenCalledTimes(1);
     expect(listeners.size).toBe(0);
+  });
+});
+
+// —— D2 same-line clustering — the pure y-bucketing math ——————————————————————
+describe("clusterSlotPlacements", () => {
+  const p = (anchorId: string, x: number, y: number, h = 18) => ({ anchorId, x, y, h });
+
+  it("clusters placements on the same line (equal y) into one cluster, keeping input order", () => {
+    const clusters = clusterSlotPlacements([p("b", 300, 100), p("a", 120, 100), p("c", 500, 100)], "anchor");
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0].anchorIds).toEqual(["b", "a", "c"]); // input (document) order
+    expect(clusters[0].y).toBe(100);
+  });
+
+  it("uses the LEFTMOST x for the anchor side and the RIGHTMOST for the note side", () => {
+    const placements = [p("a", 300, 100), p("b", 120, 102), p("c", 500, 101)];
+    expect(clusterSlotPlacements(placements, "anchor")[0].x).toBe(120);
+    expect(clusterSlotPlacements(placements, "note")[0].x).toBe(500);
+  });
+
+  it("keeps adjacent LINES separate: a y gap of one line-height (or more) splits the bucket", () => {
+    // Line advance (22) ≥ the glyph height (18) → two clusters; within-line jitter (<18) stays together.
+    const clusters = clusterSlotPlacements([p("a", 100, 100), p("b", 100, 122), p("c", 140, 105)], "anchor");
+    expect(clusters).toHaveLength(2);
+    expect(clusters[0].anchorIds).toEqual(["a", "c"]);
+    expect(clusters[1].anchorIds).toEqual(["b"]);
+  });
+
+  it("splits exactly AT the tolerance (y diff === line height ⇒ different lines)", () => {
+    const clusters = clusterSlotPlacements([p("a", 100, 100, 18), p("b", 100, 118, 18)], "anchor");
+    expect(clusters).toHaveLength(2);
+  });
+
+  it("falls back to a 16px line when the rect reports no height", () => {
+    expect(clusterSlotPlacements([p("a", 100, 100, 0), p("b", 100, 110, 0)], "anchor")).toHaveLength(1);
+    expect(clusterSlotPlacements([p("a", 100, 100, 0), p("b", 100, 117, 0)], "anchor")).toHaveLength(2);
+  });
+
+  it("returns [] for no placements and singletons for isolated lines", () => {
+    expect(clusterSlotPlacements([], "anchor")).toEqual([]);
+    const clusters = clusterSlotPlacements([p("a", 100, 100), p("b", 100, 200)], "note");
+    expect(clusters).toHaveLength(2);
+    expect(clusters.map((c) => c.anchorIds)).toEqual([["a"], ["b"]]);
+  });
+});
+
+// —— D2 clustering + card-open suppression through the overlay ————————————————
+describe("MarkerOverlay — same-line clustering + card-open suppression", () => {
+  function makeHost(): HTMLElement {
+    const host = document.createElement("div");
+    Object.defineProperty(host, "getBoundingClientRect", {
+      value: () => ({ left: 100, top: 50, right: 900, bottom: 650, width: 800, height: 600 }),
+      configurable: true
+    });
+    document.body.appendChild(host);
+    return host;
+  }
+
+  function stubAnchor(
+    host: HTMLElement,
+    key: string,
+    rect: { left: number; top: number; right: number; width: number; height: number }
+  ): HTMLElement {
+    const anchor = document.createElement("span");
+    anchor.setAttribute("data-sv-key", key);
+    Object.defineProperty(anchor, "getBoundingClientRect", {
+      value: () => ({ ...rect, bottom: rect.top + rect.height }),
+      configurable: true
+    });
+    host.appendChild(anchor);
+    return anchor;
+  }
+
+  function stubOverlayRect(host: HTMLElement): void {
+    const overlayDiv = host.querySelector(".sv-marker-overlay") as HTMLElement;
+    Object.defineProperty(overlayDiv, "getBoundingClientRect", {
+      value: () => ({ left: 100, top: 50, right: 900, bottom: 650, width: 800, height: 600 }),
+      configurable: true
+    });
+  }
+
+  // MutationObserver callbacks are microtasks and reposition() is rAF-throttled —
+  // settle both before asserting.
+  async function settle(): Promise<void> {
+    await Promise.resolve();
+    await flushFrame();
+    await flushFrame();
+  }
+
+  const slots = (payload?: Parameters<typeof buildNoteSlotHtml>[0]) => ({
+    anchorSlotHtml: buildAnchorSlotHtml(),
+    noteSlotHtml: buildNoteSlotHtml(payload)
+  });
+
+  afterEach(() => {
+    document.body.removeAttribute("data-sv-card-open");
+  });
+
+  it("two anchors on ONE line collapse into a cluster chip with a count; member chips hide", async () => {
+    const host = makeHost();
+    stubAnchor(host, "cl-a", { left: 200, top: 120, right: 260, width: 60, height: 18 });
+    stubAnchor(host, "cl-b", { left: 320, top: 120, right: 380, width: 60, height: 18 });
+    const overlay = new MarkerOverlay(host);
+    overlay.setMarkers([
+      { anchorId: "cl-a", ...slots({ noteTypes: ["markdown"], noteCount: 1 }), quote: "first passage quote" },
+      { anchorId: "cl-b", ...slots(), quote: "second passage quote" }
+    ]);
+    stubOverlayRect(host);
+    overlay.reposition();
+    await flushFrame();
+
+    const cluster = host.querySelector('.sv-cluster-chip[data-sv-cluster="anchor"]') as HTMLElement;
+    expect(cluster).not.toBeNull();
+    expect(cluster.getAttribute("data-sv-cluster-ids")).toBe("cl-a,cl-b");
+    expect(cluster.querySelector(".sv-anchor-marker-count")?.textContent).toBe("2");
+    // Cluster sits at the LEFTMOST member's left edge (200-100=100), on the shared line.
+    expect(cluster.style.left).toBe("100px");
+    expect(cluster.style.top).toBe("70px");
+    // The member anchor chips are hidden behind the cluster chip.
+    const chipA = host.querySelector('[data-sv-marker-for="cl-a"][data-sv-slot="anchor"]') as HTMLElement;
+    const chipB = host.querySelector('[data-sv-marker-for="cl-b"][data-sv-slot="anchor"]') as HTMLElement;
+    expect(chipA.style.display).toBe("none");
+    expect(chipB.style.display).toBe("none");
+    // cl-a's note slot is a SINGLETON on its side — still placed normally.
+    const noteA = host.querySelector('[data-sv-marker-for="cl-a"][data-sv-slot="note"]') as HTMLElement;
+    expect(noteA.style.display).not.toBe("none");
+    overlay.destroy();
+  });
+
+  it("anchors on DIFFERENT lines never cluster", async () => {
+    const host = makeHost();
+    stubAnchor(host, "nl-a", { left: 200, top: 120, right: 260, width: 60, height: 18 });
+    stubAnchor(host, "nl-b", { left: 200, top: 220, right: 260, width: 60, height: 18 });
+    const overlay = new MarkerOverlay(host);
+    overlay.setMarkers([
+      { anchorId: "nl-a", ...slots(), quote: "one" },
+      { anchorId: "nl-b", ...slots(), quote: "two" }
+    ]);
+    stubOverlayRect(host);
+    overlay.reposition();
+    await flushFrame();
+    expect(host.querySelector(".sv-cluster-chip")).toBeNull();
+    const chipA = host.querySelector('[data-sv-marker-for="nl-a"][data-sv-slot="anchor"]') as HTMLElement;
+    expect(chipA.style.display).not.toBe("none");
+    overlay.destroy();
+  });
+
+  it("clicking the cluster chip expands the mini-list (quote snippet per row); a row click opens that anchor's card", async () => {
+    const host = makeHost();
+    const a = stubAnchor(host, "mx-a", { left: 200, top: 120, right: 260, width: 60, height: 18 });
+    stubAnchor(host, "mx-b", { left: 320, top: 121, right: 380, width: 60, height: 18 });
+    let anchorClicks = 0;
+    a.addEventListener("click", () => {
+      anchorClicks += 1;
+    });
+    const actions: string[] = [];
+    const overlay = new MarkerOverlay(host, { onAction: ({ anchorId, role }) => actions.push(`${role}:${anchorId}`) });
+    overlay.setMarkers([
+      { anchorId: "mx-a", ...slots(), quote: "  The first   passage text  " },
+      { anchorId: "mx-b", ...slots(), quote: "The second passage text" }
+    ]);
+    stubOverlayRect(host);
+    overlay.reposition();
+    await flushFrame();
+
+    const cluster = host.querySelector(".sv-cluster-chip") as HTMLElement;
+    cluster.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    const list = host.querySelector(".sv-cluster-list") as HTMLElement;
+    expect(list).not.toBeNull();
+    const rows = Array.from(list.querySelectorAll(".sv-cluster-row"));
+    expect(rows).toHaveLength(2);
+    // Whitespace-collapsed snippet, one anchor glyph per row.
+    expect(rows[0].querySelector(".sv-cluster-row-quote")?.textContent).toBe("The first passage text");
+    expect(rows[0].querySelectorAll("svg")).toHaveLength(1);
+
+    // Row click = the note-slot path: synthesized anchor click + a "note" action; list closes.
+    (rows[0] as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(anchorClicks).toBe(1);
+    expect(actions).toEqual(["note:mx-a"]);
+    expect(host.querySelector(".sv-cluster-list")).toBeNull();
+
+    // Toggle: open again, then a second cluster-chip click closes.
+    cluster.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(host.querySelector(".sv-cluster-list")).not.toBeNull();
+    cluster.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(host.querySelector(".sv-cluster-list")).toBeNull();
+    overlay.destroy();
+  });
+
+  it("hides BOTH chips while the anchor's card is open (hover), restores on close, leaves other anchors alone", async () => {
+    ensureAnnotationLayer(document);
+    const host = makeHost();
+    const a1 = stubAnchor(host, "co-a1", { left: 200, top: 120, right: 260, width: 60, height: 18 });
+    stubAnchor(host, "co-a2", { left: 200, top: 220, right: 260, width: 60, height: 18 });
+    applyHighlight(a1, "note", "co-a1", { noteHtml: "<div>Body</div>", noteCount: 1, noteTypes: ["markdown"] });
+    const overlay = new MarkerOverlay(host);
+    overlay.setMarkers([
+      { anchorId: "co-a1", ...slots({ noteTypes: ["markdown"], noteCount: 1 }) },
+      { anchorId: "co-a2", ...slots({ noteTypes: ["quiz"], noteCount: 1 }) }
+    ]);
+    stubOverlayRect(host);
+    overlay.reposition();
+    await flushFrame();
+
+    const anchorChip1 = host.querySelector('[data-sv-marker-for="co-a1"][data-sv-slot="anchor"]') as HTMLElement;
+    const noteChip1 = host.querySelector('[data-sv-marker-for="co-a1"][data-sv-slot="note"]') as HTMLElement;
+    const anchorChip2 = host.querySelector('[data-sv-marker-for="co-a2"][data-sv-slot="anchor"]') as HTMLElement;
+    expect(anchorChip1.style.display).not.toBe("none");
+
+    // Hover opens the shared card → the realm body carries the open anchor's id and
+    // the MutationObserver re-lays-out: BOTH of co-a1's chips hide; co-a2 is untouched.
+    a1.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    expect(document.body.getAttribute("data-sv-card-open")).toBe("co-a1");
+    await settle();
+    expect(anchorChip1.style.display).toBe("none");
+    expect(noteChip1.style.display).toBe("none");
+    expect(anchorChip2.style.display).not.toBe("none");
+
+    // Mouse-out hides the (unpinned) card → the attribute clears and chips restore.
+    a1.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
+    expect(document.body.getAttribute("data-sv-card-open")).toBeNull();
+    await settle();
+    expect(anchorChip1.style.display).not.toBe("none");
+    expect(noteChip1.style.display).not.toBe("none");
+    overlay.destroy();
+  });
+
+  it("keeps suppressing while the card is PINNED; dismiss (outside click) restores; composes with the N1a toggle", async () => {
+    ensureAnnotationLayer(document);
+    const host = makeHost();
+    const a1 = stubAnchor(host, "cp-a1", { left: 200, top: 120, right: 260, width: 60, height: 18 });
+    applyHighlight(a1, "note", "cp-a1", { noteHtml: "<div>Pin body</div>", noteCount: 1, noteTypes: ["markdown"] });
+    const overlay = new MarkerOverlay(host);
+    overlay.setMarkers([{ anchorId: "cp-a1", ...slots({ noteTypes: ["markdown"], noteCount: 1 }) }]);
+    stubOverlayRect(host);
+    overlay.reposition();
+    await flushFrame();
+
+    const anchorChip = host.querySelector('[data-sv-slot="anchor"]') as HTMLElement;
+    const noteChip = host.querySelector('[data-sv-slot="note"]') as HTMLElement;
+
+    // Pin (click) → suppressed even after the pointer leaves.
+    a1.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(document.body.getAttribute("data-sv-card-open")).toBe("cp-a1");
+    a1.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
+    await settle();
+    expect(anchorChip.style.display).toBe("none");
+    expect(noteChip.style.display).toBe("none");
+
+    // Outside click dismisses the pinned card → chips restore.
+    document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(document.body.getAttribute("data-sv-card-open")).toBeNull();
+    await settle();
+    expect(anchorChip.style.display).not.toBe("none");
+    expect(noteChip.style.display).not.toBe("none");
+
+    // N1a composition: with the anchor's notes TOGGLED OFF, no card can open — so
+    // no suppression attr appears; the note chip stays hidden by the toggle and the
+    // anchor chip stays visible (dimmed).
+    setAnchorNotesHidden(document, "cp-a1", true);
+    overlay.reposition();
+    await flushFrame();
+    a1.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    expect(document.body.getAttribute("data-sv-card-open")).toBeNull();
+    expect(anchorChip.style.display).not.toBe("none");
+    expect(anchorChip.getAttribute("data-sv-notes-hidden")).toBe("1");
+    expect(noteChip.style.display).toBe("none");
+    setAnchorNotesHidden(document, "cp-a1", false);
+    overlay.destroy();
+  });
+
+  it("composes with the global 显示锚点标记 switch: glyphs off + card open ⇒ nothing shows; close restores only the note chip", async () => {
+    ensureAnnotationLayer(document);
+    const host = makeHost();
+    const a1 = stubAnchor(host, "cg-a1", { left: 200, top: 120, right: 260, width: 60, height: 18 });
+    applyHighlight(a1, "note", "cg-a1", { noteHtml: "<div>Body</div>", noteCount: 1, noteTypes: ["markdown"] });
+    const overlay = new MarkerOverlay(host);
+    overlay.setMarkers([{ anchorId: "cg-a1", ...slots({ noteTypes: ["markdown"], noteCount: 1 }) }]);
+    stubOverlayRect(host);
+    setAnchorGlyphVisibility(false);
+    overlay.reposition();
+    await flushFrame();
+
+    const anchorChip = host.querySelector('[data-sv-slot="anchor"]') as HTMLElement;
+    const noteChip = host.querySelector('[data-sv-slot="note"]') as HTMLElement;
+    expect(anchorChip.style.display).toBe("none"); // global switch
+    expect(noteChip.style.display).not.toBe("none");
+
+    a1.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    await settle();
+    expect(anchorChip.style.display).toBe("none");
+    expect(noteChip.style.display).toBe("none"); // card-open suppression
+
+    a1.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
+    await settle();
+    expect(anchorChip.style.display).toBe("none"); // still governed by the global switch
+    expect(noteChip.style.display).not.toBe("none");
+    overlay.destroy();
+  });
+
+  it("a card-open member drops OUT of its cluster (the rest become a singleton again)", async () => {
+    ensureAnnotationLayer(document);
+    const host = makeHost();
+    const a = stubAnchor(host, "cd-a", { left: 200, top: 120, right: 260, width: 60, height: 18 });
+    stubAnchor(host, "cd-b", { left: 320, top: 120, right: 380, width: 60, height: 18 });
+    applyHighlight(a, "note", "cd-a", { noteHtml: "<div>Body</div>", noteCount: 1, noteTypes: ["markdown"] });
+    const overlay = new MarkerOverlay(host);
+    overlay.setMarkers([
+      { anchorId: "cd-a", ...slots(), quote: "aaa" },
+      { anchorId: "cd-b", ...slots(), quote: "bbb" }
+    ]);
+    stubOverlayRect(host);
+    overlay.reposition();
+    await flushFrame();
+    expect(host.querySelector(".sv-cluster-chip")).not.toBeNull();
+
+    a.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    await settle();
+    // The pair dissolved: no cluster chip; cd-b's own anchor chip shows again.
+    expect(host.querySelector(".sv-cluster-chip")).toBeNull();
+    const chipB = host.querySelector('[data-sv-marker-for="cd-b"][data-sv-slot="anchor"]') as HTMLElement;
+    expect(chipB.style.display).not.toBe("none");
+
+    a.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
+    await settle();
+    expect(host.querySelector(".sv-cluster-chip")).not.toBeNull();
+    overlay.destroy();
   });
 });
 

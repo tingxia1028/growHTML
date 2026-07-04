@@ -70,6 +70,7 @@ import { registerShellNavigator } from "./shellNav";
 import { TopBar } from "./TopBar";
 import { IconRail } from "./IconRail";
 import { SelectionFloatingToolbar } from "./SelectionFloatingToolbar";
+import { FloatingNoteEditor } from "./FloatingNoteEditor";
 import { ConceptMarkToast } from "./ConceptMarkToast";
 import { GlobalSpeakSelection } from "../speech/GlobalSpeakSelection";
 import { GlobalSearch } from "../search/GlobalSearch";
@@ -433,6 +434,11 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
           BookmarkIndex chrome — it reads only from useWorkspace and only triggers
           runAction (no new render path). */}
       <SelectionFloatingToolbar />
+      {/* D5 floating card editor: a parked GeneratedDraft (kit action / operation /
+          classify-reply / slash manual) renders here, floating NEXT TO the passage —
+          the pane-bottom GenerationPreview stage is retired. Host chrome like the
+          toolbar above; renders nothing while no draft is pending. */}
+      <FloatingNoteEditor />
       {/* 标为概念 feedback (CONCEPT-UX-1): the brief toast + 撤销 after
           concept.mark-selection — host chrome like the floating toolbar above. */}
       <ConceptMarkToast />

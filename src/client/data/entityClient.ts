@@ -342,6 +342,40 @@ export type RelationRecord = {
   confidence?: number;
 };
 
+// —— Concept graph (CG-1) — shapes mirror src/core/graph/conceptGraph.ts +
+// src/server/services/graph.ts (the derived read model; nothing is stored). ——
+export type ConceptGraphNode = {
+  id: string;
+  name: string;
+  /** Linked-note count (the node-size driver). */
+  noteCount: number;
+  /** Distinct neighbors across both edge kinds. */
+  degree: number;
+};
+
+export type ConceptGraphEdge = {
+  id: string;
+  source: string;
+  target: string;
+  /** "stored" = explicit relation (solid); "cooccurrence" = derived (dashed). */
+  kind: "stored" | "cooccurrence";
+  relationKind?: string;
+  confidence?: number;
+  weight: number;
+  basis?: { note: number; anchor: number; source: number };
+};
+
+export type ConceptGraphResponse = {
+  nodes: ConceptGraphNode[];
+  edges: ConceptGraphEdge[];
+  meta: {
+    conceptCount: number;
+    noteCount: number;
+    relationCount: number;
+    scope: { conceptId?: string; depth?: number; sourceId?: string };
+  };
+};
+
 // —— Study Layers (a per-source lens tree: owned/Mine + child layers + imported) ——
 export type StudyLayerRecord = {
   id: string;
@@ -814,11 +848,24 @@ export const entityClient = {
   relations() {
     return getJson<{ relations: RelationRecord[] }>("/api/relations");
   },
-  createRelation(input: { from: NodeRef; to: NodeRef; relationKind: string; label?: string }) {
+  // `confidence` (schema field, 0..1) marks AI-emitted edges (CG-2 auto-tag).
+  createRelation(input: { from: NodeRef; to: NodeRef; relationKind: string; label?: string; confidence?: number }) {
     return sendJson<{ relation: RelationRecord }>("POST", "/api/relations", input);
   },
   deleteRelation(relationId: string) {
     return sendJson<{ ok: true }>("DELETE", `/api/relations/${relationId}`, undefined);
+  },
+
+  // —— Concept graph (CG-1) — the CORE engine's derived read model. No query =
+  // full graph; conceptId(+depth) = the inspector's neighborhood query; sourceId =
+  // this-document scope. ——
+  graph(query?: { conceptId?: string; depth?: number; sourceId?: string }) {
+    const params = new URLSearchParams();
+    if (query?.conceptId) params.set("conceptId", query.conceptId);
+    if (query?.depth !== undefined) params.set("depth", String(query.depth));
+    if (query?.sourceId) params.set("sourceId", query.sourceId);
+    const qs = params.toString();
+    return getJson<ConceptGraphResponse>(`/api/graph${qs ? `?${qs}` : ""}`);
   },
 
   // —— Operations (custom AI actions as data) + their workspace prefs ——
@@ -1076,7 +1123,9 @@ export const entityClient = {
   // the response's `contentType` names the form actually produced (equal to the
   // requested type whenever one was sent).
   generateStructured(input: { promptId: string; contentType?: string; input?: Record<string, unknown> }) {
-    return sendJson<{ content: unknown; contentType: string; provider: string }>(
+    // `concepts` (CG-2 AI 顺手挂): optional side-channel names — the preview chips
+    // them; Save creates-or-matches + links them. Absent when the model offers none.
+    return sendJson<{ content: unknown; contentType: string; provider: string; concepts?: string[] }>(
       "POST",
       "/api/kits/generate",
       input

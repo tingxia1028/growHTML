@@ -124,13 +124,21 @@ export async function generateKitContent({ vault, provider }: KitGenerateDeps, i
     ...(input.input ?? {})
   });
   const autoContext = await composeAutoContext({ vault, provider }, { input: runtimeInput });
-  const { contentType, content } = await generateOperationContent(
+  const { contentType, content, concepts } = await generateOperationContent(
     provider,
     { ...input, input: runtimeInput, autoContext },
     3,
     vault.stores.operations
   );
-  return { content, contentType, provider: provider.id };
+  // CG-2 side-channel (AI 顺手挂): suggested concept names ride the response so the
+  // preview can chip them; the key is ABSENT when the model offered none (mock),
+  // keeping pre-CG-2 exact-shape assertions and clients untouched.
+  return {
+    content,
+    contentType,
+    provider: provider.id,
+    ...(concepts && concepts.length > 0 ? { concepts } : {})
+  };
 }
 
 // —— Adaptive note forms · Phase 4 ——————————————————————————————————————————

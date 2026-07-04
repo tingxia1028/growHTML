@@ -88,7 +88,13 @@ export function paintDomAnchors(
           noteCount: anchor.notePreviews ? anchor.notePreviews.length : anchor.note ? 1 : 0,
           noteTypes: anchor.notePreviews?.map((preview) => preview.contentType) ?? []
         };
-        return { anchorId: anchor.id, anchorSlotHtml: buildAnchorSlotHtml(), noteSlotHtml: buildNoteSlotHtml(payload) };
+        return {
+          anchorId: anchor.id,
+          anchorSlotHtml: buildAnchorSlotHtml(),
+          noteSlotHtml: buildNoteSlotHtml(payload),
+          // Cluster mini-list snippet (D2 same-line clustering).
+          quote: anchor.quote
+        };
       })
     );
   }

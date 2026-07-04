@@ -15,10 +15,9 @@ vi.mock("../PdfReader", () => ({ PdfReader: () => null }));
 vi.mock("../ImageReader", () => ({ ImageReader: () => null }));
 vi.mock("../WebviewReader", () => ({ WebviewReader: () => null }));
 vi.mock("../LocalHtmlReader", () => ({ LocalHtmlReader: () => null }));
-// Provider-bound / network-probing chrome that is not under test here:
-// GenerationPreview calls useWorkspace() (throws without a provider); the speech
-// buttons probe /api/speech/status on mount.
-vi.mock("./GenerationPreview", () => ({ GenerationPreview: () => null }));
+// Network-probing chrome that is not under test here: the speech buttons probe
+// /api/speech/status on mount. (The generation preview is no longer mounted in the
+// chat pane — D5 moved it to the shell-level FloatingNoteEditor.)
 vi.mock("../speech/VoiceInputButton", () => ({ VoiceInputButton: () => null }));
 vi.mock("../speech/SpeakButton", () => ({ SpeakButton: () => null }));
 

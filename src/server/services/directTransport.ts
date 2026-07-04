@@ -44,6 +44,8 @@
 //             DELETE /api/memory                      · clear every tier (events/digests/overrides)
 //   review    GET  /api/review/schedule               · REV-3 per-note SRS records (absent ⇒ {})
 //             POST /api/review/grade                  · apply one grade outcome (skip never writes)
+//   graph     GET  /api/graph                         · CG-1 derived concept graph
+//                                                       (?conceptId&depth neighborhood, ?sourceId scope)
 // Anything else — including the HTTP-only streams (SSE chat, binary assets/files)
 // — throws DirectTransportUnsupportedError naming the method+path.
 
@@ -68,6 +70,7 @@ import {
 import type { SealedRuntime } from "../svpack";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "./errors";
 import * as anchorsService from "./anchors";
+import * as graphService from "./graph";
 import * as layersService from "./layers";
 import * as notesService from "./notes";
 import * as reviewScheduleService from "./reviewSchedule";
@@ -391,6 +394,21 @@ const routes: DirectRoute[] = [
     // No `schema` here ON PURPOSE (the events-POST idiom): recordReviewGrade parses
     // the SAME exported recordReviewGradeSchema internally — one source of truth.
     call: ({ deps, body }) => reviewScheduleService.recordReviewGrade(deps, body)
+  }),
+
+  // —— Concept graph (CG-1) — parity with GET /api/graph so mobile assembles the
+  // SAME derived graph (same query schema, same service). ——
+  route({
+    method: "GET",
+    pattern: "/api/graph",
+    call: ({ deps, query }) =>
+      graphService.getConceptGraph(deps, {
+        ...graphService.graphQuerySchema.parse({
+          conceptId: query.get("conceptId") ?? undefined,
+          depth: query.get("depth") ?? undefined,
+          sourceId: query.get("sourceId") ?? undefined
+        })
+      })
   })
 ];
 
