@@ -68,8 +68,13 @@ also dissolves the "11 subject types would need 11 buttons" problem (M-B synergy
   and shoving the textarea) + the e2e.
 - **SC-2 — toolbar surfaces:** selection toolbar + anchor/bottom bar mounts (+ anchor-context
   materialization).
-- **SC-3 — breadth:** operations in the palette, pinyin matching, kit/memory ranking,
-  marketplace effective-installed as the list source (fuses with M1).
+- **SC-3 — breadth:** ✅ SHIPPED (SC-3-001, 2026-07-05). Operations in the palette (built-in kit
+  actions + custom `op_` ops via `slash/operationAdapter.ts`; effective-installed gated), pinyin
+  matching (full + initials, reusing SEARCH-2's `pinyinForms`), active-kit-first ranking
+  (`rankByActiveKit`). Picked operations dispatch the shipped `operation.run`; the chat composer
+  MOUNT is wired (SC-3.3 — `slashEntries({operations,disabled,foregroundKitIds})` +
+  `pickSlashEntry` operation routing). Memory-recency ranking deferred (no cheap client signal —
+  see 04-decision-log).
 
 ## 6. Tests
 Engine unit (parse/resolve: 中文 alias, English id, prefix, ambiguity, bare vs instruction);

@@ -727,3 +727,8 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 | 2026-07-05 | W2-001 | ChatAttachments.test.tsx | chip 渲染/删除/选取 | Passed |
 | 2026-07-05 | W2-001 | e2e/chat-attachments.spec.ts | 挂源 → 回复带 Attached 标记+标题;chip 跨会话切换保留 | Passed |
 | 2026-07-05 | W2-001 | npx vitest run(全量) | 223 文件 / 2356 用例 | Passed |
+| 2026-07-05 | SC-3-001 | engine.test.ts | pinyin(/提 命中 hanzi/全拼 tigan/首字母 tg;非配失败;ASCII literal 胜 pinyin) | Passed(21) |
+| 2026-07-05 | SC-3-001 | operationAdapter.test.tsx | 内置 prompt-backed surface items→kind:operation(scope from slot);bookmark.add 排除;effective-installed+disabled 门;自定义 op_ 按 name/scope/aliases | Passed(13) |
+| 2026-07-05 | SC-3-001 | adapters.test.tsx | rankByActiveKit 浮动活跃 kit 优先且稳定;无 foreground 时 no-op;slashEntries() note-type 切片对 SC-1 字节等旧 | Passed(21) |
+| 2026-07-05 | SC-3-001 | slashComposer.test.tsx(SC-3.3 挂载) | 自定义 operation 出现在 /palette;点选 dispatch operation.run{operationId,scope};非 manual note pick | Passed |
+| 2026-07-05 | SC-3-001 | npx vitest run(全量) | 224 文件 / 2382 用例(基线 219/2313 + SC-3 engine+6/adapters+6/operationAdapter+13 + 挂载测试) | Passed |
