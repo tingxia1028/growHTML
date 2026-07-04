@@ -1057,6 +1057,36 @@ describe("vault server API", () => {
     await request(app).post("/api/kits/generate").send({ promptId: "op_missing", contentType: "markdown" }).expect(400);
   });
 
+  it("creates and runs a SIMPLE-mode operation end-to-end (ACTION-2a: auto output form)", async () => {
+    // 一句话新增: two fields — name + instruction. No template, no output picker.
+    const op = (
+      await request(app)
+        .post("/api/operations")
+        .send({ name: "苏格拉底提问", mode: "simple", instruction: "用苏格拉底式追问考我选中的内容,一次只问一个问题" })
+        .expect(201)
+    ).body.operation;
+    expect(op.id).toMatch(/^op_/);
+    expect(op.mode).toBe("simple");
+    expect(op.promptTemplate).toBeUndefined();
+    expect(op.outputContentType).toBeUndefined();
+
+    // 试一下 rides the SAME generate route — contentType omitted, the adaptive-note
+    // form router decides (mock: the deterministic first member = a markdown note),
+    // and the response names the routed contentType so preview/save can trust it.
+    const run = await request(app)
+      .post("/api/kits/generate")
+      .send({ promptId: op.id, input: { anchorText: "浮力等于排开液体的重力" } })
+      .expect(200);
+    expect(run.body.contentType).toBe("markdown");
+    expect(run.body.content).toBe("");
+    expect(run.body.provider).toBe("mock");
+
+    // Simple mode requires the instruction (zod is the single source of truth).
+    await request(app).post("/api/operations").send({ name: "x", mode: "simple" }).expect(400);
+    // Template mode still requires template + output type.
+    await request(app).post("/api/operations").send({ name: "x", mode: "template", promptTemplate: "t" }).expect(400);
+  });
+
   it("merges built-in placeholder params from operation-prefs into generate input", async () => {
     await request(app)
       .put("/api/operation-prefs")

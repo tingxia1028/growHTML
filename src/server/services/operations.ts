@@ -13,12 +13,17 @@ export type OperationsDeps = { vault: StudyVault };
 // A custom AI Operation authored as DATA. POST creates from scratch (or from a
 // "复制为我的插件" fork); PATCH merge-updates an existing one. The envelope fields
 // (id/type/timestamps) are server-set, so the request shapes carry only the
-// editable body.
+// editable body. ACTION-2a: `mode` + `instruction` ride through here; the
+// mode-conditional requirements (simple ⇒ instruction, template ⇒ promptTemplate
+// + outputContentType) are enforced ONCE by operationSchema's refinement — zod
+// stays the single source, so the request shapes keep the fields optional.
 export const createOperationRequestSchema = z.object({
   name: z.string().min(1),
   description: z.string().default(""),
-  outputContentType: z.string().min(1),
-  promptTemplate: z.string().min(1),
+  mode: z.enum(["simple", "template"]).default("template"),
+  instruction: z.string().optional(),
+  outputContentType: z.string().min(1).optional(),
+  promptTemplate: z.string().min(1).optional(),
   declaredVariables: z.array(operationVariableSchema).default([]),
   source: z.enum(["custom", "fork"]).default("custom"),
   forkedFrom: z.string().optional(),
@@ -30,6 +35,8 @@ export const updateOperationRequestSchema = z
   .object({
     name: z.string().min(1).optional(),
     description: z.string().optional(),
+    mode: z.enum(["simple", "template"]).optional(),
+    instruction: z.string().optional(),
     outputContentType: z.string().min(1).optional(),
     promptTemplate: z.string().min(1).optional(),
     declaredVariables: z.array(operationVariableSchema).optional(),
@@ -44,7 +51,10 @@ export async function createOperation(
   { vault }: OperationsDeps,
   input: CreateOperationInput
 ): Promise<OperationRecord> {
-  const consistency = operationConsistencyError(input.promptTemplate, input.declaredVariables);
+  // The template/variable consistency check only applies to template mode — a
+  // simple op has no template (its prompt compiles at run time).
+  const consistency =
+    input.mode === "template" ? operationConsistencyError(input.promptTemplate ?? "", input.declaredVariables) : null;
   if (consistency) throw new ValidationError(consistency);
   const now = new Date().toISOString();
   const operation = operationSchema.parse({
@@ -68,7 +78,8 @@ export async function updateOperation(
   const existing = await vault.stores.operations.get(operationId);
   if (!existing) throw new NotFoundError("Operation not found");
   const merged = { ...existing, ...patch, updatedAt: new Date().toISOString() };
-  const consistency = operationConsistencyError(merged.promptTemplate, merged.declaredVariables);
+  const consistency =
+    merged.mode === "template" ? operationConsistencyError(merged.promptTemplate ?? "", merged.declaredVariables) : null;
   if (consistency) throw new ValidationError(consistency);
   const operation = operationSchema.parse(merged);
   await vault.stores.operations.upsert(operation);

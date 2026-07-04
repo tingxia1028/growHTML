@@ -2,10 +2,16 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { registerNoteContentSpec } from "../core/notes/contentTypes";
 import { registerKitPrompt } from "./prompts";
-import { extractJson, generateStructuredContent, StructuredGenerationError } from "./structured";
-import { resolvePrompt } from "./resolvePrompt";
+import {
+  extractJson,
+  generateOperationContent,
+  generateStructuredContent,
+  StructuredGenerationError
+} from "./structured";
+import { compileSimpleOperation, resolvePrompt, SIMPLE_FORM_DIRECTIVE } from "./resolvePrompt";
 import { operationSchema, type OperationRecord } from "../core/schema";
 import type { SnapshotStore } from "../core/store/snapshotStore";
+import { formatAutoContext, type AutoContext } from "../ai/autoContext";
 import { MockModelProvider } from "../ai/mockProvider";
 import type { ChatRequest, ChatResponse, ModelProvider } from "../ai/provider";
 
@@ -185,5 +191,149 @@ describe("generateStructuredContent", () => {
     await expect(
       generateStructuredContent(mock, { promptId: "test.make-thing", contentType: "nope" })
     ).rejects.toBeInstanceOf(StructuredGenerationError);
+  });
+});
+
+// —— ACTION-2a: the auto-context envelope + simple mode ——————————————————————
+
+const envelope: AutoContext = {
+  selection: { quote: "浮力等于排开液体的重力" },
+  doc: { title: "高一物理 必修一", sourceType: "pdf" }
+};
+const preamble = formatAutoContext(envelope);
+
+const simpleAutoOp = operationSchema.parse({
+  id: "op_01HZZZZZZZZZZZZZZZZZZZZZZ1",
+  type: "operation",
+  schemaVersion: 1,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  createdBy: "user",
+  name: "苏格拉底提问",
+  mode: "simple",
+  instruction: "用苏格拉底式追问考我选中的内容,一次只问一个问题"
+});
+
+const simplePinnedOp = operationSchema.parse({
+  ...simpleAutoOp,
+  id: "op_01HZZZZZZZZZZZZZZZZZZZZZZ2",
+  outputContentType: "test.thing"
+});
+
+describe("resolvePrompt — auto-context envelope (ACTION-2a)", () => {
+  it("an EMPTY envelope returns a built-in VERBATIM (byte-compat identity)", async () => {
+    const resolved = await resolvePrompt("test.make-thing", undefined, {});
+    expect(resolved?.build({ topic: "x" })).toBe('make a thing about {"topic":"x"}');
+    expect(resolved?.mockContent?.({ topic: "x" })).toEqual({ title: "x", n: 1 });
+  });
+
+  it("prepends the preamble to a built-in prompt when the envelope is non-empty", async () => {
+    const resolved = await resolvePrompt("test.make-thing", undefined, envelope);
+    expect(resolved?.build({ topic: "x" })).toBe(`${preamble}\n\nmake a thing about {"topic":"x"}`);
+    // mockContent rides along untouched (the deterministic sample is input-driven).
+    expect(resolved?.mockContent?.({ topic: "x" })).toEqual({ title: "x", n: 1 });
+  });
+
+  it("a template that references envelope pieces gets them as values — NO preamble", async () => {
+    const op = operationSchema.parse({
+      ...storedThingOp,
+      promptTemplate: "In 《{{doc.title}}》, explain: {{selection}} ({{topic}})"
+    });
+    const resolved = await resolvePrompt(op.id, memoryOperationStore([op]), envelope);
+    const built = resolved?.build({ topic: "tides" });
+    expect(built).toBe("In 《高一物理 必修一》, explain: 浮力等于排开液体的重力 (tides)");
+    expect(built).not.toContain("[Context]");
+  });
+
+  it("a template that references NOTHING from the envelope gets the preamble prepended", async () => {
+    const resolved = await resolvePrompt(storedThingOp.id, memoryOperationStore([storedThingOp]), envelope);
+    expect(resolved?.build({ topic: "tides" })).toBe(`${preamble}\n\nmake a thing about tides`);
+  });
+
+  it("runtime/declared values win a name clash with envelope values", async () => {
+    const op = operationSchema.parse({ ...storedThingOp, promptTemplate: "explain {{selection}}" });
+    const resolved = await resolvePrompt(op.id, memoryOperationStore([op]), envelope);
+    expect(resolved?.build({ selection: "runtime wins" })).toBe("explain runtime wins");
+  });
+});
+
+describe("resolvePrompt — simple mode compile (ACTION-2a §2)", () => {
+  it("AUTO output: compiled prompt = preamble + instruction + form directive; outputType = the router sentinel", async () => {
+    const resolved = await resolvePrompt(simpleAutoOp.id, memoryOperationStore([simpleAutoOp]), envelope);
+    expect(resolved?.outputType).toBe("form-router");
+    expect(resolved?.mockContent).toBeUndefined();
+    expect(resolved?.build({})).toBe(
+      `${preamble}\n\n用苏格拉底式追问考我选中的内容,一次只问一个问题\n\n${SIMPLE_FORM_DIRECTIVE}`
+    );
+    // Empty envelope → instruction + directive only (no blank preamble).
+    const bare = await resolvePrompt(simpleAutoOp.id, memoryOperationStore([simpleAutoOp]));
+    expect(bare?.build({})).toBe(`用苏格拉底式追问考我选中的内容,一次只问一个问题\n\n${SIMPLE_FORM_DIRECTIVE}`);
+  });
+
+  it("PINNED output: no form directive, the pinned type is the outputType", async () => {
+    const resolved = await resolvePrompt(simplePinnedOp.id, memoryOperationStore([simplePinnedOp]), envelope);
+    expect(resolved?.outputType).toBe("test.thing");
+    expect(resolved?.build({})).toBe(`${preamble}\n\n用苏格拉底式追问考我选中的内容,一次只问一个问题`);
+    expect(compileSimpleOperation(simplePinnedOp, "")).toBe("用苏格拉底式追问考我选中的内容,一次只问一个问题");
+  });
+});
+
+describe("generateOperationContent — one path for both modes", () => {
+  it("AUTO simple op via the mock provider → the deterministic routed markdown form", async () => {
+    const store = memoryOperationStore([simpleAutoOp]);
+    const out = await generateOperationContent(
+      new MockModelProvider(),
+      { promptId: simpleAutoOp.id, input: { anchorText: "浮力" }, autoContext: envelope },
+      3,
+      store
+    );
+    // The mock synthesizes the first router member → a markdown note ("").
+    expect(out).toEqual({ contentType: "markdown", content: "" });
+  });
+
+  it("AUTO simple op honors a REAL routed member from a text provider (quiz arm)", async () => {
+    const provider: ModelProvider = {
+      id: "router",
+      capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, kind: "mock" },
+      async complete(): Promise<ChatResponse> {
+        return {
+          message: {
+            role: "assistant",
+            content: '{"form":"quiz","question":"浮力等于?","options":["排开液体的重力","物体的重力"],"answerIndex":0}'
+          }
+        };
+      }
+    };
+    const out = await generateOperationContent(provider, { promptId: simpleAutoOp.id }, 3, memoryOperationStore([simpleAutoOp]));
+    expect(out.contentType).toBe("quiz");
+    expect(out.content).toMatchObject({ question: "浮力等于?", answerIndex: 0 });
+  });
+
+  it("AUTO simple op rejects an explicit contentType (run-time pins are authoring-time only)", async () => {
+    await expect(
+      generateOperationContent(
+        new MockModelProvider(),
+        { promptId: simpleAutoOp.id, contentType: "markdown" },
+        3,
+        memoryOperationStore([simpleAutoOp])
+      )
+    ).rejects.toBeInstanceOf(StructuredGenerationError);
+  });
+
+  it("concrete prompts flow through the classic loop; contentType may be omitted (defaults to the prompt's)", async () => {
+    const builtin = await generateOperationContent(new MockModelProvider(), {
+      promptId: "test.make-thing",
+      input: { topic: "photosynthesis" }
+    });
+    expect(builtin).toEqual({ contentType: "test.thing", content: { title: "photosynthesis", n: 1 } });
+
+    const pinned = await generateOperationContent(
+      new MockModelProvider(),
+      { promptId: simplePinnedOp.id, input: {} },
+      3,
+      memoryOperationStore([simplePinnedOp])
+    );
+    // No mockContent on a data op → the spec's createDefault (deterministic).
+    expect(pinned).toEqual({ contentType: "test.thing", content: { title: "", n: 0 } });
   });
 });

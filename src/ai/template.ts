@@ -6,10 +6,14 @@
 // dragging in schema/kit/provider concerns.
 
 // A single source of truth for what a placeholder looks like: {{name}} where
-// name is a JS-ish identifier. Surrounding whitespace is tolerated so that
-// {{ name }} and {{name}} are equivalent. Anything that is not a valid
-// identifier inside the braces is left untouched as literal text.
-const VARIABLE_PATTERN = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
+// name is a JS-ish identifier, optionally DOTTED ({{doc.title}} — the ACTION-2a
+// auto-context namespace). Surrounding whitespace is tolerated so that
+// {{ name }} and {{name}} are equivalent. A dotted name is a FLAT key into the
+// values record (values["doc.title"]) — the engine never walks nested objects,
+// so plain-identifier semantics are byte-identical to before. Anything that is
+// not a valid (dotted) identifier inside the braces is left untouched as
+// literal text.
+const VARIABLE_PATTERN = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*\}\}/g;
 
 /**
  * Returns the DISTINCT variable names referenced by a template, in first-seen

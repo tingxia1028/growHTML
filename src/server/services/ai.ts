@@ -18,9 +18,9 @@ import {
   type FormRouterOutput
 } from "../../core/notes/formRouter";
 import { getNoteContentSpec } from "../../core/notes/contentTypes";
-import { generateStructuredContent, StructuredGenerationError } from "../../kits/structured";
-import { explainPrompt } from "../../core/review/prompts/explain.prompt";
+import { generateOperationContent, StructuredGenerationError } from "../../kits/structured";
 import type { StudyVault } from "../../core/vault";
+import { composeAutoContext } from "./autoContext";
 import { readOperationPrefs } from "./workspace";
 
 export type ChatDeps = { provider: ModelProvider };
@@ -29,9 +29,12 @@ export type KitGenerateDeps = { vault: StudyVault; provider: ModelProvider };
 export type ChatRequestInput = z.infer<typeof chatRequestSchema>;
 
 // Body for POST /api/kits/generate — a kit AI command's structured request.
+// `contentType` is optional since ACTION-2a: absent means "the resolved operation
+// decides" — a simple op with no pinned output rides the adaptive-note form
+// router and the response's `contentType` names the routed form.
 export const kitGenerateSchema = z.object({
   promptId: z.string().min(1),
-  contentType: z.string().min(1),
+  contentType: z.string().min(1).optional(),
   input: z.record(z.string(), z.unknown()).optional()
 });
 export type KitGenerateInput = z.infer<typeof kitGenerateSchema>;
@@ -82,22 +85,20 @@ export async function* streamChatDeltas(
  * and every transport (HTTP route + the direct-call adapter) funnels through
  * generateKitContent.
  *
- * MEM-3 seam: today the gate is deliberately scoped to `review.explain` — the ONLY
- * operation that carries profileContext (review-loop.md §4-REV-2, "the first MEM-3
- * consumer"). MEM-3 generalizes profileContext into ChatContext/every operation and
- * replaces this per-prompt strip with ONE per-provider-kind policy (plus the consent
- * switch) applied wherever profile data enters a provider request.
+ * ACTION-2a GENERALIZED the gate (absorbing MEM-3's "profileContext into all kit
+ * prompts"): the strip is no longer scoped to review.explain — under a managed
+ * provider the key is removed from EVERY operation's runtime input, and the
+ * envelope side (composeAutoContext) independently omits the learner section for
+ * managed kinds, so profile data never reaches a managed provider through either
+ * path. Local kinds stay default-on everywhere.
  */
 const PROFILE_CONTEXT_KEY = "profileContext";
-const PROFILE_GATED_PROMPT_IDS: readonly string[] = [explainPrompt.id];
 
 function applyProfileContextGate(
   provider: ModelProvider,
-  promptId: string,
   runtimeInput: Record<string, unknown>
 ): Record<string, unknown> {
   if (provider.capabilities.kind !== "managed") return runtimeInput;
-  if (!PROFILE_GATED_PROMPT_IDS.includes(promptId)) return runtimeInput;
   if (!(PROFILE_CONTEXT_KEY in runtimeInput)) return runtimeInput;
   const { [PROFILE_CONTEXT_KEY]: _stripped, ...rest } = runtimeInput;
   return rest;
@@ -106,22 +107,30 @@ function applyProfileContextGate(
 /**
  * Product Kit structured generation: merge the per-vault placeholder params for
  * this promptId UNDER the runtime input (so runtime values like anchorText always
- * win), apply the profileContext privacy gate, build the kit prompt, generate,
- * validate against the contentType's NoteContentSpec schema. Unknown
+ * win), apply the profileContext privacy gate, compose the auto-context envelope
+ * (ACTION-2a — selection/doc/learner, capped server-side), build the kit prompt,
+ * generate, validate against the target contentType's NoteContentSpec schema (or
+ * the form-router union for a simple auto-output operation). Unknown
  * prompt/contentType or unsatisfiable output → StructuredGenerationError (mapped to
  * 400 at the edge — a client/AI problem, not a server fault). Custom op_ ids simply
- * have no params.
+ * have no params. The response's `contentType` names what was actually produced
+ * (additive — equal to the requested type whenever one was sent).
  */
 export async function generateKitContent({ vault, provider }: KitGenerateDeps, input: KitGenerateInput) {
   const prefs = await readOperationPrefs({ vault });
   const params = prefs.params[input.promptId] ?? {};
-  const runtimeInput = applyProfileContextGate(provider, input.promptId, {
+  const runtimeInput = applyProfileContextGate(provider, {
     ...params,
     ...(input.input ?? {})
   });
-  const merged = { ...input, input: runtimeInput };
-  const content = await generateStructuredContent(provider, merged, 3, vault.stores.operations);
-  return { content, provider: provider.id };
+  const autoContext = await composeAutoContext({ vault, provider }, { input: runtimeInput });
+  const { contentType, content } = await generateOperationContent(
+    provider,
+    { ...input, input: runtimeInput, autoContext },
+    3,
+    vault.stores.operations
+  );
+  return { content, contentType, provider: provider.id };
 }
 
 // —— Adaptive note forms · Phase 4 ——————————————————————————————————————————

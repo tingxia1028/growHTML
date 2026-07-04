@@ -120,6 +120,51 @@ describe("vault entity schemas", () => {
     expect(() => operationSchema.parse({ ...base, id: "concept_01ARZ3NDEKTSV4RRFFQ69G5FAX" })).toThrow();
   });
 
+  // ACTION-2a: simple mode (一句话新增) on the same entity. V1 records carry no
+  // `mode` and must default to "template" (pinned above by the defaults test —
+  // this block is ADDITIVE).
+  it("accepts a simple-mode operation (instruction only, output type AUTO) and defaults old records to template", () => {
+    const base = {
+      id: "op_01ARZ3NDEKTSV4RRFFQ69G5FAX",
+      type: "operation" as const,
+      schemaVersion: 1 as const,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      createdBy: "user" as const,
+      name: "苏格拉底提问"
+    };
+    const simple = operationSchema.parse({
+      ...base,
+      mode: "simple",
+      instruction: "用苏格拉底式追问考我选中的内容,一次只问一个问题"
+    });
+    expect(simple.mode).toBe("simple");
+    expect(simple.promptTemplate).toBeUndefined(); // no template needed
+    expect(simple.outputContentType).toBeUndefined(); // AUTO — the form router decides
+    // A pinned output type is also allowed (the 高级 disclosure).
+    expect(operationSchema.parse({ ...base, mode: "simple", instruction: "考我", outputContentType: "quiz" }).outputContentType).toBe("quiz");
+
+    // V1 record shape (no mode) → template, byte-compatible defaults.
+    const v1 = operationSchema.parse({ ...base, outputContentType: "markdown", promptTemplate: "Summarize {{anchorText}}" });
+    expect(v1.mode).toBe("template");
+  });
+
+  it("mode-conditional requirements: simple needs an instruction; template still needs template + output type", () => {
+    const base = {
+      id: "op_01ARZ3NDEKTSV4RRFFQ69G5FAX",
+      type: "operation" as const,
+      schemaVersion: 1 as const,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      createdBy: "user" as const,
+      name: "x"
+    };
+    expect(() => operationSchema.parse({ ...base, mode: "simple" })).toThrow();
+    expect(() => operationSchema.parse({ ...base, mode: "simple", instruction: "   " })).toThrow();
+    expect(() => operationSchema.parse({ ...base, mode: "template", promptTemplate: "t {{x}}" })).toThrow(); // no outputContentType
+    expect(() => operationSchema.parse({ ...base, mode: "template", outputContentType: "markdown" })).toThrow(); // no promptTemplate
+  });
+
   it("enforces the {{var}}-safe identifier grammar on declared variables", () => {
     expect(operationVariableSchema.parse({ name: "anchorText", source: "anchorText" }).required).toBe(false);
     expect(() => operationVariableSchema.parse({ name: "1bad", source: "literal" })).toThrow();

@@ -81,3 +81,34 @@ describe("renderTemplate", () => {
     expect(renderTemplate("{{  name  }}", { name: "Z" })).toBe("Z");
   });
 });
+
+// ACTION-2a: dotted names ({{doc.title}}) join the grammar as FLAT keys into the
+// values record — the auto-context namespace. Plain-identifier semantics above are
+// untouched (these tests are ADDITIVE).
+describe("dotted auto-context names", () => {
+  it("extracts dotted names (distinct, first-seen order, whitespace-trimmed)", () => {
+    expect(extractVariables("{{doc.title}} by {{ selection.anchorId }} in {{doc.title}}")).toEqual([
+      "doc.title",
+      "selection.anchorId"
+    ]);
+  });
+
+  it("substitutes a dotted name from its FLAT key (no nested-object walking)", () => {
+    expect(renderTemplate("《{{doc.title}}》· {{selection}}", { "doc.title": "高一物理", selection: "浮力" })).toBe(
+      "《高一物理》· 浮力"
+    );
+    // A nested object under `doc` is NOT walked — the flat key is the contract.
+    expect(renderTemplate("[{{doc.title}}]", { doc: { title: "nope" } })).toBe("[]");
+  });
+
+  it("missing dotted names follow the normal missing rule (render '')", () => {
+    expect(renderTemplate("[{{doc.title}}]", {})).toBe("[]");
+  });
+
+  it("malformed dotted groups stay literal (trailing/leading/double dots)", () => {
+    expect(extractVariables("{{doc.}} {{.title}} {{doc..title}} {{a.b}}")).toEqual(["a.b"]);
+    expect(renderTemplate("{{doc.}} {{.title}} {{doc..title}}", { "doc.": "x", ".title": "y" })).toBe(
+      "{{doc.}} {{.title}} {{doc..title}}"
+    );
+  });
+});
