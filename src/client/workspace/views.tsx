@@ -552,6 +552,19 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
             />
             {/* W1: session list + 新对话 — the conversation is durable & resumable. */}
             <ChatSessionSwitcher api={chatSessions} />
+            {/* W3 (ai-workspace §W3): synthesize the conversation (+ its attachments) into
+                a NEW markdown source (headings = TOC), opened in a fresh pane. */}
+            <button
+              type="button"
+              className="icon-button chat-synthesize-button"
+              title="生成文档"
+              aria-label="生成文档"
+              onClick={() => void dispatch("chat.synthesize", {})}
+              disabled={status === "saving" || chatMessages.length === 0}
+            >
+              <FileText size={16} />
+              生成文档
+            </button>
             <PanelMenu label="AI Chat actions" align="right">
               {/* Keep non-note utilities out of the main conversation surface. */}
               <details className="patch-fold">

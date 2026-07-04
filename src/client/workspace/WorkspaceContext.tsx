@@ -1355,6 +1355,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       resolveAttachmentBundles,
       actions: {
         onNoteCreated: () => void refreshAnnotations(),
+        // W3 (ai-workspace §W3): a chat transcript was synthesized into a NEW markdown
+        // source — reload the library then open the new doc in a fresh pane (the
+        // create-then-open idiom forkActiveSource uses).
+        onSourceSynthesized: (source) => void loadSources().then(() => openSourceInNewPane(source.id)),
         // A note was deleted: re-fetch notes + repaint (painting is derived from
         // notes, so a removed note stops painting automatically).
         onNoteDeleted: () => void refreshAnnotations(),
@@ -1421,7 +1425,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       buildChatContext,
       resolveAttachmentBundles,
       refreshAnnotations,
-      parkDraft
+      parkDraft,
+      loadSources,
+      openSourceInNewPane
     ]
   );
 

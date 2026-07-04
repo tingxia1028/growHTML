@@ -159,10 +159,12 @@ describe("StudyView — chat session history + switcher (W1)", () => {
     expect(toolbar.firstElementChild).toBe(actions);
 
     const children = Array.from(actions.children);
-    expect(children).toHaveLength(3);
+    // W3: the 生成文档 (synthesize) button sits between the switcher and the overflow menu.
+    expect(children).toHaveLength(4);
     expect(children[0].classList.contains("workspace-status-dot")).toBe(true);
     expect(children[1].classList.contains("chat-session-switcher")).toBe(true);
-    expect(children[2].classList.contains("panel-menu")).toBe(true);
+    expect(children[2].classList.contains("chat-synthesize-button")).toBe(true);
+    expect(children[3].classList.contains("panel-menu")).toBe(true);
   });
 
   it("lists the sessions (title + time) and marks the active one", async () => {
