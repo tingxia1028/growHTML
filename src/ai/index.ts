@@ -17,6 +17,13 @@ export {
   type StructuredGenerateRequest
 } from "./structured";
 export { MockModelProvider, FORM_ROUTER_CONTENT_TYPE } from "./mockProvider";
+export {
+  synthesisDocSchema,
+  buildSynthesisMessages,
+  SYNTHESIS_TRANSCRIPT_CAP,
+  type SynthesisDoc,
+  type BuildSynthesisMessagesInput
+} from "./synthesizePrompt";
 export { ClaudeCliProvider, buildSubprocessEnv } from "./claudeCliProvider";
 export { ClaudePtyProvider } from "./claudePtyProvider";
 export type { PtySession, PtySessionFactory } from "./pty/session";
