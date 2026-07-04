@@ -715,3 +715,15 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 | 2026-07-05 | SRC-4-001 | e2e/rich-edit.spec.ts | 新建 HTML 页 → 从模板(lessonNotes)开始 → 丰富 callout 插入 → 保存 → 阅读经服务端管道渲染模板+callout | Passed |
 | 2026-07-05 | SRC-4-001 | npm run build | 主入口 2,528.78→2,543.58 kB(gzip 798.41→803.12);grapesjs 不在 dist/;katex/mermaid 仍懒分块 | Passed |
 | 2026-07-05 | SRC-4-001 | npx vitest run(全量) | 219 文件 / 2313 用例(基线 216/2291 + SRC-4 3 文件 22 测试) | Passed |
+| 2026-07-05 | W2-001 | buildPrompt.test.ts | attachmentsBlock/contextPreamble 字节等旧@零附件,附件渲染 | Passed |
+| 2026-07-05 | W2-001 | cliAgent/spec.test.ts | claudeCli fold — flatten/turnPrompt 出块,零附件字节等旧 | Passed |
+| 2026-07-05 | W2-001 | ai.test.ts | mock 回显 "Attached: N source(s)" 标记;零附件回复不变 | Passed |
+| 2026-07-05 | W2-001 | sourceBundle.test.ts | bundle caps(excerpt 截断/note 数上限/**sealed 过滤**/includeNotes) | Passed |
+| 2026-07-05 | W2-001 | directTransport.test.ts | bundle 路由 HTTP↔direct 对等 | Passed |
+| 2026-07-05 | W2-001 | chatContextAssembly.test.ts | 聚焦优先并集/sourceId 去重(含 focused==attachment)/跨源 drop-tail cap | Passed |
+| 2026-07-05 | W2-001 | registry.test.ts | ask-ai resolver merge/empty/absent(零附件无 sources 键) | Passed |
+| 2026-07-05 | W2-001 | chatSessions.test.ts(server) | attachment CRUD PATCH + 懒建空会话 | Passed |
+| 2026-07-05 | W2-001 | useChatSessions.test.tsx | add/remove/幂等 + 懒建 + attach-then-turn 竞态(恰一个 create) | Passed |
+| 2026-07-05 | W2-001 | ChatAttachments.test.tsx | chip 渲染/删除/选取 | Passed |
+| 2026-07-05 | W2-001 | e2e/chat-attachments.spec.ts | 挂源 → 回复带 Attached 标记+标题;chip 跨会话切换保留 | Passed |
+| 2026-07-05 | W2-001 | npx vitest run(全量) | 223 文件 / 2356 用例 | Passed |
