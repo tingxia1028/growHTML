@@ -4,6 +4,8 @@ import { sha256Hex } from "../storage/sha256";
 import { assertSafeRelativePath } from "../storage/paths";
 import { sourceSchema, type CreatedBy, type SourceRecord, type SourceType } from "../schema";
 import type { StudyVault } from "../vault";
+import type { SnapshotStore } from "./snapshotStore";
+import { withTombstone } from "./trash";
 
 export type IngestSourceInput = {
   title: string;
@@ -138,26 +140,46 @@ export async function listSources(vault: StudyVault) {
 }
 
 /**
- * Delete a source: its stored file, the record itself, and the anchors / notes /
- * patches that hang off it (so nothing is orphaned). Returns false if not found.
+ * Delete a source — SOFT (TRUST-3, docs/design/data-trust.md §3): the record and
+ * the anchors / notes / patches that hang off it are tombstoned into the recycle
+ * bin (cascade-marked `metadata.trash.cascadeOf = sourceId` so restore resurrects
+ * exactly this cascade). The stored FILE stays on disk — restore needs it; only
+ * an explicit purge (`purgeSourceRecord` via the trash surfaces) removes it.
+ * Returns false if the source is not live (absent or already in the bin).
  */
 export async function deleteSource(vault: StudyVault, id: string): Promise<boolean> {
   const source = await vault.stores.sources.get(id);
   if (!source) return false;
 
+  const deletedAt = new Date().toISOString();
+  await trashLiveDependents(vault.stores.anchors, id, deletedAt);
+  await trashLiveDependents(vault.stores.notes, id, deletedAt);
+  await trashLiveDependents(vault.stores.patches, id, deletedAt);
+  await vault.stores.sources.upsert(withTombstone(source, deletedAt));
+  return true;
+}
+
+/** Tombstone every LIVE record of `store` hanging off `sourceId`, cascade-marked. */
+async function trashLiveDependents<
+  T extends { id: string; updatedAt: string; deletedAt?: string; sourceId?: string; metadata: Record<string, unknown> }
+>(store: SnapshotStore<T>, sourceId: string, deletedAt: string): Promise<void> {
+  const related = (await store.list()).filter((item) => item.sourceId === sourceId);
+  for (const item of related) {
+    await store.upsert(withTombstone(item, deletedAt, sourceId));
+  }
+}
+
+/**
+ * PURGE a source's stored file off disk (TRUST-3 永久删除 / auto-purge only —
+ * a soft delete never touches the file). Best-effort: a missing/locked file
+ * shouldn't block removing the records.
+ */
+export async function deleteStoredSourceFile(vault: StudyVault, source: SourceRecord): Promise<void> {
   try {
     await vault.storage.deleteFile(resolveSourcePath(vault, source));
   } catch {
-    // Missing/locked file shouldn't block removing the record from the list.
+    // Missing/locked file shouldn't block the purge.
   }
-
-  for (const store of [vault.stores.anchors, vault.stores.notes, vault.stores.patches]) {
-    const related = (await store.list()).filter((item) => item.sourceId === id);
-    for (const item of related) await store.delete(item.id);
-  }
-
-  await vault.stores.sources.delete(id);
-  return true;
 }
 
 function resolveSourcePath(vault: StudyVault, source: SourceRecord) {

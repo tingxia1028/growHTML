@@ -118,6 +118,7 @@ describe("UserMenu", () => {
       "backup-now",
       "export-vault",
       "import-vault",
+      "trash",
       "account",
       "onboarding",
       "feedback",
@@ -147,6 +148,7 @@ describe("UserMenu", () => {
     await clickEntry("plugins");
     await clickEntry("profile");
     await clickEntry("share");
+    await clickEntry("trash");
     await clickEntry("onboarding");
     await clickEntry("about");
 
@@ -155,6 +157,7 @@ describe("UserMenu", () => {
       { type: "pane", kind: "plugin.manager" },
       { type: "pane", kind: "profile.panel" },
       { type: "pane", kind: "layer.switcher" },
+      { type: "pane", kind: "trash.panel" },
       { type: "onboarding", open: true },
       { type: "pane", kind: "settings.hub" }
     ]);

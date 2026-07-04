@@ -34,6 +34,11 @@ export function recordEnvelopeSchema<TType extends string>(type: TType, id: z.Zo
     createdAt: isoDateTimeSchema,
     updatedAt: isoDateTimeSchema,
     createdBy: createdBySchema,
+    // TRUST-3 soft delete (docs/design/data-trust.md §3): a tombstone timestamp.
+    // ABSENT ⇒ live. Additive + compaction-aware: the snapshot stores keep
+    // tombstoned lines through every rewrite, exclude them from list()/get()
+    // everywhere, and only the trash surfaces (listTrashed/getAny) read them.
+    deletedAt: isoDateTimeSchema.optional(),
     // Plugin escape hatch: every entity carries free-form metadata so future
     // plugins extend via metadata instead of forcing core schema changes.
     metadata: z.record(z.string(), z.unknown()).default({})

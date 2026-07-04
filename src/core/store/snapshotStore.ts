@@ -6,13 +6,28 @@ import { readJsonl, writeJsonlAtomic, type JsonlReadResult } from "./jsonl";
 export type SnapshotRecord = {
   id: string;
   updatedAt: string;
+  /**
+   * TRUST-3 soft delete (docs/design/data-trust.md §3): set ⇒ the record is in
+   * the recycle bin. `list()`/`get()` exclude tombstoned records so EVERY
+   * consumer (list/search/queue/digest/svpack-export/report) hides them for
+   * free; the trash surfaces read them explicitly via `listTrashed()`/`getAny()`.
+   */
+  deletedAt?: string;
 };
 
 export type SnapshotStore<T extends SnapshotRecord> = {
+  /** LIVE records only — soft-deleted (deletedAt) records are excluded. */
   list(): Promise<T[]>;
+  /** Recycle-bin records only (deletedAt set) — the TRUST-3 trash surfaces. */
+  listTrashed(): Promise<T[]>;
+  /** ALL records (live + tombstoned) with parse issues — the compaction-safe raw read. */
   readWithIssues(): Promise<JsonlReadResult<T>>;
+  /** A LIVE record by id (a tombstoned record reads as absent). */
   get(id: string): Promise<T | null>;
+  /** A record by id whether live or tombstoned (restore/purge need the bin). */
+  getAny(id: string): Promise<T | null>;
   upsert(record: T): Promise<T>;
+  /** REAL delete (TRUST-3 purge / non-trash entities). Soft delete = upsert with deletedAt. */
   delete(id: string): Promise<boolean>;
 };
 
@@ -42,6 +57,9 @@ export function createSnapshotStore<T extends SnapshotRecord>(input: {
     return run;
   }
 
+  // Compaction-aware by construction: dedupe (and therefore every rewrite that
+  // upsert/delete performs) keeps tombstoned records — a soft-deleted line
+  // survives compaction until an explicit purge `delete()`s it.
   async function dedupe() {
     const result = await readJsonl(input.filePath, input.schema, storage);
     const byId = new Map<string, T>();
@@ -61,7 +79,11 @@ export function createSnapshotStore<T extends SnapshotRecord>(input: {
 
   return {
     async list() {
-      return (await dedupe()).records;
+      return (await dedupe()).records.filter((record) => !record.deletedAt);
+    },
+
+    async listTrashed() {
+      return (await dedupe()).records.filter((record) => !!record.deletedAt);
     },
 
     async readWithIssues() {
@@ -69,6 +91,11 @@ export function createSnapshotStore<T extends SnapshotRecord>(input: {
     },
 
     async get(id: string) {
+      const record = (await dedupe()).records.find((candidate) => candidate.id === id);
+      return record && !record.deletedAt ? record : null;
+    },
+
+    async getAny(id: string) {
       return (await dedupe()).records.find((record) => record.id === id) ?? null;
     },
 
@@ -93,4 +120,3 @@ export function createSnapshotStore<T extends SnapshotRecord>(input: {
     }
   };
 }
-

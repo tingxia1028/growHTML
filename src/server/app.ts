@@ -14,6 +14,7 @@ import {
   defaultBackupsDir,
   registerDataTrustRoutes
 } from "./dataTrust";
+import { createTrashPurgeScheduler, createTrashService, registerTrashRoutes } from "./trash";
 import { createMemoryConsolidationScheduler, registerMemoryRoutes } from "./memory";
 import { registerAgentRoutes } from "./agent";
 import { registerChatRoutes } from "./chatSessions";
@@ -763,6 +764,18 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
     void createBackupScheduler(dataTrustService).start();
   }
   registerDataTrustRoutes(app, dataTrustService);
+
+  // 回收站 (docs/design/data-trust.md §3, TRUST-3): the DELETE routes above already
+  // SOFT-delete (notes/sources tombstone into the bin behind the same API shape);
+  // these are the trash surfaces — list / restore / 永久删除 / 清空回收站 — plus the
+  // 30d auto-purge, riding the same real-entry-point arming as the backup scheduler
+  // (STUDY_VAULT_AUTO_BACKUP=0 kills both via scheduleAuto; STUDY_VAULT_TRASH_AUTO_PURGE=0
+  // kills just the purge — e2e/dev vaults stay hermetic either way).
+  const trashService = createTrashService({ vault, now: clock });
+  if (dataTrust?.scheduleAuto && process.env.STUDY_VAULT_TRASH_AUTO_PURGE !== "0") {
+    void createTrashPurgeScheduler(trashService).start();
+  }
+  registerTrashRoutes(app, trashService);
 
   // Learner-memory (docs/design/learner-memory.md): MEM-1 event capture/read/prune +
   // the capture switch, MEM-2 tiers (consolidate/digests/profile/clear-all) — see

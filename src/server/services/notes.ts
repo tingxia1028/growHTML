@@ -7,6 +7,7 @@ import { createEntityId } from "../../core/ids";
 import { getNoteContentSpec, parseNoteContent } from "../../core/notes/contentTypes";
 import { noteSchema, type NoteRecord } from "../../core/schema";
 import { ensureOwnedLayer } from "../../core/study-layer/layers";
+import { withTombstone } from "../../core/store/trash";
 import type { StudyVault } from "../../core/vault";
 import type { SealedRuntime } from "../svpack";
 import { deleteAnchorsWithoutNotes } from "./anchors";
@@ -169,22 +170,26 @@ export async function updateNote(
 }
 
 /**
- * Delete a note. ORPHAN-ANCHOR CASCADE: painting is DERIVED from anchors (the reader
- * maps every anchor in a source to a highlight), so deleting only the note record
- * would leave its anchors behind and the highlight would STAY painted. So after
- * deleting the note we cascade-delete each of its anchors that is now ORPHANED —
- * referenced by NO remaining note AND NO patch. Anchors still shared by another note
- * or referenced by a patch are KEPT. See docs/design/note-edit-delete.md.
+ * Delete a note — SOFT (TRUST-3, docs/design/data-trust.md §3): the record is
+ * tombstoned into the recycle bin behind the same API shape (the DELETE route is
+ * unchanged; real deletion happens only via the trash purge surfaces).
+ * ORPHAN-ANCHOR CASCADE: painting is DERIVED from anchors (the reader maps every
+ * anchor in a source to a highlight), so trashing only the note record would
+ * leave its anchors behind and the highlight would STAY painted. So after
+ * trashing the note we cascade-TRASH each of its anchors that is now ORPHANED —
+ * referenced by NO remaining live note AND NO patch — marked `cascadeOf: noteId`
+ * so restoring the note resurrects them (and the highlight). Anchors still
+ * shared by another live note or referenced by a patch are KEPT live.
+ * See docs/design/note-edit-delete.md + data-trust.md §3.
  */
 export async function deleteNote({ vault, sealed }: SealedNotesDeps, input: { noteId: string }): Promise<void> {
   // Sealed notes can only leave via DELETE /api/svpack/:packId (whole-pack delete).
   assertNoteWritable({ sealed }, input.noteId);
-  // Capture the note's anchorIds BEFORE deleting it, so we know which anchors to
-  // re-check for orphan-hood.
   const note = await vault.stores.notes.get(input.noteId);
-  const removed = await vault.stores.notes.delete(input.noteId);
-  if (!removed || !note) throw new NotFoundError("Note not found");
-  await deleteAnchorsWithoutNotes(vault, note.anchorIds);
+  if (!note) throw new NotFoundError("Note not found");
+  const deletedAt = new Date().toISOString();
+  await vault.stores.notes.upsert(withTombstone(note, deletedAt));
+  await deleteAnchorsWithoutNotes(vault, note.anchorIds, { deletedAt, cascadeOf: note.id });
 }
 
 // Build the OR-over-enabled-layers note-visibility predicate. A note is visible iff

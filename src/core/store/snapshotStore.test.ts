@@ -84,6 +84,55 @@ describe("snapshot store", () => {
     expect(files).toEqual(["patches.jsonl"]);
     expect(() => JSON.parse(text.trim())).not.toThrow();
   });
+
+  // —— TRUST-3 soft delete (deletedAt tombstones, docs/design/data-trust.md §3) ——
+
+  it("excludes tombstoned records from list()/get() but serves them via listTrashed()/getAny()", async () => {
+    const trashed = { ...fixturePatch, deletedAt: "2026-07-04T00:00:00.000Z", updatedAt: "2026-07-04T00:00:00.000Z" };
+    await store.upsert(trashed);
+
+    expect(await store.list()).toEqual([]);
+    expect(await store.get(fixturePatch.id)).toBeNull();
+    expect(await store.listTrashed()).toEqual([trashed]);
+    expect(await store.getAny(fixturePatch.id)).toEqual(trashed);
+    // The raw read (compaction path) still sees everything.
+    expect((await store.readWithIssues()).records).toEqual([trashed]);
+  });
+
+  it("keeps tombstones through compaction (rewrites triggered by other writes)", async () => {
+    const trashed = { ...fixturePatch, deletedAt: "2026-07-04T00:00:00.000Z", updatedAt: "2026-07-04T00:00:00.000Z" };
+    await store.upsert(trashed);
+
+    // Unrelated upsert + delete both rewrite the whole file — the tombstone must survive.
+    const other = { ...fixturePatch, id: createEntityId("patch") };
+    await store.upsert(other);
+    await store.delete(other.id);
+
+    const text = await readFile(filePath, "utf8");
+    expect(text).toContain(trashed.id);
+    expect(await store.getAny(trashed.id)).toEqual(trashed);
+    expect(await store.list()).toEqual([]);
+  });
+
+  it("delete() REALLY removes a tombstoned record (the purge path)", async () => {
+    const trashed = { ...fixturePatch, deletedAt: "2026-07-04T00:00:00.000Z", updatedAt: "2026-07-04T00:00:00.000Z" };
+    await store.upsert(trashed);
+
+    expect(await store.delete(trashed.id)).toBe(true);
+    expect(await store.getAny(trashed.id)).toBeNull();
+    expect(await store.listTrashed()).toEqual([]);
+  });
+
+  it("restores by upserting the record without deletedAt", async () => {
+    const trashed = { ...fixturePatch, deletedAt: "2026-07-04T00:00:00.000Z", updatedAt: "2026-07-04T00:00:00.000Z" };
+    await store.upsert(trashed);
+
+    const { deletedAt: _gone, ...restored } = { ...trashed, updatedAt: "2026-07-05T00:00:00.000Z" };
+    await store.upsert(restored as PatchRecord);
+
+    expect(await store.get(fixturePatch.id)).toEqual(restored);
+    expect(await store.listTrashed()).toEqual([]);
+  });
 });
 
 describe("append-only logs", () => {

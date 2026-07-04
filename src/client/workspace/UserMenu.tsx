@@ -8,6 +8,7 @@
 //                   分享/导入 dialogs (svpackViews) — the identity/roster surfaces
 //   数据          → 立即备份 / 导出全库… / 导入全库(替换)… (TRUST-1/2, dataTrust.ts;
 //                   the hub 数据 section is deferred while SettingsHub is contended)
+//                   + 回收站 (TRUST-3 → the trash.panel view, trashViews.tsx)
 //   账户/积分     → DISABLED with tooltip until G-A3b (managed login + balance)
 //   帮助/新手引导 → reopen the SHELL-2 onboarding checklist (center view)
 //   反馈问题      → GitHub issues via window.open (desktop's window-open handler
@@ -144,6 +145,14 @@ export function UserMenu() {
       label: "导入全库(替换)…",
       title: "从 .growte-vault.zip 完整替换当前库(导入前自动备份)",
       action: () => runImportVault()
+    },
+    // TRUST-3 回收站 — the registered trash view (trashViews.tsx): deleted
+    // documents/notes stay restorable for 30 days before auto-purge.
+    {
+      id: "trash",
+      label: "回收站",
+      title: "已删除的文档与笔记(30 天内可恢复,到期自动清除)",
+      action: () => navigateShell({ type: "pane", kind: "trash.panel" })
     },
     { id: "account", label: "账户/积分", disabled: true, title: "等待托管上线" },
     { id: "onboarding", label: "帮助/新手引导", action: () => navigateShell({ type: "onboarding", open: true }) },

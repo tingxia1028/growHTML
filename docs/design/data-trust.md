@@ -46,6 +46,32 @@ counts, createdAt}. Export from the hub; import = restore flow with a DIFFERENT-
 manual multi-device bridge until sync exists.
 
 ## 3. 回收站 (TRUST-3)
+**Status: ✅ shipped (TRUST-3-001, 2026-07-04)** — `deletedAt` on the shared record
+envelope (additive, compaction-aware: the snapshot stores keep tombstoned lines through
+every rewrite and exclude them from `list()`/`get()`, so EVERY read — list/search/queue/
+digest/svpack/report — hides them by construction). The existing DELETE routes flipped to
+soft behind the SAME API shape: `DELETE /api/notes/:id` tombstones the note + orphan-
+cascades its anchors (marked `metadata.trash.cascadeOf=noteId` so restore resurrects the
+highlight); `DELETE /api/sources/:id` tombstones the source + cascade-trashes its
+notes/anchors/patches (stored FILE kept on disk — only purge removes it). Trash surfaces
+(`src/server/trash.ts`): `GET /api/trash` (typed listing: documents with cascade counts +
+directly-deleted notes with sourceState, retention readout), `POST /api/trash/:id/restore`
+(cascade resurrection; restoring a note whose source is not live → 409
+`source-in-trash`/`source-missing` — restore the document first, never a silently detached
+note; layer memberships deleted meanwhile are pruned so nothing resurrects invisible),
+`DELETE /api/trash/:id` (永久删除 — REAL delete; a source purge also removes its file +
+its trashed dependents), `DELETE /api/trash?confirm=清空回收站` (typed confirm phrase, the
+§2 import idiom). Auto-purge after 30d (`STUDY_VAULT_TRASH_RETENTION_DAYS` config) rides
+the §1 scheduler idiom (`createTrashPurgeScheduler`, clock-injected, armed by real entry
+points via `scheduleAuto`; `STUDY_VAULT_TRASH_AUTO_PURGE=0` kills it — e2e stays hermetic).
+View: registered `trash.panel` (`src/client/workspace/trashViews.tsx` + trashIo/
+trashMessages/trash.css, zh/en) reached from the UserMenu 数据 group 回收站 entry (hub
+数据 section still deferred with §1). **Explicit export choice:** tombstones RIDE the
+verbatim full-vault backups/exports (§1/§2 — disaster recovery keeps the bin, import
+roundtrips byte-identically, manifest counts count raw lines); every OUTWARD-facing read
+(svpack/report/search/queues/digests) excludes them via the stores' live-only `list()`.
+REAL delete stays for 永久删除/清空回收站 + memory clear-all (its own semantics).
+
 Soft-delete for notes + sources (+ their cascade): `deletedAt` on the envelope (additive,
 compaction-aware), excluded from every list/search/queue/digest; 回收站 view (hub 数据 section
 or library) with restore + 永久删除; auto-purge after 30d (config). Guard: soft-deleted never

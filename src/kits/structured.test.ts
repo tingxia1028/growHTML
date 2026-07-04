@@ -23,10 +23,16 @@ function memoryOperationStore(records: OperationRecord[]): SnapshotStore<Operati
     async list() {
       return Array.from(byId.values());
     },
+    async listTrashed() {
+      return [];
+    },
     async readWithIssues() {
       return { records: Array.from(byId.values()), issues: [] };
     },
     async get(id: string) {
+      return byId.get(id) ?? null;
+    },
+    async getAny(id: string) {
       return byId.get(id) ?? null;
     },
     async upsert(record: OperationRecord) {

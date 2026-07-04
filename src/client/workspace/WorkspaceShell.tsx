@@ -51,6 +51,8 @@ import "./BottomBar";
 import "./RightSidebarTabs";
 //   ./pluginManagerViews → plugin.manager (the Kit & Plugin manager panel)
 import "./pluginManagerViews";
+//   ./trashViews → trash.panel (the TRUST-3 回收站 — reached via the UserMenu 数据 group)
+import "./trashViews";
 //   ../review/ReviewPanel → review.panel (the REV-1 复习 runner — reached via the IconRail)
 import "../review/ReviewPanel";
 //   ../profile/ProfilePanel → profile.panel (the MEM-2 画像/记忆管理 page — IconRail)

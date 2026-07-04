@@ -7,6 +7,7 @@ import { createWebTextQuoteAnchor } from "../../adapters/web/anchor";
 import { createPdfSelectionAnchor } from "../../adapters/pdf/anchor";
 import { createImageRegionAnchor } from "../../adapters/image/anchor";
 import { ensureOwnedLayer } from "../../core/study-layer/layers";
+import { withTombstone } from "../../core/store/trash";
 import type { StudyVault } from "../../core/vault";
 import type { SealedRuntime } from "../svpack";
 import { NotFoundError, ValidationError } from "./errors";
@@ -163,10 +164,19 @@ export async function listSourceAnchors({ vault, sealed }: SealedAnchorsDeps, in
 }
 
 /**
- * Orphan-anchor cascade shared by the notes domain: delete each candidate anchor
- * that no remaining note references (anchorIds) and no patch references (anchorId).
+ * Orphan-anchor cascade shared by the notes domain: SOFT-delete (TRUST-3) each
+ * candidate anchor that no remaining LIVE note references (anchorIds) and no
+ * patch references (anchorId). Tombstoning instead of hard-deleting keeps the
+ * anchor restorable — restoring a trashed note resurrects its anchors, so the
+ * highlight comes back too. `cascadeOf` marks the parent (the deleted note)
+ * whose restore should resurrect these anchors; the edit-detach/prune paths
+ * pass none (their tombstones just age out via auto-purge).
  */
-export async function deleteAnchorsWithoutNotes(vault: StudyVault, anchorIds: Iterable<string>) {
+export async function deleteAnchorsWithoutNotes(
+  vault: StudyVault,
+  anchorIds: Iterable<string>,
+  trash?: { deletedAt?: string; cascadeOf?: string }
+) {
   const candidates = [...new Set(anchorIds)];
   if (candidates.length === 0) return;
 
@@ -177,9 +187,11 @@ export async function deleteAnchorsWithoutNotes(vault: StudyVault, anchorIds: It
   }
   const referencedByPatch = new Set(patches.map((patch) => patch.anchorId));
 
+  const deletedAt = trash?.deletedAt ?? new Date().toISOString();
   for (const anchorId of candidates) {
     if (!referencedByNote.has(anchorId) && !referencedByPatch.has(anchorId)) {
-      await vault.stores.anchors.delete(anchorId);
+      const anchor = await vault.stores.anchors.get(anchorId);
+      if (anchor) await vault.stores.anchors.upsert(withTombstone(anchor, deletedAt, trash?.cascadeOf));
     }
   }
 }
