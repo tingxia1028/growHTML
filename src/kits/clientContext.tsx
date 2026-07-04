@@ -238,17 +238,19 @@ export function installClientKits(kits: ProductKit[]): void {
     // auto-foreground resolves identically to the server's stage-axis seeding.
     if (kit.detection) registerKitDetection(kit.detection);
   }
-  seedBuiltinPlugins();
+  seedBuiltinKits();
 }
 
 // Seed PluginRecords for the BUILT-IN note types (those registered outside a kit
-// install). F5 fix: registrations that carry a REAL `pluginId` (flashcard / quiz /
-// bookmark / diagrams — see builtinNoteTypes.tsx) get their OWN PluginRecord named from
-// the catalog; only true core primitives (no pluginId) land on the synthetic "core"
-// record. The old seedCorePlugin over-claimed all of them under "core". Idempotent
+// install). Renamed seedBuiltinPlugins → seedBuiltinKits with FLAT §2 (plugins are
+// INTERNAL capability records now — the seeded PluginRecords feed contribution wiring
+// and the viewer-conflict surface, never a user-facing plugin list). F5 fix retained:
+// registrations that carry a REAL `pluginId` (flashcard / quiz / bookmark / diagrams —
+// see builtinNoteTypes.tsx) get their OWN PluginRecord named from the catalog; only
+// true core primitives (no pluginId) land on the synthetic "core" record. Idempotent
 // (registerContribution de-dupes by id; existing kit-owned records are skipped via the
 // owners map).
-function seedBuiltinPlugins(): void {
+function seedBuiltinKits(): void {
   ensurePluginRecord({ id: "core", name: "Core" });
   for (const plugin of listNoteTypes()) {
     if (kitNoteTypeOwners.has(plugin.contentType)) continue; // owned via a kit install

@@ -1053,6 +1053,31 @@ describe("vault server API", () => {
     expect(withKits.body.prefs.userKits).toEqual(userKits);
   });
 
+  it("FLAT migration: a pre-FLAT per-plugin install state collapses to kits on first load (write-back, idempotent)", async () => {
+    // Persist a LEGACY state (an old vault that installed 数学 Kit as a separate kit).
+    const legacy = { installedPlugins: [], installedKits: ["subject-math"] };
+    await request(app).put("/api/plugin-prefs/catalog").send({ catalogState: legacy }).expect(200);
+
+    // First GET migrates + writes back: the subject kit maps onto the Textbook Kit
+    // with ONLY its evidenced groups enabled; the shared quiz ref survives as a
+    // direct hold (zero loss — effective-installed parity).
+    const migrated = (await request(app).get("/api/plugin-prefs").expect(200)).body.prefs.catalogState;
+    expect(migrated.installedKits).toEqual(["textbook-learning"]);
+    expect(migrated.installedPlugins).toEqual(["quiz"]);
+    expect(migrated.disabledGroups["textbook-learning"]).toEqual([
+      "explanation",
+      "practice",
+      "review-pack",
+      "textbook-language",
+      "subject-english",
+      "subject-history-geo"
+    ]);
+
+    // Idempotent: a second load returns the identical, already-flat state.
+    const again = (await request(app).get("/api/plugin-prefs").expect(200)).body.prefs.catalogState;
+    expect(again).toEqual(migrated);
+  });
+
   it("generates structured content for a stored op_ promptId and for a built-in", async () => {
     const op = (
       await request(app)

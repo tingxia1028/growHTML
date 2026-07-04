@@ -1,23 +1,23 @@
 // @vitest-environment jsdom
-// Subject kits as market goods (M-B × market M1/F5/MH-0): member PluginRecords under
-// their kits, catalog members[] resolving against the read model, the 市场 tab listing
-// through CatalogSource("local"), effective-installed gating + the §8.5.2 members-union
-// refcount, and the M-A detection seam registered through the REAL client install.
+// Subject kits post-FLAT (kit-flatten §2 × M-B/M1/MH-0): the RUNTIME registration
+// vehicles are unchanged (member PluginRecords under their per-subject kit ids,
+// language + detection per subject), but user-facing they are capability GROUPS of the
+// ONE Textbook Kit — the market lists no subject kit, availability follows the group
+// switchboard, and legacy persisted subject-kit installs migrate losslessly.
 import { afterEach, describe, expect, it } from "vitest";
 
-// Side effects: install the Product Kits (textbook + review + the 3 subject kits).
+// Side effects: install the Product Kits (textbook + the 3 subject registration vehicles).
 import "../clientKits";
 
 import { catalogSource } from "../catalogSource";
-import { catalogKitMembers, getCatalogEntry, providerOf } from "../catalog";
+import { providerOf } from "../catalog";
 import { listInstalledPlugins } from "../plugin";
 import { installedKits, kitSurfaceItems, noteTypeOwnerKit } from "../clientContext";
 import {
   isPluginEffectiveInstalled,
-  kitRemovalOutcome,
   resetInstallState,
   syncInstallState,
-  withKitInstalled,
+  withKitGroupEnabled,
   EMPTY_CATALOG_STATE
 } from "../installState";
 import { listKitDetections } from "../../core/subject/detectSubject";
@@ -46,7 +46,7 @@ describe("F5 member registration — one PluginRecord per exemplar member, group
     }
   });
 
-  it("the kit records keep only kit-level config (language) and are activation choices", () => {
+  it("the kit records keep only kit-level config (language) and stay foreground choices", () => {
     for (const kitId of ["subject-english", "subject-math", "subject-history-geo"]) {
       expect(record(kitId)?.contributions.map((c) => c.kind), kitId).toEqual(["language"]);
       expect(installedKits.some((k) => k.id === kitId), kitId).toBe(true);
@@ -67,64 +67,58 @@ describe("F5 member registration — one PluginRecord per exemplar member, group
   });
 });
 
-describe("MH-0 — the 市场 tab lists the new kits automatically via CatalogSource(\"local\")", () => {
-  it("kit listings appear with member counts + the members-union contentTypes", async () => {
+describe("MH-0 × FLAT — the 市场 lists ONE Textbook Kit; subjects ride it as groups", () => {
+  it("no subject kit listing survives; the Textbook Kit carries the subject contentTypes", async () => {
     const kits = await catalogSource("local").list({ kind: "kit" });
-    const english = kits.find((l) => l.id === "subject-english");
-    expect(english).toBeTruthy();
-    expect(english!.title).toBe("英语 Kit");
-    expect(english!.memberCount).toBe(2); // subject-vocab + flashcard
-    expect(english!.contentTypes).toEqual(expect.arrayContaining(["subject.vocab", "flashcard"]));
-    const math = kits.find((l) => l.id === "subject-math");
-    // REV-CORE: the mistake TYPE is core — the `mistake` member contributes its command
-    // only, so the kit's contentTypes union carries formula + quiz.
-    expect(math!.contentTypes).toEqual(expect.arrayContaining(["subject.formula", "quiz"]));
-    expect(math!.contentTypes).not.toContain("textbook.mistake");
-    expect(kits.find((l) => l.id === "subject-history-geo")).toBeTruthy();
+    expect(kits.map((l) => l.id)).toEqual(["textbook-learning"]);
+    const textbook = kits[0];
+    expect(textbook.contentTypes).toEqual(
+      expect.arrayContaining(["subject.vocab", "subject.formula", "subject.timeline"])
+    );
+    expect(textbook.groupCount).toBe(8);
   });
 
-  it("plugin listings appear too, searchable by 中文 name", async () => {
-    const hits = await catalogSource("local").list({ kind: "plugin", search: "生词" });
-    expect(hits.map((l) => l.id)).toContain("subject-vocab");
+  it("plugins are internal now — the local source never lists them", async () => {
+    expect(await catalogSource("local").list({ kind: "plugin", search: "生词" })).toEqual([]);
   });
 });
 
-describe("M1/F4 — install state: opt-in kits, the members-union, the §8.5.2 refcount", () => {
-  it("fresh vault (null state): subject plugins are NOT effective-installed; classic goods are", () => {
+describe("M1/F4 × FLAT — availability follows the capability-group switchboard", () => {
+  it("fresh vault (null state): subject exemplars are NOT effective; classic goods are", () => {
     expect(isPluginEffectiveInstalled("subject-vocab")).toBe(false);
     expect(isPluginEffectiveInstalled("subject-formula")).toBe(false);
     expect(isPluginEffectiveInstalled("flashcard")).toBe(true);
     expect(isPluginEffectiveInstalled("mistake")).toBe(true);
   });
 
-  it("installing a kit makes its members effective (union semantics) and surfaces its toolbar item", () => {
-    syncInstallState({ catalogState: withKitInstalled(EMPTY_CATALOG_STATE, "subject-math"), userKits: [] });
+  it("enabling the 数学 group lights up the formula exemplar + its toolbar item", () => {
+    syncInstallState({
+      catalogState: withKitGroupEnabled(
+        { installedPlugins: [], installedKits: ["textbook-learning"] },
+        "textbook-learning",
+        "subject-math"
+      ),
+      userKits: []
+    });
     expect(isPluginEffectiveInstalled("subject-formula")).toBe(true);
     const items = kitSurfaceItems("selection-toolbar").map((i) => i.commandId);
     expect(items).toContain("subject.generate-formula");
-    // The other subject kits stay uninstalled → their items stay gated.
+    // The other subject groups stay off → their items stay gated.
     expect(items).not.toContain("subject.generate-vocab");
   });
 
-  it("uninstall outcome rows (§8.5.2): shared members are KEPT, the exemplar is removed", () => {
-    // 数学 Kit uninstall from the default state: mistake/quiz keep their default direct
-    // holds ("kept"); subject-formula loses its only hold ("removed") — 理化生 (M-C)
-    // will add the second hold the design's overlap example describes.
-    const rows = kitRemovalOutcome("subject-math", withKitInstalled(EMPTY_CATALOG_STATE, "subject-math"));
-    expect(rows).toEqual([
-      { pluginId: "subject-formula", kept: false, keptBy: [] },
-      { pluginId: "mistake", kept: true, keptBy: ["direct", "textbook-learning"] },
-      { pluginId: "quiz", kept: true, keptBy: ["direct"] }
-    ]);
-  });
-
-  it("catalog kit members[] resolve to cataloged plugin entries, including the referenced existing plugins", () => {
-    expect(catalogKitMembers("subject-english")).toContain("flashcard");
-    expect(catalogKitMembers("subject-math")).toContain("quiz");
-    for (const kitId of ["subject-english", "subject-math", "subject-history-geo"]) {
-      for (const member of catalogKitMembers(kitId)) {
-        expect(getCatalogEntry(member)?.kind, `${kitId} member ${member}`).toBe("plugin");
-      }
-    }
+  it("LEGACY persisted subject-kit installs migrate: the old id still activates its group", () => {
+    // A pre-FLAT vault that installed 数学 Kit — syncInstallState migrates defensively
+    // (the server write-back is the durable half), with zero loss.
+    syncInstallState({
+      catalogState: { ...EMPTY_CATALOG_STATE, installedPlugins: [], installedKits: ["subject-math"] },
+      userKits: []
+    });
+    expect(isPluginEffectiveInstalled("subject-formula")).toBe(true);
+    // The legacy members-union kept quiz/mistake effective — parity preserved.
+    expect(isPluginEffectiveInstalled("quiz")).toBe(true);
+    expect(isPluginEffectiveInstalled("mistake")).toBe(true);
+    // …and the untouched subject groups stay gated.
+    expect(isPluginEffectiveInstalled("subject-vocab")).toBe(false);
   });
 });

@@ -1,0 +1,103 @@
+/* Kit manager (FLAT-1) — scoped styles for the single-screen KIT manager that
+   replaced the plugin list (docs/design/kit-flatten-and-core-review.md §2).
+   Everything NEW lives here; shared chrome (panel-title, market-tabs, sv-switch,
+   market-card…, empty-state) keeps its existing rules in styles.css. */
+
+.kit-card {
+  border: 1px solid var(--border, #2a2f3a);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: var(--panel-2, rgba(255, 255, 255, 0.02));
+}
+
+.kit-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kit-card-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  min-width: 0;
+}
+
+.kit-card-name svg {
+  flex: none;
+  opacity: 0.8;
+}
+
+.kit-group-count {
+  font-size: 11px;
+  opacity: 0.65;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.kit-card-head .kit-enable-toggle {
+  margin-left: auto;
+}
+
+.kit-card-desc {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  opacity: 0.75;
+}
+
+.kit-card-disabled-note {
+  margin-top: 6px;
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+/* —— capability-group breakdown ————————————————————————————————— */
+
+.kit-group-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 6px 0 0;
+  border-top: 1px dashed var(--border, #2a2f3a);
+}
+
+.kit-group-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.kit-group-name {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.kit-group-desc {
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.kit-group-row .kit-group-toggle {
+  margin-left: auto;
+}
+
+.kit-group-row.disabled .kit-group-name,
+.kit-group-row.disabled .kit-group-desc {
+  opacity: 0.45;
+}
+
+/* —— uninstall confirm (compact, reuses kit-removal-* button styles) ———— */
+
+.kit-uninstall-note {
+  margin: 6px 0;
+  font-size: 12px;
+  opacity: 0.75;
+}

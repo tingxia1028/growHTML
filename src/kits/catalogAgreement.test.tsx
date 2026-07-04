@@ -90,11 +90,21 @@ describe("F5 — seedCorePlugin over-claim fixed", () => {
 });
 
 describe("F5 — the textbook kit decomposes into member plugins (members[] resolve)", () => {
-  it("one PluginRecord per catalog member, grouped under the kit", () => {
+  it("one PluginRecord per catalog member, grouped under its REGISTRATION kit", () => {
+    // FLAT §2: the catalog's ONE Textbook Kit absorbs the subject exemplars as
+    // capability groups, but the RUNTIME registration vehicles are unchanged (a
+    // presentation + install-state flatten, not a contribution rewrite): the subject
+    // members still register under their per-subject kit ids, which now resolve
+    // through the legacy group aliases for foregrounding/detection.
+    const runtimeKitOf: Record<string, string> = {
+      "subject-vocab": "subject-english",
+      "subject-formula": "subject-math",
+      "subject-timeline": "subject-history-geo"
+    };
     for (const memberId of catalogKitMembers("textbook-learning")) {
       const member = record(memberId);
       expect(member, `member ${memberId}`).toBeTruthy();
-      expect(member!.kitId).toBe("textbook-learning");
+      expect(member!.kitId).toBe(runtimeKitOf[memberId] ?? "textbook-learning");
     }
     // The member owns its loop: noteType + command + surface land on ONE record.
     expect(record("explanation")?.contributions.map((c) => c.kind)).toEqual(

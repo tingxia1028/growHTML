@@ -50,6 +50,14 @@ mistake?: true;                           // marks a spec as 错题-material (qu
 
 ## 2. FLAT — 只有 kit,plugin 降为 kit 内部结构
 
+> **Status: ✅ shipped (FLAT-1-001, 2026-07-04)** — kit-granular installState + per-kit
+> disabledGroups, lossless idempotent write-back migration (structural detection, no version
+> field), subject kits → Textbook Kit capability groups (8 groups; plugin ids preserved as
+> runtime registration vehicles; legacy pins/detection resolve via isKitInstalled alias),
+> kit-only catalog source + single-screen 套件管理 (kit cards + group toggles + uninstall +
+> ViewerConflicts; kitManager.css). Standalone plugins (flashcard/quiz/bookmark/diagrams/
+> table-viewer) demoted to hidden always-on infrastructure.
+
 **Model:** one user-facing install/uninstall unit = **kit** = a manifest of contributions
 (note types, operations, panels, triggers), organized into named **capability groups**
 (能力组) that can be toggled individually inside an installed kit (e.g. turn off 拼音 within

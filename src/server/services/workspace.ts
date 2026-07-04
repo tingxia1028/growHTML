@@ -7,6 +7,7 @@
 import path from "node:path";
 import { z } from "zod";
 import type { StudyVault } from "../../core/vault";
+import { migrateCatalogState, type UserKitDef } from "../../kits/installState";
 
 export type WorkspaceDeps = { vault: StudyVault };
 
@@ -65,7 +66,11 @@ export const catalogStateSchema = z
   .object({
     // null = vault has never touched the market → the DEFAULT-INSTALLED set.
     installedPlugins: z.array(z.string()).nullable().default(null),
-    installedKits: z.array(z.string()).nullable().default(null)
+    installedKits: z.array(z.string()).nullable().default(null),
+    // FLAT (kit-flatten-and-core-review.md §2): per-kit capability-group switchboard —
+    // kitId → DISABLED group ids. OPTIONAL (no default) so pre-FLAT states round-trip
+    // byte-for-byte; an absent key means the kit's group defaults.
+    disabledGroups: z.record(z.string(), z.array(z.string())).optional()
   })
   .default({ installedPlugins: null, installedKits: null });
 
@@ -158,9 +163,17 @@ export async function writeOperationPrefs({ vault }: WorkspaceDeps, prefs: Opera
   return prefs;
 }
 
-export async function readPluginPrefs({ vault }: WorkspaceDeps): Promise<PluginPrefs> {
+export async function readPluginPrefs(deps: WorkspaceDeps): Promise<PluginPrefs> {
+  const { vault } = deps;
   const text = await vault.storage.readText(pluginPrefsPath(vault));
-  return text ? pluginPrefsSchema.parse(JSON.parse(text)) : emptyPluginPrefs;
+  const prefs = text ? pluginPrefsSchema.parse(JSON.parse(text)) : emptyPluginPrefs;
+  // FLAT §2 migration — collapse a pre-FLAT per-plugin install state into the
+  // kit-granular model, WRITE-BACK on first load. Idempotent (a migrated state is a
+  // no-op) and zero-loss (effective-installed parity), so old vaults load cleanly and
+  // never migrate twice.
+  const migrated = migrateCatalogState(prefs.catalogState, prefs.userKits as readonly UserKitDef[]);
+  if (!migrated.changed) return prefs;
+  return writePluginPrefs(deps, { ...prefs, catalogState: migrated.state });
 }
 
 export async function writePluginPrefs({ vault }: WorkspaceDeps, prefs: PluginPrefs): Promise<PluginPrefs> {

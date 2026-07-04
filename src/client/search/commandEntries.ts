@@ -33,7 +33,7 @@ const NAV_COMMANDS: { kind: string; title: Message; aliases: string[]; modal?: b
   { kind: "library", title: searchMessages.cmdLibrary, aliases: ["library", "资料库", "文库"] },
   { kind: "concept.list", title: searchMessages.cmdConcepts, aliases: ["concepts", "概念", "知元"] },
   { kind: "operation.manager", title: searchMessages.cmdOperations, aliases: ["operations", "操作", "动作"], modal: true },
-  { kind: "plugin.manager", title: searchMessages.cmdPlugins, aliases: ["plugins", "kits", "插件"], modal: true },
+  { kind: "plugin.manager", title: searchMessages.cmdPlugins, aliases: ["kits", "plugins", "套件", "插件"], modal: true },
   { kind: "review.panel", title: searchMessages.cmdReview, aliases: ["review", "复习"] },
   { kind: "profile.panel", title: searchMessages.cmdProfile, aliases: ["profile", "画像", "记忆"] },
   { kind: "settings.hub", title: searchMessages.cmdSettings, aliases: ["settings", "设置"], modal: true },

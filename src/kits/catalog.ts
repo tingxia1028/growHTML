@@ -17,6 +17,24 @@
 
 import type { Contribution } from "./plugin";
 
+// FLAT (docs/design/kit-flatten-and-core-review.md §2): the user-facing extension unit
+// is the KIT ONLY. A capability group (能力组) is a kit's INTERNAL structure — the old
+// "member plugin" demoted from install unit to a named, toggleable slice of one kit.
+// Member plugin ids are PRESERVED inside `members` (contribution wiring, ownership,
+// uninstall-data law all keep keying on plugin ids); only presentation + install state
+// flatten to the kit.
+export type KitCapabilityGroup = {
+  id: string;
+  /** Bilingual display name — the manager resolves per locale (no zh/en mixing). */
+  name: { zh: string; en: string };
+  description?: { zh: string; en: string };
+  /** The member plugin ids whose contributions this group governs. */
+  members: string[];
+  /** false = the group starts DISABLED on a fresh/default install (opt-in capability,
+      e.g. the per-subject groups — the old NOT-default-installed subject kits). */
+  defaultEnabled?: boolean;
+};
+
 export type CatalogEntry = {
   id: string;
   kind: "plugin" | "kit";
@@ -38,6 +56,10 @@ export type CatalogEntry = {
   provides?: string[];
   /** kits: member plugin ids — each must resolve to a kind:"plugin" entry. */
   members?: string[];
+  /** kits: capability groups (FLAT §2) — the kit's internal structure. Every group
+      member must also appear in `members`. Kits without groups present each member as
+      its own implicit group (see kitCapabilityGroups). */
+  groups?: KitCapabilityGroup[];
   /** Counts as installed while catalogState is null (back-compat, §8.3). true for every
       V1 bundled entry, since everything shipping today is active today. */
   defaultInstalled?: boolean;
@@ -107,7 +129,10 @@ const BUNDLED_CATALOG: CatalogEntry[] = [
     defaultInstalled: true,
     source: "bundled"
   },
-  // (b) the textbook kit decomposed into real member plugins (F5, §8.10)
+  // (b) the textbook kit's member plugins (F5, §8.10). FLAT §2: these are no longer
+  // install units — each is GROUP-OWNED by the Textbook Kit below (defaultInstalled
+  // flips to false; availability flows from the kit's enabled groups). The entries stay
+  // cataloged as the internal read model (names + the provides/ownership index).
   {
     id: "explanation",
     kind: "plugin",
@@ -116,7 +141,7 @@ const BUNDLED_CATALOG: CatalogEntry[] = [
     description: "Explain a focused passage as a structured study block.",
     author: "growte",
     provides: ["textbook.explanation"],
-    defaultInstalled: true,
+    defaultInstalled: false,
     source: "bundled"
   },
   {
@@ -127,7 +152,7 @@ const BUNDLED_CATALOG: CatalogEntry[] = [
     description: "Generate practice questions from a passage.",
     author: "growte",
     provides: ["textbook.exercise"],
-    defaultInstalled: true,
+    defaultInstalled: false,
     source: "bundled"
   },
   {
@@ -140,7 +165,7 @@ const BUNDLED_CATALOG: CatalogEntry[] = [
     // REV-CORE: the 错题 TYPE is a core built-in (always available, never gated);
     // this plugin now provides only the mark-as-mistake command + toolbar surface.
     provides: [],
-    defaultInstalled: true,
+    defaultInstalled: false,
     source: "bundled"
   },
   {
@@ -151,7 +176,7 @@ const BUNDLED_CATALOG: CatalogEntry[] = [
     description: "Synthesize a source's study blocks into a chapter-level review pack.",
     author: "growte",
     provides: ["textbook.review-pack"],
-    defaultInstalled: true,
+    defaultInstalled: false,
     source: "bundled"
   },
   {
@@ -162,15 +187,16 @@ const BUNDLED_CATALOG: CatalogEntry[] = [
     description: "Domain vocabulary: Source→Textbook, Anchor→Knowledge Point, ….",
     author: "growte",
     provides: [],
-    defaultInstalled: true,
+    defaultInstalled: false,
     source: "bundled"
   },
   // (REV-CORE: the review loop is CORE — the mission loop is not a market good, so it
   // has NO catalog entry. Stale `"review"` ids in a vault's persisted catalogState are
   // harmless: uncataloged ids are treated as always-available and never listed.)
-  // (b) subject exemplar plugins (subject-kits.md M-B). NOT default-installed: the
-  // first true install-to-activate market goods — installing lights up their create
-  // affordances (slash/composer/toolbar); rendering is never gated.
+  // (b) subject exemplar plugins (subject-kits.md M-B). FLAT §2: group-owned by the
+  // Textbook Kit's per-subject groups (defaultEnabled:false) — enabling the group
+  // lights up their create affordances (slash/composer/toolbar); rendering is never
+  // gated.
   {
     id: "subject-vocab",
     kind: "plugin",
@@ -204,53 +230,61 @@ const BUNDLED_CATALOG: CatalogEntry[] = [
     defaultInstalled: false,
     source: "bundled"
   },
-  // (c) kits — bundles of plugin refs + kit-level config
+  // (c) THE kit (FLAT §2 + §4): ONE Textbook Kit. The old 5 member plugins re-declare
+  // as 5 capability groups; the old subject kits (english/math/history-geo — separate
+  // kits only because of the old model) merge in as per-subject groups, opt-in like the
+  // NOT-default-installed kits they were. Member plugin ids preserved throughout.
   {
     id: "textbook-learning",
     kind: "kit",
-    name: "Textbook Learning Kit",
+    name: "Textbook Kit",
     icon: "book-open",
     description:
-      "Turn a source into a textbook: explain passages, generate practice, track mistakes, review.",
+      "Turn a source into a textbook: explain passages, generate practice, track mistakes, review — with per-subject card types (英语/数学/史地).",
     author: "growte",
-    members: ["explanation", "practice", "mistake", "review-pack", "textbook-language"],
+    members: [
+      "explanation",
+      "practice",
+      "mistake",
+      "review-pack",
+      "textbook-language",
+      "subject-vocab",
+      "subject-formula",
+      "subject-timeline"
+    ],
+    groups: [
+      { id: "explanation", name: { zh: "讲解", en: "Explanation" }, members: ["explanation"] },
+      { id: "practice", name: { zh: "练习", en: "Practice" }, members: ["practice"] },
+      { id: "mistake", name: { zh: "错题", en: "Mistakes" }, members: ["mistake"] },
+      { id: "review-pack", name: { zh: "复习包", en: "Review pack" }, members: ["review-pack"] },
+      {
+        id: "textbook-language",
+        name: { zh: "教材词汇", en: "Textbook language" },
+        members: ["textbook-language"]
+      },
+      {
+        id: "subject-english",
+        name: { zh: "英语", en: "English" },
+        description: { zh: "生词卡(音标/词性/释义/例句)", en: "Vocab cards (phonetics, senses, examples)" },
+        members: ["subject-vocab"],
+        defaultEnabled: false
+      },
+      {
+        id: "subject-math",
+        name: { zh: "数学", en: "Math" },
+        description: { zh: "公式卡(LaTeX + 变量表)", en: "Formula cards (LaTeX + variable table)" },
+        members: ["subject-formula"],
+        defaultEnabled: false
+      },
+      {
+        id: "subject-history-geo",
+        name: { zh: "史地", en: "History & Geo" },
+        description: { zh: "时间线(时间/事件/意义)", en: "Timelines (date, event, significance)" },
+        members: ["subject-timeline"],
+        defaultEnabled: false
+      }
+    ],
     defaultInstalled: true,
-    source: "bundled"
-  },
-  // (c) subject kits (subject-kits.md PART 2, M-B slice) — members mix the new exemplar
-  // plugin with EXISTING plugins (referenced, not re-created; the members-union refcount
-  // §8.5.2 covers the sharing). The M-C types append to members[] when they ship.
-  {
-    id: "subject-english",
-    kind: "kit",
-    name: "英语 Kit",
-    icon: "languages",
-    description: "英语学习包:生词卡 + 闪卡(M-C 再加语法点/摘抄赏析).",
-    author: "growte",
-    members: ["subject-vocab", "flashcard"],
-    defaultInstalled: false,
-    source: "bundled"
-  },
-  {
-    id: "subject-math",
-    kind: "kit",
-    name: "数学 Kit",
-    icon: "sigma",
-    description: "数学学习包:公式卡 + 错题 + 小测(M-C 再加推导/定理卡).",
-    author: "growte",
-    members: ["subject-formula", "mistake", "quiz"],
-    defaultInstalled: false,
-    source: "bundled"
-  },
-  {
-    id: "subject-history-geo",
-    kind: "kit",
-    name: "史地 Kit",
-    icon: "map",
-    description: "史地学习包:时间线(M-C 再加人物卡/因果链).",
-    author: "growte",
-    members: ["subject-timeline"],
-    defaultInstalled: false,
     source: "bundled"
   }
 ];
@@ -306,4 +340,42 @@ export function defaultInstalledIds(kind: CatalogEntry["kind"]): string[] {
     OUTSIDE install state — always available, nothing to install/uninstall. */
 export function isCataloged(id: string): boolean {
   return entries.some((e) => e.id === id);
+}
+
+// —— FLAT §2: capability-group reads ————————————————————————————————————————————
+
+/** A catalog kit's capability groups. Kits without a `groups` declaration present each
+    member as its own implicit group (id == member id, default enabled) so the group
+    model is total over kits. [] for plugins/unknown ids. */
+export function kitCapabilityGroups(kitId: string): readonly KitCapabilityGroup[] {
+  const entry = getCatalogEntry(kitId);
+  if (entry?.kind !== "kit") return [];
+  if (entry.groups) return entry.groups;
+  return (entry.members ?? []).map((memberId) => ({
+    id: memberId,
+    name: {
+      zh: getCatalogEntry(memberId)?.name ?? memberId,
+      en: getCatalogEntry(memberId)?.name ?? memberId
+    },
+    members: [memberId]
+  }));
+}
+
+/** The kit+group that OWNS a plugin id (FLAT: group-owned plugins are not install
+    units), or undefined for standalone/uncataloged plugins. */
+export function groupOwnerOf(pluginId: string): { kitId: string; groupId: string } | undefined {
+  for (const entry of entries) {
+    if (entry.kind !== "kit" || !entry.groups) continue;
+    for (const group of entry.groups) {
+      if (group.members.includes(pluginId)) return { kitId: entry.id, groupId: group.id };
+    }
+  }
+  return undefined;
+}
+
+/** Group ids that start DISABLED by default for a kit (the opt-in groups). */
+export function defaultDisabledGroupIds(kitId: string): string[] {
+  return kitCapabilityGroups(kitId)
+    .filter((group) => group.defaultEnabled === false)
+    .map((group) => group.id);
 }

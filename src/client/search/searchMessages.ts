@@ -24,7 +24,7 @@ export const searchMessages = defineMessages({
   cmdLibrary: { zh: "打开资料库", en: "Open Library" },
   cmdConcepts: { zh: "打开知元", en: "Open Concepts" },
   cmdOperations: { zh: "打开操作管理", en: "Open Operations" },
-  cmdPlugins: { zh: "打开 Kit 与插件", en: "Open Kits & Plugins" },
+  cmdPlugins: { zh: "打开套件管理", en: "Open Kits" },
   cmdReview: { zh: "打开复习", en: "Open Review" },
   cmdProfile: { zh: "打开画像", en: "Open Profile" },
   cmdSettings: { zh: "打开设置", en: "Open Settings" },

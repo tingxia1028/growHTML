@@ -30,6 +30,8 @@ export type CatalogListing = {
   icon?: string;
   /** kits: member count for the "N plugins" card line. */
   memberCount?: number;
+  /** kits: capability-group count for the FLAT "N 能力组" card line. */
+  groupCount?: number;
 };
 
 /** The installable bytes (svpack / kit-data JSON) a REMOTE source downloads on install.
@@ -69,7 +71,8 @@ function toListing(entry: CatalogEntry): CatalogListing {
     version: entry.version,
     contentTypes,
     icon: entry.icon,
-    memberCount: entry.kind === "kit" ? (entry.members ?? []).length : undefined
+    memberCount: entry.kind === "kit" ? (entry.members ?? []).length : undefined,
+    groupCount: entry.kind === "kit" ? (entry.groups ?? entry.members ?? []).length : undefined
   };
 }
 
@@ -88,9 +91,18 @@ function matches(listing: CatalogListing, q?: { kind?: CatalogListing["kind"]; s
 export const localCatalogSource: CatalogSource = {
   id: "local",
   // async by contract (a remote source is network-bound); local resolves immediately.
-  list: (q) => Promise.resolve(listCatalogEntries().map(toListing).filter((l) => matches(l, q))),
+  // FLAT §2: the user-facing extension unit is the KIT ONLY — the local source lists
+  // kits exclusively (plugin entries stay in the catalog as the internal read model;
+  // `kind` survives on the wire for remote compat, but local never emits "plugin").
+  list: (q) =>
+    Promise.resolve(
+      listCatalogEntries()
+        .filter((entry) => entry.kind === "kit")
+        .map(toListing)
+        .filter((l) => matches(l, q))
+    ),
   get: (id) => {
-    const entry = listCatalogEntries().find((e) => e.id === id);
+    const entry = listCatalogEntries().find((e) => e.id === id && e.kind === "kit");
     return Promise.resolve(entry ? toListing(entry) : null);
   }
   // fetchArtifact intentionally absent: local artifacts are in-process registrations.
