@@ -6,14 +6,15 @@ import workerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 import "pdfjs-dist/web/pdf_viewer.css";
 import {
   applyHighlight,
-  buildMarkerHtml,
+  buildAnchorSlotHtml,
+  buildNoteSlotHtml,
   clearAnnotations,
   ensureAnnotationLayer,
   type HighlightPayload,
   revealAnchorInDoc,
   setSelectedAnchorInDoc
 } from "./annotationLayer";
-import { MarkerOverlay } from "./markerOverlay";
+import { MarkerOverlay, type MarkerItem } from "./markerOverlay";
 import type { AnchorDraft } from "./focus/FocusContext";
 import {
   collectAnchorRects,
@@ -119,8 +120,9 @@ export function PdfReader({
     viewer.querySelectorAll(".pdf-anchor-hit").forEach((el) => el.classList.remove("pdf-anchor-hit"));
     viewer.querySelectorAll(".pdf-region-box").forEach((el) => el.remove());
     clearAnnotations(viewer);
-    // One overlay chip per anchor (keyed by data-sv-key on its painted element).
-    const markers: { anchorId: string; glyphHtml: string }[] = [];
+    // One pair of D2 slot chips per anchor (keyed by data-sv-key on its painted
+    // element(s) — the adapter measures first/last spans for the two slots).
+    const markers: MarkerItem[] = [];
     for (const anchor of anchorsRef.current) {
       const pageEl = viewer.querySelector(`.page[data-page-number="${anchor.page}"]`) as HTMLElement | null;
       if (!pageEl) continue;
@@ -132,7 +134,11 @@ export function PdfReader({
         box.className = "pdf-region-box";
         placeRegionBox(box, anchor.rect, anchor.note, anchor.id, annotationPayload(anchor));
         pageEl.appendChild(box);
-        markers.push({ anchorId: anchor.id, glyphHtml: buildMarkerHtml(annotationPayload(anchor)) });
+        markers.push({
+          anchorId: anchor.id,
+          anchorSlotHtml: buildAnchorSlotHtml(),
+          noteSlotHtml: buildNoteSlotHtml(annotationPayload(anchor))
+        });
         continue;
       }
 
@@ -149,7 +155,12 @@ export function PdfReader({
         span.classList.add("pdf-anchor-hit");
         applyHighlight(span, anchor.note, anchor.id, annotationPayload(anchor, index === 0));
       });
-      if (matches.length) markers.push({ anchorId: anchor.id, glyphHtml: buildMarkerHtml(annotationPayload(anchor)) });
+      if (matches.length)
+        markers.push({
+          anchorId: anchor.id,
+          anchorSlotHtml: buildAnchorSlotHtml(),
+          noteSlotHtml: buildNoteSlotHtml(annotationPayload(anchor))
+        });
     }
     markerOverlayRef.current?.setMarkers(markers);
   }

@@ -58,6 +58,14 @@ describe("applyHighlight no longer injects markers into content", () => {
     expect(ANNOTATION_CSS).toMatch(/\.sv-marker-overlay\s*\{[^}]*position:\s*absolute/);
     expect(ANNOTATION_CSS).toMatch(/\.sv-marker-overlay\s*\{[^}]*pointer-events:\s*none/);
   });
+
+  // D2 two-slot rules: the LEFT slot pulls fully into the left margin (translateX
+  // -100% — chip width isn't known at layout time), and a toggled-off anchor's
+  // chip is dimmed via the data attribute the overlay stamps.
+  it("declares the left-slot transform and the toggled-off dim rule", () => {
+    expect(ANNOTATION_CSS).toMatch(/\.sv-anchor-markers\.sv-slot-anchor\s*\{[^}]*-100%/);
+    expect(ANNOTATION_CSS).toMatch(/\.sv-anchor-markers\[data-sv-notes-hidden="1"\]/);
+  });
 });
 
 describe("marker glyph map parity with noteTypeIcon", () => {

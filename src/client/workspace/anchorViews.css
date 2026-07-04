@@ -1,0 +1,24 @@
+/* Scoped controls for the Anchor panel (anchorViews.tsx).
+   NOTE: the shared .sv-switch control family is not in committed styles.css yet
+   (it belongs to a parallel control-unification stream); these classes stay
+   panel-scoped and can be folded into the shared family once it lands. */
+.anchor-glyph-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 8px;
+  font-size: 12px;
+  color: var(--sv-text-muted, #5f6672);
+  cursor: pointer;
+  user-select: none;
+}
+.anchor-glyph-switch-input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #3474e6;
+  cursor: pointer;
+}
+.anchor-glyph-switch-label {
+  line-height: 1.2;
+}

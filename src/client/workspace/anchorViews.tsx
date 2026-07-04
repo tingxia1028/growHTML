@@ -6,6 +6,7 @@
 //   • Linked notes — a row of note-type icons for the notes attached to this anchor.
 // When nothing is focused it shows the existing "Select a passage…" empty state.
 
+import { useState } from "react";
 import { Anchor, Crosshair, FileText } from "lucide-react";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 import { draftQuoteText } from "../focus/FocusContext";
@@ -15,6 +16,36 @@ import { getNoteType } from "../notes/noteTypeRegistry";
 import { ActionGrid } from "./ActionGrid";
 import { ActionMoreMenu } from "./ActionMoreMenu";
 import { SpeakButton } from "../speech/SpeakButton";
+import { persistAnchorGlyphVisibility, readStoredAnchorGlyphVisibility } from "../annotations";
+import { setAnchorGlyphVisibility } from "../markerOverlay";
+import "./anchorViews.css";
+
+// 显示锚点标记 — the GLOBAL anchor-glyph switch (D2 amendment, 2026-07-04). Off hides
+// every anchor glyph chip across all readers (note-slot chips stay); persisted via
+// the annotations.ts localStorage helper (the annotation-mode idiom) and pushed
+// live through the markerOverlay module store (host realms repaint immediately;
+// webview guests receive it over the sv:anchors payload).
+function AnchorGlyphSwitch() {
+  const [visible, setVisible] = useState(() => readStoredAnchorGlyphVisibility());
+  const toggle = () => {
+    const next = !visible;
+    setVisible(next);
+    persistAnchorGlyphVisibility(next);
+    setAnchorGlyphVisibility(next);
+  };
+  return (
+    <label className="anchor-glyph-switch">
+      <input
+        type="checkbox"
+        className="anchor-glyph-switch-input"
+        checked={visible}
+        onChange={toggle}
+        aria-label="显示锚点标记"
+      />
+      <span className="anchor-glyph-switch-label">显示锚点标记</span>
+    </label>
+  );
+}
 
 function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
   const { focus, activeSource, visibleNotes, anchorBarActions, runAction, generating, openOperationManager } = ctx;
@@ -56,6 +87,8 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
           </button>
         </PanelMenu>
       </div>
+
+      <AnchorGlyphSwitch />
 
       {quote ? (
         <>

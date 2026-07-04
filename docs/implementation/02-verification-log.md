@@ -594,3 +594,12 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 - `npm run build`: green (pre-existing chunk-size warnings only).
 - e2e: `npx playwright test e2e/note-edit-delete.spec.ts` → **3 passed** (ephemeral-vault harness; assertions UNCHANGED — delete still empties the list and unpaints the highlight because live reads exclude tombstones).
 - Concurrency note: the parallel session's dirty set (design.md, 00-research-and-plan.md, entityClient/ProfilePanel/SettingsHub/AiProvidersSection/styles.css, layer/study-layer/RightSidebarTabs/NoteListPanel.test/pluginManagerViews batch) was in the tree during the full run and every suite passed; none of those files were touched by TRUST-3 (`git status` checked before and after). UserMenu.tsx/WorkspaceShell.tsx were FREE this window — the 回收站 entry + side-effect import were mounted for real (no deferral needed).
+
+## N1A-D2-001 (2026-07-04)
+
+| Task | Type | Command | Expectation | Result | Status |
+|---|---|---|---|---|---|
+| N1A-D2-001 | Unit | npx vitest run markerOverlay/annotationDom/annotationMarkers/annotations/webviewSelection/webview-preload/anchorViews tests | Slot builders pinned (dedupe+count in note slot); layout() places anchor chip at rectsFor().first left / note chip at .last right (multi-line stub adapter + multi-span fallback); anchor-chip toggle hides note chip + hover/pinned/margin cards, restores, other anchors unaffected; global switch hides all anchor chips, note slots stay | 7 files / 121 tests passed IN ISOLATED WORKTREE against the staged slice | Passed |
+| N1A-D2-001 | Guest bridge | npx vitest run electron/webview-preload.test.ts | Two-slot chips in guest overlay; in-guest toggle round-trip; sv:anchors {anchorGlyphsVisible} prefs mirrored; prefs-less push leaves visibility unchanged | Passed | Passed |
+| N1A-D2-001 | Type check | isolated worktree (HEAD + staged slice) npx tsc --noEmit | 0 errors | 0 errors | Passed |
+| N1A-D2-001 | Build | npx vite build · npm run electron:build:webview-preload | Client bundle + guest preload build; preload React-free | ✓ 1.26s · 39.2kb, 0 react refs | Passed |

@@ -34,10 +34,10 @@ type GuestAnchor = {
   noteTypes?: string[];
 };
 
-function pushAnchors(anchors: GuestAnchor[]): void {
+function pushAnchors(anchors: GuestAnchor[], prefs?: { anchorGlyphsVisible?: boolean }): void {
   const handler = ipc.handlers.get("sv:anchors");
   expect(handler, "preload must register an sv:anchors handler").toBeDefined();
-  handler!(null, anchors);
+  handler!(null, anchors, prefs);
 }
 
 const ANCHOR: GuestAnchor = {
@@ -75,7 +75,7 @@ beforeEach(() => {
 });
 
 describe("webview guest annotation surface (D1)", () => {
-  it("paints the quote and hosts the marker chip in a body-mounted overlay, NOT inline in the mark", async () => {
+  it("paints the quote and hosts the D2 two-slot chips in a body-mounted overlay, NOT inline in the mark", async () => {
     pushAnchors([ANCHOR]);
     await flushFrame();
 
@@ -88,13 +88,14 @@ describe("webview guest annotation surface (D1)", () => {
     const overlay = document.body.querySelector(":scope > .sv-marker-overlay");
     expect(overlay).not.toBeNull();
     expect(document.body.style.position).toBe("relative");
-    const chip = overlay!.querySelector('[data-sv-marker-for="w1"]');
-    expect(chip).not.toBeNull();
-    // Same glyph contract as every other reader: role-marked anchor + note buttons.
-    const roles = Array.from(chip!.querySelectorAll("[data-sv-marker-role]")).map((el) =>
-      el.getAttribute("data-sv-marker-role")
-    );
-    expect(roles).toEqual(["anchor", "note"]);
+    // Same slot contract as every other reader: the anchor-glyph chip (left slot)
+    // and the note-type chip (right slot) are SEPARATE chips for one anchor.
+    const anchorChip = overlay!.querySelector('[data-sv-marker-for="w1"][data-sv-slot="anchor"]');
+    const noteChip = overlay!.querySelector('[data-sv-marker-for="w1"][data-sv-slot="note"]');
+    expect(anchorChip).not.toBeNull();
+    expect(noteChip).not.toBeNull();
+    expect(anchorChip!.querySelector('[data-sv-marker-role="anchor"]')).not.toBeNull();
+    expect(noteChip!.querySelector('[data-sv-marker-role="note"]')).not.toBeNull();
   });
 
   it("bridges an anchor-marker click to the host over sv:marker-action", async () => {
@@ -107,6 +108,78 @@ describe("webview guest annotation surface (D1)", () => {
     button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
 
     expect(ipc.sendToHost).toHaveBeenCalledWith("sv:marker-action", { anchorId: "w1", role: "anchor" });
+    // The click also toggled w1's notes hidden (guest-local session state) — click
+    // again so the toggle doesn't leak into the other tests.
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  });
+
+  it("anchor-chip click TOGGLES the anchor's notes IN the guest realm (note chip + card), second click restores", async () => {
+    pushAnchors([ANCHOR]);
+    await flushFrame();
+
+    const anchorButton = document.querySelector(
+      '.sv-marker-overlay [data-sv-marker-for="w1"][data-sv-slot="anchor"] [data-sv-marker-role="anchor"]'
+    ) as HTMLElement;
+    const noteChip = document.querySelector(
+      '.sv-marker-overlay [data-sv-marker-for="w1"][data-sv-slot="note"]'
+    ) as HTMLElement;
+    const mark = document.querySelector('mark[data-sv-key="w1"]') as HTMLElement;
+    const card = document.getElementById("sv-note-card")!;
+
+    // Toggle OFF: the note-slot chip hides and the card is suppressed in-guest.
+    anchorButton.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flushFrame();
+    expect(noteChip.style.display).toBe("none");
+    mark.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    expect(card.classList.contains("sv-note-card-show")).toBe(false);
+    mark.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(card.classList.contains("sv-note-card-show")).toBe(false);
+
+    // Toggle ON: the note chip returns and the card hovers again.
+    anchorButton.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flushFrame();
+    expect(noteChip.style.display).not.toBe("none");
+    mark.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    expect(card.classList.contains("sv-note-card-show")).toBe(true);
+    // Dismiss (outside click) so the card doesn't leak into other tests.
+    document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+
+  it("mirrors the host's 显示锚点标记 switch from the additive sv:anchors prefs payload", async () => {
+    pushAnchors([ANCHOR], { anchorGlyphsVisible: false });
+    await flushFrame();
+
+    const anchorChip = document.querySelector(
+      '.sv-marker-overlay [data-sv-marker-for="w1"][data-sv-slot="anchor"]'
+    ) as HTMLElement;
+    const noteChip = document.querySelector(
+      '.sv-marker-overlay [data-sv-marker-for="w1"][data-sv-slot="note"]'
+    ) as HTMLElement;
+    // The global switch hides the anchor glyph chip; the note slot STAYS.
+    expect(anchorChip.style.display).toBe("none");
+    expect(noteChip.style.display).not.toBe("none");
+
+    // Flipping back on over the same channel restores the glyph chips.
+    pushAnchors([ANCHOR], { anchorGlyphsVisible: true });
+    await flushFrame();
+    const restored = document.querySelector(
+      '.sv-marker-overlay [data-sv-marker-for="w1"][data-sv-slot="anchor"]'
+    ) as HTMLElement;
+    expect(restored.style.display).not.toBe("none");
+  });
+
+  it("a prefs-less sv:anchors push (older host) leaves the glyph visibility unchanged", async () => {
+    pushAnchors([ANCHOR], { anchorGlyphsVisible: false });
+    await flushFrame();
+    pushAnchors([ANCHOR]); // no prefs — must NOT reset to visible
+    await flushFrame();
+    const anchorChip = document.querySelector(
+      '.sv-marker-overlay [data-sv-marker-for="w1"][data-sv-slot="anchor"]'
+    ) as HTMLElement;
+    expect(anchorChip.style.display).toBe("none");
+    // Restore the module-level default for the remaining tests.
+    pushAnchors([ANCHOR], { anchorGlyphsVisible: true });
+    await flushFrame();
   });
 
   it("note-marker click bridges sv:marker-action AND opens the shared in-guest note card", async () => {
@@ -131,7 +204,8 @@ describe("webview guest annotation surface (D1)", () => {
   it("a repaint with no anchors clears the overlay chips (single overlay reused)", async () => {
     pushAnchors([ANCHOR]);
     await flushFrame();
-    expect(document.querySelectorAll(".sv-anchor-markers")).toHaveLength(1);
+    // Two slot chips for the one anchor (anchor glyph + note types).
+    expect(document.querySelectorAll(".sv-anchor-markers")).toHaveLength(2);
 
     pushAnchors([]);
     await flushFrame();

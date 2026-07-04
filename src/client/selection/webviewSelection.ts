@@ -15,6 +15,7 @@
 // guest protocol stays an implementation detail of the webview surface.
 
 import type { AnchorDraft } from "../focus/FocusContext";
+import { getAnchorGlyphVisibility, subscribeAnchorGlyphVisibility } from "../markerOverlay";
 import type { PaintAnchor } from "../surfaces/types";
 
 export type WebSelection = { exact: string; prefix: string; suffix: string };
@@ -64,6 +65,13 @@ export type WebAnchorMsg = {
   noteHtml?: string;
   noteCount?: number;
   noteTypes?: string[];
+};
+
+// Additive second payload on sv:anchors: host-side marker preferences the guest
+// realm can't read itself (its module store is a separate bundle). Currently just
+// the global anchor-glyph switch (显示锚点标记); extend additively.
+export type WebAnchorPrefs = {
+  anchorGlyphsVisible: boolean;
 };
 
 // The preload file:// url the host attaches to each guest webview so it captures
@@ -127,7 +135,11 @@ export function bindWebviewAnchors(
 ): { dispose: () => void; push: () => void } {
   const push = () => {
     try {
-      webview.send("sv:anchors", getAnchors());
+      // The prefs ride ALONGSIDE the anchors (additive payload extension): the
+      // guest realm mirrors the host's 显示锚点标记 switch from here, since its own
+      // module store can't see the host's localStorage.
+      const prefs: WebAnchorPrefs = { anchorGlyphsVisible: getAnchorGlyphVisibility() };
+      webview.send("sv:anchors", getAnchors(), prefs);
     } catch {
       // Guest not ready yet; sv:ready / dom-ready will retry.
     }
@@ -137,11 +149,22 @@ export function bindWebviewAnchors(
   };
   webview.addEventListener("ipc-message", onReady);
   webview.addEventListener("dom-ready", push);
+  // The global anchor-glyph switch must reach an ALREADY-painted guest: re-push
+  // (with the new flag) whenever it flips. Self-cleaning: a webview removed
+  // without dispose() (tab close in WebviewReader) unsubscribes on the next flip.
+  const unsubscribeGlyphs: () => void = subscribeAnchorGlyphVisibility(() => {
+    if (!webview.isConnected) {
+      unsubscribeGlyphs();
+      return;
+    }
+    push();
+  });
   return {
     push,
     dispose: () => {
       webview.removeEventListener("ipc-message", onReady);
       webview.removeEventListener("dom-ready", push);
+      unsubscribeGlyphs();
     }
   };
 }

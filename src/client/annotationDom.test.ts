@@ -7,10 +7,12 @@ import {
   clearMarginNotes,
   ensureAnnotationLayer,
   highlightQuote,
+  isAnchorNotesHidden,
   packColumn,
   paintMarginNotes,
   readCardGeom,
   revealAnchorInDoc,
+  setAnchorNotesHidden,
   setSelectedAnchorInDoc,
   writeCardGeom
 } from "./annotationLayer";
@@ -353,6 +355,84 @@ describe("paintMarginNotes", () => {
     expect(document.getElementById("sv-margin-layer")).toBeNull();
     expect(document.body.classList.contains("sv-annot-margin")).toBe(false);
     expect(document.querySelector('[data-study-id="s1"]')?.classList.contains("sv-annotated")).toBe(true);
+  });
+});
+
+// D2 per-anchor toggle (user-amended 2026-07-04): clicking an anchor's left glyph
+// chip hides that anchor's notes — the shared hover/pinned card AND its margin
+// card — via setAnchorNotesHidden; a second toggle restores them. The store lives
+// here in annotationLayer so the card + margin machinery consult the same state
+// the MarkerOverlay flips.
+describe("setAnchorNotesHidden (per-anchor notes toggle)", () => {
+  it("suppresses the hover card and click-pin for a hidden anchor, and restores them", () => {
+    const doc = freshReaderDocument();
+    doc.body.innerHTML = '<p id="t">hello</p>';
+    ensureAnnotationLayer(doc);
+    const el = doc.getElementById("t")!;
+    applyHighlight(el, "note", "k-tog", { noteHtml: "<div>Toggle body</div>", noteCount: 1 });
+    const card = doc.getElementById("sv-note-card")!;
+
+    setAnchorNotesHidden(doc, "k-tog", true);
+    expect(isAnchorNotesHidden(doc, "k-tog")).toBe(true);
+    el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    expect(card.classList.contains("sv-note-card-show")).toBe(false);
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(card.classList.contains("sv-note-card-show")).toBe(false);
+
+    setAnchorNotesHidden(doc, "k-tog", false);
+    expect(isAnchorNotesHidden(doc, "k-tog")).toBe(false);
+    el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    expect(card.classList.contains("sv-note-card-show")).toBe(true);
+    expect(card.querySelector(".sv-note-card-body")!.innerHTML).toContain("Toggle body");
+  });
+
+  it("dismisses an OPEN pinned card when its anchor is toggled hidden", () => {
+    const doc = freshReaderDocument();
+    doc.body.innerHTML = '<p id="t">hello</p>';
+    ensureAnnotationLayer(doc);
+    const el = doc.getElementById("t")!;
+    applyHighlight(el, "note", "k-pin", { noteHtml: "<div>Pinned</div>", noteCount: 1 });
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true })); // pin
+    const card = doc.getElementById("sv-note-card")!;
+    expect(card.classList.contains("sv-note-card-show")).toBe(true);
+
+    setAnchorNotesHidden(doc, "k-pin", true);
+    expect(card.classList.contains("sv-note-card-show")).toBe(false);
+  });
+
+  it("filters a hidden anchor's margin card out (column re-packs) and restores it on toggle", () => {
+    document.body.innerHTML = '<p id="a">one</p><p id="b">two</p>';
+    paintMarginNotes(document, [
+      { element: document.getElementById("a")!, noteText: "first", noteHtml: "<p>first</p>", key: "m1" },
+      { element: document.getElementById("b")!, noteText: "second", noteHtml: "<p>second</p>", key: "m2" }
+    ]);
+    expect(document.querySelectorAll("#sv-margin-layer .sv-margin-note")).toHaveLength(2);
+
+    // Toggle m1 off: the gutter re-packs from the remembered paint input.
+    setAnchorNotesHidden(document, "m1", true);
+    const cards = document.querySelectorAll("#sv-margin-layer .sv-margin-note");
+    expect(cards).toHaveLength(1);
+    expect(cards[0].getAttribute("data-sv-key")).toBe("m2");
+
+    // Toggle back on: the card returns without any caller re-decorating.
+    setAnchorNotesHidden(document, "m1", false);
+    expect(document.querySelectorAll("#sv-margin-layer .sv-margin-note")).toHaveLength(2);
+  });
+
+  it("never resurrects a stale gutter after a margin → floating mode switch", () => {
+    document.body.innerHTML = '<p data-study-id="s1">Hello world</p>';
+    const anchors = [{ id: "st1", anchorKind: "html_selection", studyId: "s1", quote: "Hello world" }];
+    const notes = [{ anchorIds: ["st1"], content: "n", previewHtml: "<p>n</p>" }];
+    decorateAnnotations(document, { anchors, notes, mode: "margin" });
+    expect(document.getElementById("sv-margin-layer")).not.toBeNull();
+
+    // Floating repaint clears the gutter AND the margin memo.
+    decorateAnnotations(document, { anchors, notes });
+    expect(document.getElementById("sv-margin-layer")).toBeNull();
+
+    setAnchorNotesHidden(document, "st1", true);
+    setAnchorNotesHidden(document, "st1", false);
+    expect(document.getElementById("sv-margin-layer")).toBeNull();
   });
 });
 

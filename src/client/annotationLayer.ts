@@ -71,6 +71,17 @@ export const ANNOTATION_CSS = `
   user-select: none;
   transform: translate(5px, -4px);
 }
+/* D2 two-slot markers: the LEFT slot (one anchor glyph at the passage's FIRST
+   line) pulls fully into the left margin via translateX(-100%); the RIGHT slot
+   (note-type icons at the LAST line) keeps the default hang-off-the-right
+   transform above. An anchor whose notes are toggled hidden dims its anchor chip
+   so the collapsed state stays visible. */
+.sv-anchor-markers.sv-slot-anchor {
+  transform: translate(calc(-100% - 6px), -4px);
+}
+.sv-anchor-markers[data-sv-notes-hidden="1"] {
+  opacity: 0.55;
+}
 .sv-anchor-marker {
   position: relative;
   flex: 0 0 auto;
@@ -387,6 +398,45 @@ export function clampGeom(geom: CardGeom, viewW: number, viewH: number): CardGeo
 
 const wiredDocs = new WeakSet<Document>();
 
+// --- Per-anchor notes-visibility toggle (D2, user-amended 2026-07-04) ---------
+// Clicking an anchor's LEFT glyph chip toggles that anchor's notes: the note-slot
+// chip AND every card presentation (hover, pinned, margin) hide; a second click
+// restores them. Session-scoped and realm-local (keyed by the realm document) —
+// never persisted. The store lives HERE (not in the overlay) so the card and the
+// margin machinery consult the same state the overlay toggles.
+const hiddenNoteAnchorsByDoc = new WeakMap<Document, Set<string>>();
+// wireNoteCard registers a tiny per-document controller so the toggle can dismiss
+// the shared card when it currently shows the toggled anchor — reusing the card's
+// own dismiss() + currentKey instead of a new state store.
+const noteCardControllers = new WeakMap<Document, { dismissIfKey: (key: string) => void }>();
+// The last paintMarginNotes input per document, so a toggle can re-run the gutter
+// layout (with the hidden anchor filtered out, and back in on restore) without
+// the caller re-decorating.
+const lastMarginItems = new WeakMap<Document, MarginItem[]>();
+
+export function isAnchorNotesHidden(doc: Document | null | undefined, anchorId: string): boolean {
+  if (!doc || !anchorId) return false;
+  return hiddenNoteAnchorsByDoc.get(doc)?.has(anchorId) ?? false;
+}
+
+export function setAnchorNotesHidden(doc: Document | null | undefined, anchorId: string, hidden: boolean): void {
+  if (!doc || !anchorId) return;
+  let set = hiddenNoteAnchorsByDoc.get(doc);
+  if (!set) {
+    set = new Set<string>();
+    hiddenNoteAnchorsByDoc.set(doc, set);
+  }
+  if (hidden) set.add(anchorId);
+  else set.delete(anchorId);
+  // An open hover/pinned card currently showing this anchor closes immediately.
+  if (hidden) noteCardControllers.get(doc)?.dismissIfKey(anchorId);
+  // Margin mode: re-pack the gutter from the remembered paint input so the
+  // anchor's margin card disappears/returns without a full re-decorate. The memo
+  // is cleared by floating-mode paints, so this never resurrects a stale gutter.
+  const marginItems = lastMarginItems.get(doc);
+  if (marginItems?.length) paintMarginNotes(doc, marginItems);
+}
+
 // Inject the stylesheet once and wire the single floating note card (shown on
 // hover, pinned on click) for a document. Idempotent.
 export function ensureAnnotationLayer(doc: Document): void {
@@ -498,6 +548,18 @@ function wireNoteCard(doc: Document): void {
     card.classList.remove("sv-note-card-show");
   };
 
+  // The notes-visibility toggle (setAnchorNotesHidden) dismisses an open card for
+  // a just-hidden anchor through this controller — no new state store.
+  noteCardControllers.set(doc, {
+    dismissIfKey: (key) => {
+      if (key && currentKey === key && card.classList.contains("sv-note-card-show")) dismiss();
+    }
+  });
+
+  // D2 user amendment: an anchor whose notes are toggled hidden shows NO card —
+  // hover and click-pin are both suppressed until the anchor chip restores them.
+  const notesHidden = (target: Element) => isAnchorNotesHidden(doc, target.getAttribute("data-sv-key") ?? "");
+
   // Remember user resizes (CSS `resize: both`) for the active key.
   const view = doc.defaultView as (Window & { ResizeObserver?: typeof ResizeObserver }) | null;
   if (view && typeof view.ResizeObserver === "function") {
@@ -517,7 +579,7 @@ function wireNoteCard(doc: Document): void {
   doc.addEventListener("mouseover", (event) => {
     if (marginActive()) return;
     const target = closestMatch(event.target, ".sv-annotated");
-    if (target && !pinned) show(target);
+    if (target && !pinned && !notesHidden(target)) show(target);
   });
   doc.addEventListener("mouseout", (event) => {
     if (!closestMatch(event.target, ".sv-annotated")) return;
@@ -529,6 +591,7 @@ function wireNoteCard(doc: Document): void {
     if (marginActive()) return;
     const target = closestMatch(event.target, ".sv-annotated");
     if (target) {
+      if (notesHidden(target)) return; // toggled off — no pin until restored
       if (pinned && currentTarget === target) {
         pinned = false;
         currentTarget = null;
@@ -559,18 +622,26 @@ export type MarkerRole = "anchor" | "note";
 
 function markerHtml(inner: string, count: number | undefined, role: MarkerRole): string {
   const badge = count && count > 1 ? `<sup class="sv-anchor-marker-count">${count}</sup>` : "";
-  const title = role === "anchor" ? "Focus anchor" : "Show linked notes";
+  const title = role === "anchor" ? "Toggle this anchor's notes" : "Show linked notes";
   return `<button type="button" class="sv-anchor-marker" data-sv-marker-role="${role}" title="${title}" aria-label="${title}">${inner}${badge}</button>`;
 }
 
-// PURE glyph builder for an anchor's overlay chip: a leading anchor glyph plus one
-// glyph per DISTINCT note type (deduped in first-seen order), each carrying a count
-// superscript when that type repeats. When the anchor has no type info, fall back to
-// the markdown glyph carrying the total note count. Framework-free string output so
-// it's identical in the reader iframe, the PDF/image host document, and the guest.
-// The overlay controller (markerOverlay.ts) wraps this in a positioned chip; the
-// guest appends it inline as a trailing <mark> child (no transform problem there).
-export function buildMarkerHtml(payload?: HighlightPayload): string {
+// D2 LEFT slot (the "有锚点" indicator): one anchor-glyph button, placed at the
+// passage's FIRST line. User-amended semantics (2026-07-04): clicking it TOGGLES
+// the anchor's notes (its note-slot chip + every card presentation) instead of
+// opening the card. Framework-free string output — identical in the reader
+// iframe, the PDF/image host document, and the webview guest.
+export function buildAnchorSlotHtml(): string {
+  return markerHtml(ANCHOR_GLYPH, undefined, "anchor");
+}
+
+// D2 RIGHT slot: one glyph per DISTINCT note type (deduped in first-seen order),
+// each carrying a count superscript when that type repeats; when the anchor has
+// no type info, fall back to the markdown glyph carrying the total note count.
+// Returns "" for a note-less anchor (no right chip at all). This is the former
+// buildMarkerHtml minus its leading anchor glyph — the two slots now render as
+// SEPARATE chips placed at the passage's first/last line by markerOverlay.ts.
+export function buildNoteSlotHtml(payload?: HighlightPayload): string {
   const types = payload?.noteTypes ?? [];
   const noteCount = payload?.noteCount ?? types.length;
 
@@ -586,7 +657,7 @@ export function buildMarkerHtml(payload?: HighlightPayload): string {
     // No type info: fall back to the markdown glyph, carrying the note count.
     glyphs += markerHtml(markerGlyph("markdown"), noteCount > 1 ? noteCount : undefined, "note");
   }
-  return markerHtml(ANCHOR_GLYPH, undefined, "anchor") + glyphs;
+  return glyphs;
 }
 
 // A resolved anchor's overlay-local rect: the chip's target box (x,y,w,h) already
@@ -614,7 +685,8 @@ export function rectToOverlayLocal(
 // Mark an already-resolved element as annotated and stash the note text for the
 // card. `noteText` may be empty (highlight only). Markers are NO LONGER painted into
 // the content here — each reader mounts a MarkerOverlay (view-layer sibling) and
-// drives it from buildMarkerHtml, so the annotated element stays clean.
+// drives it from buildAnchorSlotHtml/buildNoteSlotHtml, so the annotated element
+// stays clean.
 export function applyHighlight(element: Element, noteText: string, key?: string, payload?: HighlightPayload): void {
   element.classList.add("sv-annotated");
   if (noteText) element.setAttribute("data-sv-note", noteText);
@@ -805,8 +877,15 @@ export function clearMarginNotes(doc: Document): void {
 // links each card back to its anchor. Re-runnable (clears first).
 export function paintMarginNotes(doc: Document, items: MarginItem[]): void {
   if (!doc.body) return;
+  // Remember the raw paint input so the notes-visibility toggle can re-run this
+  // layout without the caller re-decorating. Floating-mode paints pass [] which
+  // clears the memo, so a stale margin layout can't be resurrected.
+  lastMarginItems.set(doc, items);
   clearMarginNotes(doc);
-  if (!items.length) return;
+  // Margin item filtering (D2 toggle): a toggled-off anchor contributes no gutter
+  // card and the column re-packs around it.
+  const visible = items.filter((item) => !item.key || !isAnchorNotesHidden(doc, item.key));
+  if (!visible.length) return;
 
   const body = doc.body;
   const view = doc.defaultView;
@@ -832,7 +911,7 @@ export function paintMarginNotes(doc: Document, items: MarginItem[]): void {
   connectors.setAttribute("height", `${contentHeight}`);
 
   // First pass: create cards at their desired tops and measure heights.
-  const placedCards = items.map(({ element, noteHtml, key }) => {
+  const placedCards = visible.map(({ element, noteHtml, key }) => {
     const card = doc.createElement("div");
     card.className = "sv-margin-note";
     if (key) card.setAttribute("data-sv-key", key);

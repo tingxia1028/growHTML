@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { AnyAnchor, NoteRecord, WorkspaceNode } from "../data/entityClient";
 import type { FocusContextValue } from "../focus/FocusContext";
+import { getAnchorGlyphVisibility, setAnchorGlyphVisibility } from "../markerOverlay";
 import { getView } from "./viewRegistry";
 import type { WorkspaceContext } from "./viewRegistry";
 import "./anchorViews";
@@ -94,6 +95,52 @@ describe("anchor.excerpt linked notes", () => {
     expect(setAnchor).toHaveBeenCalledWith(anchor);
     expect(setFocus).toHaveBeenCalledWith({ type: "note", noteId: note.id });
     expect(container.querySelector(".anchor-linked-card")).toBeNull();
+    cleanup();
+  });
+});
+
+// The global 显示锚点标记 switch (D2 amendment) lives INSIDE the Anchor panel
+// content. Flipping it drives the live markerOverlay store (all host overlays
+// re-lay-out; guests get it over sv:anchors) and persists via the annotations.ts
+// localStorage helper so the choice survives reloads.
+describe("anchor panel 显示锚点标记 switch", () => {
+  afterEach(() => {
+    window.localStorage.removeItem("sv-anchor-glyph-markers");
+    setAnchorGlyphVisibility(true);
+  });
+
+  it("renders in the panel, flips the live glyph store, and persists the choice", () => {
+    const plugin = getView("anchor.excerpt");
+    expect(plugin).toBeTruthy();
+    const { ctx } = ctxWithLinkedNote();
+    const node = { id: "anchor", kind: "anchor.excerpt" } as WorkspaceNode;
+    const { container, cleanup } = mount(<>{plugin!.render(node, ctx)}</>);
+
+    const input = container.querySelector(".anchor-glyph-switch-input") as HTMLInputElement;
+    expect(input).toBeTruthy();
+    expect(input.checked).toBe(true); // default: anchor glyphs visible
+
+    act(() => input.click());
+    expect(input.checked).toBe(false);
+    expect(getAnchorGlyphVisibility()).toBe(false);
+    expect(window.localStorage.getItem("sv-anchor-glyph-markers")).toBe("hidden");
+
+    act(() => input.click());
+    expect(input.checked).toBe(true);
+    expect(getAnchorGlyphVisibility()).toBe(true);
+    expect(window.localStorage.getItem("sv-anchor-glyph-markers")).toBe("shown");
+    cleanup();
+  });
+
+  it("also renders in the empty (no anchor focused) state", () => {
+    const plugin = getView("anchor.excerpt");
+    const { ctx } = ctxWithLinkedNote();
+    (ctx.focus as { anchor: unknown; draft: unknown }).anchor = null;
+    (ctx.focus as { anchor: unknown; draft: unknown }).draft = null;
+    const node = { id: "anchor", kind: "anchor.excerpt" } as WorkspaceNode;
+    const { container, cleanup } = mount(<>{plugin!.render(node, ctx)}</>);
+    expect(container.querySelector(".anchor-excerpt-empty")).toBeTruthy();
+    expect(container.querySelector(".anchor-glyph-switch-input")).toBeTruthy();
     cleanup();
   });
 });

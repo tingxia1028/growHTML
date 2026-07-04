@@ -1,8 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   decorateAnnotations,
   groupForRenderer,
   listAnnotationRenderers,
+  persistAnchorGlyphVisibility,
+  readStoredAnchorGlyphVisibility,
   registerAnnotationRenderer,
   type AnnotationAnchor,
   type AnnotationNote,
@@ -144,5 +146,43 @@ describe("decorateAnnotations", () => {
     registerAnnotationRenderer(plugin);
     expect(listAnnotationRenderers()[0].id).toBe("plugin-first");
     expect(listAnnotationRenderers()[0].id).not.toBe(before);
+  });
+});
+
+// The 显示锚点标记 switch's persistence — the same localStorage idiom as the
+// annotation mode above. The LIVE value is the markerOverlay module store; these
+// helpers only seed/persist it across reloads.
+describe("anchor glyph visibility persistence", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("defaults to visible when nothing is stored (or storage is absent)", () => {
+    expect(readStoredAnchorGlyphVisibility()).toBe(true);
+  });
+
+  it("round-trips hidden/shown through the storage helper", () => {
+    const store = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => void store.set(key, value)
+    });
+    persistAnchorGlyphVisibility(false);
+    expect(readStoredAnchorGlyphVisibility()).toBe(false);
+    persistAnchorGlyphVisibility(true);
+    expect(readStoredAnchorGlyphVisibility()).toBe(true);
+  });
+
+  it("swallows a throwing storage (sandboxed realm) and stays visible", () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => {
+        throw new Error("denied");
+      },
+      setItem: () => {
+        throw new Error("denied");
+      }
+    });
+    expect(readStoredAnchorGlyphVisibility()).toBe(true);
+    expect(() => persistAnchorGlyphVisibility(false)).not.toThrow();
   });
 });

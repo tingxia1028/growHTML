@@ -43,6 +43,30 @@ export function persistAnnotationMode(mode: HtmlAnnotationMode): void {
   }
 }
 
+// Global "显示锚点标记" switch (D2 amendment, 2026-07-04): the Anchor panel toggle
+// hides EVERY anchor glyph chip across readers (note-slot chips stay). Same
+// persistence idiom as the annotation mode above. The LIVE value is the
+// markerOverlay module store (lazily seeded from readStoredAnchorGlyphVisibility),
+// which every overlay in the realm subscribes to; the webview guest realm gets
+// the value over the sv:anchors payload instead of its own storage.
+const ANCHOR_GLYPH_STORAGE_KEY = "sv-anchor-glyph-markers";
+
+export function readStoredAnchorGlyphVisibility(): boolean {
+  try {
+    return globalThis.localStorage?.getItem(ANCHOR_GLYPH_STORAGE_KEY) !== "hidden";
+  } catch {
+    return true; // storage unavailable — default to visible
+  }
+}
+
+export function persistAnchorGlyphVisibility(visible: boolean): void {
+  try {
+    globalThis.localStorage?.setItem(ANCHOR_GLYPH_STORAGE_KEY, visible ? "shown" : "hidden");
+  } catch {
+    // storage unavailable — the in-memory overlay store still drives the paint.
+  }
+}
+
 // Minimal structural shapes so the registry doesn't couple to the full schemas;
 // the real AnyAnchor / NoteRecord are assignable to these.
 export interface AnnotationAnchor {
@@ -114,20 +138,23 @@ const htmlHighlightRenderer: AnnotationRenderer = {
     // inline highlight as we go. Returns the resolved targets so the margin mode
     // can lay cards out next to them.
     const resolved = resolveTargets(doc, items);
-    if (mode === "margin") {
-      paintMarginNotes(
-        doc,
-        resolved.map(({ element, noteText, noteHtml, noteCount, key }): MarginItem => ({
-          element,
-          noteText,
-          noteHtml,
-          noteCount,
-          key
-        }))
-      );
-    }
-    // floating mode needs no extra work: the inline highlight + shared hover card
-    // (wired by ensureAnnotationLayer) already cover it.
+    // ALWAYS routed through paintMarginNotes: margin mode paints the gutter;
+    // floating mode passes [] so the margin memo clears (the per-anchor notes
+    // toggle re-packs the gutter from that memo and must never resurrect a stale
+    // margin layout after a mode switch). Floating needs no other work: the
+    // inline highlight + shared hover card (ensureAnnotationLayer) cover it.
+    paintMarginNotes(
+      doc,
+      mode === "margin"
+        ? resolved.map(({ element, noteText, noteHtml, noteCount, key }): MarginItem => ({
+            element,
+            noteText,
+            noteHtml,
+            noteCount,
+            key
+          }))
+        : []
+    );
   }
 };
 

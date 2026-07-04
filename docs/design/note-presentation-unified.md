@@ -86,6 +86,21 @@ Current adapter duties and gaps, per reader:
 
 ## 2. D2 — Two-slot markers (left anchor glyph · right type icons) + suppression
 
+> **§2 amendment (2026-07-04, user-locked; supersedes the click/suppression wording below; shipped as N1A-D2-001):**
+> 1. Click semantics: the LEFT anchor-glyph chip does NOT open the card — it TOGGLES that
+>    anchor's notes (right note chip + hover/pinned/margin cards) off/on. Per-anchor UI state,
+>    session-scoped (realm memory, never persisted). The RIGHT note chip keeps today's behavior
+>    (opens the shared grouped card; guest sv:marker-action bridge unchanged).
+> 2. A global 显示锚点标记 switch lives in the Anchor panel (anchorViews.tsx): off hides every
+>    anchor glyph chip across all readers; note slots stay. Persisted like the annotation mode
+>    (localStorage helper in annotations.ts); guests receive it over the sv:anchors payload.
+> 3. Still pending from the original D2: same-line clustering, card-open suppression
+>    (data-sv-card-open), and the D5 floating editor.
+> Shipped: buildAnchorSlotHtml/buildNoteSlotHtml (annotationLayer.ts), MarkerOverlay
+> {anchorId, anchorSlotHtml, noteSlotHtml} + first/last placement from the F3 adapter,
+> per-anchor toggle store in annotationLayer (card + margin filtering reuse), markerOverlay
+> glyph-visibility store.
+
 Today one combined chip (anchor glyph + type glyphs) hangs at the anchor's TOP-RIGHT
 (`rectToOverlayLocal`), and it stays visible while the card is open — over a long passage it sits
 mid-paragraph and collides with the pinned card. Decision:

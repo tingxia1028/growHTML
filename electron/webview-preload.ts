@@ -10,13 +10,19 @@
 // to the host over the existing sv:marker-action channel.
 import { ipcRenderer } from "electron";
 import {
-  buildMarkerHtml,
+  buildAnchorSlotHtml,
+  buildNoteSlotHtml,
   clearAnnotations,
   ensureAnnotationLayer,
   highlightQuote,
   setSelectedAnchorInDoc
 } from "../src/client/annotationLayer";
-import { mountRealmMarkerOverlay, type MarkerOverlay } from "../src/client/markerOverlay";
+import {
+  mountRealmMarkerOverlay,
+  setAnchorGlyphVisibility,
+  type MarkerItem,
+  type MarkerOverlay
+} from "../src/client/markerOverlay";
 import { createDomRealmAdapter, type ReaderAnnotationAdapter } from "../src/client/surfaces/readerAnnotationAdapter";
 
 type WebAnchorMsg = {
@@ -129,7 +135,7 @@ function ensureGuestSurface(): { adapter: ReaderAnnotationAdapter<WebAnchorMsg>;
 function paintGuestAnchors(anchors: WebAnchorMsg[]): void {
   ensureAnnotationLayer(document);
   clearAnnotations(document.body);
-  const markers: { anchorId: string; glyphHtml: string }[] = [];
+  const markers: MarkerItem[] = [];
   for (const anchor of anchors) {
     const painted = highlightQuote(
       document,
@@ -138,12 +144,13 @@ function paintGuestAnchors(anchors: WebAnchorMsg[]): void {
       anchor.id,
       { noteHtml: anchor.noteHtml, noteCount: anchor.noteCount, noteTypes: anchor.noteTypes }
     );
-    // One overlay chip per painted anchor — the SAME buildMarkerHtml glyphs, hosted
-    // by the overlay instead of the old inline <span> appended inside the <mark>.
+    // One pair of D2 slot chips per painted anchor — the SAME slot builders every
+    // reader uses, hosted by the shared body-mounted overlay.
     if (painted && anchor.id) {
       markers.push({
         anchorId: anchor.id,
-        glyphHtml: buildMarkerHtml({
+        anchorSlotHtml: buildAnchorSlotHtml(),
+        noteSlotHtml: buildNoteSlotHtml({
           noteHtml: anchor.noteHtml,
           noteCount: anchor.noteCount,
           noteTypes: anchor.noteTypes
@@ -156,7 +163,17 @@ function paintGuestAnchors(anchors: WebAnchorMsg[]): void {
   setSelectedAnchorInDoc(document, selectedAnchorId);
 }
 
-ipcRenderer.on("sv:anchors", (_event, anchors: WebAnchorMsg[]) => {
+// Additive second payload on sv:anchors (see webviewSelection.ts WebAnchorPrefs):
+// the host's global 显示锚点标记 switch. This bundle is its own realm, so the shared
+// markerOverlay module store must be driven from here — the guest page's own
+// localStorage never sees the host's persisted choice. Older hosts send no prefs;
+// the default ("visible") stands.
+type AnchorPrefsMsg = { anchorGlyphsVisible?: boolean };
+
+ipcRenderer.on("sv:anchors", (_event, anchors: WebAnchorMsg[], prefs?: AnchorPrefsMsg) => {
+  if (prefs && typeof prefs.anchorGlyphsVisible === "boolean") {
+    setAnchorGlyphVisibility(prefs.anchorGlyphsVisible);
+  }
   ensureGuestSurface().adapter.paint(anchors ?? []);
 });
 

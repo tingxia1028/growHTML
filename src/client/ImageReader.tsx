@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import {
   applyHighlight,
-  buildMarkerHtml,
+  buildAnchorSlotHtml,
+  buildNoteSlotHtml,
   ensureAnnotationLayer,
   type HighlightPayload,
   revealAnchorInDoc,
@@ -70,7 +71,9 @@ export function ImageReader({ src, sourceId, anchors, onSelect, onMarkerAction, 
         markerOverlayRef.current?.setMarkers(
           anchorsOfKind(paintList, "image_region").map((anchor) => ({
             anchorId: anchor.id,
-            glyphHtml: buildMarkerHtml(annotationPayload(anchor))
+            // Single box ⇒ first === last: both D2 slots hang off the same rect.
+            anchorSlotHtml: buildAnchorSlotHtml(),
+            noteSlotHtml: buildNoteSlotHtml(annotationPayload(anchor))
           }))
         );
       }

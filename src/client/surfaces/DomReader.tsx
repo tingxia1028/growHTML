@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { decorateAnnotations, type HtmlAnnotationMode } from "../annotations";
-import { buildMarkerHtml, setSelectedAnchorInDoc, type HighlightPayload } from "../annotationLayer";
+import { buildAnchorSlotHtml, buildNoteSlotHtml, setSelectedAnchorInDoc, type HighlightPayload } from "../annotationLayer";
 import { MarkerOverlay, mountRealmMarkerOverlay } from "../markerOverlay";
 import type { AnchorDraft } from "../focus/FocusContext";
 import { publishSelectionRect, rectFromDomRect } from "../selection/selectionRect";
@@ -78,8 +78,9 @@ export function paintDomAnchors(
     mode
   });
   // Drive the view-layer marker overlay from the same painted anchors, so HTML gets
-  // the uniform overlay chip (a sibling of the iframe body content) rather than an
-  // in-content child. One chip per html anchor that carries a note glyph.
+  // the uniform D2 two-slot chips (siblings of the iframe body content) rather than
+  // in-content children: the anchor glyph at the passage's first line + the
+  // note-type icons at its last line.
   if (overlay) {
     overlay.setMarkers(
       htmlAnchors.map((anchor) => {
@@ -87,7 +88,7 @@ export function paintDomAnchors(
           noteCount: anchor.notePreviews ? anchor.notePreviews.length : anchor.note ? 1 : 0,
           noteTypes: anchor.notePreviews?.map((preview) => preview.contentType) ?? []
         };
-        return { anchorId: anchor.id, glyphHtml: buildMarkerHtml(payload) };
+        return { anchorId: anchor.id, anchorSlotHtml: buildAnchorSlotHtml(), noteSlotHtml: buildNoteSlotHtml(payload) };
       })
     );
   }

@@ -46,7 +46,7 @@ The extension seams (registries / content-as-data / entity stores / render contr
 ## Two keystones everything leans on
 Most work funnels through two load-bearing pieces. Build order is mostly "who unblocks whom":
 
-1. **D1 — the ReaderAnnotationAdapter** (`note-presentation-unified.md`). One paint/marker/card contract per reader. ✅ **shipped as F3** (F3-D1-001): `src/client/surfaces/readerAnnotationAdapter.ts`. Unblocks **D2 markers (N1)** AND **per-pane paint (P-A2)** — both still pending, now sitting on the landed adapter.
+1. **D1 — the ReaderAnnotationAdapter** (`note-presentation-unified.md`). One paint/marker/card contract per reader. ✅ **shipped as F3** (F3-D1-001): `src/client/surfaces/readerAnnotationAdapter.ts`. Unblocks **D2 markers (N1)** AND **per-pane paint (P-A2)** — D2's slot layout ✅ shipped as **N1a** (N1A-D2-001, user-amended semantics: anchor chip = per-anchor notes TOGGLE; global 显示锚点标记 switch in the Anchor panel; shared machinery across DomReader/PDF/image/guest via `rectsFor.first/.last`); clustering + suppression + D5 floating editor remain (**N1b**), P-A2 still pending.
 2. **Market M1 — effective-installed selector** (`plugin-viewer-model.md` §8.3/§8.5). The composer/toolbar must source its type list from marketplace *effective-installed*, not the single-active-kit gate in `src/kits/activation.ts`. Unblocks **subject-kit "foreground not filter" (M-B)** and **N4 types-as-catalog**.
 
 ## Dependency graph

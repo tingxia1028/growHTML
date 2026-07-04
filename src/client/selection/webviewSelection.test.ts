@@ -13,6 +13,7 @@ import {
   type WebAnchorMsg,
   type WebviewIpcMessage
 } from "./webviewSelection";
+import { setAnchorGlyphVisibility } from "../markerOverlay";
 import type { PaintAnchor } from "../surfaces/types";
 
 // A minimal stand-in for an Electron <webview>: a real EventTarget (so the shared
@@ -48,7 +49,13 @@ function fakeWebview(url = "https://example.test/page"): FakeWebview {
 afterEach(() => {
   // Remove any preload url injected onto the shared bridge surface.
   delete (window as { studyVault?: unknown }).studyVault;
+  // Restore the module-level glyph-visibility default (flip tests change it).
+  setAnchorGlyphVisibility(true);
 });
+
+// The prefs object every sv:anchors push now carries alongside the anchors
+// (additive payload extension — the guest mirrors the host's 显示锚点标记 switch).
+const VISIBLE_PREFS = { anchorGlyphsVisible: true };
 
 describe("normalizeWebSelection", () => {
   it("keeps a non-blank quote with its prefix/suffix", () => {
@@ -244,7 +251,7 @@ describe("bindWebviewAnchors", () => {
     webview.fire("sv:ready", {});
 
     expect(webview.send).toHaveBeenCalledTimes(1);
-    expect(webview.send).toHaveBeenCalledWith("sv:anchors", anchors);
+    expect(webview.send).toHaveBeenCalledWith("sv:anchors", anchors, VISIBLE_PREFS);
   });
 
   it("sends the current anchors over sv:anchors on dom-ready (re-paint after nav)", () => {
@@ -255,7 +262,7 @@ describe("bindWebviewAnchors", () => {
     webview.fireEvent("dom-ready");
 
     expect(webview.send).toHaveBeenCalledTimes(1);
-    expect(webview.send).toHaveBeenCalledWith("sv:anchors", anchors);
+    expect(webview.send).toHaveBeenCalledWith("sv:anchors", anchors, VISIBLE_PREFS);
   });
 
   it("re-sends the LATEST anchors when push() is called (e.g. after a new note)", () => {
@@ -268,7 +275,7 @@ describe("bindWebviewAnchors", () => {
     push();
 
     expect(webview.send).toHaveBeenCalledTimes(1);
-    expect(webview.send).toHaveBeenCalledWith("sv:anchors", anchors);
+    expect(webview.send).toHaveBeenCalledWith("sv:anchors", anchors, VISIBLE_PREFS);
     expect((webview.send as ReturnType<typeof vi.fn>).mock.calls[0][1]).toHaveLength(2);
   });
 
@@ -312,6 +319,33 @@ describe("bindWebviewAnchors", () => {
     dispose();
     webview.fire("sv:ready", {});
     webview.fireEvent("dom-ready");
+    expect(webview.send).not.toHaveBeenCalled();
+  });
+
+  // —— The global 显示锚点标记 switch reaching an already-painted guest ——
+
+  it("re-pushes with the new flag when the anchor-glyph switch flips (connected webview)", () => {
+    const webview = fakeWebview();
+    document.body.appendChild(webview); // connected — the subscription stays live
+    const anchors = [anchor("a1")];
+    const { dispose } = bindWebviewAnchors(webview, () => anchors);
+
+    setAnchorGlyphVisibility(false);
+    expect(webview.send).toHaveBeenCalledTimes(1);
+    expect(webview.send).toHaveBeenCalledWith("sv:anchors", anchors, { anchorGlyphsVisible: false });
+
+    dispose();
+    setAnchorGlyphVisibility(true);
+    expect(webview.send).toHaveBeenCalledTimes(1); // unsubscribed by dispose
+    webview.remove();
+  });
+
+  it("a removed webview (tab closed without dispose) self-unsubscribes on the next flip", () => {
+    const webview = fakeWebview(); // never appended → isConnected is false
+    bindWebviewAnchors(webview, () => [anchor("a1")]);
+
+    setAnchorGlyphVisibility(false); // first flip: detects the dead webview, no send
+    setAnchorGlyphVisibility(true);
     expect(webview.send).not.toHaveBeenCalled();
   });
 });
