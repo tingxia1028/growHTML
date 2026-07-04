@@ -1,6 +1,6 @@
 # F-1 follow-up — per-realm scoping of annotation-visibility singletons — BUILD SPEC
 
-Status: Plan agent produced this, reviewed for bounds. F-1 was logged as a SHOULD-FIX during the
+Status: **DONE** (commits a9eb939 F-1.1 + 71ff755 F-1.2 — landed as 2 compiling+green commits, not 4: A/B and H/I interleave in shared files so the project typechecks as one unit. Host bridge went through a new `sourceRealmDoc` registry, NOT views.tsx). Original plan below. F-1 was logged as a SHOULD-FIX during the
 F1 (multi-doc) impl review: two iframe panes in an F1 split share the module-global "hide-all
 notes" + anchor-glyph-visibility state. Cosmetic cross-pane leak (view-state only, NOT data loss);
 the DELTA-3 gate already blocks the only unshippable case (two host-realm panes). **Build AFTER W2

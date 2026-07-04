@@ -732,3 +732,8 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 | 2026-07-05 | SC-3-001 | adapters.test.tsx | rankByActiveKit 浮动活跃 kit 优先且稳定;无 foreground 时 no-op;slashEntries() note-type 切片对 SC-1 字节等旧 | Passed(21) |
 | 2026-07-05 | SC-3-001 | slashComposer.test.tsx(SC-3.3 挂载) | 自定义 operation 出现在 /palette;点选 dispatch operation.run{operationId,scope};非 manual note pick | Passed |
 | 2026-07-05 | SC-3-001 | npx vitest run(全量) | 224 文件 / 2382 用例(基线 219/2313 + SC-3 engine+6/adapters+6/operationAdapter+13 + 挂载测试) | Passed |
+| 2026-07-05 | F-1-001 | annotationDom.test.ts | 两 realm hide-all 独立(docA 隐藏→docB 仍上色)+ 边栏笔记独立;单 realm D10/D11 保持(带 doc 参) | Passed |
+| 2026-07-05 | F-1-001 | markerOverlay.test.ts | 两 realm 字形可见性独立(setAnchorGlyphVisibility(docA,false) 仅隐 A)+ hide-all 独立 | Passed |
+| 2026-07-05 | F-1-001 | e2e/multi-doc.spec.ts | 两 iframe 面板 hide-all/字形开关 PER-PANE;单面板 note-persist-export hide-all 回归 | 5 passed |
+| 2026-07-05 | F-1-001 | npm run check / build | tsc 0 · build 0 | Passed |
+| 2026-07-05 | F-1-001 | npx vitest run(全量) | 224 文件 / 2386 用例(基线 224/2382 + 4) | Passed |
