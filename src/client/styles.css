@@ -5409,6 +5409,7 @@ textarea {
 
 .chat-composer-bar {
   flex: 0 0 auto;
+  position: relative; /* SC-1: anchors the slash palette above the input row */
   display: flex;
   align-items: center;
   gap: 8px;
@@ -5419,6 +5420,25 @@ textarea {
   border-radius: 10px;
   background: #ffffff;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+/* SC-1 (slash-composer §4.1): the `/类型` palette drops ABOVE the chat input while
+   the draft parses as a slash command. It is lifted out of the composer flex row
+   (position:absolute) so it never becomes a flex item competing with the textarea,
+   and pinned to the bar's bottom edge so it grows upward as rows accumulate. */
+.chat-slash-palette {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 40;
+  display: flex;
+}
+
+.chat-slash-palette .slash-palette {
+  width: 100%;
+  max-width: none;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.14);
 }
 
 .chat-composer-input {
