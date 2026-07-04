@@ -48,7 +48,7 @@ export function slugifySourceTitle(title: string, fallback = "source") {
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 72);
 
@@ -65,11 +65,19 @@ function getExtension(sourceType: SourceType) {
   return "txt";
 }
 
+function sourceFileName(input: { id: string; title: string; sourceType: SourceType }) {
+  const extension = getExtension(input.sourceType);
+  return `${slugifySourceTitle(input.title)}-${input.id.slice("src_".length)}.${extension}`;
+}
+
+function sourceRelativePath(input: { id: string; title: string; sourceType: SourceType }) {
+  return path.posix.join("sources", sourceFileName(input));
+}
+
 export async function ingestSource(vault: StudyVault, input: IngestSourceInput): Promise<SourceRecord> {
   const id = createEntityId("source");
   const now = input.createdAt ?? new Date().toISOString();
-  const extension = getExtension(input.sourceType);
-  const fileName = `${slugifySourceTitle(input.title)}-${id.slice("src_".length)}.${extension}`;
+  const fileName = sourceFileName({ id, title: input.title, sourceType: input.sourceType });
   const relativePath = path.posix.join("sources", fileName);
   const filePath = path.join(vault.paths.sourcesDir, fileName);
 
@@ -108,12 +116,46 @@ export async function updateStoredSourceContent(
   content: string,
   opts: { title?: string } = {}
 ): Promise<SourceRecord> {
-  await vault.storage.writeText(resolveSourcePath(vault, source), content);
+  const title = opts.title ?? source.title;
+  const nextRelativePath = sourceRelativePath({ id: source.id, title, sourceType: source.sourceType });
+  const nextPath = resolveRelativeSourcePath(vault, nextRelativePath);
+
+  await vault.storage.writeText(nextPath, content);
+  if (nextRelativePath !== source.path) {
+    await vault.storage.deleteFile(resolveSourcePath(vault, source));
+  }
+
   const record = sourceSchema.parse({
     ...source,
-    title: opts.title ?? source.title,
+    title,
+    path: nextRelativePath,
     contentHash: computeContentHash(content),
     revision: (source.revision ?? 1) + 1,
+    updatedAt: new Date().toISOString()
+  });
+  await vault.stores.sources.upsert(record);
+  return record;
+}
+
+export async function updateStoredSourceTitle(
+  vault: StudyVault,
+  source: SourceRecord,
+  title: string
+): Promise<SourceRecord> {
+  const nextRelativePath = sourceRelativePath({ id: source.id, title, sourceType: source.sourceType });
+
+  if (nextRelativePath !== source.path) {
+    const currentPath = resolveSourcePath(vault, source);
+    const currentContent = await vault.storage.readText(currentPath);
+    if (currentContent === null) throw new Error(`Source content not found: ${source.path}`);
+    await vault.storage.writeText(resolveRelativeSourcePath(vault, nextRelativePath), currentContent);
+    await vault.storage.deleteFile(currentPath);
+  }
+
+  const record = sourceSchema.parse({
+    ...source,
+    title,
+    path: nextRelativePath,
     updatedAt: new Date().toISOString()
   });
   await vault.stores.sources.upsert(record);
@@ -126,8 +168,7 @@ export async function ingestBinarySource(
 ): Promise<SourceRecord> {
   const id = createEntityId("source");
   const now = input.createdAt ?? new Date().toISOString();
-  const extension = getExtension(input.sourceType);
-  const fileName = `${slugifySourceTitle(input.title)}-${id.slice("src_".length)}.${extension}`;
+  const fileName = sourceFileName({ id, title: input.title, sourceType: input.sourceType });
   const relativePath = path.posix.join("sources", fileName);
   const filePath = path.join(vault.paths.sourcesDir, fileName);
 
@@ -212,8 +253,12 @@ export async function deleteStoredSourceFile(vault: StudyVault, source: SourceRe
 
 function resolveSourcePath(vault: StudyVault, source: SourceRecord) {
   // Pure traversal guard (portable across storage backends), then compose.
-  assertSafeRelativePath(source.path);
-  return path.join(vault.paths.rootDir, source.path);
+  return resolveRelativeSourcePath(vault, source.path);
+}
+
+function resolveRelativeSourcePath(vault: StudyVault, relativePath: string) {
+  assertSafeRelativePath(relativePath);
+  return path.join(vault.paths.rootDir, relativePath);
 }
 
 export async function readSourceContent(vault: StudyVault, source: SourceRecord) {

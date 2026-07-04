@@ -230,21 +230,48 @@ registerLibrarySection({
 
 // —— core + menu actions ————————————————————————————————————————————————————————————
 
-const desktopOnly = {
-  disabled: (ctx: WorkspaceContext) => !ctx.canOpenLocal,
-  disabledHint: m.desktopOnly
-};
-
-// 文件… — ONE picker for PDF/图片/HTML/MD/.xmind/…: openFileDialog routes .xmind to the
-// mind-map import (WorkspaceContext folds it in), so .xmind is no longer a separate item.
+// 本地文件/文件夹… — one UI block for the two native local pickers. File imports still use
+// the single file path router below, so PDF/图片/HTML/MD/.xmind share the same file flow.
 registerLibraryAddAction({
-  id: "core.import-file",
+  id: "core.import-local",
   group: "import",
-  title: m.importFile,
-  icon: <File size={15} />,
+  title: m.importLocal,
   order: 10,
-  ...desktopOnly,
-  run: (ctx) => void ctx.openFileDialog()
+  render: (ctx) => {
+    const disabled = !ctx.canOpenLocal;
+    const title = disabled ? t(m.desktopOnly) : undefined;
+    return (
+      <div className="library-add-local">
+        <div className="panel-menu-label">{t(m.importLocal)}</div>
+        <div className="library-add-local-control" role="group" aria-label={t(m.importLocal)}>
+          <button
+            className="library-add-local-action"
+            type="button"
+            title={title ?? t(m.importFile)}
+            aria-label={t(m.importFile)}
+            disabled={disabled}
+            data-panel-menu-close="true"
+            onClick={() => void ctx.openFileDialog()}
+          >
+            <File size={15} />
+            <span>{t(m.pickLocalFile)}</span>
+          </button>
+          <button
+            className="library-add-local-action"
+            type="button"
+            title={title ?? t(m.mountFolder)}
+            aria-label={t(m.mountFolder)}
+            disabled={disabled}
+            data-panel-menu-close="true"
+            onClick={() => void ctx.openFolderDialog()}
+          >
+            <FolderOpen size={15} />
+            <span>{t(m.pickLocalFolder)}</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 });
 
 // 网页… — the inline URL input + 抓取/实时打开 pair, exactly the old kebab-menu block.
@@ -287,16 +314,6 @@ registerLibraryAddAction({
       </div>
     </div>
   )
-});
-
-registerLibraryAddAction({
-  id: "core.mount-folder",
-  group: "import",
-  title: m.mountFolder,
-  icon: <FolderOpen size={15} />,
-  order: 30,
-  ...desktopOnly,
-  run: (ctx) => void ctx.openFolderDialog()
 });
 
 // 新建 → the SRC-1 blank-creates (source-authoring.md §4): 新建 Markdown (the default,

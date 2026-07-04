@@ -14,11 +14,12 @@ import path from "node:path";
 import { z } from "zod";
 import { injectStudyIds } from "../../adapters/html/core";
 import { renderNoteContent } from "../../adapters/notes/render";
-import { anchorSchema, sourceSchema, type AnchorRecord, type SourceRecord } from "../../core/schema";
+import { anchorSchema, type AnchorRecord, type SourceRecord } from "../../core/schema";
 import {
   computeContentHash,
   ingestSource,
-  updateStoredSourceContent
+  updateStoredSourceContent,
+  updateStoredSourceTitle
 } from "../../core/store/sources";
 import { rematchAnchor, type MatchStatus } from "../../core/study-layer/rematch";
 import type { StudyVault } from "../../core/vault";
@@ -153,12 +154,7 @@ export async function updateAuthoredSource(
   // rename still lands (without a revision bump — the revision tracks CONTENT).
   if (computeContentHash(stored) === existing.contentHash) {
     if (input.title && input.title !== existing.title) {
-      const record = sourceSchema.parse({
-        ...existing,
-        title: input.title,
-        updatedAt: new Date().toISOString()
-      });
-      await vault.stores.sources.upsert(record);
+      const record = await updateStoredSourceTitle(vault, existing, input.title);
       return { source: record, reprojection: emptyReprojection() };
     }
     return { source: existing, reprojection: emptyReprojection() };

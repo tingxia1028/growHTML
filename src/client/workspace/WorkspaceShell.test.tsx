@@ -32,6 +32,7 @@ beforeEach(() => {
   // the `.library-panel` behind a rail — so force a wide viewport for these structural
   // assertions (responsive collapse is covered by its own dock unit test + an e2e).
   Object.defineProperty(window, "innerWidth", { configurable: true, value: 1400 });
+  window.localStorage.clear();
   // WorkspaceProvider's mount effect calls entityClient.sources() (fetch). jsdom has
   // no fetch; stub it to reject so loadSources hits its catch (no unhandled rejection)
   // and the panels still render with empty state.
@@ -92,6 +93,43 @@ describe("WorkspaceShell", () => {
     });
     expect(container.querySelector(".shell-modal-dialog")).not.toBeNull();
     expect(container.querySelector(".shortcut-help")).not.toBeNull();
+  });
+
+  it("toggles the left sidebar from the active rail icon", async () => {
+    await act(async () => {
+      root.render(
+        <FocusProvider>
+          <WorkspaceProvider>
+            <WorkspaceShell layout={threePane} />
+          </WorkspaceProvider>
+        </FocusProvider>
+      );
+    });
+
+    const [libraryButton, , conceptsButton] = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(".icon-rail-entries .icon-rail-btn")
+    );
+    expect(container.querySelector(".library-panel")).not.toBeNull();
+
+    await act(async () => {
+      libraryButton.click();
+    });
+    expect(container.querySelector(".library-panel")).toBeNull();
+    expect(container.querySelector<HTMLElement>('.dock-pane[data-collapsed="true"]')?.style.flex).toBe("0 0 0px");
+
+    await act(async () => {
+      libraryButton.click();
+    });
+    expect(container.querySelector(".library-panel")).not.toBeNull();
+
+    await act(async () => {
+      libraryButton.click();
+    });
+    await act(async () => {
+      conceptsButton.click();
+    });
+    expect(container.querySelector(".concept-panel")).not.toBeNull();
+    expect(container.querySelector(".library-panel")).toBeNull();
   });
 
   it("renders the panels in the preset's node order (library → reader → study)", async () => {

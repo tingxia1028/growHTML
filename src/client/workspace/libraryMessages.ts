@@ -15,9 +15,12 @@ export const libraryMessages = defineMessages({
   // —— the unified + menu ——
   groupImport: { zh: "导入", en: "Import" },
   groupCreate: { zh: "新建", en: "Create" },
+  importLocal: { zh: "本地文件/文件夹…", en: "Local file/folder…" },
   importFile: { zh: "文件…", en: "File…" },
+  pickLocalFile: { zh: "文件", en: "File" },
+  pickLocalFolder: { zh: "文件夹", en: "Folder" },
   importWeb: { zh: "网页…", en: "Web page…" },
-  mountFolder: { zh: "挂载文件夹…", en: "Mount folder…" },
+  mountFolder: { zh: "文件夹…", en: "Folder…" },
   fetchUrl: { zh: "抓取网页", en: "Fetch page" },
   openLive: { zh: "实时打开", en: "Open live" },
   urlPlaceholder: { zh: "https://…", en: "https://…" },
@@ -33,7 +36,7 @@ export const libraryMessages = defineMessages({
   expandSection: { zh: "展开", en: "Expand" },
   emptyRecent: { zh: "还没有阅读记录。", en: "No recent reads yet." },
   emptyDocuments: { zh: "点 + 导入第一份资料", en: "Click + to import your first document" },
-  emptyFolders: { zh: "点 + 挂载本地文件夹", en: "Click + to mount a local folder" },
+  emptyFolders: { zh: "点 + 本地… 选择文件夹", en: "Click + Local... and choose Folder" },
   noMatches: { zh: "没有匹配的条目。", en: "No matching items." },
 
   // —— document rows / chips ——

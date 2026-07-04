@@ -78,8 +78,8 @@ import { GlobalSearch } from "../search/GlobalSearch";
 const SIZES_KEY = "sv-panel-widths";
 // Per-pane collapsed flags, keyed by `${layoutId}:${nodeId}`.
 const COLLAPSED_KEY = "sv-pane-collapsed";
-// Width of a collapsed pane's rail (just enough for the rotated label + expand hit area).
-const RAIL_PX = 34;
+// Collapsed left sidebar consumes no dock width; the IconRail is the reopen control.
+const RAIL_PX = 0;
 
 // The dock leaf nodeId that the IconRail / TopBar buttons SWAP: selecting a rail entry
 // renders that view-kind in this slot instead of the static "library" view. Keeps the
@@ -95,7 +95,7 @@ const CENTER_SLOT_NODE_ID = "source-viewer";
 const ONBOARDING_KIND = "onboarding.checklist";
 const modalTitles: Record<string, LocalizedText> = {
   "settings.hub": { zh: "设置", en: "Settings" },
-  "plugin.manager": { zh: "Kit 与插件", en: "Kit & Plugin" },
+  "plugin.manager": { zh: "套件", en: "Kits" },
   "operation.manager": { zh: "操作", en: "Operations" },
   "layer.switcher": { zh: "分享身份", en: "Share Identity" },
   "trash.panel": { zh: "回收站", en: "Trash" },
@@ -171,7 +171,7 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
   // of reaching into the shell (the registerOpenOperationManager idiom, module-scope).
   useEffect(() => {
     registerShellNavigator((target) => {
-      if (target.type === "pane") setLeftPaneKind(target.kind);
+      if (target.type === "pane") openLeftPane(target.kind);
       else if (target.type === "modal") setModalKind(target.kind);
       else if (target.open) setModalKind(ONBOARDING_KIND);
       else {
@@ -180,7 +180,7 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
       }
     });
     return () => registerShellNavigator(null);
-  }, []);
+  }, [layout.id]);
 
   useEffect(() => {
     if (!modalKind) return;
@@ -256,6 +256,22 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
     });
   }
 
+  function openLeftPane(kind: string) {
+    setLeftPaneKind(kind);
+    toggleCollapsed(paneCollapseKey(layout.id, LEFT_SLOT_NODE_ID), false);
+  }
+
+  function selectLeftPaneFromRail(kind: string) {
+    const collapseKey = paneCollapseKey(layout.id, LEFT_SLOT_NODE_ID);
+    const isLeftCollapsed = collapsed[collapseKey] ?? false;
+    if (kind === leftPaneKind && !isLeftCollapsed) {
+      toggleCollapsed(collapseKey, true);
+      return;
+    }
+    setLeftPaneKind(kind);
+    toggleCollapsed(collapseKey, false);
+  }
+
   function pxFor(key: string, fallback: number): number {
     return sizes[key] ?? fallback;
   }
@@ -321,7 +337,6 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
               title={`Expand ${paneLabel(m.wsNode!)}`}
               onClick={() => toggleCollapsed(m.collapseKey, false)}
             >
-              <span className="dock-rail-label">{paneLabel(m.wsNode!)}</span>
             </button>
           ) : (
             <>
@@ -360,7 +375,7 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
             />
           );
         } else {
-          out.push(<div key={`gutter-${i}`} className="dock-gap" />);
+          out.push(<div key={`gutter-${i}`} className={boundaryCollapsed ? "dock-gap dock-gap-collapsed" : "dock-gap"} />);
         }
       }
     });
@@ -410,7 +425,7 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
     <div className="app-frame">
       <TopBar ctx={ctx} />
       <div className="app-body">
-        <IconRail selected={leftPaneKind} onSelect={setLeftPaneKind} />
+        <IconRail selected={leftPaneKind} onSelect={selectLeftPaneFromRail} />
         {dock}
       </div>
       {/* Global overlay (portaled to <body>): floats the anchor-scope action toolbar

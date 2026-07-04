@@ -47,8 +47,8 @@ describe("source ingest", () => {
   });
 
   it("slugifies source titles defensively", () => {
-    expect(slugifySourceTitle("UE Render Thread 学习笔记")).toBe("ue-render-thread");
+    expect(slugifySourceTitle("UE Render Thread 学习笔记")).toBe("ue-render-thread-学习笔记");
+    expect(slugifySourceTitle("你好")).toBe("你好");
     expect(slugifySourceTitle("!!!", "fallback")).toBe("fallback");
   });
 });
-

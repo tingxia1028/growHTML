@@ -123,8 +123,12 @@ describe("anchor panel 显示锚点标记 switch", () => {
     const { container, cleanup } = mount(<>{plugin!.render(node, ctx)}</>);
 
     const button = container.querySelector(".anchor-glyph-switch") as HTMLButtonElement;
+    const actions = container.querySelector(".anchor-context-actions") as HTMLElement;
     expect(button).toBeTruthy();
-    expect(container.querySelector(".anchor-panel-toolbar .anchor-glyph-switch")).toBe(button);
+    expect(actions).toBeTruthy();
+    expect(actions.querySelector(".anchor-glyph-switch")).toBe(button);
+    expect(actions.querySelector(".anchor-context-jump")).toBeTruthy();
+    expect(container.querySelector(".anchor-panel-toolbar .anchor-glyph-switch")).toBeNull();
     expect(container.querySelector(".anchor-action-bar > .anchor-glyph-switch")).toBeNull();
     expect(button.getAttribute("aria-pressed")).toBe("true"); // default: anchor glyphs visible
 

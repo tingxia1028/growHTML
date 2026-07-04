@@ -221,7 +221,7 @@ describe("LibraryView sections (registry-driven)", () => {
     );
     expect(sectionEl("core.recent")!.querySelector(".library-empty")!.textContent).toBe("还没有阅读记录。");
     expect(sectionEl("core.folders")!.querySelector(".library-empty")!.textContent).toBe(
-      "点 + 挂载本地文件夹"
+      "点 + 本地… 选择文件夹"
     );
   });
 });
@@ -330,14 +330,24 @@ describe("the unified + menu (registry groups)", () => {
     const popover = await openAddMenu();
 
     const importGroup = popover.querySelector('[data-add-group="import"]')!;
-    expect(importGroup.querySelector('[data-add-action="core.import-file"]')!.textContent).toBe("文件…");
+    expect(
+      Array.from(importGroup.querySelectorAll("[data-add-action]")).map((el) => el.getAttribute("data-add-action"))
+    ).toEqual(["core.import-local", "core.import-web"]);
+    const localBlock = importGroup.querySelector('[data-add-action="core.import-local"]')!;
+    expect(localBlock.querySelector(".panel-menu-label")!.textContent).toBe("本地文件/文件夹…");
+    expect(importGroup.querySelector('[data-add-action="core.import-file"]')).toBeNull();
     expect(importGroup.querySelector('[data-add-action="core.import-web"]')).toBeTruthy();
-    expect(importGroup.querySelector('[data-add-action="core.mount-folder"]')!.textContent).toBe(
-      "挂载文件夹…"
-    );
+    expect(importGroup.querySelector('[data-add-action="core.mount-folder"]')).toBeNull();
 
-    await click(importGroup.querySelector('[data-add-action="core.import-file"]'));
+    const buttons = Array.from(localBlock.querySelectorAll(".library-add-local-action")) as HTMLButtonElement[];
+    expect(buttons.map((button) => button.textContent)).toEqual(["文件", "文件夹"]);
+    await click(buttons[0]);
     expect(ctx.openFileDialog).toHaveBeenCalledTimes(1);
+
+    const reopened = await openAddMenu();
+    const folderButton = reopened.querySelectorAll(".library-add-local-action")[1];
+    await click(folderButton);
+    expect(ctx.openFolderDialog).toHaveBeenCalledTimes(1);
   });
 
   it("wires the 网页 inline block to the existing URL handlers", async () => {
@@ -414,9 +424,10 @@ describe("the unified + menu (registry groups)", () => {
   it("disables desktop-only items on web with the hint", async () => {
     await mountLibrary(makeCtx({ canOpenLocal: false }));
     const popover = await openAddMenu();
-    const fileItem = popover.querySelector('[data-add-action="core.import-file"]') as HTMLButtonElement;
-    expect(fileItem.disabled).toBe(true);
-    expect(fileItem.title).toBe("仅桌面端可用");
+    const localButtons = Array.from(popover.querySelectorAll(".library-add-local-action")) as HTMLButtonElement[];
+    expect(localButtons).toHaveLength(2);
+    expect(localButtons.every((button) => button.disabled)).toBe(true);
+    expect(localButtons.map((button) => button.title)).toEqual(["仅桌面端可用", "仅桌面端可用"]);
     expect(popover.querySelector(".panel-menu-hint")!.textContent).toBe("打开本地文件/文件夹仅桌面端可用。");
   });
 });

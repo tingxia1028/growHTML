@@ -73,11 +73,16 @@ describe("dock collapse + responsiveness", () => {
   const flexLeaf: DockChild = { size: "flex", node: leaf("x") };
 
   describe("isCollapsibleLeaf", () => {
-    it("never collapses fixed-size leaves in the current UI", () => {
-      expect(isCollapsibleLeaf(fixedLeaf, "library")).toBe(false);
+    it("allows the fixed left library pane to collapse", () => {
+      expect(isCollapsibleLeaf(fixedLeaf, "library")).toBe(true);
     });
     it("the flex reader child is never collapsible", () => {
       expect(isCollapsibleLeaf(flexLeaf, "source.viewer")).toBe(false);
+    });
+    it("other fixed secondary panes are not collapsible", () => {
+      expect(isCollapsibleLeaf(fixedLeaf, "concept.list")).toBe(false);
+      expect(isCollapsibleLeaf(fixedLeaf, "layer.switcher")).toBe(false);
+      expect(isCollapsibleLeaf(fixedLeaf, "study")).toBe(false);
     });
     it("a fixed source.viewer is still excluded (reader is the spine)", () => {
       expect(isCollapsibleLeaf(fixedLeaf, "source.viewer")).toBe(false);
@@ -92,7 +97,9 @@ describe("dock collapse + responsiveness", () => {
     const wide = RESPONSIVE_BREAKPOINT_PX; // exactly at the breakpoint = still expanded (< is the rule)
     const narrow = RESPONSIVE_BREAKPOINT_PX - 1;
 
-    it("ignores explicit user collapse state", () => {
+    it("applies explicit user collapse state only to the library pane", () => {
+      expect(isPaneCollapsed("library", true, 2000)).toBe(true);
+      expect(isPaneCollapsed("library", false, 2000)).toBe(false);
       expect(isPaneCollapsed("study", true, 2000)).toBe(false);
     });
     it("does not auto-collapse secondary panes below the breakpoint", () => {

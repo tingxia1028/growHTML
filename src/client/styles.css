@@ -717,67 +717,11 @@ button {
   min-width: 360px;
 }
 
-/* Collapse affordance: a small chevron pinned to the pane's top-right, faint until hover
-   so it doesn't compete with pane content. Clicking collapses the pane to a rail. */
-.dock-collapse-btn {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  z-index: 5;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid #d8d2c4;
-  border-radius: 5px;
-  background: rgba(244, 241, 234, 0.85);
-  color: #5f5a4e;
-  font-size: 13px;
-  line-height: 1;
-  opacity: 0.35;
-  transition: opacity 0.12s ease, background 0.12s ease;
-}
-
-.dock-pane:hover > .dock-collapse-btn {
-  opacity: 0.85;
-}
-
-.dock-collapse-btn:hover {
-  opacity: 1;
-  background: var(--sv-surface-card);
-}
-
-/* A collapsed pane renders ONLY this full-height rail: a vertical label + click-to-expand
-   hit area. The pane's flex is fixed to RAIL_PX (dock.ts) so it reads as a thin spine. */
+/* LEFT-COLLAPSE-001: the IconRail is the only visible toggle, matching VS Code's
+   activity-bar behavior. The old dock-local collapse controls stay out of view. */
+.dock-collapse-btn,
 .dock-rail {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  padding: 8px 0;
-  border: none;
-  border-left: 1px solid #e3ddcf;
-  border-right: 1px solid #e3ddcf;
-  background: #efeadf;
-  color: #5f5a4e;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-
-.dock-rail:hover {
-  background: #e6e0d2;
-  color: var(--sv-accent);
-}
-
-.dock-rail-label {
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
+  display: none;
 }
 
 /* Resize gutters — vertical (col-resize) in a row, horizontal (row-resize) in a column. */
@@ -803,6 +747,10 @@ button {
 .dock-gap {
   flex: 0 0 6px;
   background: transparent;
+}
+
+.dock-gap-collapsed {
+  flex-basis: 0;
 }
 
 .library-panel,

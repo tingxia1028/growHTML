@@ -10,11 +10,9 @@ import { useState } from "react";
 import { Anchor as AnchorIcon, Crosshair, FileText } from "lucide-react";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 import { draftQuoteText } from "../focus/FocusContext";
-import { PanelMenu } from "./PanelMenu";
 import { noteTypeIcon } from "../notes/noteTypeIcon";
 import { getNoteType } from "../notes/noteTypeRegistry";
 import { ActionGrid } from "./ActionGrid";
-import { ActionMoreMenu } from "./ActionMoreMenu";
 import { SpeakButton } from "../speech/SpeakButton";
 import { persistAnchorGlyphVisibility, readStoredAnchorGlyphVisibility } from "../annotations";
 import { setAnchorGlyphVisibility } from "../markerOverlay";
@@ -66,7 +64,7 @@ function AnchorGlyphSwitch() {
 
 function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
   useLocale();
-  const { focus, activeSource, visibleNotes, anchorBarActions, runAction, generating, openOperationManager } = ctx;
+  const { focus, activeSource, visibleNotes, anchorBarActions, runAction, generating } = ctx;
   const anchor = focus.anchor;
   const quote = anchor?.quote ?? draftQuoteText(focus.draft);
   const page =
@@ -91,20 +89,6 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
 
   return (
     <aside className="anchor-panel">
-      <div className="anchor-panel-toolbar">
-        <AnchorGlyphSwitch />
-        <PanelMenu label={t(anchorViewMessages.actions)} align="right">
-          <button
-            className="panel-menu-item"
-            type="button"
-            disabled={!anchor && !focus.draft}
-            onClick={() => focus.clear()}
-          >
-            {t(anchorViewMessages.clearAnchor)}
-          </button>
-        </PanelMenu>
-      </div>
-
       {quote ? (
         <>
           {/* —— Context —— */}
@@ -114,16 +98,19 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
               <span className="anchor-context-name" title={activeSource?.title}>
                 {activeSource?.title ?? t(anchorViewMessages.currentSource)}
               </span>
-              <button
-                className="anchor-context-jump"
-                type="button"
-                title={t(anchorViewMessages.revealAnchor)}
-                aria-label={t(anchorViewMessages.revealAnchor)}
-                disabled={!anchor}
-                onClick={() => anchor && focus.setAnchor(anchor)}
-              >
-                <Crosshair size={14} />
-              </button>
+              <span className="anchor-context-actions">
+                <AnchorGlyphSwitch />
+                <button
+                  className="anchor-context-jump"
+                  type="button"
+                  title={t(anchorViewMessages.revealAnchor)}
+                  aria-label={t(anchorViewMessages.revealAnchor)}
+                  disabled={!anchor}
+                  onClick={() => anchor && focus.setAnchor(anchor)}
+                >
+                  <Crosshair size={14} />
+                </button>
+              </span>
             </div>
             {page != null ? (
               <div className="anchor-context-meta">
@@ -154,17 +141,6 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
               disabled={!anchor && !focus.draft}
               busy={generating}
               density="grid"
-            />
-            {/* The grouped overflow (R6.2): mirrors the full anchor-scope action list in
-                fixed group sections + a Customize footer. The grid shows the actions; this
-                menu is the searchable/grouped twin (same runAction; no render path). The
-                footer's Customize Toolbar opens the operation manager (R6.3). */}
-            <ActionMoreMenu
-              items={anchorBarActions}
-              onRun={runAction}
-              busy={generating}
-              surface="anchor"
-              onCustomize={openOperationManager}
             />
           </div>
 
@@ -203,6 +179,13 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
         </>
       ) : (
         <>
+          {/* N1a law: the 显示锚点标记 switch renders in BOTH states — hiding glyphs is a
+              document-level preference, not a focused-anchor affordance. With no focused
+              context row to host it, the empty state keeps a minimal toolbar. */}
+          <div className="anchor-panel-toolbar">
+            <span className="anchor-panel-toolbar-spacer" />
+            <AnchorGlyphSwitch />
+          </div>
           <p className="anchor-excerpt-empty">{t(anchorViewMessages.empty)}</p>
           {/* The Action Bar still shows in the empty state, but disabled — so the user
               sees what's available before focusing a passage. */}

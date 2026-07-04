@@ -70,7 +70,7 @@ async function seedAuthoredHtmlWithAnchor() {
 describe("SRC-1 — authored blank-create", () => {
   it("creates an authored markdown source (origin/revision) and round-trips RAW markdown", async () => {
     const { source } = await createAuthoredSource(deps(), {
-      title: "未命名文档",
+      title: "你好",
       sourceType: "markdown",
       content: "# 标题\n\n正文 **加粗**。"
     });
@@ -78,6 +78,7 @@ describe("SRC-1 — authored blank-create", () => {
     expect(source.origin).toBe("authored");
     expect(source.revision).toBe(1);
     expect(source.sourceType).toBe("markdown");
+    expect(source.path.startsWith("sources/你好-")).toBe(true);
     // The editor edits the stored content — it must stay raw markdown, never HTML.
     await expect(readSourceContent(vault, source)).resolves.toBe("# 标题\n\n正文 **加粗**。");
 
@@ -190,7 +191,10 @@ describe("SRC-2 — save → re-hash → re-project (html)", () => {
       title: "Cell biology (v2)"
     });
     expect(renamed.source.title).toBe("Cell biology (v2)");
+    expect(renamed.source.path).toContain("cell-biology-v2-");
     expect(renamed.source.revision).toBe(1);
+    await expect(vault.storage.readText(path.join(vault.paths.rootDir, source.path))).resolves.toBeNull();
+    await expect(readSourceContent(vault, renamed.source)).resolves.toBe(stored);
   });
 });
 

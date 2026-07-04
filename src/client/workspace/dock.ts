@@ -85,29 +85,27 @@ export function dockRoot(layout: WorkspaceLayout): DockNode {
 
 // —— Pane collapse + responsiveness ————————————————————————————————————————————
 
-// Below this viewport width the secondary side panes auto-collapse so the reader stays
-// usable without horizontal scroll. 1280 is Playwright's / Desktop-Chrome default width,
-// so `< 1280` leaves the standard test viewport (and roomy screens) fully expanded.
+// Below this viewport width the old auto-collapse system used to fold secondary panes.
+// LEFT-COLLAPSE-001 keeps the constant for tests/docs but no longer auto-collapses:
+// the left sidebar now folds only from an explicit user click.
 export const RESPONSIVE_BREAKPOINT_PX = 1280;
 
-// The side panes that auto-collapse when narrow (the flex reader + the study panel stay).
+// Historical set for the broader collapse engine. Today only the left `library` leaf is
+// collapsible, and only through explicit user state.
 export const SECONDARY_KINDS = new Set(["library", "concept.list", "layer.switcher", "bookmark.list"]);
 
-// Collapse rails are disabled by product direction: no pane should render as a vertical
-// "Sources"/"Layers" strip. Keep this seam stable for callers, but always opt out.
+// The only supported collapsed dock child is the fixed left sidebar. The left slot can
+// render several view kinds at runtime, but its layout node remains `kind:"library"`;
+// keeping the predicate here scopes collapse to that one physical pane.
 export function isCollapsibleLeaf(child: DockChild, kind: string): boolean {
-  void child;
-  void kind;
-  return false;
+  return child.node.type === "leaf" && !isFlexChild(child) && kind === "library";
 }
 
-// Stored/user collapse state and narrow-view auto-collapse are ignored so old
-// localStorage cannot bring collapsed rails back.
+// Collapse is explicit only. Narrow viewports keep the same panes visible unless the user
+// chose to fold the left sidebar.
 export function isPaneCollapsed(kind: string, userCollapsed: boolean, viewportWidth: number): boolean {
-  void kind;
-  void userCollapsed;
   void viewportWidth;
-  return false;
+  return kind === "library" && userCollapsed;
 }
 
 // Stable key for persisting a pane's collapsed state (scoped per layout + node).

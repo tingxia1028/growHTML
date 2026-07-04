@@ -36,3 +36,27 @@
   background: var(--sv-accent-soft, #eaf2ff);
   color: var(--sv-accent, #3474e6);
 }
+
+.anchor-panel-toolbar-spacer {
+  flex: 0 0 0;
+}
+
+.anchor-context-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.anchor-context-actions .anchor-glyph-switch,
+.anchor-context-actions .anchor-context-jump {
+  display: inline-flex;
+  flex: 0 0 32px;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-left: 0;
+  padding: 0;
+}
