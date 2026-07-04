@@ -262,8 +262,13 @@ describe("ReviewPanel — self-grade flow (quiz/flashcard/review-pack)", () => {
     expect(container.textContent).toContain("F正面问题");
     expect(container.textContent).not.toContain("B背面答案");
 
+    // 显示答案 → the full render, which (N4-D7) is now an INTERACTIVE flip card: it opens
+    // on the front, and the back appears once the card is flipped (click the flip control).
     await click(".review-reveal-btn");
-    expect(container.textContent).toContain("B背面答案"); // full render revealed
+    expect(container.querySelector(".sv-flip")).toBeTruthy();
+    expect(container.textContent).not.toContain("B背面答案"); // back still hidden until flipped
+    await click(".sv-flip");
+    expect(container.textContent).toContain("B背面答案"); // full render revealed after the flip
 
     await click(".review-pass-btn");
     const events = await postedEvents();
