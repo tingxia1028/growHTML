@@ -1,4 +1,5 @@
 import path from "node:path";
+import { existsSync } from "node:fs";
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell } from "electron";
 import log from "electron-log/main";
 import { startServer, type StartedServer } from "../src/server/start";
@@ -57,6 +58,11 @@ async function resolveStartUrl(): Promise<string> {
 // when a release is downloaded; every failure is logged and NEVER blocks boot.
 async function checkForUpdates() {
   if (!app.isPackaged) return;
+  // The branded dev launch (launch-electron.cjs renames electron.exe → Growte.exe)
+  // fools app.isPackaged into true and app.getVersion() into the exe's resource
+  // version ("42.4.1"). A REAL install is the only place app-update.yml exists —
+  // gate on it so dev launches never construct the updater.
+  if (!existsSync(path.join(process.resourcesPath ?? "", "app-update.yml"))) return;
   try {
     const { autoUpdater } = await import("electron-updater");
     autoUpdater.logger = log;
