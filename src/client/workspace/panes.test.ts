@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import {
   closePane,
@@ -5,8 +6,12 @@ import {
   focusedPane,
   openOrFocusPane,
   paneIdFor,
+  parsePanesState,
+  persistPanes,
   prunePanes,
+  readStoredPanes,
   sourceOfPane,
+  switchFocusedPane,
   type PanesState
 } from "./panes";
 
@@ -38,6 +43,37 @@ describe("panes — pure open-panes model", () => {
 
   it("openOrFocusPane is a no-op for an empty sourceId", () => {
     expect(openOrFocusPane(EMPTY, "")).toBe(EMPTY);
+  });
+
+  it("switchFocusedPane REPLACES the focused pane in place (single tab preserved)", () => {
+    const a = openOrFocusPane(EMPTY, "s1"); // one pane, focused
+    const switched = switchFocusedPane(a, "s2");
+    // Still ONE pane — the source was swapped in the same slot (switch, not add).
+    expect(switched.openPanes).toHaveLength(1);
+    expect(switched.openPanes[0].sourceId).toBe("s2");
+    expect(switched.focusedPaneId).toBe("pane:s2");
+  });
+
+  it("switchFocusedPane focuses an already-open pane instead of duplicating", () => {
+    let s = openOrFocusPane(EMPTY, "s1");
+    s = openOrFocusPane(s, "s2"); // two panes, focus s2
+    const switched = switchFocusedPane(s, "s1");
+    expect(switched.openPanes).toHaveLength(2); // no duplicate
+    expect(switched.focusedPaneId).toBe("pane:s1");
+  });
+
+  it("switchFocusedPane opens a pane when nothing is open", () => {
+    const s = switchFocusedPane(EMPTY, "s1");
+    expect(s.openPanes.map((p) => p.sourceId)).toEqual(["s1"]);
+    expect(s.focusedPaneId).toBe("pane:s1");
+  });
+
+  it("switchFocusedPane only replaces the FOCUSED pane, leaving other panes intact", () => {
+    let s = openOrFocusPane(EMPTY, "s1");
+    s = openOrFocusPane(s, "s2"); // focus s2
+    const switched = switchFocusedPane(s, "s3"); // replace s2 → s3
+    expect(switched.openPanes.map((p) => p.sourceId)).toEqual(["s1", "s3"]);
+    expect(switched.focusedPaneId).toBe("pane:s3");
   });
 
   it("openOrFocusPane returns the same state when re-focusing the already-focused source", () => {
@@ -139,5 +175,47 @@ describe("panes — pure open-panes model", () => {
     const s = openOrFocusPane(EMPTY, oldActiveSourceId);
     const derived = focusedPane(s.openPanes, s.focusedPaneId)?.sourceId ?? "";
     expect(derived).toBe(oldActiveSourceId);
+  });
+});
+
+describe("panes — persistence (delta 6 restore)", () => {
+  it("parsePanesState round-trips a valid state", () => {
+    const state: PanesState = {
+      openPanes: [
+        { paneId: "pane:s1", sourceId: "s1", viewState: { scrollTop: 12 } },
+        { paneId: "pane:s2", sourceId: "s2", viewState: {} }
+      ],
+      focusedPaneId: "pane:s2"
+    };
+    expect(parsePanesState(state)).toEqual(state);
+  });
+
+  it("parsePanesState drops malformed panes + re-homes a stale focus", () => {
+    const parsed = parsePanesState({
+      openPanes: [
+        { sourceId: "s1" }, // missing paneId → derived
+        { paneId: "x", nope: true }, // missing sourceId → dropped
+        "junk"
+      ],
+      focusedPaneId: "pane:gone"
+    });
+    expect(parsed.openPanes).toEqual([{ paneId: "pane:s1", sourceId: "s1", viewState: {} }]);
+    // Stale focus → first surviving pane.
+    expect(parsed.focusedPaneId).toBe("pane:s1");
+  });
+
+  it("parsePanesState on junk → empty", () => {
+    expect(parsePanesState(null)).toEqual({ openPanes: [], focusedPaneId: "" });
+    expect(parsePanesState("nope")).toEqual({ openPanes: [], focusedPaneId: "" });
+  });
+
+  it("persistPanes → readStoredPanes round-trips via localStorage", () => {
+    // jsdom localStorage (this file runs in node env by default — guard when absent).
+    if (typeof globalThis.localStorage === "undefined") return;
+    globalThis.localStorage.clear();
+    let s = openOrFocusPane(EMPTY, "s1");
+    s = openOrFocusPane(s, "s2");
+    persistPanes(s);
+    expect(readStoredPanes()).toEqual(s);
   });
 });

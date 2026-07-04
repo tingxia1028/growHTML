@@ -61,7 +61,10 @@ import {
   focusedPane,
   openOrFocusPane,
   paneIdFor,
+  persistPanes,
   prunePanes,
+  readStoredPanes,
+  switchFocusedPane,
   type OpenPane
 } from "./panes";
 // F1 (P-A1): the pure per-source reader-data cache (renderedHtml/anchors/notes/patches/
@@ -362,6 +365,9 @@ export type WorkspaceContextValue = {
   activeViewer: SourceViewer;
   setActiveSourceId(id: string): void;
   // —— F1 (P-A1): the open-panes model (multi-document workspace) ——
+  /** Open a source in a NEW pane (multi-doc: add a tab, never replacing the focused one).
+      The explicit "open another document" entry (Ctrl/Cmd-click a library row). */
+  openSourceInNewPane(id: string): void;
   /** Every open reader pane (mirrors the dock's source.viewer leaves). */
   openPanes: OpenPane[];
   /** The pane that selection / anchor / source actions target (focus-follows-pane). */
@@ -654,8 +660,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // F1 (P-A1): the open-panes model. `activeSourceId` is no longer a useState — it is
   // DERIVED from the focused pane (the back-compat shim, below), so every single-pane
   // caller keeps reading the same string while the workspace grows to multiple panes.
-  const [openPanes, setOpenPanes] = useState<OpenPane[]>([]);
-  const [focusedPaneId, setFocusedPaneId] = useState<string>("");
+  // Seeded from localStorage (mirrors recentSourceIds) so the open docs + focus survive a
+  // reload; reconciled against the live sources list on first loadSources (delta 4 prune).
+  const [openPanes, setOpenPanes] = useState<OpenPane[]>(() => readStoredPanes().openPanes);
+  const [focusedPaneId, setFocusedPaneId] = useState<string>(() => readStoredPanes().focusedPaneId);
+  // Always-current focus id so the stable-deps callbacks (loadSources has []) read the
+  // live value instead of a captured stale one.
+  const focusedPaneIdRef = useRef(focusedPaneId);
+  focusedPaneIdRef.current = focusedPaneId;
   // F1 (P-A1 §A.1): the per-source reader-data cache — filled when a pane opens, reused
   // across panes/refocus. The FOCUSED pane's bundle is mirrored into the top-level
   // anchors/notes/patches/sourceLayers/renderedHtml state so the 8 per-source memos keep
@@ -666,37 +678,46 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // `setActiveSourceId(id)` → open-or-focus a pane for that source (the shim). id==="" is
   // "no doc" → close the currently focused pane (VERIFIED: the only two "" call sites are
   // the reader tab-close and deleteSourceItem, both meaning "close the active document").
+  // The shim: a library-row click / ingest focus. SWITCH semantics — it replaces the
+  // focused pane's source (single tab preserved, byte-identical to the pre-F1 "one active
+  // source" UX) or focuses an already-open pane. id==="" closes the focused pane (the
+  // reader tab-close / deleteSourceItem "no doc" signal). Opening a SECOND concurrent doc
+  // is the explicit `openSourceInNewPane` entry (below), so the single-pane path is intact.
   const setActiveSourceId = useCallback((id: string) => {
-    if (!id) {
-      setOpenPanes((panes) => {
-        const closed = closePane({ openPanes: panes, focusedPaneId }, paneIdFor(activeSourceId));
-        setFocusedPaneId(closed.focusedPaneId);
-        return closed.openPanes;
-      });
-      return;
-    }
     setOpenPanes((panes) => {
-      const next = openOrFocusPane({ openPanes: panes, focusedPaneId }, id);
+      const state = { openPanes: panes, focusedPaneId: focusedPaneIdRef.current };
+      const focused = focusedPane(panes, focusedPaneIdRef.current);
+      const next = id ? switchFocusedPane(state, id) : closePane(state, focused?.paneId ?? "");
       setFocusedPaneId(next.focusedPaneId);
       return next.openPanes;
     });
-  }, [activeSourceId, focusedPaneId]);
+  }, []);
+  // Open a source in a NEW pane (multi-document): add a tab (or focus if already open),
+  // never replacing the focused pane. The explicit multi-doc entry (Ctrl/Cmd-click a
+  // library row, "open to the side").
+  const openSourceInNewPane = useCallback((id: string) => {
+    setOpenPanes((panes) => {
+      const next = openOrFocusPane({ openPanes: panes, focusedPaneId: focusedPaneIdRef.current }, id);
+      setFocusedPaneId(next.focusedPaneId);
+      return next.openPanes;
+    });
+  }, []);
   // Focus a pane (any pane click / selection routes here first — focus-follows-pane).
   const focusPaneById = useCallback((paneId: string) => {
     setOpenPanes((panes) => {
-      const next = focusPane({ openPanes: panes, focusedPaneId }, paneId);
+      const next = focusPane({ openPanes: panes, focusedPaneId: focusedPaneIdRef.current }, paneId);
       setFocusedPaneId(next.focusedPaneId);
       return next.openPanes;
     });
-  }, [focusedPaneId]);
+  }, []);
   // Close a pane (tab-strip ×). Focus flips to the neighbour that took its slot.
   const closePaneById = useCallback((paneId: string) => {
     setOpenPanes((panes) => {
-      const next = closePane({ openPanes: panes, focusedPaneId }, paneId);
+      const next = closePane({ openPanes: panes, focusedPaneId: focusedPaneIdRef.current }, paneId);
       setFocusedPaneId(next.focusedPaneId);
       return next.openPanes;
     });
-  }, [focusedPaneId]);
+  }, []);
   const [renderedHtml, setRenderedHtml] = useState("");
   const [anchors, setAnchors] = useState<AnyAnchor[]>([]);
   const [notes, setNotes] = useState<NoteRecord[]>([]);
@@ -928,19 +949,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     try {
       const response = await entityClient.sources();
       setSources(response.sources);
-      // DELTA 1 (F1 build spec): the first-load default-source auto-open. The old
-      // `setActiveSourceId((current) => current || sources[0]?.id)` functional updater
-      // can't run against the plain-string shim; express the same intent explicitly —
-      // if NO pane is open yet, open one for the first source.
+      // DELTA 4: reconcile the (possibly persisted) panes against the live sources —
+      // drop every pane whose source no longer exists — THEN, if nothing is open,
+      // default-open the first source (DELTA 1: the explicit first-load auto-open that
+      // replaced the old `setActiveSourceId((c)=>c||sources[0]?.id)` functional updater).
+      const liveIds = new Set(response.sources.map((source) => source.id));
       const firstSourceId = response.sources[0]?.id;
-      if (firstSourceId) {
-        setOpenPanes((panes) => {
-          if (panes.length > 0) return panes;
-          const next = openOrFocusPane({ openPanes: panes, focusedPaneId: "" }, firstSourceId);
-          setFocusedPaneId(next.focusedPaneId);
-          return next.openPanes;
-        });
-      }
+      setOpenPanes((panes) => {
+        const pruned = prunePanes({ openPanes: panes, focusedPaneId: focusedPaneIdRef.current }, liveIds);
+        const next =
+          pruned.openPanes.length === 0 && firstSourceId
+            ? openOrFocusPane(pruned, firstSourceId)
+            : pruned;
+        setFocusedPaneId(next.focusedPaneId);
+        return next.openPanes;
+      });
       setStatus("idle");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load sources");
@@ -1170,8 +1193,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       try {
         await entityClient.deleteSource(sourceId);
         forgetSourceId(sourceId);
-        if (activeSourceId === sourceId) {
-          setActiveSourceId("");
+        // DELTA 4: drop EVERY open pane showing the deleted source (not just the focused
+        // one), collapsing an emptied split/tab-group, and evict its cached bundle. When
+        // the focused pane was one of them, the top-level state is cleared so the reader
+        // shows empty until loadSources re-homes focus.
+        const wasFocusedSource = activeSourceId === sourceId;
+        setOpenPanes((panes) => {
+          const live = new Set(panes.map((p) => p.sourceId).filter((id) => id !== sourceId));
+          const next = prunePanes({ openPanes: panes, focusedPaneId: focusedPaneIdRef.current }, live);
+          setFocusedPaneId(next.focusedPaneId);
+          return next.openPanes;
+        });
+        setSourceBundles((cache) => pruneBundles(cache, new Set([...cache.keys()].filter((id) => id !== sourceId))));
+        if (wasFocusedSource) {
           setRenderedHtml("");
           setNotes([]);
           setAnchors([]);
@@ -1226,6 +1260,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load a pane's bundle on open
   }, [openPanes]);
+
+  // Persist the open panes + focus (mirrors recentSourceIds) so the workspace's open docs
+  // survive a reload; reconciled against live sources on the next loadSources (prune).
+  useEffect(() => {
+    persistPanes({ openPanes, focusedPaneId });
+  }, [openPanes, focusedPaneId]);
 
   // Pre-fill the "Edit source (patch)" textarea from an HTML-surface selection (the
   // only surface whose patches replace study-id elements). All selection/paint logic
@@ -2031,6 +2071,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       activeSource,
       activeViewer,
       setActiveSourceId,
+      openSourceInNewPane,
       openPanes,
       focusedPaneId,
       focusPane: focusPaneById,
@@ -2150,6 +2191,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       activeSourceId,
       activeSource,
       activeViewer,
+      openSourceInNewPane,
       openPanes,
       focusedPaneId,
       focusPaneById,

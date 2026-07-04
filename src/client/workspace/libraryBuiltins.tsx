@@ -48,7 +48,17 @@ function SourceRow({
       className={`source-item${source.id === ctx.activeSourceId ? " active" : ""}`}
       title={[source.title, `Type: ${source.sourceType}`, detail].join("\n")}
     >
-      <button className="source-item-open" type="button" onClick={() => ctx.setActiveSourceId(source.id)}>
+      <button
+        className="source-item-open"
+        type="button"
+        title="点击打开(Ctrl/Cmd+点击 在新分屏标签中打开)"
+        onClick={(event) => {
+          // Plain click SWITCHES the focused pane (single-document behavior unchanged);
+          // Ctrl/Cmd-click opens the doc in a NEW pane (the multi-document entry).
+          if (event.metaKey || event.ctrlKey) ctx.openSourceInNewPane(source.id);
+          else ctx.setActiveSourceId(source.id);
+        }}
+      >
         <File size={15} className="source-item-icon" />
         <span className="source-item-text">
           <span>{source.title}</span>

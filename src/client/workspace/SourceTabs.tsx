@@ -30,8 +30,8 @@ import { isHostRealmSource } from "../viewers";
 function SourceTabs({ ctx }: { ctx: WorkspaceContext }) {
   const { openPanes, focusedPaneId, focusPane, closePane, sourceForPane, activeLayoutId } = ctx;
 
-  // The pane whose body renders as the FOCUSED (left) body.
-  const focusedBodyPane = openPanes.find((p) => p.paneId === focusedPaneId) ?? openPanes[0] ?? null;
+  // The currently-focused pane (highlights a tab; targets toolbar/commandContext).
+  const focusedPane = openPanes.find((p) => p.paneId === focusedPaneId) ?? openPanes[0] ?? null;
 
   // Split state ({ sidePaneId, ratio }) — restored per layout from localStorage on mount.
   const paneIds = openPanes.map((p) => p.paneId);
@@ -46,19 +46,19 @@ function SourceTabs({ ctx }: { ctx: WorkspaceContext }) {
     saveSourceSplit(activeLayoutId, next);
   }
 
-  // The side pane must still be open AND must not be the focused pane (they'd be the same
-  // body). Drop a stale/degenerate split so the divider never strands an empty pane.
-  const sidePane =
-    split.sidePaneId && split.sidePaneId !== focusedBodyPane?.paneId
-      ? openPanes.find((p) => p.paneId === split.sidePaneId) ?? null
-      : null;
-  const isSplit = !!sidePane;
+  // A split PINS two panes: the side pane (`sidePaneId`, shown RIGHT) + the "main" pane
+  // (the first open pane that isn't the side, shown LEFT). Focus can sit on EITHER without
+  // collapsing the split (it only highlights the tab). Drop a stale split whose side pane
+  // closed, or when fewer than two panes remain, so the divider never strands an empty pane.
+  const sidePane = split.sidePaneId ? openPanes.find((p) => p.paneId === split.sidePaneId) ?? null : null;
+  const mainPane = sidePane ? openPanes.find((p) => p.paneId !== sidePane.paneId) ?? null : null;
+  const isSplit = !!sidePane && !!mainPane;
 
   // The candidate pane the 分屏 button would pop to the side: the first open pane that
   // isn't the focused one. Enabling is gated on the host-realm rule (delta 3): the split
   // is refused when both the focused body and the candidate are host-realm surfaces.
-  const splitCandidate = openPanes.find((p) => p.paneId !== focusedBodyPane?.paneId) ?? null;
-  const focusedSourceType = focusedBodyPane ? sourceForPane(focusedBodyPane.paneId)?.sourceType : undefined;
+  const splitCandidate = openPanes.find((p) => p.paneId !== focusedPane?.paneId) ?? null;
+  const focusedSourceType = focusedPane ? sourceForPane(focusedPane.paneId)?.sourceType : undefined;
   const candidateSourceType = splitCandidate ? sourceForPane(splitCandidate.paneId)?.sourceType : undefined;
   const splitAllowed =
     !isSplit && !!splitCandidate && canSplitConcurrently(focusedSourceType, candidateSourceType);
@@ -168,29 +168,32 @@ function SourceTabs({ ctx }: { ctx: WorkspaceContext }) {
     );
 
   // No split → the single focused-pane body (the pre-split path), strip in its header.
-  if (!isSplit || !focusedBodyPane) {
+  if (!isSplit || !mainPane || !sidePane) {
     return (
       <SourceViewerView
         ctx={ctx}
         tabStrip={tabStrip}
-        pane={
-          focusedBodyPane ? { paneId: focusedBodyPane.paneId, sourceId: focusedBodyPane.sourceId } : undefined
-        }
+        pane={focusedPane ? { paneId: focusedPane.paneId, sourceId: focusedPane.sourceId } : undefined}
       />
     );
   }
 
   // Split → two bodies side by side, each bound to its OWN pane's source (per-pane paint).
-  // The left (focused) body carries the tab strip; the right (side) body carries a small
-  // "merge back" affordance. `ratio` is the LEFT pane's width fraction.
+  // The LEFT (main) body carries the multi-tab strip; the RIGHT (side) body carries a small
+  // "merge back" affordance. Focus can sit on EITHER pane (it just highlights the tab).
+  // `ratio` is the LEFT pane's width fraction.
   const leftPct = clampSplitRatio(split.ratio) * 100;
   const splitStyle = {
     "--source-split-left": `calc(${leftPct}% - 3px)`,
     "--source-split-right": `calc(${100 - leftPct}% - 3px)`
   } as CSSProperties;
   const mergeStrip = (
-    <div className="reader-tabs" role="tablist">
-      <div className="reader-tab active reader-tab-side" role="tab" aria-selected="true">
+    <div className="reader-tabs reader-tabs-side" role="tablist">
+      <div
+        className={`reader-tab reader-tab-side${focusedPaneId === sidePane.paneId ? " active" : ""}`}
+        role="tab"
+        aria-selected={focusedPaneId === sidePane.paneId}
+      >
         <FileText size={14} className="reader-tab-icon" />
         <span className="reader-tab-title" title={sourceForPane(sidePane.paneId)?.title ?? "…"}>
           {sourceForPane(sidePane.paneId)?.title ?? "…"}
@@ -210,12 +213,8 @@ function SourceTabs({ ctx }: { ctx: WorkspaceContext }) {
 
   return (
     <div className="source-split" ref={splitRef} style={splitStyle}>
-      <div className="source-split-pane source-split-left" onMouseDown={() => focusPane(focusedBodyPane.paneId)}>
-        <SourceViewerView
-          ctx={ctx}
-          tabStrip={tabStrip}
-          pane={{ paneId: focusedBodyPane.paneId, sourceId: focusedBodyPane.sourceId }}
-        />
+      <div className="source-split-pane source-split-left" onMouseDown={() => focusPane(mainPane.paneId)}>
+        <SourceViewerView ctx={ctx} tabStrip={tabStrip} pane={{ paneId: mainPane.paneId, sourceId: mainPane.sourceId }} />
       </div>
       <div
         className="source-split-divider"

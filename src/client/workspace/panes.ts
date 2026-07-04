@@ -63,6 +63,29 @@ export function openOrFocusPane(state: PanesState, sourceId: string): PanesState
   return { openPanes: [...state.openPanes, pane], focusedPaneId: paneId };
 }
 
+// Switch the FOCUSED pane to a different source (the single-document "open replaces the
+// current doc" behavior — a library-row click with one pane open). If a pane for the
+// target source is already open, focus it (dedup) instead of duplicating; if nothing is
+// open, open a new pane. This keeps the single-pane path byte-identical to the pre-F1
+// "one active source, clicking switches it" UX while the workspace can still grow panes
+// via the explicit openOrFocusPane (open-in-new-pane) entry.
+export function switchFocusedPane(state: PanesState, sourceId: string): PanesState {
+  if (!sourceId) return state;
+  const targetPaneId = paneIdFor(sourceId);
+  // Already open elsewhere → just focus it (no duplicate, no clobber).
+  if (state.openPanes.some((pane) => pane.paneId === targetPaneId)) {
+    return focusPane(state, targetPaneId);
+  }
+  const focused = focusedPane(state.openPanes, state.focusedPaneId);
+  if (!focused) return openOrFocusPane(state, sourceId);
+  // Replace the focused pane's source in place (same slot → single tab preserved).
+  const replaced: OpenPane = { paneId: targetPaneId, sourceId, viewState: {} };
+  return {
+    openPanes: state.openPanes.map((pane) => (pane.paneId === focused.paneId ? replaced : pane)),
+    focusedPaneId: targetPaneId
+  };
+}
+
 // Focus an already-open pane. A stale/unknown id is ignored (state unchanged).
 export function focusPane(state: PanesState, paneId: string): PanesState {
   if (paneId === state.focusedPaneId) return state;
@@ -95,4 +118,52 @@ export function prunePanes(state: PanesState, liveSourceIds: ReadonlySet<string>
     openPanes: keep,
     focusedPaneId: stillFocused ? state.focusedPaneId : (keep[0]?.paneId ?? "")
   };
+}
+
+// —— Persistence (mirrors the RECENT_SOURCE_IDS_KEY localStorage pattern) ——————————————
+
+const OPEN_PANES_KEY = "sv-open-panes";
+
+// Parse a stored value into a clean PanesState (drops malformed panes; a focusedPaneId
+// that names no surviving pane falls back to the first). Pure so it is unit-testable.
+export function parsePanesState(raw: unknown): PanesState {
+  if (!raw || typeof raw !== "object") return { openPanes: [], focusedPaneId: "" };
+  const r = raw as { openPanes?: unknown; focusedPaneId?: unknown };
+  const openPanes: OpenPane[] = Array.isArray(r.openPanes)
+    ? r.openPanes
+        .filter(
+          (p): p is { paneId: string; sourceId: string; viewState?: PaneViewState } =>
+            !!p && typeof p === "object" && typeof (p as { sourceId?: unknown }).sourceId === "string"
+        )
+        .map((p) => ({
+          paneId: typeof p.paneId === "string" && p.paneId ? p.paneId : paneIdFor(p.sourceId),
+          sourceId: p.sourceId,
+          viewState: p.viewState && typeof p.viewState === "object" ? p.viewState : {}
+        }))
+    : [];
+  const focusedRaw = typeof r.focusedPaneId === "string" ? r.focusedPaneId : "";
+  const focusedPaneId = openPanes.some((p) => p.paneId === focusedRaw)
+    ? focusedRaw
+    : (openPanes[0]?.paneId ?? "");
+  return { openPanes, focusedPaneId };
+}
+
+// Read the persisted panes (empty on absent/malformed storage). Callers reconcile the
+// result against the live sources list (prunePanes) before adopting it.
+export function readStoredPanes(): PanesState {
+  try {
+    const raw = globalThis.localStorage?.getItem(OPEN_PANES_KEY);
+    return raw ? parsePanesState(JSON.parse(raw)) : { openPanes: [], focusedPaneId: "" };
+  } catch {
+    return { openPanes: [], focusedPaneId: "" };
+  }
+}
+
+// Persist the open panes + focus. No-ops if storage is unavailable.
+export function persistPanes(state: PanesState): void {
+  try {
+    globalThis.localStorage?.setItem(OPEN_PANES_KEY, JSON.stringify(state));
+  } catch {
+    // storage unavailable — keep the in-memory panes only
+  }
 }
