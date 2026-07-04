@@ -22,6 +22,8 @@ import {
   writeCardGeom
 } from "./annotationLayer";
 import { decorateAnnotations } from "./annotations";
+import { resolveAnchorPaintStyle } from "./workspace/paneSelectors";
+import type { NoteRecord, StudyLayerRecord } from "./data/entityClient";
 
 beforeEach(() => {
   document.body.innerHTML = "";
@@ -129,6 +131,30 @@ describe("applyPaintStyle (D3a per-layer paint)", () => {
     clearAnnotations(document.body);
     expect(el.style.getPropertyValue("--sv-anchor-color")).toBe("");
     expect(el.className).not.toContain("sv-deco-");
+  });
+
+  // R7min (N2 D3a made reachable) — the END-TO-END data path the now-reachable
+  // LayerSwitcherView paint control writes into: a layer whose `style` was set (what the
+  // control persists) resolves through resolveAnchorPaintStyle for the anchor, then
+  // applyPaintStyle paints that resolved style onto the element. This closes the loop
+  // "reachable UI writes style -> paint" without a source change.
+  it("a layer's persisted style.{color,decoration} resolves + paints onto the anchor element", () => {
+    const notes = [
+      { id: "n1", sourceId: "s1", anchorIds: ["a1"], conceptIds: [], layerIds: ["L1"], contentType: "markdown", content: "b", visibility: "private" } as NoteRecord
+    ];
+    // What the LayerSwitcherView paint control persists via patchLayer(id, { style }).
+    const layers = [
+      { id: "L1", enabled: true, style: { color: "#ff0000", decoration: "underline" } } as StudyLayerRecord
+    ];
+    const resolved = resolveAnchorPaintStyle(notes, layers, new Set(["L1"]));
+    expect(resolved).toEqual({ color: "#ff0000", decoration: "underline" });
+
+    document.body.innerHTML = '<p id="t">x</p>';
+    const el = document.getElementById("t") as HTMLElement;
+    applyHighlight(el, "note", "a1");
+    applyPaintStyle(el, resolved);
+    expect(el.style.getPropertyValue("--sv-anchor-color")).toBe("#ff0000");
+    expect(el.classList.contains("sv-deco-underline")).toBe(true);
   });
 });
 
