@@ -5500,6 +5500,55 @@ textarea {
   box-shadow: 0 6px 20px rgba(15, 23, 42, 0.14);
 }
 
+/* SC-2 (slash-composer §5 "toolbar surfaces"): the `/` affordance for the toolbar
+   surfaces that have no text input (the selection floating toolbar + the anchor action
+   bar). The button matches the surrounding icon buttons; its popover floats the SHIPPED
+   .slash-palette anchored to the button. The wrapper is position:relative so the popover
+   positions off it; a high z-index keeps the popover above the floating toolbar card. */
+.toolbar-slash {
+  position: relative;
+  display: inline-flex;
+}
+
+.toolbar-slash-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface-card);
+  color: var(--sv-text-muted);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.toolbar-slash-btn:hover {
+  background: var(--sv-surface-muted);
+  border-color: var(--sv-accent-border);
+  color: var(--sv-accent);
+}
+
+.toolbar-slash-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.toolbar-slash-btn[aria-expanded="true"] {
+  background: var(--sv-active-bg);
+  border-color: var(--sv-accent-border);
+  color: var(--sv-accent);
+}
+
+.toolbar-slash-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 1300;
+}
+
 .chat-composer-input {
   flex: 1 1 auto;
   height: 38px;
