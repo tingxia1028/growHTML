@@ -769,3 +769,10 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 | 2026-07-05 | N4D7-001 | textbook-learning/noteTypes.test.tsx | exercise:`Answer:` 揭前隐/揭后显;review-pack:每条 exercises[] 渲染进 tb-review-exercises(守住修复的丢失) | Passed |
 | 2026-07-05 | N4D7-001 | ReviewPanel.test.tsx | 自评流 mode:full flashcard 是翻卡;显示答案后背面隐、翻后显 | Passed |
 | 2026-07-05 | N4D7-001 | npx vitest run(全量) | 237 文件 / 2496 用例(基线 236/2488 + 8) | Passed |
+| 2026-07-05 | PRO1-001 | trigger.test.ts + directTransport.test.ts | schema parse/refine/union/defaults + store round-trip + GET /api/triggers 路由/transport parity | Passed |
+| 2026-07-05 | PRO1-001 | evaluate.test.ts | 克制矩阵:各闸 fire/suppress + quiet 午夜绕 + 本地日 rollover + event/operation 拒 + **cap-never-exceeded 属性**(50 tick×caps{0,1,2,5}) | Passed |
+| 2026-07-05 | PRO1-001 | triggerFires.test.ts + parity | fire 记 lastFiredAt+日计数 / snooze / dismiss / 日隔离 / prune TTL / 缺文件安全默认 | Passed |
+| 2026-07-05 | PRO1-001 | proactiveTick.test.ts | idle 转换 + tick(到期→nudge+fire-on-surface / minGap / quiet / 非idle / 无信号 / 武装守卫 / 去重) | Passed |
+| 2026-07-05 | PRO1-001 | NudgeToast.test.tsx | 渲染 reason / 点击→navigateShell / snooze+dismiss→POST / Notification 仅 hidden+granted | Passed |
+| 2026-07-05 | PRO1-001 | reviewPush.test.ts(集成) | 新用户武装守卫 + e2e nudge→navigate(review.panel),直驱真 registry+tick,无 test-only 路由 | Passed |
+| 2026-07-05 | PRO1-001 | npx vitest run(全量) | 244 文件 / 2550 用例(基线 237/2496 + 54) | Passed |

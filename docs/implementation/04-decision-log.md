@@ -146,3 +146,6 @@ Record durable implementation decisions here. Keep entries short and dated.
 | 2026-07-05 | 交互全屏渲染机制 = 每类型一个有状态 React 子组件(非 HTML 串/host 缝),因 render():ReactNode 且 useState 已是契约 | 契约就是 React,子组件是最干净且零新路径;状态短暂(无 store/schema),重挂=重来 | HTML 串+wireup / 加 host 分支 | 持久化/SRS |
 | 2026-07-05 | vocab deck 上/下一张 DEFERRED;review-pack exercises[]=清单非逐题 Reveal;exercise 揭答只揭不选;textbook-kit-review e2e 保持 skip | NoteRenderInput 是单 content+单 note(无兄弟);exercises schema 是纯 string[] 无答案;答案串未必对齐 4 类选项;e2e 是 pre-IA 死标记 | 现在做 deck/逐题揭答/un-skip | ctx 兄弟缝(deck) |
 | 2026-07-05 | **已知 UX 皱褶:** review 自评"显示答案"浮出翻卡正面,需再翻一次见背面 | 翻卡统一 mode:full 后 review 流多一步;功能对、契约纯,V1 先留 | — | FlipCard 加 initialFlipped(review 答案位传入)去双揭 |
+| 2026-07-05 | PRO-1 客户端主导:无 server scheduler,客户端 app 运行时 tick,纯评估器客户端调用用真本地时钟 | 3 个时间本地 delta 逻辑上指向它,且甩掉 server 时区/分层违规/fire-on-post 三坑;背景/关闭态推送=PRO-3 | server scheduler + 提升 reviewDueStats 到 core | PRO-3 背景推送 |
+| 2026-07-05 | trigger = core(1 schema + 1 纯评估器);review-push = 代码注册内置(非 seeded 实体) | operation 的时间类比;内置触发器像内置 operation 是代码,用户触发器将是实体(PRO-1 不 seed) | 复习推送硬编码(PRO-2 得撕出重来) | 用户触发器 UI(PRO-2/3) |
+| 2026-07-05 | PRO-1 只 schedule+navigate;event/operation schema 定义但评估器拒(unsupported-in-pro1) | event 要没建的 memory-event hook;operation.run 要 focus(registry.ts:746)headless 跑不了 | 现在 ship 两个空跑分支 | PRO-2 |

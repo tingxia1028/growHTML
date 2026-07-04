@@ -44,8 +44,9 @@ pre-class preview (needs calendar — defer). Spaced-repetition upgrade of the s
 feeds back into the REV queue policy (the swappable-policy seam).
 
 ## 4. Phasing
-- **PRO-1** trigger engine (schedule+event, constraints first-class) + nudge surface +
-  desktop notification + the review-push exemplar. Clean files; scheduler pattern exists.
+- **PRO-1 ✅ SHIPPED (PRO1-001, 2026-07-05, client-centric).** Trigger organ (core `trigger` entity in `triggers.jsonl` + pure `evaluateTrigger`, constraints first-class) + client tick + NudgeToast + desktop Notification + the review-push exemplar with a new-user arming guard. **Trimmed to `when:schedule` + `actionRef:navigate`** (event/operation schema-defined but evaluator-rejected). **No server scheduler** — the client ticks while the app runs; the pure evaluator is called client-side with the REAL LOCAL clock (fixes the timezone bug: the codebase is 100% UTC); fire is recorded on SURFACE not on candidate; due-signal is client-computed (`reviewDueStats`). Background/closed-app + OS/mobile push = PRO-3.
+- ~~**PRO-1** trigger engine (schedule+event, constraints first-class) + nudge surface +
+  desktop notification + the review-push exemplar. Clean files; scheduler pattern exists.~~
 - **PRO-2** 教回/口语 kit text-first (panel + operations + wrap-up note + memory) →
   voice via SPEECH lanes when they land.
 - **PRO-3** more modes + spaced scheduling + X2 mobile notifications.
