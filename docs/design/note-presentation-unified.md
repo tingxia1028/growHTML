@@ -233,6 +233,12 @@ i.e. PDF pages in V1.
 
 ## 5. D5 — Kill the bottom mega-composer → floating card editor
 
+> **Status: ✅ shipped as N1b (N1B-001, 2026-07-04, commit 02c0476)** — GenerationPreview.tsx
+> DELETED; FloatingNoteEditor.tsx anchors the create/edit surface near the passage; slash
+> composer (/类型) integration preserved. Landed with the two remaining D2 pieces (same-line
+> clustering + card-open suppression) through the shared MarkerOverlay machinery (guest realm
+> included), composing with N1a's per-anchor toggle + global glyph switch.
+
 **What actually renders the "bottom composer" today (found, precisely):**
 
 - Clicking a note-type generate button (Anchor bar `ActionGrid` in `anchorViews.tsx`, or the

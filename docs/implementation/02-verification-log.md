@@ -664,3 +664,18 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 | E2E-LOCALE-001 | locale-flip.spec.ts (NEW) | in-suite | zh boot → EN live flip no reload → persists across reload → back to 中文 | Passed | Passed |
 | E2E-LOCALE-001 | html-inplace-edit.spec.ts (NEW, SRC-2b) | standalone + in-suite | typing in sandboxed contenteditable iframe → 加粗 <b> → 源码 → 保存 → 阅读 bold | Passed (965ms; no flake ×2) | Passed |
 | E2E-LOCALE-001 | Full Electron | npm run e2e:electron | ≥10 / ≤2 / 0 | 10 passed / 2 skipped / 0 failed (1.1m; note-types fixed for core.import-local) | Passed |
+
+## REV-3-001 + CG-123-001 + N1B-001 (2026-07-04)
+
+| Task | Type | Command | Expectation | Result | Status |
+|---|---|---|---|---|---|
+| REV-3-001 | schedule 纯函数 | npx vitest run src/core/review/schedule.test.ts | 阶梯/ease/边界/确定性/schema | 18 passed | Passed |
+| REV-3-001 | 服务持久化 | npx vitest run src/server/services/reviewSchedule.test.ts | 旧库{}/首判落行/序列推进/skip不写/at注入/坏文件降级 | 8 passed | Passed |
+| REV-3-001 | 队列 SRS | npx vitest run src/client/review/queue.test.ts | 12 新 SRS 用例 + 全部旧 pin 不动 | 47 passed | Passed |
+| REV-3-001 | 面板 SRS | npx vitest run src/client/review/ReviewPanel.test.tsx | chip/计数/提前复习/en 无中文残留 | 23 passed | Passed |
+| REV-3-001 | direct transport | npx vitest run src/server/services/directTransport.test.ts | 复习路由 HTTP 对等 | 5 passed | Passed |
+| REV-3-001 | e2e 全环 | npx playwright test e2e/review-srs.spec.ts | 到期/已排期分流→判分推进→持久化→提前复习 | 1 passed | Passed |
+| CG-123-001 | 图引擎+服务 | npx vitest run src/core/graph src/core/concepts src/server/services/graph.test.ts | 节点/边推导、共现权重、邻域查询、wiki-link、auto-tag 缝 | passed | Passed |
+| CG-123-001 | 图视图+镜头 | npx vitest run src/client/workspace/conceptGraphView.test.tsx forceLayout.test.ts graphLens.test.ts | render、节点点击、力导向、镜头注册 | passed | Passed |
+| N1B-001 | 标记+浮动编辑器 | npx vitest run src/client/markerOverlay.test.ts src/client/workspace/floatingNoteEditor.test.tsx slashComposer.test.tsx | 聚簇布局、开卡避让复合 N1a、浮动编辑器 create/edit + slash | passed | Passed |
+| CG+N1b+REV3 | 全树 | npm run check · npx vitest run · npm run build · electron:build:webview-preload | 全绿 | tsc 0 · 202 文件/2097 用例 · build ✓ · preload 48.6kb | Passed |

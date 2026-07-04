@@ -54,13 +54,18 @@ kit boundary moves to LENSES. The 3-question test (环判据/复现判据/卸载
 uninstall any kit and the graph + data survive, only a lens disappears.
 
 ## 3. Phasing
-- **CONCEPT-UX-1** ✅ in flight (§1.4).
-- **CG-1 (V1.1 head candidate)**: graph view core (assembly + interactions + lazy chunk) +
-  co-occurrence derivation + lens registry with the built-in default lens.
-- **CG-2**: AI 顺手挂 (generation-contract side-channel, rides ACTION-2a's engine work) +
-  [[双链]] in markdown/composer.
-- **CG-3**: Textbook subject lens + 弱项/复习 lenses (kit-side, proves the seam) + review-queue
-  concept-grain weak buckets.
+> **Status: CG-1/2/3 ✅ shipped 2026-07-04 (CG-123-001, commit 02c0476)** — core graph engine
+> (`src/core/graph/` + `src/core/concepts/`), `GET /api/graph` (+ direct-transport parity),
+> `ConceptGraphView` with a hand-rolled `forceLayout` (zero heavy deps), `graphLens` registry
+> (core default lens; plugins restyle only), CG-2 auto-tag side-channel (`generateStructured`
+> `concepts[]`) + `[[wiki-links]]`. Kit-side subject/弱项/复习 lenses (the CG-3 lens exemplars)
+> remain a follow-up now that the seam exists.
+- **CONCEPT-UX-1** ✅ (§1.4).
+- **CG-1** ✅: graph view core (assembly + interactions) + co-occurrence derivation + lens
+  registry with the built-in default lens.
+- **CG-2** ✅: AI 顺手挂 (generation-contract side-channel) + [[双链]] in markdown/composer.
+- **CG-3** ✅ (engine + seam): review-queue concept-grain hooks; the exemplar Textbook subject
+  lens + 弱项/复习 kit lenses remain a follow-up (the seam is proven by the core default lens).
 
 ## 4. Tests
 Capture: dedupe-by-name, [[]) parse/render/autocomplete, co-occurrence derivation pure fn
