@@ -42,7 +42,8 @@ export type TtsVoice = (typeof TTS_VOICES)[number];
 /** Body for POST /api/speech/tts. */
 export const ttsRequestSchema = z.object({
   text: z.string().trim().min(1).max(TTS_MAX_TEXT_LENGTH),
-  voice: z.string().min(1).optional()
+  voice: z.string().min(1).optional(),
+  rate: z.number().min(0.5).max(1.5).optional()
 });
 export type TtsRequestInput = z.infer<typeof ttsRequestSchema>;
 
@@ -70,7 +71,7 @@ export class SpeechTranscriptionFailedError extends Error {
 }
 
 /** One lane's synthesizer: text+voice in, encoded audio bytes out (mp3 for edge). */
-export type EdgeTtsSynthesizer = (input: { text: string; voice: string }) => Promise<Buffer>;
+export type EdgeTtsSynthesizer = (input: { text: string; voice: string; rate?: number }) => Promise<Buffer>;
 
 /** Local-lane health probe: sidecar base URL in, its /health readout out (throw = down). */
 export type SttHealthProbe = (baseUrl: string) => Promise<{ ok: boolean; model?: string }>;
@@ -104,7 +105,7 @@ export type SpeechStatus = {
 };
 
 export type SpeechService = {
-  synthesize(input: { text: string; voice?: string }): Promise<{ audio: Buffer; mimeType: "audio/mpeg"; voice: string }>;
+  synthesize(input: { text: string; voice?: string; rate?: number }): Promise<{ audio: Buffer; mimeType: "audio/mpeg"; voice: string }>;
   transcribe(input: {
     audio: Buffer;
     mimeType: string;
@@ -200,12 +201,12 @@ const defaultSttTranscriber: SttTranscriber = async ({ baseUrl, audio, mimeType,
 // a broken install degrades to the friendly 502 instead of failing app boot. A fresh
 // client per call keeps the ws lifecycle trivially correct (mirrors tts.py's fresh
 // asyncio.run per request); close() in finally releases the socket either way.
-const defaultEdgeSynthesizer: EdgeTtsSynthesizer = async ({ text, voice }) => {
+const defaultEdgeSynthesizer: EdgeTtsSynthesizer = async ({ text, voice, rate }) => {
   const { MsEdgeTTS, OUTPUT_FORMAT } = await import("msedge-tts");
   const tts = new MsEdgeTTS();
   try {
     await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-    const { audioStream } = tts.toStream(text);
+    const { audioStream } = rate === undefined ? tts.toStream(text) : tts.toStream(text, { rate });
     const chunks: Buffer[] = [];
     for await (const chunk of audioStream) chunks.push(chunk as Buffer);
     return Buffer.concat(chunks);
@@ -271,7 +272,7 @@ export function createSpeechService(options: SpeechServiceOptions = {}): SpeechS
   };
 
   return {
-    async synthesize({ text, voice }) {
+    async synthesize({ text, voice, rate }) {
       const voiceId = voice ?? DEFAULT_TTS_VOICE;
       // The voice goes into the SSML template verbatim — restrict it to the curated
       // list (a 400: the caller named a voice we don't offer, not an upstream fault).
@@ -280,7 +281,10 @@ export function createSpeechService(options: SpeechServiceOptions = {}): SpeechS
       }
       let audio: Buffer;
       try {
-        audio = await withTimeout(synthesizeEdge({ text, voice: voiceId }), EDGE_SYNTH_TIMEOUT_MS);
+        audio = await withTimeout(
+          synthesizeEdge({ text, voice: voiceId, ...(rate !== undefined ? { rate } : {}) }),
+          EDGE_SYNTH_TIMEOUT_MS
+        );
       } catch {
         throw new SpeechSynthesisFailedError(EDGE_FAILURE_MESSAGE);
       }

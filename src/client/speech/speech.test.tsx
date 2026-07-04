@@ -9,6 +9,7 @@ import type { ReactElement, ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { SpeakButton } from "./SpeakButton";
 import { useSpeakText, resetSpeechStatusCacheForTests } from "./useSpeakText";
+import { resetSpeechPreferencesForTests, setSpeechPreferences } from "./speechPreferences";
 import { SelectionToolbar } from "../workspace/SelectionToolbar";
 import type { ToolbarAction } from "../workspace/WorkspaceContext";
 
@@ -91,6 +92,7 @@ beforeEach(() => {
   document.body.innerHTML = "";
   MockAudio.instances = [];
   resetSpeechStatusCacheForTests();
+  resetSpeechPreferencesForTests();
   vi.stubGlobal("Audio", MockAudio);
   // jsdom has no blob URL support — stub the pair the hook uses.
   (URL as unknown as { createObjectURL: unknown }).createObjectURL = vi.fn(
@@ -101,6 +103,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  resetSpeechPreferencesForTests();
   delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
   delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
 });
@@ -141,6 +144,23 @@ describe("useSpeakText", () => {
     act(() => MockAudio.instances[0].onended?.());
     expect(state(container)).toBe("available:idle");
     expect(URL.revokeObjectURL).toHaveBeenCalledOnce();
+    cleanup();
+  });
+
+  it("speak() includes the saved voice and non-default rate preference", async () => {
+    const calls = stubFetch();
+    setSpeechPreferences({ voice: "en-US-JennyNeural", rate: 1.25 });
+    const { container, cleanup } = mount(<Probe />);
+    await flush();
+
+    act(() => byId(container, "speak-a").click());
+    await flush();
+
+    expect(calls.find((call) => call.url === "/api/speech/tts")?.body).toEqual({
+      text: "第一段话",
+      voice: "en-US-JennyNeural",
+      rate: 1.25
+    });
     cleanup();
   });
 

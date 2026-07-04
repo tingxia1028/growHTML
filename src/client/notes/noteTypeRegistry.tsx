@@ -15,6 +15,7 @@
 // the core spec; only the React lives here).
 
 import type { ReactNode } from "react";
+import type { LocalizedText } from "../i18n";
 import {
   getNoteContentSpec,
   resolveNoteContentTypeAlias,
@@ -63,11 +64,11 @@ export type NoteTypePlugin = {
   /** The editor that authors this type's structured content. */
   edit(input: NoteEditInput): ReactNode;
   /** Optional friendly label for the composer's type picker (defaults to contentType). */
-  label?: string;
+  label?: LocalizedText;
   /** Natural display name for the slash palette / list surfaces — 中文 for the
       built-ins (e.g. quiz → "小测"). ADDITIVE + optional (slash-composer §2): the
       adapter falls back to `contentType` when absent, so nothing existing changes. */
-  title?: string;
+  title?: LocalizedText;
   /** Extra slash-palette match keys: 中文 synonyms + English shorthands (e.g.
       quiz → ["判断题", "选择题"]). The contentType itself always matches — never
       repeat it here. Optional; absent = the id/title alone match. */

@@ -1,11 +1,10 @@
 // Study Layer workspace view (V2 → layer-as-lens) — the "layer switcher" pane. It is
 // both the multi-select FILTER and the layer MANAGER over the active source:
 //
-//   • FILTER: every layer over the source (owned + the 4 preset stages 预习/学习/复习/拓展
-//     + custom + imported) is a checkbox. Checking it INCLUDES that lens in the view;
-//     the filter is OR across the checked layers. A note shows iff its layers intersect
-//     the checked set (the server reads each layer's stored `enabled` for both the note
-//     list and the derived anchor painting, so toggling repaints the reader too).
+//   • FILTER: every layer over the source is a checkbox in a parentId tree. Checking it
+//     INCLUDES that lens in the view; the filter is OR across checked layers. A parent
+//     toggle cascades over itself + descendants, because Mine can carry notes and own
+//     preset/custom child layers.
 //   • MANAGER: create a CUSTOM layer; rename / recolor / reorder any owned/custom layer;
 //     delete a CUSTOM layer (preset / owned / imported are structural — no delete).
 //   • EXPORT a layer → a portable `.studypack`; IMPORT a `.studypack` (preview → commit).
@@ -18,10 +17,11 @@
 // reused as the filter include/exclude (routed through ctx.toggleLayerFilter).
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Layers, Upload, Download, Plus, Share2, Lock, Trash2 } from "lucide-react";
+import { Upload, Download, Plus, Share2, Lock, Trash2 } from "lucide-react";
 import { entityClient, type ImportPreview, type StudyLayerRecord, type StudyPack } from "../data/entityClient";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 import { SvpackExportDialog, SvpackImportDialog } from "./svpackViews";
+import { buildLayerTree, coveredLayerIds, parentToggleState, type LayerNode } from "./layerTree";
 
 // Trigger a browser/Electron-renderer download of a `.studypack`.
 export function downloadPack(pack: StudyPack, fileName: string) {
@@ -36,22 +36,28 @@ export function downloadPack(pack: StudyPack, fileName: string) {
   URL.revokeObjectURL(url);
 }
 
-// A layer's group label, derived from role/importMode (the owned layer leaves role
-// unset). Used to bucket the list so presets / custom / imported read as distinct.
-export function groupOf(layer: StudyLayerRecord): "owned" | "preset" | "custom" | "shared" {
-  if (layer.role) return layer.role;
-  return layer.importMode === "imported" || layer.importMode === "subscribed" ? "shared" : "owned";
+export function sortLayersForTree(layers: StudyLayerRecord[]): StudyLayerRecord[] {
+  return [...layers].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title));
 }
 
-export const GROUP_ORDER: ReadonlyArray<{ key: "owned" | "preset" | "custom" | "shared"; label: string }> = [
-  { key: "owned", label: "Mine" },
-  { key: "preset", label: "Stages" },
-  { key: "custom", label: "Custom" },
-  { key: "shared", label: "Imported" }
-];
+export function isMineLayer(layer: StudyLayerRecord): boolean {
+  return layer.importMode === "owned" && !layer.role && !layer.parentId;
+}
+
+export function layerDisplayTitle(layer: StudyLayerRecord): string {
+  return isMineLayer(layer) ? "Mine" : layer.title;
+}
+
+export function isLayerEditable(layer: StudyLayerRecord): boolean {
+  return !layer.sealed && layer.importMode === "owned" && layer.role !== "preset" && layer.role !== "shared";
+}
+
+export function isLayerShareable(layer: StudyLayerRecord): boolean {
+  return !layer.sealed && layer.importMode !== "imported" && layer.importMode !== "subscribed" && layer.role !== "shared";
+}
 
 function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
-  const { activeSourceId, refreshLayers, layersVersion, toggleLayerFilter } = ctx;
+  const { activeSourceId, refreshLayers, layersVersion, toggleLayerFilter, setLayersEnabled } = ctx;
   const [layers, setLayers] = useState<StudyLayerRecord[]>([]);
   const [error, setError] = useState("");
   // The in-flight import: the parsed pack + its dry-run preview, shown for confirm.
@@ -89,6 +95,20 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
       toggleLayerFilter(layer);
     },
     [toggleLayerFilter]
+  );
+
+  const enabledLayerIds = ctx.enabledLayerIds ?? new Set(layers.filter((layer) => layer.enabled).map((layer) => layer.id));
+
+  const toggleNode = useCallback(
+    (node: LayerNode) => {
+      if (node.children.length > 0 && typeof setLayersEnabled === "function") {
+        const nextEnabled = parentToggleState(node, enabledLayerIds) !== "on";
+        void setLayersEnabled(coveredLayerIds(node), nextEnabled);
+        return;
+      }
+      toggle(node.layer);
+    },
+    [enabledLayerIds, setLayersEnabled, toggle]
   );
 
   const exportLayer = useCallback(async (layer: StudyLayerRecord) => {
@@ -205,18 +225,114 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
     }
   }, [pending, refreshLayers]);
 
-  // One sorted, grouped list: each group's layers sorted by `order` then title.
-  const sorted = [...layers].sort(
-    (a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title)
-  );
+  const tree = buildLayerTree(sortLayersForTree(layers));
+
+  const renderLayerNode = (node: LayerNode, depth = 0) => {
+    const layer = node.layer;
+    const state = node.children.length > 0 ? parentToggleState(node, enabledLayerIds) : layer.enabled ? "on" : "off";
+    const editable = isLayerEditable(layer);
+    return (
+      <div key={layer.id} className="layer-tree-node" data-depth={depth}>
+        <div
+          className={`layer-item${state !== "off" ? " enabled" : ""}`}
+          data-import-mode={layer.importMode}
+          data-role={layer.role ?? "owned"}
+          data-layer-state={state}
+          data-has-children={node.children.length > 0 ? "true" : "false"}
+          style={{ paddingLeft: 10 + depth * 14 }}
+        >
+          <label className="layer-toggle-label sv-check" data-state={state}>
+            <input
+              type="checkbox"
+              className="layer-toggle sv-check-input"
+              checked={state === "on"}
+              aria-checked={state === "mixed" ? "mixed" : state === "on"}
+              onChange={() => toggleNode(node)}
+            />
+            <span className="sv-check-box" aria-hidden="true" />
+            {layer.color ? <span className="layer-color-dot" style={{ background: layer.color }} /> : null}
+            <span className="layer-item-title" title={layer.title}>
+              <span className="layer-item-name">{layerDisplayTitle(layer)}</span>
+              {isMineLayer(layer) ? <span className="layer-item-subtitle">{layer.title}</span> : null}
+            </span>
+          </label>
+          <div className="layer-item-meta">
+            {editable ? (
+              <>
+                <button
+                  type="button"
+                  className="link-button layer-up-btn"
+                  title="Move up"
+                  onClick={() => void reorderLayer(layer, -1)}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  className="link-button layer-down-btn"
+                  title="Move down"
+                  onClick={() => void reorderLayer(layer, 1)}
+                >
+                  ↓
+                </button>
+                <input
+                  type="color"
+                  className="layer-color-input"
+                  aria-label="Layer color"
+                  title="Recolor layer"
+                  value={layer.color ?? "#2f6f64"}
+                  onChange={(event) => void recolorLayer(layer, event.target.value)}
+                />
+                <button
+                  type="button"
+                  className="link-button layer-rename-btn"
+                  title="Rename layer"
+                  onClick={() => void renameLayer(layer)}
+                >
+                  Rename
+                </button>
+              </>
+            ) : null}
+            {isLayerShareable(layer) ? (
+              <button
+                type="button"
+                className="link-button layer-share-btn"
+                title="以受保护 .svpack 分享（每位接收者一个口令）"
+                onClick={() => setShareLayer(layer)}
+              >
+                <Share2 size={13} /> 分享…
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="link-button layer-export-btn"
+              title="Export as .studypack"
+              onClick={() => void exportLayer(layer)}
+            >
+              <Download size={13} />
+            </button>
+            {layer.role === "custom" ? (
+              <button
+                type="button"
+                className="link-button layer-delete-btn"
+                title="Delete custom layer"
+                aria-label="Delete custom layer"
+                onClick={() => void deleteLayer(layer)}
+              >
+                <Trash2 size={13} />
+              </button>
+            ) : null}
+          </div>
+        </div>
+        {node.children.length > 0 ? (
+          <div className="layer-tree-children">{node.children.map((child) => renderLayerNode(child, depth + 1))}</div>
+        ) : null}
+      </div>
+    );
+  };
 
   return (
     <aside className="layer-panel">
-      <div className="panel-title">
-        <Layers size={16} />
-        Layers
-      </div>
-
       {error ? <div className="error-box">{error}</div> : null}
 
       <section className="layer-import">
@@ -316,110 +432,9 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
         </section>
       ) : null}
 
-      {/* Grouped layer list — each checkbox INCLUDES that lens in the OR filter; the
-          manager controls (rename/recolor/reorder/delete) sit in each row's meta. */}
+      {/* Tree layer list — parentId is the only organization primitive. */}
       <div className="layer-list record-list">
-        {GROUP_ORDER.map(({ key, label }) => {
-          const group = sorted.filter((layer) => groupOf(layer) === key);
-          if (group.length === 0) return null;
-          return (
-            <div key={key} className="layer-group" data-group={key}>
-              <div className="layer-group-title">{label}</div>
-              {group.map((layer) => (
-                <div
-                  key={layer.id}
-                  className={`layer-item${layer.enabled ? " enabled" : ""}`}
-                  data-import-mode={layer.importMode}
-                  data-role={layer.role ?? "owned"}
-                >
-                  <label className="layer-toggle-label">
-                    <input
-                      type="checkbox"
-                      className="layer-toggle"
-                      checked={layer.enabled}
-                      onChange={() => toggle(layer)}
-                    />
-                    {layer.color ? (
-                      <span className="layer-color-dot" style={{ background: layer.color }} />
-                    ) : null}
-                    <span className="layer-item-title">{layer.title}</span>
-                  </label>
-                  <div className="layer-item-meta">
-                    {/* rename / recolor / reorder are only for owned + custom layers;
-                        preset stages and imported (shared) layers are structural (spec). */}
-                    {groupOf(layer) === "owned" || groupOf(layer) === "custom" ? (
-                      <>
-                        <button
-                          type="button"
-                          className="link-button layer-up-btn"
-                          title="Move up"
-                          onClick={() => void reorderLayer(layer, -1)}
-                        >
-                          ↑
-                        </button>
-                        <button
-                          type="button"
-                          className="link-button layer-down-btn"
-                          title="Move down"
-                          onClick={() => void reorderLayer(layer, 1)}
-                        >
-                          ↓
-                        </button>
-                        <input
-                          type="color"
-                          className="layer-color-input"
-                          aria-label="Layer color"
-                          title="Recolor layer"
-                          value={layer.color ?? "#2f6f64"}
-                          onChange={(event) => void recolorLayer(layer, event.target.value)}
-                        />
-                        <button
-                          type="button"
-                          className="link-button layer-rename-btn"
-                          title="Rename layer"
-                          onClick={() => void renameLayer(layer)}
-                        >
-                          Rename
-                        </button>
-                      </>
-                    ) : null}
-                    {/* Protected share — own content only: never a shared (imported)
-                        row, never a sealed one (the server refuses re-export anyway). */}
-                    {groupOf(layer) !== "shared" && !layer.sealed ? (
-                      <button
-                        type="button"
-                        className="link-button layer-share-btn"
-                        title="以受保护 .svpack 分享（每位接收者一个口令）"
-                        onClick={() => setShareLayer(layer)}
-                      >
-                        <Share2 size={13} /> 分享…
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="link-button layer-export-btn"
-                      title="Export as .studypack"
-                      onClick={() => void exportLayer(layer)}
-                    >
-                      <Download size={13} />
-                    </button>
-                    {layer.role === "custom" ? (
-                      <button
-                        type="button"
-                        className="link-button layer-delete-btn"
-                        title="Delete custom layer"
-                        aria-label="Delete custom layer"
-                        onClick={() => void deleteLayer(layer)}
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
-            </div>
-          );
-        })}
+        {tree.map((node) => renderLayerNode(node))}
         {activeSourceId && layers.length === 0 ? <div className="empty-state">No layers yet.</div> : null}
         {!activeSourceId ? <div className="empty-state">Open a source to see its layers.</div> : null}
       </div>

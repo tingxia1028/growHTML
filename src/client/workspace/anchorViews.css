@@ -3,22 +3,36 @@
    (it belongs to a parallel control-unification stream); these classes stay
    panel-scoped and can be folded into the shared family once it lands. */
 .anchor-glyph-switch {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin: 2px 0 8px;
-  font-size: 12px;
-  color: var(--sv-text-muted, #5f6672);
-  cursor: pointer;
-  user-select: none;
-}
-.anchor-glyph-switch-input {
-  width: 14px;
-  height: 14px;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
   margin: 0;
-  accent-color: #3474e6;
+  border: 1px solid var(--sv-border, #d9e0eb);
+  border-radius: var(--sv-radius, 8px);
+  background: #fff;
+  color: var(--sv-text-muted, #647084);
   cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease;
 }
-.anchor-glyph-switch-label {
-  line-height: 1.2;
+
+.anchor-glyph-switch:hover {
+  border-color: rgba(52, 116, 230, 0.45);
+  color: var(--sv-accent, #3474e6);
+}
+
+.anchor-glyph-switch:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(52, 116, 230, 0.16);
+}
+
+.anchor-glyph-switch.active {
+  border-color: rgba(52, 116, 230, 0.35);
+  background: var(--sv-accent-soft, #eaf2ff);
+  color: var(--sv-accent, #3474e6);
 }

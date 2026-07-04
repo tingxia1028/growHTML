@@ -22,7 +22,7 @@ export const searchMessages = defineMessages({
 
   // —— the commands family (navigation — 打开X, design §1's free navigation win) ——
   cmdLibrary: { zh: "打开资料库", en: "Open Library" },
-  cmdConcepts: { zh: "打开概念", en: "Open Concepts" },
+  cmdConcepts: { zh: "打开知元", en: "Open Concepts" },
   cmdOperations: { zh: "打开操作管理", en: "Open Operations" },
   cmdPlugins: { zh: "打开 Kit 与插件", en: "Open Kits & Plugins" },
   cmdReview: { zh: "打开复习", en: "Open Review" },

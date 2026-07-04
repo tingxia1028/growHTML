@@ -290,7 +290,7 @@ registerNoteType({
   label: "flashcard",
   // F5: reclassified out of the "core" seed — the cataloged `flashcard` plugin.
   pluginId: "flashcard",
-  title: "闪卡",
+  title: { zh: "闪卡", en: "Flashcard" },
   aliases: ["卡片", "记忆卡", "card"],
   render: (input) => <FlashcardRender {...input} />,
   edit: (input) => <FlashcardEditor {...input} />
@@ -400,7 +400,7 @@ registerNoteType({
   pluginId: "quiz",
   // Reality check vs the design sketch: this quiz IS a options+answerIndex 选择题, so
   // "小测" titles it; "判断题" stays an alias (the design doc's example query must hit).
-  title: "小测",
+  title: { zh: "小测", en: "Quiz" },
   aliases: ["选择题", "判断题", "测验", "判断"],
   render: (input) => <QuizRender {...input} />,
   edit: (input) => <QuizEditor {...input} />

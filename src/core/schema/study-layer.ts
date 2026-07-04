@@ -35,18 +35,18 @@ export const studyLayerSchema = recordEnvelopeSchema("layer", layerIdSchema).ext
   visibility: visibilitySchema.default("private"),
   importMode: importModeSchema.default("owned"),
   enabled: z.boolean().default(true),
-  // Presentation / organization only (all optional, additive): role groups a layer
-  // (preset = the 预习/学习/复习/拓展 stages, custom = user-made, shared = imported);
-  // color is a UI chip; order sorts the switcher. None affect filter/visibility.
+  // Presentation / organization only (all optional, additive): role is compatibility
+  // and permission metadata (preset = kit-seeded child layer, custom = user-made,
+  // shared = imported); color is a UI chip; order sorts siblings. None affect
+  // filter/visibility.
   role: z.enum(["preset", "custom", "shared"]).optional(),
   color: z.string().optional(),
   order: z.number().optional(),
-  // Hierarchy (R7, additive, no migration): the parent layer this one nests under in
-  // the Layer Lens tree. Empty/undefined = a top-level layer. Hierarchy is IMPORT/role
-  // driven, not manual drag-nesting (spec §8.2): importing a `.studypack` hangs the
-  // imported layer under a per-source "Imported" parent (ensureImportedParent). The
-  // FILTER semantics are unchanged — membership + the enabled-OR is still per LEAF
-  // layer; a parent's enabled flag only drives cascade + count roll-up in the Lens.
+  // Hierarchy (R7, additive): the parent layer this one nests under in the Layer Lens
+  // tree. Empty/undefined = a top-level layer. Kit-seeded preset/custom owned layers
+  // hang under the owned/Mine layer; importing a `.studypack` hangs the imported layer
+  // under a per-source "Imported" parent (ensureImportedParent). The filter semantics
+  // are unchanged: notes are visible when any of their layerIds is enabled.
   parentId: layerIdSchema.optional(),
   origin: z
     .object({

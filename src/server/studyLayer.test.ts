@@ -71,6 +71,7 @@ describe("study layer API", () => {
     expect(owned[0].id).toBe(anchor.layerId);
     const presets = layers.filter((l: { role?: string }) => l.role === "preset");
     expect(presets.map((l: { title: string }) => l.title).sort()).toEqual(["复习", "学习", "拓展", "预习"]);
+    expect(presets.every((l: { parentId?: string }) => l.parentId === owned[0].id)).toBe(true);
   });
 
   it("exports a layer to a portable pack with local realizations stripped", async () => {
@@ -151,7 +152,7 @@ describe("study layer API", () => {
   // preset stages (lazily created the first time layers are listed).
   async function listLayers(sourceId: string) {
     const layers = (await request(app).get(`/api/sources/${sourceId}/layers`).expect(200)).body
-      .layers as Array<{ id: string; title: string; importMode: string; role?: string }>;
+      .layers as Array<{ id: string; title: string; importMode: string; role?: string; parentId?: string }>;
     const owned = layers.find((l) => l.importMode === "owned" && !l.role)!;
     const presetByTitle = new Map(layers.filter((l) => l.role === "preset").map((l) => [l.title, l]));
     return { layers, owned, presetByTitle };
@@ -358,6 +359,7 @@ describe("study layer API", () => {
     expect(custom.role).toBe("custom");
     expect(custom.color).toBe("#f00");
     expect(custom.order).toBe(9);
+    expect(custom.parentId).toBe(owned.id);
 
     // It shows up in the list.
     const after = (await request(app).get(`/api/sources/${source.id}/layers`).expect(200)).body.layers;
@@ -404,9 +406,11 @@ describe("study layer API", () => {
     //    → the 4 preset stages appear (back-compat, but now KIT-sourced).
     const a = await request(app).post("/api/sources/html").send({ title: "Default Kit Doc", content: SOURCE_HTML }).expect(201);
     const layersA = (await request(app).get(`/api/sources/${a.body.source.id}/layers`).expect(200)).body
-      .layers as Array<{ title: string; role?: string; importMode: string }>;
+      .layers as Array<{ id: string; title: string; role?: string; importMode: string; parentId?: string }>;
     expect(layersA.filter((l) => l.role === "preset").map((l) => l.title).sort()).toEqual(["复习", "学习", "拓展", "预习"]);
-    expect(layersA.some((l) => l.importMode === "owned" && !l.role)).toBe(true);
+    const ownedA = layersA.find((l) => l.importMode === "owned" && !l.role)!;
+    expect(ownedA).toBeTruthy();
+    expect(layersA.filter((l) => l.role === "preset").every((l) => l.parentId === ownedA.id)).toBe(true);
 
     // B) Force Core (activeKitIds: []) → no kit imposes an axis → NO preset stages, owned still present.
     const b = await request(app).post("/api/sources/html").send({ title: "Core Doc", content: SOURCE_HTML }).expect(201);

@@ -177,3 +177,35 @@
   gap: 6px;
   width: 100%;
 }
+
+.concept-inspector-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.concept-merge-select {
+  min-height: 28px;
+  min-width: 0;
+  padding: 3px 7px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-sm, 6px);
+  background: var(--sv-surface-card);
+  color: inherit;
+  font-size: 12px;
+}
+
+.concept-merge-btn,
+.concept-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 8px;
+}
+
+.concept-delete-btn {
+  color: var(--sv-danger-strong);
+}

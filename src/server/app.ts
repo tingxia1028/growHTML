@@ -950,6 +950,23 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
     }
   });
 
+  app.delete("/api/concepts/:conceptId", async (req, res, next) => {
+    try {
+      res.json(await conceptsService.deleteConcept({ vault }, { conceptId: req.params.conceptId }));
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  app.post("/api/concepts/:conceptId/merge", async (req, res, next) => {
+    try {
+      const input = conceptsService.mergeConceptRequestSchema.parse(req.body);
+      res.json(await conceptsService.mergeConcept({ vault }, { conceptId: req.params.conceptId, ...input }));
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
   // —— Relations ———————————————————————————————————————————————————————
   app.get("/api/relations", async (_req, res, next) => {
     try {
@@ -1129,6 +1146,24 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
     try {
       const onboarding = workspaceService.onboardingStateSchema.parse(req.body);
       res.json({ onboarding: await workspaceService.writeWorkspaceOnboarding({ vault }, onboarding) });
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  // —— App-shell preferences (I18N locale, independent workspace.json field group) ——
+  app.get("/api/workspace/ui-prefs", async (_req, res, next) => {
+    try {
+      res.json({ prefs: await workspaceService.readWorkspaceUiPrefs({ vault }) });
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  app.put("/api/workspace/ui-prefs", async (req, res, next) => {
+    try {
+      const prefs = workspaceService.uiPrefsSchema.parse(req.body);
+      res.json({ prefs: await workspaceService.writeWorkspaceUiPrefs({ vault }, prefs) });
     } catch (error) {
       if (!handleServiceError(res, error)) next(error);
     }

@@ -20,6 +20,9 @@ const EMPTY: OnboardingSnapshot = {
   providerKind: null,
   layers: [],
   sealedPackCount: 0,
+  trashItemCount: 0,
+  speechAvailable: false,
+  chatSessionCount: 0,
   events: []
 };
 
@@ -37,10 +40,15 @@ describe("onboarding step done-detection (pure)", () => {
   it("lists exactly the six designed steps, in the doc's order", () => {
     expect(ONBOARDING_STEPS.map((s) => s.id)).toEqual([
       "import-doc",
+      "new-document",
+      "search-vault",
       "connect-ai",
       "first-note",
+      "speech-tools",
       "see-layers",
+      "trash-recovery",
       "import-pack",
+      "chat-history",
       "review-once"
     ]);
   });
@@ -48,6 +56,17 @@ describe("onboarding step done-detection (pure)", () => {
   it("import-doc: any source in the vault", () => {
     expect(step("import-doc").done(EMPTY)).toBe(false);
     expect(step("import-doc").done({ ...EMPTY, sourceCount: 1 })).toBe(true);
+  });
+
+  it("new-document: any source in the vault", () => {
+    expect(step("new-document").done(EMPTY)).toBe(false);
+    expect(step("new-document").done({ ...EMPTY, sourceCount: 1 })).toBe(true);
+  });
+
+  it("search-vault: any captured search command", () => {
+    expect(step("search-vault").done(EMPTY)).toBe(false);
+    expect(step("search-vault").done({ ...EMPTY, events: [{ verb: "note.review" }] })).toBe(false);
+    expect(step("search-vault").done({ ...EMPTY, events: [{ verb: "search" }] })).toBe(true);
   });
 
   it("connect-ai: a NON-mock active provider; unknown/mock stays undone", () => {
@@ -60,6 +79,11 @@ describe("onboarding step done-detection (pure)", () => {
   it("first-note: any note in the vault", () => {
     expect(step("first-note").done(EMPTY)).toBe(false);
     expect(step("first-note").done({ ...EMPTY, noteCount: 3 })).toBe(true);
+  });
+
+  it("speech-tools: read-aloud support is available", () => {
+    expect(step("speech-tools").done(EMPTY)).toBe(false);
+    expect(step("speech-tools").done({ ...EMPTY, speechAvailable: true })).toBe(true);
   });
 
   it("see-layers: a toggled-OFF layer or a custom layer (the vault-state substitute — no layer verb exists in MEM-1)", () => {
@@ -78,6 +102,16 @@ describe("onboarding step done-detection (pure)", () => {
     expect(step("import-pack").done({ ...EMPTY, layers: [{ enabled: true, importMode: "imported" }] })).toBe(true);
     expect(step("import-pack").done({ ...EMPTY, layers: [{ enabled: true, sealed: true }] })).toBe(true);
     expect(step("import-pack").done({ ...EMPTY, layers: [{ enabled: true, importMode: "owned" }] })).toBe(false);
+  });
+
+  it("trash-recovery: any recoverable trash item", () => {
+    expect(step("trash-recovery").done(EMPTY)).toBe(false);
+    expect(step("trash-recovery").done({ ...EMPTY, trashItemCount: 1 })).toBe(true);
+  });
+
+  it("chat-history: any persisted chat session", () => {
+    expect(step("chat-history").done(EMPTY)).toBe(false);
+    expect(step("chat-history").done({ ...EMPTY, chatSessionCount: 1 })).toBe(true);
   });
 
   it("review-once: any note.review memory event (the MEM-1 verb the ReviewPanel emits)", () => {
@@ -120,29 +154,36 @@ describe("nextPersistedState (latch + completion derivation)", () => {
   it("returns null when the stored state already reflects the snapshot (no useless PUT)", () => {
     expect(nextPersistedState(state(), EMPTY, "2026-07-02T00:00:00.000Z")).toBeNull();
     expect(
-      nextPersistedState(state({ doneSteps: ["import-doc"] }), { ...EMPTY, sourceCount: 1 }, "2026-07-02T00:00:00.000Z")
+      nextPersistedState(
+        state({ doneSteps: ["import-doc", "new-document"] }),
+        { ...EMPTY, sourceCount: 1 },
+        "2026-07-02T00:00:00.000Z"
+      )
     ).toBeNull();
   });
 
   it("latches newly-done steps while preserving previously latched ones", () => {
     const next = nextPersistedState(
-      state({ doneSteps: ["import-doc"] }),
+      state({ doneSteps: ["import-doc", "new-document"] }),
       { ...EMPTY, sourceCount: 1, noteCount: 1 },
       "2026-07-02T00:00:00.000Z"
     );
     expect(next).not.toBeNull();
-    expect(next!.doneSteps).toEqual(["import-doc", "first-note"]);
+    expect(next!.doneSteps).toEqual(["import-doc", "new-document", "first-note"]);
     expect(next!.completedAt).toBeNull();
   });
 
-  it("stamps completedAt exactly once when ALL six are done", () => {
+  it("stamps completedAt exactly once when all steps are done", () => {
     const fullSnapshot: OnboardingSnapshot = {
       sourceCount: 1,
       noteCount: 1,
       providerKind: "cli-agent",
       layers: [{ enabled: false }, { enabled: true, importMode: "imported" }],
       sealedPackCount: 1,
-      events: [{ verb: "note.review" }]
+      trashItemCount: 1,
+      speechAvailable: true,
+      chatSessionCount: 1,
+      events: [{ verb: "search" }, { verb: "note.review" }]
     };
     const first = nextPersistedState(state(), fullSnapshot, "2026-07-02T10:00:00.000Z");
     expect(first!.completedAt).toBe("2026-07-02T10:00:00.000Z");

@@ -300,7 +300,7 @@ export type RelationRecord = {
   confidence?: number;
 };
 
-// —— Study Layers (a per-source lens axis: owned + preset stages + custom + imported) ——
+// —— Study Layers (a per-source lens tree: owned/Mine + child layers + imported) ——
 export type StudyLayerRecord = {
   id: string;
   title: string;
@@ -311,15 +311,15 @@ export type StudyLayerRecord = {
   enabled: boolean;
   localSourceId?: string;
   origin?: { packId?: string; importedAt?: string; sourceLayerId?: string };
-  // Additive presentation/organization fields (no visibility impact). role groups the
-  // switcher: "preset" = the built-in stages (预习/学习/复习/拓展), "custom" = a
-  // user-made layer, "shared" = an imported one. color is a chip hex; order sorts within
-  // a group. The owned layer leaves role unset (it is neither preset, custom, nor shared).
+  // Additive presentation/organization fields (no visibility impact). role is
+  // compatibility/permission metadata: "preset" = kit-seeded child layer, "custom" =
+  // user-made layer, "shared" = imported one. color is a chip hex; order sorts siblings.
+  // The owned layer leaves role unset and is the Mine parent.
   role?: "preset" | "custom" | "shared";
   color?: string;
   order?: number;
   // Layer Lens hierarchy (R7): the parent layer this nests under (undefined = top-level).
-  // Import-driven (a `.studypack` hangs under the per-source "Imported" parent).
+  // Preset/custom owned layers hang under Mine; imported layers hang under Imported.
   parentId?: string;
   // Protected `.svpack` import (sealed store, read-only): the server merges sealed
   // layers into the read model flagged `sealed: true`. Absent on normal layers.
@@ -463,6 +463,8 @@ export type WorkspaceState = {
   layouts: WorkspaceLayout[];
   /** SHELL-2 onboarding block (server-owned field group; absent on old files). */
   onboarding?: OnboardingState;
+  /** I18N app-shell prefs block (server-owned field group; absent on old files). */
+  uiPrefs?: UiPrefs;
 };
 
 // —— App shell (SHELL-1/SHELL-2) — shapes mirror src/server/services/workspace.ts +
@@ -476,6 +478,10 @@ export type OnboardingState = {
   doneSteps: string[];
   /** The 载入示例文档 seed, remembered so re-seeding stays idempotent. */
   sampleSourceId: string | null;
+};
+
+export type UiPrefs = {
+  locale: "zh" | "en";
 };
 
 /** GET /api/about — app id + package.json version (关于 surfaces). */
@@ -746,6 +752,23 @@ export const entityClient = {
   },
 
   // —— Relations ——
+  deleteConcept(conceptId: string) {
+    return sendJson<{ ok: true; deletedConceptId: string; notesUpdated: number; relationsRemoved: number }>(
+      "DELETE",
+      `/api/concepts/${conceptId}`,
+      undefined
+    );
+  },
+  mergeConcept(conceptId: string, targetConceptId: string) {
+    return sendJson<{
+      concept: ConceptRecord;
+      mergedFrom: string;
+      notesUpdated: number;
+      relationsUpdated: number;
+      relationsRemoved: number;
+    }>("POST", `/api/concepts/${conceptId}/merge`, { targetConceptId });
+  },
+
   relations() {
     return getJson<{ relations: RelationRecord[] }>("/api/relations");
   },
@@ -1038,6 +1061,13 @@ export const entityClient = {
   },
   putOnboardingState(onboarding: OnboardingState) {
     return sendJson<{ onboarding: OnboardingState }>("PUT", "/api/workspace/onboarding", onboarding);
+  },
+  /** The UI PREFS write seam (I18N locale), separate from the layout PUT. */
+  uiPrefs() {
+    return getJson<{ prefs: UiPrefs }>("/api/workspace/ui-prefs");
+  },
+  putUiPrefs(prefs: UiPrefs) {
+    return sendJson<{ prefs: UiPrefs }>("PUT", "/api/workspace/ui-prefs", prefs);
   },
 
   // —— App shell readouts (SHELL-1 user menu + Settings Hub) ——

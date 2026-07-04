@@ -24,6 +24,10 @@ export type LibrarySectionContext = {
   /** The Library header search query, trimmed + lower-cased (empty = no filter). The
       section filters its ITEM TITLES against it (SEARCH-1 will feed this same seam). */
   query: string;
+  /** Source rows closed from the Library document list in this panel session. This is
+      non-destructive UI state: it does not delete the source from the vault. */
+  dismissedSourceIds?: readonly string[];
+  dismissSourceId?(sourceId: string): void;
 };
 
 export type LibrarySection = {

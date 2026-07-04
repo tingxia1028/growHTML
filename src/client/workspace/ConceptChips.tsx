@@ -129,6 +129,11 @@ export type ConceptChipsProps = {
   /** All known concepts (chip names + the ＋ autocomplete pool). */
   concepts: ConceptRecord[];
   busy?: boolean;
+  /** Controlled open state for the add autocomplete; defaults to local state. */
+  adding?: boolean;
+  onAddingChange?(adding: boolean): void;
+  /** Hide the inline ＋ when the host renders its own add trigger. */
+  showAddButton?: boolean;
   /** A chip was clicked — navigate to the concept (host decides how). */
   onNavigate(conceptId: string): void;
   /** Link an EXISTING concept picked in the ＋ autocomplete. */
@@ -137,8 +142,20 @@ export type ConceptChipsProps = {
   onCreateAndLink(name: string): void;
 };
 
-export function ConceptChips({ conceptIds, concepts, busy, onNavigate, onLink, onCreateAndLink }: ConceptChipsProps) {
-  const [adding, setAdding] = useState(false);
+export function ConceptChips({
+  conceptIds,
+  concepts,
+  busy,
+  adding,
+  onAddingChange,
+  showAddButton = true,
+  onNavigate,
+  onLink,
+  onCreateAndLink
+}: ConceptChipsProps) {
+  const [localAdding, setLocalAdding] = useState(false);
+  const isAdding = adding ?? localAdding;
+  const setAdding = onAddingChange ?? setLocalAdding;
   const byId = useMemo(() => new Map(concepts.map((concept) => [concept.id, concept])), [concepts]);
 
   return (
@@ -155,7 +172,7 @@ export function ConceptChips({ conceptIds, concepts, busy, onNavigate, onLink, o
           {byId.get(id)?.name ?? id}
         </button>
       ))}
-      {adding ? (
+      {isAdding ? (
         <ConceptAutocomplete
           className="concept-chip-add-input"
           concepts={concepts}
@@ -172,7 +189,7 @@ export function ConceptChips({ conceptIds, concepts, busy, onNavigate, onLink, o
             onCreateAndLink(name);
           }}
         />
-      ) : (
+      ) : showAddButton ? (
         <button
           type="button"
           className="concept-chip concept-chip-add"
@@ -183,7 +200,7 @@ export function ConceptChips({ conceptIds, concepts, busy, onNavigate, onLink, o
         >
           <Plus size={12} />
         </button>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -197,7 +214,19 @@ export function ConceptChips({ conceptIds, concepts, busy, onNavigate, onLink, o
 //   create   → entityClient.createConcept (deduped by normalized name first), then link.
 //   navigate → focus.setFocus({type:"concept"}) — the existing focus contract; the
 //              host's onNavigated (FocusOverlay passes onClose) fires after.
-export function NoteConceptChips({ note, onNavigated }: { note: NoteRecord; onNavigated?(): void }) {
+export function NoteConceptChips({
+  note,
+  onNavigated,
+  adding,
+  onAddingChange,
+  showAddButton
+}: {
+  note: NoteRecord;
+  onNavigated?(): void;
+  adding?: boolean;
+  onAddingChange?(adding: boolean): void;
+  showAddButton?: boolean;
+}) {
   const ws = useWorkspaceOptional();
   const [conceptIds, setConceptIds] = useState<string[]>(note.conceptIds ?? []);
   const [concepts, setConcepts] = useState<ConceptRecord[]>([]);
@@ -289,6 +318,9 @@ export function NoteConceptChips({ note, onNavigated }: { note: NoteRecord; onNa
         conceptIds={conceptIds}
         concepts={concepts}
         busy={busy}
+        adding={adding}
+        onAddingChange={onAddingChange}
+        showAddButton={showAddButton}
         onNavigate={onNavigate}
         onLink={(concept) => void onLink(concept)}
         onCreateAndLink={(name) => void onCreateAndLink(name)}

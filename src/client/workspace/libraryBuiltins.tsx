@@ -9,7 +9,7 @@
 // port unchanged; only WHERE they render moved (a registered section, not inline JSX).
 
 import { useState, type ReactNode } from "react";
-import { File, FileCode2, FilePlus2, FolderOpen, Globe, Trash2, X } from "lucide-react";
+import { File, FileCode2, FilePlus2, FolderOpen, Globe, X } from "lucide-react";
 import { baseName, FileTree } from "../FileTree";
 import { type SourceRecord } from "../data/entityClient";
 import { t, type Message } from "../i18n";
@@ -32,33 +32,36 @@ function matchesQuery(title: string, query: string): boolean {
 
 // —— shared source row (ported verbatim from the old Recent Read markup) ————————————
 
-function SourceRow({ source, ctx }: { source: SourceRecord; ctx: WorkspaceContext }) {
+function SourceRow({
+  source,
+  ctx,
+  onRemove
+}: {
+  source: SourceRecord;
+  ctx: WorkspaceContext;
+  onRemove?: () => void;
+}) {
+  const sourcePath = source.metadata?.originalPath ?? source.path;
+  const detail = sourcePath ? `Path: ${sourcePath}` : `ID: ${source.id}`;
   return (
     <div
       className={`source-item${source.id === ctx.activeSourceId ? " active" : ""}`}
-      title={[
-        source.title,
-        `Type: ${source.sourceType}`,
-        source.metadata?.originalPath ? `Path: ${source.metadata.originalPath}` : `ID: ${source.id}`
-      ].join("\n")}
+      title={[source.title, `Type: ${source.sourceType}`, detail].join("\n")}
     >
       <button className="source-item-open" type="button" onClick={() => ctx.setActiveSourceId(source.id)}>
         <File size={15} className="source-item-icon" />
         <span className="source-item-text">
           <span>{source.title}</span>
-          <small>
-            {source.sourceType} · {source.id}
-          </small>
         </span>
       </button>
       <button
-        className="source-item-delete"
+        className="source-item-remove"
         type="button"
-        title={t(m.removeDocument)}
-        aria-label={t(m.removeDocument)}
-        onClick={() => void ctx.deleteSourceItem(source.id, source.title)}
+        title={t(m.closeDocumentRow)}
+        aria-label={t(m.closeDocumentRow)}
+        onClick={onRemove}
       >
-        <Trash2 size={15} />
+        <X size={14} />
       </button>
     </div>
   );
@@ -76,7 +79,12 @@ function RecentSectionBody({ ctx }: { ctx: LibrarySectionContext }) {
   return (
     <div className="source-list recent-source-list">
       {recentRows(ctx).map((source) => (
-        <SourceRow key={source.id} source={source} ctx={ctx.workspace} />
+        <SourceRow
+          key={source.id}
+          source={source}
+          ctx={ctx.workspace}
+          onRemove={() => ctx.workspace.removeRecentSourceId(source.id)}
+        />
       ))}
     </div>
   );
@@ -107,7 +115,8 @@ function chipLabel(key: string): string {
 }
 
 function documentRows(ctx: LibrarySectionContext): SourceRecord[] {
-  return ctx.workspace.sources.filter((source) => matchesQuery(source.title, ctx.query));
+  const dismissed = new Set(ctx.dismissedSourceIds ?? []);
+  return ctx.workspace.sources.filter((source) => !dismissed.has(source.id) && matchesQuery(source.title, ctx.query));
 }
 
 function DocumentsSectionBody({ ctx }: { ctx: LibrarySectionContext }) {
@@ -147,7 +156,12 @@ function DocumentsSectionBody({ ctx }: { ctx: LibrarySectionContext }) {
       ) : null}
       <div className="source-list library-doc-list">
         {visible.map((source) => (
-          <SourceRow key={source.id} source={source} ctx={ctx.workspace} />
+          <SourceRow
+            key={source.id}
+            source={source}
+            ctx={ctx.workspace}
+            onRemove={() => ctx.dismissSourceId?.(source.id)}
+          />
         ))}
         {visible.length === 0 ? <div className="empty-state library-empty">{t(m.noMatches)}</div> : null}
       </div>
@@ -242,21 +256,35 @@ registerLibraryAddAction({
   render: (ctx) => (
     <div className="library-add-web">
       <div className="panel-menu-label">{t(m.importWeb)}</div>
-      <input
-        className="panel-menu-input"
-        value={ctx.importUrl}
-        placeholder={t(m.urlPlaceholder)}
-        aria-label={t(m.importWeb)}
-        onChange={(event) => ctx.setImportUrl(event.target.value)}
-      />
-      <button className="panel-menu-item" type="button" onClick={() => void ctx.importFromUrl()}>
-        <FilePlus2 size={15} />
-        {t(m.fetchUrl)}
-      </button>
-      <button className="panel-menu-item" type="button" onClick={() => void ctx.openLiveUrl()}>
-        <Globe size={15} />
-        {t(m.openLive)}
-      </button>
+      <div className="library-add-web-control">
+        <input
+          className="panel-menu-input library-add-web-input"
+          value={ctx.importUrl}
+          placeholder={t(m.urlPlaceholder)}
+          aria-label={t(m.importWeb)}
+          onChange={(event) => ctx.setImportUrl(event.target.value)}
+        />
+        <button
+          className="library-add-web-action"
+          type="button"
+          title={t(m.fetchUrl)}
+          aria-label={t(m.fetchUrl)}
+          data-panel-menu-close="true"
+          onClick={() => void ctx.importFromUrl()}
+        >
+          <FilePlus2 size={15} />
+        </button>
+        <button
+          className="library-add-web-action"
+          type="button"
+          title={t(m.openLive)}
+          aria-label={t(m.openLive)}
+          data-panel-menu-close="true"
+          onClick={() => void ctx.openLiveUrl()}
+        >
+          <Globe size={15} />
+        </button>
+      </div>
     </div>
   )
 });

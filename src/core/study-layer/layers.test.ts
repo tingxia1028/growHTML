@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openVault, type StudyVault } from "../vault";
-import { anchorSchema, noteSchema } from "../schema";
+import { anchorSchema, noteSchema, studyLayerSchema } from "../schema";
 import { createEntityId } from "../ids";
 import { ingestHtmlSource } from "../store/sources";
 import { ensureOwnedLayer, ensurePresetStages, migrateStudyLayers } from "./layers";
@@ -85,10 +85,12 @@ describe("ensurePresetStages (F7a: core takes an explicit stage list, no hardcod
 
   it("creates the given stages as role:'preset' layers, once, and is idempotent on a second call", async () => {
     const source = await ingestHtmlSource(vault, { title: "Doc", content: "<p>hi</p>" });
+    const owned = await ensureOwnedLayer(vault, source);
     const first = await ensurePresetStages(vault, source, STAGES);
     expect(first.map((l) => l.title)).toEqual(["预习", "学习", "复习"]);
     expect(first.map((l) => l.order)).toEqual([0, 1, 2]);
     expect(first.every((l) => l.role === "preset" && l.localSourceId === source.id)).toBe(true);
+    expect(first.every((l) => l.parentId === owned.id)).toBe(true);
 
     const second = await ensurePresetStages(vault, source, STAGES);
     // Same records reused (same ids) — no duplicates written to the store.
@@ -104,6 +106,7 @@ describe("ensurePresetStages (F7a: core takes an explicit stage list, no hardcod
 
   it("preserves a pre-existing preset layer of the same title (migration-safe: reuse, no duplicate)", async () => {
     const source = await ingestHtmlSource(vault, { title: "Doc", content: "<p>hi</p>" });
+    const owned = await ensureOwnedLayer(vault, source);
     // Simulate a migrated vault where a preset "复习" layer already exists (may hold notes).
     const pre = await ensurePresetStages(vault, source, [{ title: "复习", order: 2 }]);
     const preId = pre[0].id;
@@ -114,6 +117,7 @@ describe("ensurePresetStages (F7a: core takes an explicit stage list, no hardcod
     const presets = (await vault.stores.layers.list()).filter((l) => l.role === "preset");
     expect(presets).toHaveLength(3);
     expect(presets.filter((l) => l.title === "复习")).toHaveLength(1); // reused, not re-created
+    expect(presets.every((l) => l.parentId === owned.id)).toBe(true);
   });
 
   it("never deletes a stage the caller no longer lists (dropped stage keeps its layer)", async () => {
@@ -128,6 +132,39 @@ describe("ensurePresetStages (F7a: core takes an explicit stage list, no hardcod
     // …but the previously-created 复习 layer is NOT removed (no auto-delete of note-holders).
     const presets = (await vault.stores.layers.list()).filter((l) => l.role === "preset");
     expect(presets.map((l) => l.title).sort()).toEqual(["复习", "学习", "预习"]);
+  });
+
+  it("backfills existing preset/custom layers under Mine even when the active kit lists no stages", async () => {
+    const source = await ingestHtmlSource(vault, { title: "Doc", content: "<p>hi</p>" });
+    const owned = await ensureOwnedLayer(vault, source);
+    const createdAt = new Date().toISOString();
+    const oldPreset = studyLayerSchema.parse({
+      id: createEntityId("layer"),
+      type: "layer",
+      schemaVersion: 1,
+      createdAt,
+      updatedAt: createdAt,
+      createdBy: "user",
+      localSourceId: source.id,
+      title: "复习",
+      visibility: "private",
+      importMode: "owned",
+      enabled: true,
+      role: "preset"
+    });
+    const oldCustom = studyLayerSchema.parse({
+      ...oldPreset,
+      id: createEntityId("layer"),
+      title: "重点",
+      role: "custom"
+    });
+    await vault.stores.layers.upsert(oldPreset);
+    await vault.stores.layers.upsert(oldCustom);
+
+    expect(await ensurePresetStages(vault, source, [])).toEqual([]);
+
+    expect((await vault.stores.layers.get(oldPreset.id))?.parentId).toBe(owned.id);
+    expect((await vault.stores.layers.get(oldCustom.id))?.parentId).toBe(owned.id);
   });
 });
 

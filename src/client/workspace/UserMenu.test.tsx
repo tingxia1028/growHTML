@@ -11,12 +11,14 @@ import { UserMenu } from "./UserMenu";
 import { setDataTrustIoForTests } from "./dataTrust";
 import { setUserMenuIoForTests } from "./userMenuIo";
 import { registerShellNavigator, type ShellNavTarget } from "./shellNav";
+import { setLocale } from "../i18n";
 
 let container: HTMLDivElement;
 let root: Root;
 let targets: ShellNavTarget[];
 
 beforeEach(() => {
+  setLocale("zh");
   targets = [];
   registerShellNavigator((target) => targets.push(target));
   setUserMenuIoForTests({
@@ -113,6 +115,7 @@ describe("UserMenu", () => {
     expect(ids).toEqual([
       "settings",
       "plugins",
+      "operations",
       "profile",
       "share",
       "backup-now",
@@ -121,6 +124,7 @@ describe("UserMenu", () => {
       "trash",
       "account",
       "onboarding",
+      "shortcuts",
       "feedback",
       "about"
     ]);
@@ -131,6 +135,18 @@ describe("UserMenu", () => {
 
     // 关于 carries the version readout.
     expect(container.querySelector('[data-entry-id="about"]')!.textContent).toBe("关于 · v0.1.0");
+  });
+
+  it("flips menu chrome to English when locale changes", async () => {
+    setLocale("en");
+    await renderMenu();
+    expect(container.querySelector(".shell-menu-avatar-label")!.textContent).toBe("Local User");
+    await openMenu();
+    expect(container.querySelector(".shell-menu-identity-hint")!.textContent).toBe("No sharing identity yet");
+    expect(container.querySelector('[data-entry-id="settings"]')!.textContent).toBe("Settings");
+    expect(container.querySelector<HTMLButtonElement>('[data-entry-id="account"]')!.title).toBe(
+      "Waiting for hosted account support"
+    );
   });
 
   it("entries dispatch the RIGHT shell-nav targets (aggregation, no re-implementation) and close the menu", async () => {
@@ -146,20 +162,24 @@ describe("UserMenu", () => {
 
     await clickEntry("settings");
     await clickEntry("plugins");
+    await clickEntry("operations");
     await clickEntry("profile");
     await clickEntry("share");
     await clickEntry("trash");
     await clickEntry("onboarding");
+    await clickEntry("shortcuts");
     await clickEntry("about");
 
     expect(targets).toEqual([
-      { type: "pane", kind: "settings.hub" },
-      { type: "pane", kind: "plugin.manager" },
+      { type: "modal", kind: "settings.hub" },
+      { type: "modal", kind: "plugin.manager" },
+      { type: "modal", kind: "operation.manager" },
       { type: "pane", kind: "profile.panel" },
-      { type: "pane", kind: "layer.switcher" },
-      { type: "pane", kind: "trash.panel" },
-      { type: "onboarding", open: true },
-      { type: "pane", kind: "settings.hub" }
+      { type: "modal", kind: "layer.switcher" },
+      { type: "modal", kind: "trash.panel" },
+      { type: "modal", kind: "onboarding.checklist" },
+      { type: "modal", kind: "shortcut.help" },
+      { type: "modal", kind: "settings.hub" }
     ]);
   });
 

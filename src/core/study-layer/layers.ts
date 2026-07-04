@@ -30,25 +30,49 @@ export async function ensureOwnedLayer(vault: StudyVault, source: SourceRecord):
   return layer;
 }
 
-// The preset "stage" layers — a lens axis over a source (e.g. the textbook kit's
-// 预习 / 学习 / 复习 / 拓展). Core owns only the PRIMITIVE here, not the taxonomy: the
-// concrete stage list (titles + order) is supplied by the caller, seeded from the
-// source's active kit (see KitLayerPolicy.stagePreset + the server call site). A stage
-// is a pre-named layer record created lazily the first time the switcher lists a
-// source's layers; role:"preset" keeps the client switcher grouping them as an axis.
+async function ensureOwnedChildLayerParents(
+  vault: StudyVault,
+  source: SourceRecord,
+  owned: StudyLayerRecord
+): Promise<void> {
+  const ownedChildren = (await vault.stores.layers.list()).filter(
+    (layer) =>
+      layer.localSourceId === source.id &&
+      layer.importMode === "owned" &&
+      (layer.role === "preset" || layer.role === "custom") &&
+      layer.parentId !== owned.id
+  );
+  for (const layer of ownedChildren) {
+    await vault.stores.layers.upsert(
+      studyLayerSchema.parse({
+        ...layer,
+        parentId: owned.id,
+        updatedAt: new Date().toISOString()
+      })
+    );
+  }
+}
+
+// The kit-seeded preset layers — ordinary child layers under the source's owned/Mine
+// layer (e.g. the textbook kit's 预习 / 学习 / 复习 / 拓展). Core owns only the primitive
+// (layer + parentId), not the taxonomy: the concrete list is supplied by the caller,
+// seeded from the source's active kit (see KitLayerPolicy.stagePreset + the server call
+// site). role:"preset" is retained for compatibility/permissions, not for UI grouping.
 //
 // Idempotent: a stage that already exists (same role:"preset" + localSourceId + title)
-// is reused, so this is safe to call on every layer-list. MIGRATION / NO-DELETE: this
-// only ever CREATES missing stages — it never removes an existing preset layer. So a
-// vault whose active kit dropped (or changed) a stage KEEPS the already-created layer
+// is reused, so this is safe to call on every layer-list. Existing preset layers without
+// a parentId are backfilled under Mine on the next list call. MIGRATION / NO-DELETE:
+// this only ever CREATES missing stages — it never removes an existing preset layer. So
+// a vault whose active kit dropped (or changed) a stage KEEPS the already-created layer
 // (it may hold notes); we simply stop creating new ones for the omitted title. Passing
-// an empty `stages` list therefore creates nothing (a kit that imposes no stage axis).
-// Mirrors ensureOwnedLayer's construction.
+// an empty `stages` list therefore creates nothing beyond ensuring the Mine parent.
 export async function ensurePresetStages(
   vault: StudyVault,
   source: SourceRecord,
   stages: ReadonlyArray<{ title: string; order: number }>
 ): Promise<StudyLayerRecord[]> {
+  const owned = await ensureOwnedLayer(vault, source);
+  await ensureOwnedChildLayerParents(vault, source, owned);
   const existing = (await vault.stores.layers.list()).filter(
     (layer) => layer.role === "preset" && layer.localSourceId === source.id
   );
@@ -58,7 +82,17 @@ export async function ensurePresetStages(
   for (const stage of stages) {
     const found = byTitle.get(stage.title);
     if (found) {
-      result.push(found);
+      if (found.parentId !== owned.id) {
+        const updated = studyLayerSchema.parse({
+          ...found,
+          parentId: owned.id,
+          updatedAt: new Date().toISOString()
+        });
+        await vault.stores.layers.upsert(updated);
+        result.push(updated);
+      } else {
+        result.push(found);
+      }
       continue;
     }
     const now = new Date().toISOString();
@@ -76,6 +110,7 @@ export async function ensurePresetStages(
       importMode: "owned",
       enabled: true,
       role: "preset",
+      parentId: owned.id,
       order: stage.order
     });
     await vault.stores.layers.upsert(layer);
@@ -131,6 +166,7 @@ export async function createCustomLayer(
   source: SourceRecord,
   opts: { title: string; color?: string; order?: number }
 ): Promise<StudyLayerRecord> {
+  const owned = await ensureOwnedLayer(vault, source);
   const now = new Date().toISOString();
   const layer = studyLayerSchema.parse({
     id: createEntityId("layer"),
@@ -146,6 +182,7 @@ export async function createCustomLayer(
     importMode: "owned",
     enabled: true,
     role: "custom",
+    parentId: owned.id,
     color: opts.color,
     order: opts.order
   });

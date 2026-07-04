@@ -6,10 +6,32 @@
 // readerForSource. Adding a new view = register a plugin + add its node to a preset;
 // zero edits to this file. See docs/design/workspace-runtime.md.
 
+import { useEffect, type ReactNode } from "react";
+import { entityClient } from "./data/entityClient";
 import { FocusProvider } from "./focus/FocusContext";
+import { LocaleProvider, setLocale } from "./i18n";
 import { WorkspaceProvider, useWorkspace } from "./workspace/WorkspaceContext";
 import { WorkspaceShell } from "./workspace/WorkspaceShell";
 import { getLayoutPreset } from "./workspace/presets";
+
+function LocaleBootstrap({ children }: { children: ReactNode }) {
+  useEffect(() => {
+    let cancelled = false;
+    void entityClient
+      .uiPrefs()
+      .then(({ prefs }) => {
+        if (!cancelled) setLocale(prefs.locale);
+      })
+      .catch(() => {
+        // LocalStorage/default locale still drives the UI when the server is unavailable.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return <>{children}</>;
+}
 
 // Reads the active layout preset id from the workspace context (the reader-header layout
 // switcher writes it) and renders that preset. Kept inside the provider so switching
@@ -21,10 +43,14 @@ function ActiveWorkspaceShell() {
 
 export default function App() {
   return (
-    <FocusProvider>
-      <WorkspaceProvider>
-        <ActiveWorkspaceShell />
-      </WorkspaceProvider>
-    </FocusProvider>
+    <LocaleProvider>
+      <LocaleBootstrap>
+        <FocusProvider>
+          <WorkspaceProvider>
+            <ActiveWorkspaceShell />
+          </WorkspaceProvider>
+        </FocusProvider>
+      </LocaleBootstrap>
+    </LocaleProvider>
   );
 }

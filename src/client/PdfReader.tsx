@@ -24,6 +24,7 @@ import {
 import { anchorsOfKind, type PaintAnchor, type SurfaceReaderProps } from "./surfaces/types";
 import { isRealRegion, normalizeDragRect, placeRegionBox } from "./surfaces/overlay";
 import { formatZoomPct, nextZoom } from "./surfaces/pdfZoom";
+import { selectorFromPdfRange, spansForPdfQuote } from "./surfaces/pdfTextLayer";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -145,9 +146,10 @@ export function PdfReader({
       const textLayer = pageEl.querySelector(".textLayer");
       const quote = anchor.quote;
       if (!textLayer || !quote) continue;
-      const matches = Array.from(textLayer.querySelectorAll("span")).filter((span) => {
-        const text = span.textContent ?? "";
-        return text && quote.includes(text.trim()) && text.trim().length > 1;
+      const matches = spansForPdfQuote(textLayer, {
+        exact: quote,
+        prefix: anchor.contextBefore ?? "",
+        suffix: anchor.contextAfter ?? ""
       });
       matches.forEach((span, index) => {
         // Keep .pdf-anchor-hit for the visual; add the shared highlight + note
@@ -192,10 +194,13 @@ export function PdfReader({
 
     if (target.quote) {
       const textLayer = pageEl.querySelector(".textLayer");
-      const span = Array.from(textLayer?.querySelectorAll("span") ?? []).find((item) => {
-        const text = item.textContent?.trim() ?? "";
-        return text.length > 1 && target.quote?.includes(text);
-      }) as (HTMLElement & { scrollIntoView?: Element["scrollIntoView"] }) | undefined;
+      const span = textLayer
+        ? (spansForPdfQuote(textLayer, {
+            exact: target.quote,
+            prefix: target.contextBefore ?? "",
+            suffix: target.contextAfter ?? ""
+          })[0] as (HTMLElement & { scrollIntoView?: Element["scrollIntoView"] }) | undefined)
+        : undefined;
       if (span) {
         flashElement(span);
         return true;
@@ -350,18 +355,16 @@ export function PdfReader({
       const pageEl = startEl?.closest(".page") as HTMLElement | null;
       if (!pageEl || !viewer.contains(pageEl)) return;
       const page = Number(pageEl.dataset.pageNumber) || 1;
-      const pageText = (pageEl.querySelector(".textLayer")?.textContent ?? "").replace(/\s+/g, " ");
-      const index = pageText.indexOf(exact);
-      const prefix = index >= 0 ? pageText.slice(Math.max(0, index - CONTEXT), index) : "";
-      const suffix = index >= 0 ? pageText.slice(index + exact.length, index + exact.length + CONTEXT) : "";
+      const textLayer = pageEl.querySelector(".textLayer");
+      const selector = textLayer ? selectorFromPdfRange(textLayer, range, CONTEXT) : null;
 
       const draft: AnchorDraft = {
         mode: "quote",
         sourceId: sourceIdRef.current,
         kind: "pdf",
-        quote: exact,
-        prefix,
-        suffix,
+        quote: selector?.exact ?? exact,
+        prefix: selector?.prefix ?? "",
+        suffix: selector?.suffix ?? "",
         page
       };
       onSelectRef.current(draft);

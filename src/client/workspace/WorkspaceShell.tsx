@@ -13,7 +13,9 @@
 // consumer only has to render <WorkspaceShell layout={…} /> inside a WorkspaceProvider.
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { X } from "lucide-react";
 import type { WorkspaceLayout, WorkspaceNode } from "../data/entityClient";
+import { resolveText, t, type LocalizedText } from "../i18n";
 import { renderNode } from "./viewRegistry";
 import { useWorkspace } from "./WorkspaceContext";
 import {
@@ -61,6 +63,7 @@ import "../profile/ProfilePanel";
 import "../settings/SettingsHub";
 //   ../onboarding/OnboardingPanel → onboarding.checklist (SHELL-2 — center slot on first run)
 import "../onboarding/OnboardingPanel";
+import "./ShortcutHelp";
 import { entityClient } from "../data/entityClient";
 import { shouldAutoOpenOnboarding } from "../onboarding/steps";
 import { registerShellNavigator } from "./shellNav";
@@ -90,6 +93,22 @@ const DEFAULT_LEFT_KIND = "library";
 // the SAME leaf renders a different registered kind; closing restores the reader.
 const CENTER_SLOT_NODE_ID = "source-viewer";
 const ONBOARDING_KIND = "onboarding.checklist";
+const modalTitles: Record<string, LocalizedText> = {
+  "settings.hub": { zh: "设置", en: "Settings" },
+  "plugin.manager": { zh: "Kit 与插件", en: "Kit & Plugin" },
+  "operation.manager": { zh: "操作", en: "Operations" },
+  "layer.switcher": { zh: "分享身份", en: "Share Identity" },
+  "trash.panel": { zh: "回收站", en: "Trash" },
+  "onboarding.checklist": { zh: "新手引导", en: "Onboarding" },
+  "shortcut.help": { zh: "快捷键", en: "Shortcuts" }
+};
+const modalMessages = {
+  close: { zh: "关闭弹窗", en: "Close dialog" }
+} as const;
+
+function modalTitle(kind: string): string {
+  return resolveText(modalTitles[kind] ?? { zh: kind, en: kind });
+}
 
 function loadSizes(): Record<string, number> {
   try {
@@ -135,6 +154,8 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
   // (SHELL-2). Set by the first-run effect below + the shell nav bus (user menu's
   // 帮助/新手引导 reopens it; the checklist's own 跳过/带我去 actions close it).
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [modalKind, setModalKind] = useState<string | null>(null);
+  const modalCloseRef = useRef<HTMLButtonElement | null>(null);
 
   // Register the "show the operation manager" handler the Customize-Toolbar seam fires
   // (R6.3): the manager is reachable as the left-slot kind, so showing it = swapping the
@@ -142,7 +163,7 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
   // opens the panel without reaching into the shell (IRON LAW).
   const { registerOpenOperationManager } = ctx;
   useEffect(() => {
-    registerOpenOperationManager(() => setLeftPaneKind("operation.manager"));
+    registerOpenOperationManager(() => setModalKind("operation.manager"));
   }, [registerOpenOperationManager]);
 
   // The shell nav bus (SHELL-1/2): user menu entries, settings deep-links and
@@ -151,9 +172,43 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
   useEffect(() => {
     registerShellNavigator((target) => {
       if (target.type === "pane") setLeftPaneKind(target.kind);
-      else setOnboardingOpen(target.open);
+      else if (target.type === "modal") setModalKind(target.kind);
+      else if (target.open) setModalKind(ONBOARDING_KIND);
+      else {
+        setOnboardingOpen(false);
+        setModalKind((kind) => (kind === ONBOARDING_KIND ? null : kind));
+      }
     });
     return () => registerShellNavigator(null);
+  }, []);
+
+  useEffect(() => {
+    if (!modalKind) return;
+    modalCloseRef.current?.focus();
+  }, [modalKind]);
+
+  useEffect(() => {
+    if (!modalKind) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setModalKind(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [modalKind]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.key !== "?" || event.altKey || event.ctrlKey || event.metaKey) return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (target?.isContentEditable || tag === "input" || tag === "textarea" || tag === "select") return;
+      event.preventDefault();
+      setModalKind("shortcut.help");
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
   // First-run detection (SHELL-2): fresh vault (no sources) AND a pristine onboarding
@@ -375,6 +430,34 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
           single shell mount; no per-view wiring) and dispatches through the existing
           contracts only (focus.setAnchor / setActiveSourceId / navigateShell). */}
       <GlobalSearch />
+      {modalKind ? (
+        <div
+          className="shell-modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setModalKind(null);
+          }}
+        >
+          <section className="shell-modal-dialog" role="dialog" aria-modal="true" aria-label={modalTitle(modalKind)}>
+            <header className="shell-modal-head">
+              <span className="shell-modal-title">{modalTitle(modalKind)}</span>
+              <button
+                type="button"
+                className="shell-modal-close"
+                aria-label={t(modalMessages.close)}
+                title={t(modalMessages.close)}
+                ref={modalCloseRef}
+                onClick={() => setModalKind(null)}
+              >
+                <X size={16} />
+              </button>
+            </header>
+            <div className="shell-modal-body">
+              {renderNode({ id: "shell-modal", kind: modalKind }, ctx)}
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

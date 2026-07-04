@@ -143,6 +143,56 @@ describe("ConceptInspector — 关联到… (one-pick relation)", () => {
   });
 });
 
+describe("ConceptInspector concept management actions", () => {
+  it("deletes the focused concept, refreshes concepts, and clears focus", async () => {
+    const { ctx, setFocus } = fakeCtx();
+    const deleteConcept = vi.spyOn(entityClient, "deleteConcept").mockResolvedValue({
+      ok: true,
+      deletedConceptId: "concept_a",
+      notesUpdated: 1,
+      relationsRemoved: 0
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { container, cleanup } = await renderInspector(ctx);
+
+    await act(async () => {
+      (container.querySelector(".concept-delete-btn") as HTMLButtonElement).click();
+    });
+
+    expect(deleteConcept).toHaveBeenCalledWith("concept_a");
+    expect(ctx.refreshConcepts).toHaveBeenCalled();
+    expect(setFocus).toHaveBeenCalledWith(null);
+    cleanup();
+  });
+
+  it("merges the focused concept into the selected target and focuses the target", async () => {
+    const { ctx, setFocus } = fakeCtx();
+    const mergeConcept = vi.spyOn(entityClient, "mergeConcept").mockResolvedValue({
+      concept: CONCEPT_B,
+      mergedFrom: "concept_a",
+      notesUpdated: 1,
+      relationsUpdated: 0,
+      relationsRemoved: 0
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { container, cleanup } = await renderInspector(ctx);
+    const select = container.querySelector(".concept-merge-select") as HTMLSelectElement;
+
+    await act(async () => {
+      select.value = "concept_b";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      (container.querySelector(".concept-merge-btn") as HTMLButtonElement).click();
+    });
+
+    expect(mergeConcept).toHaveBeenCalledWith("concept_a", "concept_b");
+    expect(ctx.refreshConcepts).toHaveBeenCalled();
+    expect(setFocus).toHaveBeenCalledWith({ type: "concept", conceptId: "concept_b" });
+    cleanup();
+  });
+});
+
 describe("ConceptInspector — linked-note rows jump", () => {
   it("clicking a linked note reveals its anchor in the reader AND focuses the note", async () => {
     const { ctx, setAnchor, setFocus } = fakeCtx();

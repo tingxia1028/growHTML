@@ -19,7 +19,7 @@
 // whenever the workspace's `conceptsVersion` token changes (a command mutated data).
 
 import { useCallback, useEffect, useState } from "react";
-import { Link2, Trash2 } from "lucide-react";
+import { GitMerge, Link2, Trash2 } from "lucide-react";
 import {
   entityClient,
   type ConceptRecord,
@@ -48,6 +48,7 @@ export function ConceptInspector({ conceptId, ctx }: { conceptId: string; ctx: I
 
   // Input for the manual note-link action.
   const [linkNoteId, setLinkNoteId] = useState("");
+  const [mergeTargetId, setMergeTargetId] = useState("");
 
   const load = useCallback(async () => {
     setError("");
@@ -71,6 +72,10 @@ export function ConceptInspector({ conceptId, ctx }: { conceptId: string; ctx: I
   useEffect(() => {
     void load();
   }, [load, conceptsVersion]);
+
+  useEffect(() => {
+    setMergeTargetId("");
+  }, [conceptId]);
 
   const linkedNoteIds = new Set(detail?.notes.map((note) => note.id) ?? []);
   // Notes that aren't already linked to THIS concept are the link candidates.
@@ -133,6 +138,32 @@ export function ConceptInspector({ conceptId, ctx }: { conceptId: string; ctx: I
     [refreshConcepts]
   );
 
+  const deleteCurrentConcept = useCallback(async () => {
+    if (!detail) return;
+    if (!window.confirm(`Delete concept "${detail.concept.name}"? Linked notes will keep their content.`)) return;
+    try {
+      await entityClient.deleteConcept(detail.concept.id);
+      refreshConcepts();
+      focus.setFocus(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete concept");
+    }
+  }, [detail, focus, refreshConcepts]);
+
+  const mergeCurrentConcept = useCallback(async () => {
+    if (!detail || !mergeTargetId) return;
+    const target = allConcepts.find((concept) => concept.id === mergeTargetId);
+    if (!target) return;
+    if (!window.confirm(`Merge "${detail.concept.name}" into "${target.name}"?`)) return;
+    try {
+      const result = await entityClient.mergeConcept(detail.concept.id, target.id);
+      refreshConcepts();
+      focus.setFocus({ type: "concept", conceptId: result.concept.id });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to merge concept");
+    }
+  }, [allConcepts, detail, focus, mergeTargetId, refreshConcepts]);
+
   if (!detail) {
     return (
       <div className="concept-inspector">
@@ -152,6 +183,34 @@ export function ConceptInspector({ conceptId, ctx }: { conceptId: string; ctx: I
           <div className="concept-aliases">{concept.aliases.join(", ")}</div>
         ) : null}
         {concept.description ? <p className="concept-description">{concept.description}</p> : null}
+        <div className="concept-inspector-actions">
+          <select
+            className="concept-merge-select"
+            aria-label="Merge target concept"
+            value={mergeTargetId}
+            onChange={(event) => setMergeTargetId(event.target.value)}
+          >
+            <option value="">Merge into...</option>
+            {relationTargets.map((target) => (
+              <option key={target.id} value={target.id}>
+                {target.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="link-button concept-merge-btn"
+            disabled={!mergeTargetId}
+            onClick={() => void mergeCurrentConcept()}
+          >
+            <GitMerge size={14} />
+            Merge
+          </button>
+          <button type="button" className="link-button concept-delete-btn" onClick={() => void deleteCurrentConcept()}>
+            <Trash2 size={14} />
+            Delete
+          </button>
+        </div>
       </header>
 
       {error ? <div className="error-box">{error}</div> : null}

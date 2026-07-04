@@ -1,7 +1,7 @@
 // LayerLensManage (R7.3) — the in-place layer MANAGEMENT surface folded into the Layer
 // Lens popover (spec §8.1 "管理(就地)"). It mirrors the manager half of the
 // `layer.switcher` pane (create / rename / recolor / reorder / delete custom + import /
-// export `.studypack`) but is driven by the shared `useWorkspace()` layer state
+// export `.studypack`) but is driven by the shared `useWorkspace()` layer tree state
 // (ctx.sourceLayers) and refreshes through ctx.refreshLayers, so the Lens tree updates
 // reactively after a mutation. The standalone `layer.switcher` pane stays as-is (its
 // filter checkboxes back the layer-as-lens e2e); this is the Lens-embedded twin.
@@ -10,7 +10,8 @@ import { useCallback, useRef, useState } from "react";
 import { Download, Plus, Trash2, Upload } from "lucide-react";
 import { entityClient, type ImportPreview, type StudyLayerRecord, type StudyPack } from "../data/entityClient";
 import type { WorkspaceContext } from "./viewRegistry";
-import { downloadPack, GROUP_ORDER, groupOf } from "./layerViews";
+import { buildLayerTree, type LayerNode } from "./layerTree";
+import { downloadPack, isLayerEditable, isMineLayer, layerDisplayTitle, sortLayersForTree } from "./layerViews";
 
 export function LayerLensManage({ ctx }: { ctx: WorkspaceContext }) {
   const { activeSourceId, sourceLayers, refreshLayers } = ctx;
@@ -121,9 +122,89 @@ export function LayerLensManage({ ctx }: { ctx: WorkspaceContext }) {
     }
   }, [pending, refreshLayers]);
 
-  const sorted = [...sourceLayers].sort(
-    (a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title)
-  );
+  const tree = buildLayerTree(sortLayersForTree(sourceLayers));
+
+  const renderLayerNode = (node: LayerNode, depth = 0) => {
+    const layer = node.layer;
+    const editable = isLayerEditable(layer);
+    return (
+      <div key={layer.id} className="layer-tree-node" data-depth={depth}>
+        <div
+          className={`layer-item${layer.enabled ? " enabled" : ""}`}
+          data-role={layer.role ?? "owned"}
+          data-import-mode={layer.importMode}
+          data-has-children={node.children.length > 0 ? "true" : "false"}
+          style={{ paddingLeft: 10 + depth * 14 }}
+        >
+          <span className="layer-item-title" title={layer.title}>
+            {layer.color ? <span className="layer-color-dot" style={{ background: layer.color }} /> : null}
+            <span className="layer-item-name">{layerDisplayTitle(layer)}</span>
+            {isMineLayer(layer) ? <span className="layer-item-subtitle">{layer.title}</span> : null}
+          </span>
+          <div className="layer-item-meta">
+            {editable ? (
+              <>
+                <button
+                  type="button"
+                  className="link-button layer-up-btn"
+                  title="Move up"
+                  onClick={() => void reorderLayer(layer, -1)}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  className="link-button layer-down-btn"
+                  title="Move down"
+                  onClick={() => void reorderLayer(layer, 1)}
+                >
+                  ↓
+                </button>
+                <input
+                  type="color"
+                  className="layer-color-input"
+                  aria-label="Layer color"
+                  title="Recolor layer"
+                  value={layer.color ?? "#2f6f64"}
+                  onChange={(event) => void recolorLayer(layer, event.target.value)}
+                />
+                <button
+                  type="button"
+                  className="link-button layer-rename-btn"
+                  title="Rename layer"
+                  onClick={() => void renameLayer(layer)}
+                >
+                  Rename
+                </button>
+              </>
+            ) : null}
+            <button
+              type="button"
+              className="link-button layer-export-btn"
+              title="Export as .studypack"
+              onClick={() => void exportLayer(layer)}
+            >
+              <Download size={13} />
+            </button>
+            {layer.role === "custom" ? (
+              <button
+                type="button"
+                className="link-button layer-delete-btn"
+                title="Delete custom layer"
+                aria-label="Delete custom layer"
+                onClick={() => void deleteLayer(layer)}
+              >
+                <Trash2 size={13} />
+              </button>
+            ) : null}
+          </div>
+        </div>
+        {node.children.length > 0 ? (
+          <div className="layer-tree-children">{node.children.map((child) => renderLayerNode(child, depth + 1))}</div>
+        ) : null}
+      </div>
+    );
+  };
 
   return (
     <div className="layer-lens-manage">
@@ -202,51 +283,7 @@ export function LayerLensManage({ ctx }: { ctx: WorkspaceContext }) {
       ) : null}
 
       <div className="layer-list layer-lens-manage-list">
-        {GROUP_ORDER.map(({ key, label }) => {
-          const group = sorted.filter((layer) => groupOf(layer) === key);
-          if (group.length === 0) return null;
-          return (
-            <div key={key} className="layer-group" data-group={key}>
-              <div className="layer-group-title">{label}</div>
-              {group.map((layer) => {
-                const editable = groupOf(layer) === "owned" || groupOf(layer) === "custom";
-                return (
-                  <div key={layer.id} className="layer-item" data-role={layer.role ?? "owned"}>
-                    <span className="layer-item-title">
-                      {layer.color ? <span className="layer-color-dot" style={{ background: layer.color }} /> : null}
-                      {layer.title}
-                    </span>
-                    <div className="layer-item-meta">
-                      {editable ? (
-                        <>
-                          <button type="button" className="link-button layer-up-btn" title="Move up" onClick={() => void reorderLayer(layer, -1)}>↑</button>
-                          <button type="button" className="link-button layer-down-btn" title="Move down" onClick={() => void reorderLayer(layer, 1)}>↓</button>
-                          <input
-                            type="color"
-                            className="layer-color-input"
-                            aria-label="Layer color"
-                            title="Recolor layer"
-                            value={layer.color ?? "#2f6f64"}
-                            onChange={(event) => void recolorLayer(layer, event.target.value)}
-                          />
-                          <button type="button" className="link-button layer-rename-btn" title="Rename layer" onClick={() => void renameLayer(layer)}>Rename</button>
-                        </>
-                      ) : null}
-                      <button type="button" className="link-button layer-export-btn" title="Export as .studypack" onClick={() => void exportLayer(layer)}>
-                        <Download size={13} />
-                      </button>
-                      {layer.role === "custom" ? (
-                        <button type="button" className="link-button layer-delete-btn" title="Delete custom layer" aria-label="Delete custom layer" onClick={() => void deleteLayer(layer)}>
-                          <Trash2 size={13} />
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })}
+        {tree.map((node) => renderLayerNode(node))}
       </div>
     </div>
   );

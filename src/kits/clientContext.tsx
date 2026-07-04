@@ -22,6 +22,7 @@ import { registerNoteContentSpec } from "../core/notes/contentTypes";
 import { registerKitDetection } from "../core/subject/detectSubject";
 import { listNoteTypes, registerNoteType } from "../client/notes/noteTypeRegistry";
 import { registerCommand } from "../client/commands/registry";
+import { resolveText } from "../client/i18n";
 import { registerKitLanguage } from "./language";
 import { getCatalogEntry, catalogKitMembers } from "./catalog";
 import { isPluginEffectiveInstalled } from "./installState";
@@ -161,7 +162,7 @@ export function createKitInstallContext(ownerId: string, opts?: { kitId?: string
         contribute({
           id: namespaceId(ownerId, "noteType", spec.contentType),
           kind: "noteType",
-          label: plugin.label ?? spec.contentType,
+          label: plugin.label ? resolveText(plugin.label) : spec.contentType,
           key: spec.contentType
         });
       }
@@ -182,7 +183,7 @@ export function createKitInstallContext(ownerId: string, opts?: { kitId?: string
         contribute({
           id: namespaceId(ownerId, "command", command.id),
           kind: "command",
-          label: command.title ?? command.id,
+          label: command.title ? resolveText(command.title) : command.id,
           key: command.id
         });
       }
@@ -203,7 +204,7 @@ export function createKitInstallContext(ownerId: string, opts?: { kitId?: string
           contribute({
             id: surfaceContributionId(ownerId, item.commandId),
             kind: "surface",
-            label: item.title,
+            label: resolveText(item.title),
             key: item.commandId
           });
         }
@@ -258,7 +259,7 @@ function seedBuiltinPlugins(): void {
     registerContribution(ownerId, {
       id: namespaceId(ownerId, "noteType", plugin.contentType),
       kind: "noteType",
-      label: plugin.label ?? plugin.contentType,
+      label: plugin.label ? resolveText(plugin.label) : plugin.contentType,
       key: plugin.contentType
     });
   }

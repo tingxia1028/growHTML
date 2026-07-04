@@ -1,4 +1,5 @@
 import { getNoteType } from "./noteTypeRegistry";
+import { resolveText } from "../i18n";
 
 export type NoteCardMeta = {
   typeLabel: string;
@@ -78,7 +79,8 @@ function diagramTitle(contentType: string, source: string): string {
 }
 
 export function noteCardMeta(contentType: string, content: unknown): NoteCardMeta {
-  const typeLabel = TYPE_LABELS[contentType] ?? getNoteType(contentType)?.label ?? contentType;
+  const pluginLabel = getNoteType(contentType)?.label;
+  const typeLabel = TYPE_LABELS[contentType] ?? (pluginLabel ? resolveText(pluginLabel) : contentType);
   const record = asRecord(content);
   let title = stringField(record, ["title", "label", "name"]);
   let extra: string | undefined;

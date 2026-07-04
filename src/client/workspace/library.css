@@ -4,27 +4,79 @@
    `.folder-tree-host`, `.panel-menu-*` rules; styles.css is contended by the parallel
    UI session, so everything LIB-2 adds lives here. */
 
-/* —— header: title · search (SEARCH-1 seam) · refresh · the one + ————————————— */
+/* —— header: title · collapsed search · refresh · the one + ————————————— */
 
-.library-head .library-search {
+.library-head {
+  justify-content: flex-start;
+}
+
+.library-title {
   flex: 1 1 auto;
-  min-width: 0;
+}
+
+.library-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.library-search-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 26px;
+  width: 26px;
   height: 26px;
-  padding: 0 8px;
-  border: 1px solid #e3e8f0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sv-icon-muted);
+  cursor: pointer;
+}
+
+.library-search-toggle:hover,
+.library-search-toggle.active {
+  border-color: var(--sv-accent-border);
+  background: var(--sv-accent-weak);
+  color: var(--sv-accent-text);
+}
+
+.library-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  margin: 0 0 10px;
+  padding: 0 10px;
+  border: 1px solid var(--sv-border);
   border-radius: 8px;
   background: #ffffff;
+  color: var(--sv-icon-muted);
+}
+
+.library-search-row .library-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--sv-text);
-  font-size: 12px;
-  line-height: 24px;
+  font-size: 13px;
+  line-height: 32px;
+  box-shadow: none;
 }
 
-.library-head .library-search:focus {
+.library-search-row .library-search:focus {
   outline: none;
-  border-color: #c8d8f2;
 }
 
-.library-head .library-search::placeholder {
+.library-search-row .library-search::placeholder {
   color: var(--sv-text-faint);
 }
 
@@ -157,4 +209,166 @@
 .library-add-web {
   display: grid;
   gap: 4px;
+}
+
+.library-add-web-control {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid var(--sv-border);
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.library-add-web-control:focus-within {
+  border-color: var(--sv-accent-border);
+  box-shadow: 0 0 0 3px rgba(52, 116, 230, 0.12);
+}
+
+.library-add-web-input.panel-menu-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.library-add-web-input.panel-menu-input:focus {
+  outline: none;
+}
+
+.library-add-web-action {
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 2px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--sv-icon-muted);
+  cursor: pointer;
+}
+
+.library-add-web-action:hover,
+.library-add-web-action:focus-visible {
+  background: var(--sv-accent-weak);
+  color: var(--sv-accent-text);
+}
+
+.library-add-web-action:focus-visible {
+  outline: none;
+}
+
+/* —— source rows: title-only compact list, no destructive delete in Library ———— */
+
+.library-panel :is(.recent-source-list, .library-doc-list) {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.library-panel :is(.recent-source-list, .library-doc-list) .source-item {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.library-panel :is(.recent-source-list, .library-doc-list) .source-item:hover {
+  background: var(--sv-surface-muted);
+}
+
+.library-panel :is(.recent-source-list, .library-doc-list) .source-item.active {
+  border-color: transparent;
+  background: var(--sv-accent-weak);
+  box-shadow: none;
+}
+
+.library-panel :is(.recent-source-list, .library-doc-list) .source-item-open {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  padding: 0 7px;
+  color: var(--sv-text);
+}
+
+.library-panel :is(.recent-source-list, .library-doc-list) .source-item-icon {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  color: var(--sv-accent-text);
+}
+
+.library-panel :is(.recent-source-list, .library-doc-list) .source-item-text {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.library-panel :is(.recent-source-list, .library-doc-list) .source-item-text span {
+  display: block;
+  overflow: hidden;
+  color: var(--sv-text-strong);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-panel :is(.recent-source-list, .library-doc-list) .source-item.active .source-item-text span {
+  color: var(--sv-accent-text);
+  font-weight: 600;
+}
+
+.library-panel :is(.recent-source-list, .library-doc-list) .source-item-text small {
+  display: none;
+}
+
+.source-item-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  margin-right: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--sv-icon-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.library-panel .source-item:hover .source-item-remove,
+.library-panel .source-item.active .source-item-remove,
+.source-item-remove:focus-visible {
+  opacity: 1;
+}
+
+.source-item-remove:hover {
+  background: #eef3fb;
+  color: var(--sv-accent-text);
 }

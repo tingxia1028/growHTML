@@ -314,21 +314,21 @@ function ReviewPackEditor({ content, onChange }: NoteEditInput) {
 // carry only the natural names.
 export const explanationPlugin: KitNoteTypePlugin = {
   label: "Explanation",
-  title: "讲解",
+  title: { zh: "讲解", en: "Explanation" },
   aliases: ["解释", "讲解卡", "explanation", "explain"],
   render: (input) => <ExplanationRender {...input} />,
   edit: (input) => <ExplanationEditor {...input} />
 };
 export const reviewPackPlugin: KitNoteTypePlugin = {
   label: "Review Pack",
-  title: "复习包",
+  title: { zh: "复习包", en: "Review Pack" },
   aliases: ["复习", "review"],
   render: (input) => <ReviewPackRender {...input} />,
   edit: (input) => <ReviewPackEditor {...input} />
 };
 export const exercisePlugin: KitNoteTypePlugin = {
   label: "Practice",
-  title: "练习",
+  title: { zh: "练习", en: "Practice" },
   aliases: ["练习题", "习题", "practice", "exercise"],
   render: (input) => <ExerciseRender {...input} />,
   edit: (input) => <ExerciseEditor {...input} />

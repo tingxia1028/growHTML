@@ -29,15 +29,15 @@ export type SearchCommandEntry = {
 // kind → (title, aliases). Kinds mirror the registered view kinds the IconRail /
 // user menu already navigate to (RAIL_ENTRIES + settings.hub + the two views that
 // left the rail but stay registered: layer.switcher / bookmark.list).
-const NAV_COMMANDS: { kind: string; title: Message; aliases: string[] }[] = [
+const NAV_COMMANDS: { kind: string; title: Message; aliases: string[]; modal?: boolean }[] = [
   { kind: "library", title: searchMessages.cmdLibrary, aliases: ["library", "资料库", "文库"] },
-  { kind: "concept.list", title: searchMessages.cmdConcepts, aliases: ["concepts", "概念"] },
-  { kind: "operation.manager", title: searchMessages.cmdOperations, aliases: ["operations", "操作", "动作"] },
-  { kind: "plugin.manager", title: searchMessages.cmdPlugins, aliases: ["plugins", "kits", "插件"] },
+  { kind: "concept.list", title: searchMessages.cmdConcepts, aliases: ["concepts", "概念", "知元"] },
+  { kind: "operation.manager", title: searchMessages.cmdOperations, aliases: ["operations", "操作", "动作"], modal: true },
+  { kind: "plugin.manager", title: searchMessages.cmdPlugins, aliases: ["plugins", "kits", "插件"], modal: true },
   { kind: "review.panel", title: searchMessages.cmdReview, aliases: ["review", "复习"] },
   { kind: "profile.panel", title: searchMessages.cmdProfile, aliases: ["profile", "画像", "记忆"] },
-  { kind: "settings.hub", title: searchMessages.cmdSettings, aliases: ["settings", "设置"] },
-  { kind: "layer.switcher", title: searchMessages.cmdLayers, aliases: ["layers", "分层", "层"] },
+  { kind: "settings.hub", title: searchMessages.cmdSettings, aliases: ["settings", "设置"], modal: true },
+  { kind: "layer.switcher", title: searchMessages.cmdLayers, aliases: ["layers", "分层", "层"], modal: true },
   { kind: "bookmark.list", title: searchMessages.cmdBookmarks, aliases: ["bookmarks", "书签"] }
 ];
 
@@ -47,11 +47,11 @@ const NAV_COMMANDS: { kind: string; title: Message; aliases: string[] }[] = [
  * derivation (kit-contributed commands, SEARCH-2) can slot in without palette changes.
  */
 export function searchCommandEntries(): SearchCommandEntry[] {
-  const panes = NAV_COMMANDS.map(({ kind, title, aliases }) => {
-    const target: ShellNavTarget = { type: "pane", kind };
+  const panes = NAV_COMMANDS.map(({ kind, title, aliases, modal }) => {
+    const target: ShellNavTarget = modal ? { type: "modal", kind } : { type: "pane", kind };
     return { id: `open:${kind}`, title, aliases, target, run: () => navigateShell(target) };
   });
-  const onboarding: ShellNavTarget = { type: "onboarding", open: true };
+  const onboarding: ShellNavTarget = { type: "modal", kind: "onboarding.checklist" };
   return [
     ...panes,
     {

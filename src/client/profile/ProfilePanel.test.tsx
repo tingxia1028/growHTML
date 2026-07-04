@@ -13,6 +13,7 @@ import { createRoot } from "react-dom/client";
 import "./ProfilePanel";
 
 import { getView, type WorkspaceContext } from "../workspace/viewRegistry";
+import { setLocale } from "../i18n";
 import type {
   MemoryDigestRow,
   MemoryEventInput,
@@ -96,6 +97,7 @@ function makeIo(initialOverrides: ProfileOverrides = { facts: [] }, captureEnabl
 let posted: MemoryEventInput[][];
 
 beforeEach(() => {
+  setLocale("zh");
   posted = [];
   resetMemoryCaptureForTests();
   setMemoryTransportForTests(async (events) => {
@@ -183,6 +185,29 @@ describe("ProfilePanel — rendering", () => {
     expect(container.querySelector(".profile-empty")).toBeTruthy();
     expect(container.querySelector(".profile-capture-off")!.textContent).toContain("行为记录已关闭");
     expect((container.querySelector(".profile-capture-switch input") as HTMLInputElement).checked).toBe(false);
+    cleanup();
+  });
+
+  it("flips profile chrome and built-in fact labels to English", async () => {
+    setLocale("en");
+    const { io } = makeIo();
+    setProfileIoForTests(io);
+    const { container, cleanup } = await renderPanel();
+
+    const weak = container.querySelector('[data-fact-key="weak:contentType:quiz"]')!;
+    expect(container.querySelector(".panel-title")!.textContent).toContain("Profile");
+    expect(container.querySelector(".profile-head")!.textContent).toContain("Memory Profile");
+    expect(weak.querySelector(".profile-fact-kind")!.textContent).toBe("Weak");
+    expect(weak.querySelector(".profile-fact-title")!.textContent).toBe("Weak Spot: quiz");
+    expect(weak.querySelector(".profile-fact-value")!.textContent).toBe("Review fail rate 67% (2/3 failed, Type)");
+    expect(container.querySelector(".profile-activity")!.textContent).toContain("4 events");
+    expect(container.querySelector(".profile-activity")!.textContent).toContain("streak 2 days");
+    expect(container.querySelector('.profile-dimension[data-dimension="contentType"] .profile-subhead')!.textContent).toBe("Type");
+    expect(container.querySelector('.profile-dimension[data-dimension="contentType"] .profile-fail-label')!.textContent).toBe("Fail Rate 67%");
+    expect(container.querySelector(".profile-manage-section .profile-head")!.textContent).toBe("Memory Management");
+    expect(container.textContent).not.toContain("画像");
+    expect(container.textContent).not.toContain("弱项");
+    expect(container.textContent).not.toContain("错误率");
     cleanup();
   });
 });

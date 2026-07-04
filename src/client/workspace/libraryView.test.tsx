@@ -3,7 +3,7 @@
 // states), the NEW full 文档 list with type filter chips, the header search filter
 // (SEARCH-1 seam), the ONE unified `+` menu (registry groups, fixture kit action,
 // web-disabled hint), fixture kit sections, i18n locale flip, and the ported legacy
-// behaviors (open / delete / recent rows / folder trees / refresh).
+// behaviors (open / close-from-list / recent rows / folder trees / refresh).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import type { ReactElement, ReactNode } from "react";
@@ -45,6 +45,7 @@ function makeCtx(overrides: Record<string, unknown> = {}): WorkspaceContext {
     activeSourceId: "source_2",
     setActiveSourceId: vi.fn(),
     deleteSourceItem: vi.fn().mockResolvedValue(undefined),
+    removeRecentSourceId: vi.fn(),
     loadSources: vi.fn().mockResolvedValue(undefined),
     canOpenLocal: true,
     openFileDialog: vi.fn().mockResolvedValue(undefined),
@@ -102,9 +103,18 @@ function sectionCount(id: string): string {
 
 async function openAddMenu(): Promise<HTMLElement> {
   await click(container.querySelector('[aria-label="添加到资料库"]'));
-  const popover = container.querySelector(".panel-menu-popover");
+  const popover = document.body.querySelector(".panel-menu-popover");
   expect(popover).toBeTruthy();
   return popover as HTMLElement;
+}
+
+async function openLibrarySearch(): Promise<HTMLInputElement> {
+  const trigger = container.querySelector(".library-search-toggle");
+  expect(trigger).toBeTruthy();
+  await click(trigger);
+  const input = container.querySelector(".library-search") as HTMLInputElement | null;
+  expect(input).toBeTruthy();
+  return input!;
 }
 
 beforeEach(() => {
@@ -125,6 +135,21 @@ afterEach(async () => {
 });
 
 describe("LibraryView sections (registry-driven)", () => {
+  it("keeps Library header tools grouped on the right", async () => {
+    await mountLibrary(makeCtx());
+    const head = container.querySelector(".library-head") as HTMLElement;
+    const actions = head.querySelector(".library-actions") as HTMLElement;
+    expect(head.children).toHaveLength(2);
+    expect(head.firstElementChild).toBe(container.querySelector(".library-title"));
+    expect(head.lastElementChild).toBe(actions);
+
+    const actionChildren = Array.from(actions.children);
+    expect(actionChildren).toHaveLength(3);
+    expect(actionChildren[0].classList.contains("library-search-toggle")).toBe(true);
+    expect(actionChildren[1].classList.contains("library-icon-btn")).toBe(true);
+    expect(actionChildren[2].classList.contains("panel-menu")).toBe(true);
+  });
+
   it("renders the three core sections in order with count badges", async () => {
     await mountLibrary(makeCtx());
     const ids = Array.from(container.querySelectorAll("[data-section-id]")).map((el) =>
@@ -231,21 +256,45 @@ describe("文档 — the full sources list + type filter chips", () => {
     expect(sectionEl("core.documents")!.querySelectorAll(".library-doc-list .source-item")).toHaveLength(4);
   });
 
-  it("opens a source from the list and deletes one via the row button", async () => {
+  it("opens a source from the list and closes one from the Library list without deleting it", async () => {
     const ctx = makeCtx();
     await mountLibrary(ctx);
     const rows = sectionEl("core.documents")!.querySelectorAll(".library-doc-list .source-item");
     await click(rows[0].querySelector(".source-item-open"));
     expect(ctx.setActiveSourceId).toHaveBeenCalledWith("source_1");
-    await click(rows[2].querySelector(".source-item-delete"));
-    expect(ctx.deleteSourceItem).toHaveBeenCalledWith("source_3", "React 文档");
+    await click(rows[2].querySelector(".source-item-remove"));
+    expect(ctx.deleteSourceItem).not.toHaveBeenCalled();
+    const remainingTitles = Array.from(sectionEl("core.documents")!.querySelectorAll(".library-doc-list .source-item"))
+      .map((row) => row.querySelector(".source-item-text span")!.textContent);
+    expect(remainingTitles).toEqual(["线性代数教材", "细胞生物学讲义", "错题截图"]);
+    expect(sectionCount("core.documents")).toBe("3");
+  });
+
+  it("renders source rows as title-only compact rows with tooltip detail", async () => {
+    await mountLibrary(makeCtx());
+    const row = sectionEl("core.documents")!.querySelector(".library-doc-list .source-item")!;
+    expect(row.querySelector(".source-item-text span")!.textContent).toBe("线性代数教材");
+    expect(row.querySelector(".source-item-text small")).toBeNull();
+    expect(row.getAttribute("title")).toContain("Type: pdf");
+    expect(row.getAttribute("title")).toContain("Path: source_1.dat");
+    expect(row.getAttribute("title")).not.toContain("ID: source_1");
+  });
+
+  it("removes recent rows through the recent-list action, not source delete", async () => {
+    const ctx = makeCtx();
+    await mountLibrary(ctx);
+    const row = sectionEl("core.recent")!.querySelector(".recent-source-list .source-item")!;
+    await click(row.querySelector(".source-item-remove"));
+    expect(ctx.removeRecentSourceId).toHaveBeenCalledWith("source_1");
+    expect(ctx.deleteSourceItem).not.toHaveBeenCalled();
   });
 });
 
 describe("header search (SEARCH-1 seam)", () => {
   it("filters items across sections by title match and updates the counts", async () => {
     await mountLibrary(makeCtx());
-    const input = container.querySelector(".library-search") as HTMLInputElement;
+    expect(container.querySelector(".library-search")).toBeNull();
+    const input = await openLibrarySearch();
     await act(async () => setInputValue(input, "细胞"));
 
     expect(sectionCount("core.documents")).toBe("1");
@@ -257,7 +306,7 @@ describe("header search (SEARCH-1 seam)", () => {
 
   it("shows a no-matches line (not the import guidance) when a search empties a section", async () => {
     await mountLibrary(makeCtx());
-    const input = container.querySelector(".library-search") as HTMLInputElement;
+    const input = await openLibrarySearch();
     await act(async () => setInputValue(input, "不存在的标题"));
     expect(sectionCount("core.documents")).toBe("0");
     expect(sectionEl("core.documents")!.querySelector(".library-empty")!.textContent).toBe("没有匹配的条目。");
@@ -265,6 +314,16 @@ describe("header search (SEARCH-1 seam)", () => {
 });
 
 describe("the unified + menu (registry groups)", () => {
+  it("portals the add menu outside the Library panel so panel overflow cannot clip it", async () => {
+    await mountLibrary(makeCtx());
+    const popover = await openAddMenu();
+
+    expect(container.querySelector(".panel-menu-popover")).toBeNull();
+    expect(document.body.contains(popover)).toBe(true);
+    expect(popover.style.position).toBe("fixed");
+    expect(popover.style.width).toBe("260px");
+  });
+
   it("renders the 导入 group's built-ins and runs them against the context", async () => {
     const ctx = makeCtx();
     await mountLibrary(ctx);
@@ -290,9 +349,24 @@ describe("the unified + menu (registry groups)", () => {
     await act(async () => setInputValue(input, "https://example.com"));
     expect(ctx.setImportUrl).toHaveBeenCalledWith("https://example.com");
 
-    const buttons = Array.from(webBlock.querySelectorAll(".panel-menu-item"));
-    await click(buttons.find((button) => button.textContent === "抓取网页")!);
+    const buttons = Array.from(webBlock.querySelectorAll(".library-add-web-action"));
+    expect(buttons).toHaveLength(2);
+    expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual(["抓取网页", "实时打开"]);
+
+    await click(buttons.find((button) => button.getAttribute("aria-label") === "抓取网页")!);
     expect(ctx.importFromUrl).toHaveBeenCalledTimes(1);
+    expect(document.body.querySelector(".panel-menu-popover")).toBeNull();
+  });
+
+  it("auto-closes the + menu when focus moves outside", async () => {
+    await mountLibrary(makeCtx());
+    await openAddMenu();
+    expect(document.body.querySelector(".panel-menu-popover")).toBeTruthy();
+
+    await act(async () => {
+      document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    });
+    expect(document.body.querySelector(".panel-menu-popover")).toBeNull();
   });
 
   it("exposes the built-in 新建 entries — Markdown (default, first) + HTML 页 (SRC-1)", async () => {

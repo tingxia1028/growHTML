@@ -27,7 +27,8 @@
 // (the adaptive-note contract).
 
 import { useEffect, useMemo, useState } from "react";
-import { Blocks, Package, Puzzle } from "lucide-react";
+import { Blocks, Package, Puzzle, Search } from "lucide-react";
+import { defineMessages, t, useLocale, type Message } from "../i18n";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 import type { PluginRecord } from "../../kits/plugin";
 import { listViewers, resolveViewer, NOTETYPE_SENTINEL } from "../notes/viewerRegistry";
@@ -46,15 +47,84 @@ import {
 import { entityClient } from "../data/entityClient";
 
 // A short human label for a contribution kind (the row's kind badge).
-const KIND_LABEL: Record<string, string> = {
-  noteType: "Note Type",
-  viewer: "Viewer",
-  command: "Command",
-  surface: "Surface",
-  language: "Language",
-  layout: "Layout",
-  prompt: "Prompt",
-  layerPolicy: "Layer Policy"
+const pluginManagerMessages = defineMessages({
+  title: { zh: "插件", en: "Kit & Plugin" },
+  installedTab: { zh: "已安装", en: "Installed" },
+  marketTab: { zh: "市场", en: "Market" },
+  hideSearch: { zh: "收起插件搜索", en: "Hide plugin search" },
+  showSearch: { zh: "搜索插件", en: "Search plugins" },
+  searchMarket: { zh: "搜索市场…", en: "Search market…" },
+  searchInstalled: { zh: "搜索已安装…", en: "Search installed…" },
+  searchMarketLabel: { zh: "搜索市场", en: "Search the market" },
+  searchInstalledLabel: { zh: "搜索已安装插件", en: "Search installed plugins" },
+  saveInstallFailed: { zh: "保存安装状态失败", en: "Failed to save install state" },
+  pluginCount: { zh: "个插件", en: "plugins" },
+  uninstall: { zh: "卸载", en: "Uninstall" },
+  removeKit: { zh: "移除", en: "Remove" },
+  keep: { zh: "保留", en: "Keep" },
+  listSeparator: { zh: "、", en: ", " },
+  remove: { zh: "移除", en: "Remove" },
+  directInstall: { zh: "直接安装", en: "direct install" },
+  alsoIn: { zh: "也在", en: "also in" },
+  viewerFallback: { zh: "Viewer 回退到默认渲染", en: "Viewer falls back to the default renderer" },
+  confirmUninstall: { zh: "确认卸载", en: "Confirm uninstall" },
+  cancel: { zh: "取消", en: "Cancel" },
+  standalonePlugins: { zh: "插件", en: "Plugins" },
+  noInstalled: { zh: "还没有安装套件或插件。", en: "No kits or plugins installed." },
+  noInstalledMatches: { zh: "没有匹配的已安装插件。", en: "No installed plugins match this search." },
+  installedVia: { zh: "经", en: "Installed via" },
+  builtin: { zh: "内置", en: "Built in" },
+  enableToggleTitle: {
+    zh: "启用/停用（隐藏创建入口，不影响渲染）",
+    en: "Enable/disable creation entry points without changing rendering"
+  },
+  removeDirectTitle: {
+    zh: "移除直接安装（仍由套件提供；要完全移除请卸载该套件）",
+    en: "Remove the direct install. The kit still provides it; uninstall the kit to remove it fully."
+  },
+  uninstallViewerTitle: {
+    zh: "卸载（其 Viewer 回退到默认渲染；已有笔记照常显示）",
+    en: "Uninstall. Its viewer falls back to default rendering; existing notes still display."
+  },
+  uninstallTitle: {
+    zh: "卸载（已有笔记照常显示）",
+    en: "Uninstall. Existing notes still display."
+  },
+  advanced: { zh: "高级", en: "Advanced" },
+  enablePrefix: { zh: "启用", en: "Enable" },
+  togglePrefix: { zh: "切换", en: "Toggle" },
+  all: { zh: "全部", en: "All" },
+  plugins: { zh: "插件", en: "Plugins" },
+  kits: { zh: "套件", en: "Kits" },
+  loadingCatalog: { zh: "正在载入市场…", en: "Loading catalog…" },
+  noCatalogEntries: { zh: "暂无市场条目。", en: "No catalog entries." },
+  installedBadge: { zh: "已安装 ✓", en: "Installed ✓" },
+  install: { zh: "安装", en: "Install" },
+  viewerConflicts: { zh: "Viewer 冲突", en: "Viewer conflicts" },
+  noViewerConflicts: { zh: "没有 Viewer 冲突。", en: "No viewer conflicts." },
+  defaultNoteType: { zh: "默认（笔记类型）", en: "Default (note type)" },
+  resolvedBy: { zh: "解析来源:", en: "Resolved by:" },
+  viewerFor: { zh: "Viewer:", en: "Viewer for" },
+  auto: { zh: "自动", en: "Auto" },
+  noteTypeKind: { zh: "笔记类型", en: "Note Type" },
+  viewerKind: { zh: "Viewer", en: "Viewer" },
+  commandKind: { zh: "命令", en: "Command" },
+  surfaceKind: { zh: "入口", en: "Surface" },
+  languageKind: { zh: "语言", en: "Language" },
+  layoutKind: { zh: "布局", en: "Layout" },
+  promptKind: { zh: "提示词", en: "Prompt" },
+  layerPolicyKind: { zh: "层策略", en: "Layer Policy" }
+});
+
+const KIND_LABEL: Record<string, Message> = {
+  noteType: pluginManagerMessages.noteTypeKind,
+  viewer: pluginManagerMessages.viewerKind,
+  command: pluginManagerMessages.commandKind,
+  surface: pluginManagerMessages.surfaceKind,
+  language: pluginManagerMessages.languageKind,
+  layout: pluginManagerMessages.layoutKind,
+  prompt: pluginManagerMessages.promptKind,
+  layerPolicy: pluginManagerMessages.layerPolicyKind
 };
 
 type Snapshot = {
@@ -65,8 +135,10 @@ type Snapshot = {
 };
 
 function KitPluginMarketView({ ctx }: { ctx: WorkspaceContext }) {
+  useLocale();
   const [tab, setTab] = useState<"installed" | "market">("installed");
   const [search, setSearch] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [kindFilter, setKindFilter] = useState<"all" | "plugin" | "kit">("all");
   const [listings, setListings] = useState<CatalogListing[] | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot>(() => installStateSnapshot());
@@ -112,50 +184,69 @@ function KitPluginMarketView({ ctx }: { ctx: WorkspaceContext }) {
     entityClient
       .putPluginCatalog({ catalogState: next })
       .then(() => setSnapshot(installStateSnapshot()))
-      .catch((err) => setMarketError(err instanceof Error ? err.message : "Failed to save install state"));
+      .catch((err) => setMarketError(err instanceof Error ? err.message : t(pluginManagerMessages.saveInstallFailed)));
   };
 
   return (
     <aside className="plugin-manager-panel">
       <div className="panel-title">
         <Blocks size={16} />
-        Kit &amp; Plugin
+        {t(pluginManagerMessages.title)}
       </div>
 
-      <div className="market-tabs" role="tablist">
+      <div className="plugin-manager-tabs-row">
+        <div className="market-tabs" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            className={`market-tab market-tab-installed${tab === "installed" ? " active" : ""}`}
+            aria-selected={tab === "installed"}
+            onClick={() => setTab("installed")}
+          >
+            {t(pluginManagerMessages.installedTab)}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            className={`market-tab market-tab-market${tab === "market" ? " active" : ""}`}
+            aria-selected={tab === "market"}
+            onClick={() => setTab("market")}
+          >
+            {t(pluginManagerMessages.marketTab)}
+          </button>
+        </div>
         <button
           type="button"
-          role="tab"
-          className={`market-tab market-tab-installed${tab === "installed" ? " active" : ""}`}
-          aria-selected={tab === "installed"}
-          onClick={() => setTab("installed")}
+          className={`plugin-search-toggle${searchOpen ? " active" : ""}`}
+          aria-label={searchOpen ? t(pluginManagerMessages.hideSearch) : t(pluginManagerMessages.showSearch)}
+          aria-pressed={searchOpen}
+          onClick={() => {
+            if (searchOpen) setSearch("");
+            setSearchOpen((open) => !open);
+          }}
         >
-          已安装
+          <Search size={15} />
         </button>
-        <button
-          type="button"
-          role="tab"
-          className={`market-tab market-tab-market${tab === "market" ? " active" : ""}`}
-          aria-selected={tab === "market"}
-          onClick={() => setTab("market")}
-        >
-          市场
-        </button>
-        {tab === "market" ? (
+      </div>
+
+      {searchOpen ? (
+        <div className="plugin-search-row">
+          <Search size={14} aria-hidden="true" />
           <input
             className="market-search"
-            placeholder="搜索…"
-            aria-label="Search the market"
+            placeholder={tab === "market" ? t(pluginManagerMessages.searchMarket) : t(pluginManagerMessages.searchInstalled)}
+            aria-label={tab === "market" ? t(pluginManagerMessages.searchMarketLabel) : t(pluginManagerMessages.searchInstalledLabel)}
             value={search}
+            autoFocus
             onChange={(event) => setSearch(event.target.value)}
           />
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       {marketError ? <div className="error-box market-error">{marketError}</div> : null}
 
       {tab === "installed" ? (
-        <InstalledTab ctx={ctx} snapshot={snapshot} listings={listings} persist={persist} />
+        <InstalledTab ctx={ctx} snapshot={snapshot} listings={listings} search={search} persist={persist} />
       ) : (
         <MarketTab
           snapshot={snapshot}
@@ -175,11 +266,13 @@ function InstalledTab({
   ctx,
   snapshot,
   listings,
+  search,
   persist
 }: {
   ctx: WorkspaceContext;
   snapshot: Snapshot;
   listings: CatalogListing[] | null;
+  search: string;
   persist(next: CatalogState): void;
 }) {
   const { installedPlugins } = ctx;
@@ -194,6 +287,16 @@ function InstalledTab({
     installedPlugins.find((p) => p.id === pluginId)?.name ??
     (listings ?? []).find((l) => l.id === pluginId)?.title ??
     pluginId;
+  const query = search.trim().toLowerCase();
+  const matches = (...parts: Array<string | undefined>): boolean =>
+    !query || parts.some((part) => (part ?? "").toLowerCase().includes(query));
+  const pluginMatches = (plugin: PluginRecord): boolean =>
+    matches(
+      plugin.name,
+      plugin.id,
+      plugin.kitId,
+      ...plugin.contributions.flatMap((contribution) => [contribution.label, contribution.key, contribution.kind])
+    );
 
   // Kit groups = kit records whose kit is INSTALLED; their members are the read-model
   // plugins tagged with that kitId. Everything else effective-installed lists as a
@@ -210,48 +313,58 @@ function InstalledTab({
     // Cataloged → must be effective-installed to appear here; uncataloged → always-on.
     return catalogedIds.has(p.id) ? snapshot.effectivePluginIds.has(p.id) : true;
   });
+  const visibleKitGroups = kitRecords
+    .map((kit) => {
+      const members = installedPlugins.filter((p) => p.kitId === kit.id && p.id !== kit.id);
+      const kitMatches = pluginMatches(kit);
+      const visibleMembers = kitMatches ? members : members.filter(pluginMatches);
+      return { kit, members, visibleMembers, visible: kitMatches || visibleMembers.length > 0 };
+    })
+    .filter((entry) => entry.visible);
+  const visibleStandalonePlugins = standalonePlugins.filter(pluginMatches);
+  const hasInstalledItems = kitRecords.length > 0 || standalonePlugins.length > 0;
+  const hasVisibleItems = visibleKitGroups.length > 0 || visibleStandalonePlugins.length > 0;
 
   return (
     <div className="market-installed">
       <div className="plugin-manager-list record-list">
-        {kitRecords.map((kit) => {
-          const members = installedPlugins.filter((p) => p.kitId === kit.id && p.id !== kit.id);
+        {visibleKitGroups.map(({ kit, members, visibleMembers }) => {
           const outcome = kitRemovalOutcome(kit.id, snapshot.catalogState, snapshot.userKits);
           return (
             <div key={kit.id} className="plugin-kit-group" data-kit-id={kit.id}>
               <div className="plugin-kit-head">
                 <div className="plugin-kit-name">
                   <Package size={13} /> {kit.name}
-                  <span className="market-kit-count">{members.length} plugins</span>
+                  <span className="market-kit-count">{members.length} {t(pluginManagerMessages.pluginCount)}</span>
                 </div>
                 <button
                   type="button"
                   className="link-button kit-uninstall-btn"
                   onClick={() => setConfirmingKitId(confirmingKitId === kit.id ? null : kit.id)}
                 >
-                  卸载
+                  {t(pluginManagerMessages.uninstall)}
                 </button>
               </div>
               {confirmingKitId === kit.id ? (
                 <div className="kit-removal-confirm" data-kit-id={kit.id}>
-                  <div className="kit-removal-title">移除 «{kit.name}»?</div>
+                  <div className="kit-removal-title">{t(pluginManagerMessages.removeKit)} «{kit.name}»?</div>
                   <ul className="kit-removal-list">
                     {outcome.map((row) => (
                       <li key={row.pluginId} className="kit-removal-row" data-plugin-id={row.pluginId}>
                         <span className="kit-removal-name">{nameOf(row.pluginId)}</span>
                         <span className={`kit-removal-outcome ${row.kept ? "kept" : "removed"}`}>
                           {row.kept
-                            ? `保留(${row.keptBy
-                                .map((k) => (k === "direct" ? "直接安装" : `也在 «${nameOf(k)}»`))
-                                .join("、")})`
-                            : "移除"}
+                            ? `${t(pluginManagerMessages.keep)}(${row.keptBy
+                                .map((k) => (k === "direct" ? t(pluginManagerMessages.directInstall) : `${t(pluginManagerMessages.alsoIn)} «${nameOf(k)}»`))
+                                .join(t(pluginManagerMessages.listSeparator))})`
+                            : t(pluginManagerMessages.remove)}
                         </span>
                         {/* §8.5.5: name the viewer fallback for members losing a viewer slot. */}
                         {!row.kept &&
                         installedPlugins
                           .find((p) => p.id === row.pluginId)
                           ?.contributions.some((c) => c.kind === "viewer") ? (
-                          <span className="kit-removal-viewer-note">Viewer 回退到默认渲染</span>
+                          <span className="kit-removal-viewer-note">{t(pluginManagerMessages.viewerFallback)}</span>
                         ) : null}
                       </li>
                     ))}
@@ -265,15 +378,15 @@ function InstalledTab({
                         persist(withKitUninstalled(snapshot.catalogState, kit.id));
                       }}
                     >
-                      确认卸载
+                      {t(pluginManagerMessages.confirmUninstall)}
                     </button>
                     <button type="button" className="link-button" onClick={() => setConfirmingKitId(null)}>
-                      取消
+                      {t(pluginManagerMessages.cancel)}
                     </button>
                   </div>
                 </div>
               ) : null}
-              {members.map((plugin) => (
+              {visibleMembers.map((plugin) => (
                 <InstalledPluginRow
                   key={plugin.id}
                   ctx={ctx}
@@ -288,12 +401,12 @@ function InstalledTab({
           );
         })}
 
-        {standalonePlugins.length > 0 ? (
+        {visibleStandalonePlugins.length > 0 ? (
           <div className="plugin-kit-group market-standalone-group">
             <div className="plugin-kit-name">
-              <Puzzle size={13} /> Plugins
+              <Puzzle size={13} /> {t(pluginManagerMessages.standalonePlugins)}
             </div>
-            {standalonePlugins.map((plugin) => (
+            {visibleStandalonePlugins.map((plugin) => (
               <InstalledPluginRow
                 key={plugin.id}
                 ctx={ctx}
@@ -307,8 +420,11 @@ function InstalledTab({
           </div>
         ) : null}
 
-        {kitRecords.length === 0 && standalonePlugins.length === 0 ? (
-          <div className="empty-state">No kits or plugins installed.</div>
+        {!hasInstalledItems ? (
+          <div className="empty-state">{t(pluginManagerMessages.noInstalled)}</div>
+        ) : null}
+        {query && !hasVisibleItems ? (
+          <div className="empty-state">{t(pluginManagerMessages.noInstalledMatches)}</div>
         ) : null}
       </div>
 
@@ -354,18 +470,20 @@ function InstalledPluginRow({
         <span className="plugin-name">{plugin.name}</span>
         {holds && !holds.direct && holds.viaKits.length > 0 ? (
           <span className="plugin-provenance">
-            经 {holds.viaKits.map((kitId) => `«${nameOf(kitId)}»`).join("、")} 安装
+            {t(pluginManagerMessages.installedVia)} {holds.viaKits.map((kitId) => `«${nameOf(kitId)}»`).join(t(pluginManagerMessages.listSeparator))}
           </span>
         ) : null}
-        {!cataloged ? <span className="plugin-provenance">内置</span> : null}
+        {!cataloged ? <span className="plugin-provenance">{t(pluginManagerMessages.builtin)}</span> : null}
         {contributions.length > 0 ? (
-          <label className="plugin-contrib-toggle plugin-enable-toggle" title="启用/停用(隐藏创建入口,不影响渲染)">
+          <label className="plugin-contrib-toggle plugin-enable-toggle sv-switch" title={t(pluginManagerMessages.enableToggleTitle)}>
             <input
               type="checkbox"
+              className="sv-switch-input"
               checked={enabled}
-              aria-label={`Enable ${plugin.name}`}
+              aria-label={`${t(pluginManagerMessages.enablePrefix)} ${plugin.name}`}
               onChange={(event) => toggleAll(event.target.checked)}
             />
+            <span className="sv-switch-track" aria-hidden="true" />
           </label>
         ) : null}
         {holds?.direct ? (
@@ -374,34 +492,36 @@ function InstalledPluginRow({
             className="link-button plugin-uninstall-btn"
             title={
               holds.viaKits.length > 0
-                ? "移除直接安装(仍由套件提供;要完全移除请卸载该套件)"
+                ? t(pluginManagerMessages.removeDirectTitle)
                 : hasViewer
-                  ? "卸载(其 Viewer 回退到默认渲染;已有笔记照常显示)"
-                  : "卸载(已有笔记照常显示)"
+                  ? t(pluginManagerMessages.uninstallViewerTitle)
+                  : t(pluginManagerMessages.uninstallTitle)
             }
             onClick={() => persist(withPluginUninstalled(snapshot.catalogState, plugin.id))}
           >
-            卸载
+            {t(pluginManagerMessages.uninstall)}
           </button>
         ) : null}
       </div>
       {contributions.length > 0 ? (
         <details className="plugin-advanced">
-          <summary className="plugin-advanced-summary">Advanced</summary>
+          <summary className="plugin-advanced-summary">{t(pluginManagerMessages.advanced)}</summary>
           <ul className="plugin-contrib-list">
             {contributions.map((contribution) => {
               const contributionEnabled = !disabled.has(contribution.id);
               return (
                 <li key={contribution.id} className="plugin-contrib-row" data-contribution-id={contribution.id}>
-                  <span className="plugin-contrib-kind">{KIND_LABEL[contribution.kind] ?? contribution.kind}</span>
+                  <span className="plugin-contrib-kind">{KIND_LABEL[contribution.kind] ? t(KIND_LABEL[contribution.kind]) : contribution.kind}</span>
                   <span className="plugin-contrib-label">{contribution.label}</span>
-                  <label className="plugin-contrib-toggle">
+                  <label className="plugin-contrib-toggle sv-switch">
                     <input
                       type="checkbox"
+                      className="sv-switch-input"
                       checked={contributionEnabled}
-                      aria-label={`Toggle ${contribution.label}`}
+                      aria-label={`${t(pluginManagerMessages.togglePrefix)} ${contribution.label}`}
                       onChange={(event) => setContributionEnabled(contribution.id, event.target.checked)}
                     />
+                    <span className="sv-switch-track" aria-hidden="true" />
                   </label>
                 </li>
               );
@@ -437,9 +557,9 @@ function MarketTab({
       <div className="market-kind-filter">
         {(
           [
-            ["all", "All"],
-            ["plugin", "Plugins"],
-            ["kit", "Kits"]
+            ["all", t(pluginManagerMessages.all)],
+            ["plugin", t(pluginManagerMessages.plugins)],
+            ["kit", t(pluginManagerMessages.kits)]
           ] as const
         ).map(([value, label]) => (
           <button
@@ -455,9 +575,9 @@ function MarketTab({
       </div>
 
       {listings === null ? (
-        <div className="empty-state">Loading catalog…</div>
+        <div className="empty-state">{t(pluginManagerMessages.loadingCatalog)}</div>
       ) : listings.length === 0 ? (
-        <div className="empty-state">No catalog entries.</div>
+        <div className="empty-state">{t(pluginManagerMessages.noCatalogEntries)}</div>
       ) : (
         <ul className="market-card-list">
           {listings.map((listing) => {
@@ -471,13 +591,13 @@ function MarketTab({
                   <span className="market-card-title">
                     {listing.title}
                     {listing.kind === "kit" && typeof listing.memberCount === "number" ? (
-                      <span className="market-kit-count">{listing.memberCount} plugins</span>
+                      <span className="market-kit-count">{listing.memberCount} {t(pluginManagerMessages.pluginCount)}</span>
                     ) : null}
                   </span>
                   <span className="market-card-desc">{listing.description}</span>
                 </span>
                 {installed ? (
-                  <span className="market-installed-badge">Installed ✓</span>
+                  <span className="market-installed-badge">{t(pluginManagerMessages.installedBadge)}</span>
                 ) : (
                   <button
                     type="button"
@@ -490,7 +610,7 @@ function MarketTab({
                       )
                     }
                   >
-                    Install
+                    {t(pluginManagerMessages.install)}
                   </button>
                 )}
               </li>
@@ -536,37 +656,37 @@ function ViewerConflicts({ ctx, plugins }: { ctx: WorkspaceContext; plugins: rea
 
   return (
     <div className="plugin-viewer-conflicts">
-      <div className="plugin-section-title">Viewer conflicts</div>
+      <div className="plugin-section-title">{t(pluginManagerMessages.viewerConflicts)}</div>
       {conflicts.length === 0 ? (
-        <div className="empty-state">No viewer conflicts.</div>
+        <div className="empty-state">{t(pluginManagerMessages.noViewerConflicts)}</div>
       ) : (
         <ul className="viewer-conflict-list">
           {conflicts.map(({ contentType, candidates }) => {
             const winner = resolveViewer({ contentType }, ctx.pluginPrefs);
             const winnerLabel =
               winner.viewerId === NOTETYPE_SENTINEL
-                ? "Default (note type)"
+                ? t(pluginManagerMessages.defaultNoteType)
                 : candidates.find((c) => c.id === winner.viewerId)?.label ?? winner.viewerId;
             return (
               <li key={contentType} className="viewer-conflict-row" data-content-type={contentType}>
                 <span className="viewer-conflict-type">{contentType}</span>
-                <span className="viewer-conflict-winner" title={`Resolved by: ${winner.source}`}>
+                <span className="viewer-conflict-winner" title={`${t(pluginManagerMessages.resolvedBy)} ${winner.source}`}>
                   {winnerLabel}
                 </span>
                 <select
                   className="viewer-conflict-picker"
-                  aria-label={`Viewer for ${contentType}`}
+                  aria-label={`${t(pluginManagerMessages.viewerFor)} ${contentType}`}
                   value={pinnedFor(contentType)}
                   onChange={(event) => ctx.pinViewer({ contentType }, event.target.value)}
                 >
                   {/* Empty = no explicit pin (resolver's automatic choice). */}
-                  <option value="">Auto ({winnerLabel})</option>
+                  <option value="">{t(pluginManagerMessages.auto)} ({winnerLabel})</option>
                   {candidates.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.label}
                     </option>
                   ))}
-                  <option value={NOTETYPE_SENTINEL}>Default (note type)</option>
+                  <option value={NOTETYPE_SENTINEL}>{t(pluginManagerMessages.defaultNoteType)}</option>
                 </select>
               </li>
             );

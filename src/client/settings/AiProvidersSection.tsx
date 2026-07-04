@@ -338,11 +338,21 @@ export function AiProvidersSection() {
         {rows.map((row) => {
           const isManaged = row.kind === "managed";
           const checked = config?.activeProviderId === row.id;
+          const effective = active.id === row.id;
           const test = tests[row.id];
           const detectState = detects[row.id];
           const detectable = row.kind === "cli-agent" && isDetectableCliId(row.entry?.preset ?? row.id);
           return (
-            <li key={row.id} className="settings-ai-row" data-provider-id={row.id} data-provider-kind={row.kind}>
+            <li
+              key={row.id}
+              className="settings-ai-row"
+              data-provider-id={row.id}
+              data-provider-kind={row.kind}
+              data-selected={checked ? "true" : "false"}
+              data-effective={effective ? "true" : "false"}
+              data-disabled={isManaged || !configWritable ? "true" : "false"}
+              aria-current={effective ? "true" : undefined}
+            >
               <div className="settings-ai-row-main">
                 <label className="settings-ai-pick">
                   <input
@@ -353,16 +363,21 @@ export function AiProvidersSection() {
                     disabled={busy || isManaged || !configWritable}
                     onChange={() => activate(row.id)}
                   />
-                  <span className="settings-provider-label">{row.label}</span>
-                </label>
-                <code className="settings-provider-id">{row.id}</code>
-                <span className="settings-provider-kind">{PROVIDER_KIND_LABEL[row.kind] ?? row.kind}</span>
-                <CapabilityChips capabilities={row.capabilities} />
-                {row.entry ? (
-                  <span className="settings-ai-key-badge" data-key-set={row.entry.keySet}>
-                    {row.entry.keySet ? "密钥已保存 ●" : "未设密钥"}
+                  <span className="settings-ai-radio-mark" aria-hidden="true" />
+                  <span className="settings-ai-title">
+                    <span className="settings-provider-label">{row.label}</span>
+                    <span className="settings-ai-meta">
+                      <code className="settings-provider-id">{row.id}</code>
+                      <span className="settings-provider-kind">{PROVIDER_KIND_LABEL[row.kind] ?? row.kind}</span>
+                      <CapabilityChips capabilities={row.capabilities} />
+                      {row.entry ? (
+                        <span className="settings-ai-key-badge" data-key-set={row.entry.keySet}>
+                          {row.entry.keySet ? "密钥已保存 ●" : "未设密钥"}
+                        </span>
+                      ) : null}
+                    </span>
                   </span>
-                ) : null}
+                </label>
               </div>
               <div className="settings-ai-row-actions">
                 {detectable ? (

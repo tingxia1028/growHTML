@@ -518,6 +518,41 @@ describe("vault server API", () => {
     expect(byConcept.body.notes[0].id).toBe(note.id);
   });
 
+  it("merges concepts and deletes a concept with note/relation cleanup", async () => {
+    const source = (
+      await request(app).post("/api/sources/html").send({ title: "Doc", content: fixtureHtmlBody }).expect(201)
+    ).body.source;
+    const a = (await request(app).post("/api/concepts").send({ name: "Render Thread", aliases: ["RT"], tags: ["render"] }).expect(201)).body.concept;
+    const b = (await request(app).post("/api/concepts").send({ name: "Game Thread", tags: ["runtime"] }).expect(201)).body.concept;
+    const note = (
+      await request(app)
+        .post("/api/notes")
+        .send({ sourceId: source.id, conceptIds: [a.id], contentType: "markdown", content: "Explains it." })
+        .expect(201)
+    ).body.note;
+    const relation = (
+      await request(app)
+        .post("/api/relations")
+        .send({ from: { type: "concept", id: a.id }, to: { type: "concept", id: b.id }, relationKind: "related" })
+        .expect(201)
+    ).body.relation;
+
+    const merged = await request(app).post(`/api/concepts/${a.id}/merge`).send({ targetConceptId: b.id }).expect(200);
+    expect(merged.body.concept.id).toBe(b.id);
+    expect(merged.body.concept.aliases).toEqual(expect.arrayContaining(["Render Thread", "RT"]));
+    expect(merged.body.concept.tags).toEqual(expect.arrayContaining(["render", "runtime"]));
+    await request(app).get(`/api/concepts/${a.id}`).expect(404);
+
+    const targetDetail = await request(app).get(`/api/concepts/${b.id}`).expect(200);
+    expect(targetDetail.body.notes.map((item: { id: string }) => item.id)).toContain(note.id);
+    expect(targetDetail.body.relations.map((item: { id: string }) => item.id)).not.toContain(relation.id);
+
+    const deleteResult = await request(app).delete(`/api/concepts/${b.id}`).expect(200);
+    expect(deleteResult.body.notesUpdated).toBe(1);
+    expect((await request(app).get(`/api/notes?conceptId=${b.id}`).expect(200)).body.notes).toHaveLength(0);
+    await request(app).get(`/api/concepts/${b.id}`).expect(404);
+  });
+
   it("links an EXISTING note to a concept via PATCH /api/notes/:id", async () => {
     const source = (
       await request(app).post("/api/sources/html").send({ title: "Doc", content: fixtureHtmlBody }).expect(201)

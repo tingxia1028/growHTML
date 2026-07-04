@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import type { ReactElement, ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { AnyAnchor, NoteRecord } from "../data/entityClient";
+import { setLocale } from "../i18n";
 import type { WorkspaceContextValue } from "./WorkspaceContext";
 
 let mockWorkspace: WorkspaceContextValue;
@@ -56,6 +60,7 @@ function anchor(id: string): AnyAnchor {
 
 describe("NoteListPanel focused note", () => {
   beforeEach(() => {
+    setLocale("zh");
     document.body.innerHTML = "";
     HTMLElement.prototype.scrollIntoView = vi.fn();
     const notes = [note("note_1", "anchor_1"), note("note_2", "anchor_2")];
@@ -89,5 +94,39 @@ describe("NoteListPanel focused note", () => {
     expect(container.querySelector(".note-list-head")?.getAttribute("aria-expanded")).toBe("true");
 
     cleanup();
+  });
+
+  it("distinguishes concept marker notes with a chip-style row", () => {
+    const marker = {
+      ...note("note_marker", "anchor_1"),
+      conceptIds: ["concept_1"],
+      content: "anchor_1"
+    };
+    mockWorkspace = {
+      ...mockWorkspace,
+      visibleNotes: [marker, note("note_regular", "anchor_2")],
+      focus: { focus: null, setAnchor: vi.fn() }
+    } as unknown as WorkspaceContextValue;
+
+    const { container, cleanup } = mount(<NoteListPanel collapsible={false} />);
+
+    const markerRow = container.querySelector('.note-list-row[data-note-id="note_marker"]')!;
+    expect(markerRow.className).toContain("note-list-row-marker");
+    expect(markerRow.getAttribute("data-note-kind")).toBe("concept-marker");
+    expect(markerRow.querySelector(".note-list-marker-chip")!.textContent).toBe("知元标记");
+    expect(container.querySelector('.note-list-row[data-note-id="note_regular"]')!.className).not.toContain("note-list-row-marker");
+
+    cleanup();
+  });
+
+  it("keeps note cards adaptive by overriding the shared 260px preview width", () => {
+    const cssPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../styles.css");
+    const css = readFileSync(cssPath, "utf8").replace(/\r\n/g, "\n");
+    const fixedRule = css.indexOf(".note-list-row .sv-artifact-card.sv-preview-card,\n.anchor-linked-card");
+    const adaptiveRule = css.lastIndexOf(".note-list-row .sv-artifact-card.sv-preview-card");
+
+    expect(fixedRule).toBeGreaterThan(-1);
+    expect(adaptiveRule).toBeGreaterThan(fixedRule);
+    expect(css.slice(adaptiveRule, adaptiveRule + 120)).toContain("max-width: none");
   });
 });

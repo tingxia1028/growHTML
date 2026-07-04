@@ -1,24 +1,82 @@
-// I18N seed (pulled forward by LIB-2) — the smallest typed core the Library redesign
-// needs so NO user-visible string is a hardcoded literal. Scope is deliberately tiny:
-// a module-level locale (default "zh", no persistence, no React provider — that whole
-// half is I18N-1), `defineMessages` for fully-typed {key: {zh,en}} dictionaries, `t()`
-// resolution, and the contribution-facing `LocalizedText` (plain string OR a per-locale
-// record) with `resolveText()`. Because `Message` requires EVERY locale, a missing
-// translation is a compile error, not a runtime fallback.
+// I18N core: a tiny typed dictionary helper plus a React-visible locale store. The
+// exported API stays intentionally small (`defineMessages`, `t`, `setLocale`,
+// `LocaleProvider`, `LocalizedText/resolveText`) so feature code can be bilingual
+// without bringing in a third-party i18n runtime.
+
+import {
+  createContext,
+  createElement,
+  useContext,
+  useMemo,
+  useSyncExternalStore,
+  type ReactNode
+} from "react";
 
 export type Locale = "zh" | "en";
 
 const DEFAULT_LOCALE: Locale = "zh";
+const LOCALE_STORAGE_KEY = "growte.locale";
 
-let currentLocale: Locale = DEFAULT_LOCALE;
+function isLocale(value: unknown): value is Locale {
+  return value === "zh" || value === "en";
+}
 
-/** The active UI locale. Module-level for now; I18N-1 adds persistence + a provider. */
+function readStoredLocale(): Locale {
+  try {
+    const raw = globalThis.localStorage?.getItem(LOCALE_STORAGE_KEY);
+    return isLocale(raw) ? raw : DEFAULT_LOCALE;
+  } catch {
+    return DEFAULT_LOCALE;
+  }
+}
+
+let currentLocale: Locale = readStoredLocale();
+const listeners = new Set<() => void>();
+
+/** The active UI locale. */
 export function getLocale(): Locale {
   return currentLocale;
 }
 
 export function setLocale(locale: Locale): void {
+  if (currentLocale === locale) return;
   currentLocale = locale;
+  try {
+    globalThis.localStorage?.setItem(LOCALE_STORAGE_KEY, locale);
+  } catch {
+    // Storage may be unavailable in tests or hardened desktop contexts.
+  }
+  listeners.forEach((listener) => listener());
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function getSnapshot(): Locale {
+  return currentLocale;
+}
+
+export function useLocale(): Locale {
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+export type LocaleContextValue = {
+  locale: Locale;
+  setLocale(locale: Locale): void;
+};
+
+const LocaleContext = createContext<LocaleContextValue>({ locale: DEFAULT_LOCALE, setLocale });
+
+export function LocaleProvider({ children }: { children: ReactNode }) {
+  const locale = useLocale();
+  const value = useMemo(() => ({ locale, setLocale }), [locale]);
+  return createElement(LocaleContext.Provider, { value }, children);
+}
+
+export function useLocaleContext(): LocaleContextValue {
+  return useContext(LocaleContext);
 }
 
 /** One translatable string — a value for EVERY locale (missing one = type error). */

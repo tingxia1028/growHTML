@@ -13,6 +13,7 @@
 import { listNoteTypes } from "../notes/noteTypeRegistry";
 import { providerOf } from "../../kits/catalog";
 import { isPluginEffectiveInstalled } from "../../kits/installState";
+import { resolveText } from "../i18n";
 import type { SlashEntry } from "./engine";
 
 /**
@@ -40,7 +41,7 @@ export function slashEntriesFromNoteTypes(): SlashEntry[] {
     .map((plugin) => ({
       kind: "noteType" as const,
       id: plugin.contentType,
-      title: plugin.title ?? plugin.contentType,
+      title: plugin.title ? resolveText(plugin.title) : plugin.contentType,
       aliases: plugin.aliases ?? [],
       icon: plugin.icon,
       kitId: plugin.pluginId

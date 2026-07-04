@@ -5,12 +5,13 @@
 // in `order`; a section's render failure is isolated by the hub's error boundary.
 
 import type { ReactNode } from "react";
+import type { LocalizedText } from "../i18n";
 
 export type SettingsSection = {
   /** Stable id (e.g. "ai-providers"). Re-registering the same id REPLACES it. */
   id: string;
   /** Section heading shown in the hub. */
-  title: string;
+  title: LocalizedText;
   /** Sort key — lower renders first; ties break on id for a stable order. */
   order: number;
   /** The section body. Failures are caught per-section by the hub, never crash it. */

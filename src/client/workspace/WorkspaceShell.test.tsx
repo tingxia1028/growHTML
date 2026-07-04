@@ -15,7 +15,9 @@ vi.mock("../LocalHtmlReader", () => ({ LocalHtmlReader: () => null }));
 import { FocusProvider } from "../focus/FocusContext";
 import { WorkspaceProvider } from "./WorkspaceContext";
 import { WorkspaceShell } from "./WorkspaceShell";
+import { RAIL_ENTRIES } from "./IconRail";
 import { threePane } from "./presets";
+import { navigateShell } from "./shellNav";
 
 // The shell renders the threePane preset's DOCK TREE through the ViewRegistry. We assert
 // it produces the three pane containers in order, inside the `.app-shell` flex dock —
@@ -68,6 +70,28 @@ describe("WorkspaceShell", () => {
 
     // No unknown-view placeholders — every preset node resolved to a real view.
     expect(container.querySelector(".workspace-node-missing")).toBeNull();
+  });
+
+  it("keeps the left rail to Library/Review/Concepts/Profile and hosts secondary views in a modal", async () => {
+    await act(async () => {
+      root.render(
+        <FocusProvider>
+          <WorkspaceProvider>
+            <WorkspaceShell layout={threePane} />
+          </WorkspaceProvider>
+        </FocusProvider>
+      );
+    });
+
+    const railButtons = Array.from(container.querySelectorAll<HTMLButtonElement>(".icon-rail-entries .icon-rail-btn"));
+    expect(railButtons).toHaveLength(4);
+    expect(RAIL_ENTRIES.map((entry) => entry.kind)).toEqual(["library", "review.panel", "concept.list", "profile.panel"]);
+
+    await act(async () => {
+      expect(navigateShell({ type: "modal", kind: "shortcut.help" })).toBe(true);
+    });
+    expect(container.querySelector(".shell-modal-dialog")).not.toBeNull();
+    expect(container.querySelector(".shortcut-help")).not.toBeNull();
   });
 
   it("renders the panels in the preset's node order (library → reader → study)", async () => {

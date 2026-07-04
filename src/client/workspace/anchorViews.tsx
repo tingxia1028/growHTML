@@ -7,7 +7,7 @@
 // When nothing is focused it shows the existing "Select a passage…" empty state.
 
 import { useState } from "react";
-import { Anchor, Crosshair, FileText } from "lucide-react";
+import { Anchor as AnchorIcon, Crosshair, FileText } from "lucide-react";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 import { draftQuoteText } from "../focus/FocusContext";
 import { PanelMenu } from "./PanelMenu";
@@ -18,7 +18,22 @@ import { ActionMoreMenu } from "./ActionMoreMenu";
 import { SpeakButton } from "../speech/SpeakButton";
 import { persistAnchorGlyphVisibility, readStoredAnchorGlyphVisibility } from "../annotations";
 import { setAnchorGlyphVisibility } from "../markerOverlay";
+import { defineMessages, resolveText, t, useLocale } from "../i18n";
 import "./anchorViews.css";
+
+const anchorViewMessages = defineMessages({
+  actions: { zh: "锚点操作", en: "Anchor actions" },
+  clearAnchor: { zh: "清除锚点", en: "Clear anchor" },
+  showAnchorMarkers: { zh: "显示锚点标记", en: "Show anchor markers" },
+  currentSource: { zh: "当前资料", en: "Current source" },
+  revealAnchor: { zh: "在阅读器中显示此锚点", en: "Reveal this anchor in the reader" },
+  page: { zh: "第", en: "Page" },
+  pageSuffix: { zh: "页", en: "" },
+  linkedNotes: { zh: "关联笔记", en: "Linked notes" },
+  noneYet: { zh: "暂无", en: "None yet" },
+  showNoteInNotes: { zh: "在笔记中显示", en: "Show in Notes" },
+  empty: { zh: "选择一段文本来聚焦锚点。", en: "Select a passage to focus an anchor." }
+});
 
 // 显示锚点标记 — the GLOBAL anchor-glyph switch (D2 amendment, 2026-07-04). Off hides
 // every anchor glyph chip across all readers (note-slot chips stay); persisted via
@@ -26,6 +41,7 @@ import "./anchorViews.css";
 // live through the markerOverlay module store (host realms repaint immediately;
 // webview guests receive it over the sv:anchors payload).
 function AnchorGlyphSwitch() {
+  useLocale();
   const [visible, setVisible] = useState(() => readStoredAnchorGlyphVisibility());
   const toggle = () => {
     const next = !visible;
@@ -33,21 +49,23 @@ function AnchorGlyphSwitch() {
     persistAnchorGlyphVisibility(next);
     setAnchorGlyphVisibility(next);
   };
+  const label = t(anchorViewMessages.showAnchorMarkers);
   return (
-    <label className="anchor-glyph-switch">
-      <input
-        type="checkbox"
-        className="anchor-glyph-switch-input"
-        checked={visible}
-        onChange={toggle}
-        aria-label="显示锚点标记"
-      />
-      <span className="anchor-glyph-switch-label">显示锚点标记</span>
-    </label>
+    <button
+      type="button"
+      className={`anchor-glyph-switch${visible ? " active" : ""}`}
+      title={label}
+      aria-label={label}
+      aria-pressed={visible}
+      onClick={toggle}
+    >
+      <AnchorIcon size={15} aria-hidden="true" />
+    </button>
   );
 }
 
 function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
+  useLocale();
   const { focus, activeSource, visibleNotes, anchorBarActions, runAction, generating, openOperationManager } = ctx;
   const anchor = focus.anchor;
   const quote = anchor?.quote ?? draftQuoteText(focus.draft);
@@ -73,22 +91,19 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
 
   return (
     <aside className="anchor-panel">
-      <div className="panel-title anchor-panel-title">
-        <Anchor size={16} />
-        Anchor
-        <PanelMenu label="Anchor actions" align="right">
+      <div className="anchor-panel-toolbar">
+        <AnchorGlyphSwitch />
+        <PanelMenu label={t(anchorViewMessages.actions)} align="right">
           <button
             className="panel-menu-item"
             type="button"
             disabled={!anchor && !focus.draft}
             onClick={() => focus.clear()}
           >
-            Clear anchor
+            {t(anchorViewMessages.clearAnchor)}
           </button>
         </PanelMenu>
       </div>
-
-      <AnchorGlyphSwitch />
 
       {quote ? (
         <>
@@ -97,13 +112,13 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
             <div className="anchor-context-source">
               <FileText size={14} />
               <span className="anchor-context-name" title={activeSource?.title}>
-                {activeSource?.title ?? "Current source"}
+                {activeSource?.title ?? t(anchorViewMessages.currentSource)}
               </span>
               <button
                 className="anchor-context-jump"
                 type="button"
-                title="Reveal this anchor in the reader"
-                aria-label="Reveal this anchor in the reader"
+                title={t(anchorViewMessages.revealAnchor)}
+                aria-label={t(anchorViewMessages.revealAnchor)}
                 disabled={!anchor}
                 onClick={() => anchor && focus.setAnchor(anchor)}
               >
@@ -112,7 +127,8 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
             </div>
             {page != null ? (
               <div className="anchor-context-meta">
-                Page {page}
+                {t(anchorViewMessages.page)} {page}
+                {t(anchorViewMessages.pageSuffix)}
                 {section ? ` (${section}…)` : ""}
               </div>
             ) : null}
@@ -155,21 +171,23 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
           {/* —— Linked notes (visible layers) —— note-type icons focus the Notes viewer
               and re-reveal the source anchor; no inline popover here. */}
           <div className="anchor-linked">
-            <span className="anchor-linked-label">Linked notes</span>
+            <span className="anchor-linked-label">{t(anchorViewMessages.linkedNotes)}</span>
             {linkedNotes.length ? (
               <div className="anchor-linked-icons">
                 {linkedNotes.map((note) => {
                   const contentType = note.contentType ?? "markdown";
                   const Icon = noteTypeIcon(contentType);
-                  const label = getNoteType(contentType)?.label ?? contentType;
+                  const noteType = getNoteType(contentType);
+                  const label = noteType?.label ? resolveText(noteType.label) : contentType;
                   const active = focus.focus?.type === "note" && focus.focus.noteId === note.id;
+                  const buttonLabel = `${t(anchorViewMessages.showNoteInNotes)}: ${label}`;
                   return (
                     <button
                       key={note.id}
                       className={`anchor-linked-icon${active ? " active" : ""}`}
                       type="button"
-                      title={`Show ${label} in Notes`}
-                      aria-label={`Show ${label} in Notes`}
+                      title={buttonLabel}
+                      aria-label={buttonLabel}
                       aria-pressed={active}
                       onClick={() => focusLinkedNote(note.id)}
                     >
@@ -179,13 +197,13 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
                 })}
               </div>
             ) : (
-              <span className="anchor-linked-empty">None yet</span>
+              <span className="anchor-linked-empty">{t(anchorViewMessages.noneYet)}</span>
             )}
           </div>
         </>
       ) : (
         <>
-          <p className="anchor-excerpt-empty">Select a passage to focus an anchor.</p>
+          <p className="anchor-excerpt-empty">{t(anchorViewMessages.empty)}</p>
           {/* The Action Bar still shows in the empty state, but disabled — so the user
               sees what's available before focusing a passage. */}
           <div className="anchor-action-bar">

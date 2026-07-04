@@ -13,6 +13,7 @@ import type { ReactNode } from "react";
 import type { NoteContentSpec } from "../core/notes/contentTypes";
 import type { NoteEditInput, NoteRenderInput } from "../client/notes/noteTypeRegistry";
 import type { Command } from "../client/commands/registry";
+import type { LocalizedText } from "../client/i18n";
 import type { KitLayerPolicy } from "./policy";
 import type { KitDetectionTable } from "../core/subject/detectSubject";
 
@@ -22,10 +23,10 @@ export type KitNoteTypePlugin = {
   render(input: NoteRenderInput): ReactNode;
   edit(input: NoteEditInput): ReactNode;
   /** Friendly label for the composer type picker (defaults to the domain name). */
-  label?: string;
+  label?: LocalizedText;
   /** Natural display name for the slash palette (slash-composer §2), e.g.
       `textbook.exercise` → "练习". Optional; adapters fall back to the contentType. */
-  title?: string;
+  title?: LocalizedText;
   /** Slash-palette match keys: 中文 synonyms + English shorthands. Never repeats the
       contentType (the id always matches on its own). */
   aliases?: string[];
@@ -69,12 +70,12 @@ export type KitLayout = unknown; // phase 3
 // presentation (user spec §6).
 export type KitSurfaceItem = {
   commandId: string;
-  title: string;
+  title: LocalizedText;
   icon?: string;
   group?: string;
   priority?: number;
   /** A concise one-line hint shown in the action tooltip (after the title). */
-  description?: string;
+  description?: LocalizedText;
 };
 
 // A prompt-pack entry: builds the LLM prompt for a structured generation and

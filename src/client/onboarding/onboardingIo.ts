@@ -13,6 +13,9 @@ import {
   type SealedPackRow,
   type SourceRecord
 } from "../data/entityClient";
+import { getSpeechStatus, type SpeechStatusView } from "../speech/speechStatus";
+import { getChatSessionIo, type ChatSessionSummary } from "../chat/sessionClient";
+import { getTrashIo, type TrashListing } from "../workspace/trashIo";
 
 export type OnboardingIo = {
   /** GET /api/workspace/onboarding — the persisted checklist block. */
@@ -25,6 +28,12 @@ export type OnboardingIo = {
   fetchEvents(): Promise<MemoryEventRow[]>;
   /** GET /api/svpack — sealed imports for 导入笔记/分享包. */
   fetchSealedPacks(): Promise<SealedPackRow[]>;
+  /** GET /api/trash — deleted item count for the recovery step. */
+  fetchTrash(): Promise<TrashListing>;
+  /** GET /api/speech/status — read-aloud availability. */
+  fetchSpeechStatus(): Promise<SpeechStatusView>;
+  /** GET /api/chat/sessions — saved chat history summaries. */
+  fetchChatSessions(): Promise<ChatSessionSummary[]>;
   /** GET /api/ai/providers — active provider kind for 接入 AI. */
   fetchProviders(): Promise<AiProvidersInfo>;
   /** POST /api/sources/html — seed the sample doc (载入示例文档). */
@@ -37,6 +46,9 @@ const defaultIo: OnboardingIo = {
   fetchAllNotes: () => entityClient.allNotes().then(({ notes }) => notes),
   fetchEvents: () => entityClient.listMemoryEvents({ limit: 1000 }).then(({ events }) => events),
   fetchSealedPacks: () => entityClient.sealedImports().then(({ packs }) => packs),
+  fetchTrash: () => getTrashIo().fetchTrash(),
+  fetchSpeechStatus: () => getSpeechStatus(),
+  fetchChatSessions: () => getChatSessionIo().list().then(({ sessions }) => sessions),
   fetchProviders: () => entityClient.aiProviders(),
   seedSample: (title, content) => entityClient.ingestHtml(title, content).then(({ source }) => source)
 };

@@ -37,6 +37,12 @@ export type VaultImportOutcome = {
   preImportBackup: string;
   restartRequired: boolean;
 };
+export type BackupRestoreOutcome = {
+  ok: true;
+  restoredFrom: string;
+  preRestoreBackup: string;
+  counts: Record<string, number>;
+};
 
 export type DataTrustIo = {
   /** POST /api/backup/now */
@@ -49,6 +55,8 @@ export type DataTrustIo = {
   exportVault(): Promise<{ blob: Blob; fileName: string }>;
   /** POST /api/vault/import?confirm=… with the raw zip bytes. */
   importVault(bytes: Uint8Array, confirm: string): Promise<VaultImportOutcome>;
+  /** POST /api/backup/restore */
+  restoreBackup(name: string, confirm: string): Promise<BackupRestoreOutcome>;
 };
 
 const transport = createHttpTransport();
@@ -73,7 +81,8 @@ const defaultIo: DataTrustIo = {
     const parsed = (await response.json().catch(() => ({}))) as { error?: string };
     if (!response.ok) throw new Error(parsed.error ?? `导入失败 (HTTP ${response.status})`);
     return parsed as unknown as VaultImportOutcome;
-  }
+  },
+  restoreBackup: (name, confirm) => transport.request("POST", "/api/backup/restore", { name, confirm })
 };
 
 let io: DataTrustIo = defaultIo;

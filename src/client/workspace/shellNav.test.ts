@@ -14,9 +14,11 @@ describe("shellNav", () => {
     registerShellNavigator((target) => seen.push(target));
 
     expect(navigateShell({ type: "pane", kind: "settings.hub" })).toBe(true);
+    expect(navigateShell({ type: "modal", kind: "operation.manager" })).toBe(true);
     expect(navigateShell({ type: "onboarding", open: true })).toBe(true);
     expect(seen).toEqual([
       { type: "pane", kind: "settings.hub" },
+      { type: "modal", kind: "operation.manager" },
       { type: "onboarding", open: true }
     ]);
   });

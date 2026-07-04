@@ -87,6 +87,17 @@ describe("POST /api/speech/tts", () => {
     expect(synth).toHaveBeenCalledExactlyOnceWith({ text: "Hello there", voice: "en-US-JennyNeural" });
   });
 
+  it("passes a bounded rate override to the edge lane", async () => {
+    const synth = vi.fn(async () => FAKE_MP3);
+    await request(appWith(synth))
+      .post("/api/speech/tts")
+      .send({ text: "Hello there", voice: "en-US-JennyNeural", rate: 1.25 })
+      .buffer()
+      .parse(binaryParser)
+      .expect(200);
+    expect(synth).toHaveBeenCalledExactlyOnceWith({ text: "Hello there", voice: "en-US-JennyNeural", rate: 1.25 });
+  });
+
   it("rejects empty text with 400 before touching the lane", async () => {
     const synth = vi.fn(async () => FAKE_MP3);
     const response = await request(appWith(synth)).post("/api/speech/tts").send({ text: "" }).expect(400);

@@ -8,6 +8,8 @@
 export type ShellNavTarget =
   /** Show a registered view-kind in the switchable LEFT rail slot (IconRail idiom). */
   | { type: "pane"; kind: string }
+  /** Show a registered view-kind in the centered shell modal host. */
+  | { type: "modal"; kind: string }
   /** Open/close the onboarding checklist in the CENTER slot (SHELL-2). */
   | { type: "onboarding"; open: boolean };
 

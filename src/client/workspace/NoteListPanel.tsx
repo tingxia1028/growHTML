@@ -19,6 +19,22 @@ import { ArtifactCard } from "./ArtifactCard";
 import { getNoteType } from "../notes/noteTypeRegistry";
 import { BOOKMARK_CONTENT_TYPE, getNoteContentSpec } from "../../core/notes/contentTypes";
 import { SpeakButton } from "../speech/SpeakButton";
+import type { AnyAnchor, NoteRecord } from "../data/entityClient";
+import { conceptMessages } from "./conceptMessages";
+import { t } from "../i18n";
+
+function normalizedMarkerText(value: unknown): string {
+  return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+}
+
+export function isConceptMarkerNote(note: NoteRecord, anchor?: AnyAnchor): boolean {
+  return (
+    note.conceptIds.length > 0 &&
+    note.anchorIds.length > 0 &&
+    !!anchor?.quote &&
+    normalizedMarkerText(note.content) === normalizedMarkerText(anchor.quote)
+  );
+}
 
 export function NoteListPanel({
   defaultOpen = false,
@@ -82,15 +98,7 @@ export function NoteListPanel({
           <span className="note-list-head-label">Notes</span>
           <span className="note-list-count">{listed.length}</span>
         </button>
-      ) : (
-        // Full-panel form: the SAME shared panel header the Anchor/Layers panes use
-        // (.panel-title with an icon + title), so the Notes sub-page reads consistently.
-        <div className="panel-title note-list-panel-title">
-          <StickyNote size={16} />
-          Notes
-          <span className="note-list-count">{listed.length}</span>
-        </div>
-      )}
+      ) : null}
 
       {expanded ? (
         listed.length ? (
@@ -99,6 +107,7 @@ export function NoteListPanel({
               const contentType = note.contentType ?? "markdown";
               const anchorId = note.anchorIds[0];
               const anchor = anchorId ? anchors.find((item) => item.id === anchorId) : undefined;
+              const markerNote = isConceptMarkerNote(note, anchor);
               const page = anchor && "page" in anchor ? (anchor as { page?: number }).page : undefined;
               const layer = note.layerIds[0]
                 ? sourceLayers.find((item) => item.id === note.layerIds[0])?.title
@@ -113,9 +122,11 @@ export function NoteListPanel({
                   <div
                     key={note.id}
                     ref={note.id === focusedNoteId ? focusedRowRef : undefined}
-                    className={`note-list-row note-list-row-editing${note.id === focusedNoteId ? " active" : ""}`}
+                    className={`note-list-row note-list-row-editing${markerNote ? " note-list-row-marker" : ""}${note.id === focusedNoteId ? " active" : ""}`}
                     data-note-id={note.id}
+                    data-note-kind={markerNote ? "concept-marker" : undefined}
                   >
+                    {markerNote ? <span className="note-list-marker-chip">{t(conceptMessages.markerNote)}</span> : null}
                     <div className="note-edit-inline">
                       {plugin.edit({ content: draft, onChange: setDraft })}
                       <div className="note-list-row-actions note-list-edit-actions">
@@ -145,9 +156,11 @@ export function NoteListPanel({
                 <div
                   key={note.id}
                   ref={note.id === focusedNoteId ? focusedRowRef : undefined}
-                  className={`note-list-row${note.id === focusedNoteId ? " active" : ""}`}
+                  className={`note-list-row${markerNote ? " note-list-row-marker" : ""}${note.id === focusedNoteId ? " active" : ""}`}
                   data-note-id={note.id}
+                  data-note-kind={markerNote ? "concept-marker" : undefined}
                 >
+                  {markerNote ? <span className="note-list-marker-chip">{t(conceptMessages.markerNote)}</span> : null}
                   <ArtifactCard
                     block={{
                       contentType,

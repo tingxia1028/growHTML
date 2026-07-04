@@ -20,7 +20,7 @@ import {
   Plus,
   RefreshCcw,
   RotateCcw,
-  Sparkles,
+  Search,
   TerminalSquare,
   X
 } from "lucide-react";
@@ -136,6 +136,8 @@ function LibraryAddMenu({ ctx }: { ctx: WorkspaceContext }) {
 
 function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [dismissedSourceIds, setDismissedSourceIds] = useState<string[]>([]);
   const [collapsedMap, setCollapsedMap] = useState<Record<string, boolean>>(readCollapsedSections);
 
   const toggleSection = (id: string) => {
@@ -150,7 +152,14 @@ function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
     });
   };
 
-  const sectionCtx: LibrarySectionContext = { workspace: ctx, query: query.trim().toLowerCase() };
+  const sectionCtx: LibrarySectionContext = {
+    workspace: ctx,
+    query: query.trim().toLowerCase(),
+    dismissedSourceIds,
+    dismissSourceId: (sourceId) => {
+      setDismissedSourceIds((current) => (current.includes(sourceId) ? current : [...current, sourceId]));
+    }
+  };
 
   return (
     <aside className="library-panel">
@@ -158,25 +167,46 @@ function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
         <h1 className="library-title">{t(libraryMessages.title)}</h1>
         {/* SEARCH-1 shipped: Cmd/Ctrl+K (GlobalSearch, WorkspaceShell chrome) is the
             GLOBAL search entry — this input stays the Library's LOCAL section filter. */}
-        <input
-          className="library-search"
-          type="search"
-          value={query}
-          placeholder={t(libraryMessages.searchPlaceholder)}
-          aria-label={t(libraryMessages.searchPlaceholder)}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        <button
-          className="library-icon-btn"
-          type="button"
-          title={t(libraryMessages.refresh)}
-          aria-label={t(libraryMessages.refresh)}
-          onClick={() => void ctx.loadSources()}
-        >
-          <RefreshCcw size={14} />
-        </button>
-        <LibraryAddMenu ctx={ctx} />
+        <div className="library-actions">
+          <button
+            className={`library-search-toggle${searchOpen ? " active" : ""}`}
+            type="button"
+            title={t(libraryMessages.searchPlaceholder)}
+            aria-label={t(libraryMessages.searchPlaceholder)}
+            aria-pressed={searchOpen}
+            onClick={() => {
+              if (searchOpen) setQuery("");
+              setSearchOpen((open) => !open);
+            }}
+          >
+            <Search size={14} />
+          </button>
+          <button
+            className="library-icon-btn"
+            type="button"
+            title={t(libraryMessages.refresh)}
+            aria-label={t(libraryMessages.refresh)}
+            onClick={() => void ctx.loadSources()}
+          >
+            <RefreshCcw size={14} />
+          </button>
+          <LibraryAddMenu ctx={ctx} />
+        </div>
       </div>
+
+      {searchOpen ? (
+        <div className="library-search-row">
+          <Search size={14} aria-hidden="true" />
+          <input
+            className="library-search"
+            type="search"
+            value={query}
+            placeholder={t(libraryMessages.searchPlaceholder)}
+            aria-label={t(libraryMessages.searchPlaceholder)}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+      ) : null}
 
       <div className="library-body library-sections">
         {listLibrarySections().map((section) => {
@@ -367,69 +397,69 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
   return (
     <aside className="study-panel">
       <section className="chat-box">
-        <div className="panel-title chat-panel-title">
-          <Sparkles size={16} />
-          AI Chat
-          <span
-            className={`workspace-status-dot status-${status}`}
-            title={`AI Chat status: ${status}`}
-            aria-label={`AI Chat status: ${status}`}
-          />
-          {/* W1: session list + 新对话 — the conversation is durable & resumable. */}
-          <ChatSessionSwitcher api={chatSessions} />
-          <PanelMenu label="AI Chat actions" align="right">
-            {/* Keep non-note utilities out of the main conversation surface. */}
-            <details className="patch-fold">
-              <summary>
-                <ListRestart size={14} /> Edit source (patch)
-              </summary>
-              <textarea
-                className="patch-input"
-                value={patchHtml}
-                onChange={(event) => setPatchHtml(event.target.value)}
-              />
-              <button
-                className="icon-button"
-                type="button"
-                onClick={() => void dispatch("anchor.create-patch", { newContent: patchHtml, oldText: draftQuote })}
-                disabled={!focus.draft && !focus.anchor}
-              >
-                <ListRestart size={16} />
-                Create Patch
-              </button>
-              <div className="record-list patch-list">
-                {activePatches.map((patch) => (
-                  <article key={patch.id} className="record-card">
-                    <strong>{patch.status}</strong>
-                    <code>{patch.id}</code>
-                    <p>{patch.newContent}</p>
-                    <div className="row-actions">
-                      <button type="button" onClick={() => void changePatchStatus(patch, "applied")}>
-                        Apply
-                      </button>
-                      <button type="button" onClick={() => void changePatchStatus(patch, "reverted")}>
-                        <RotateCcw size={14} />
-                        Revert
-                      </button>
-                    </div>
-                  </article>
-                ))}
+        <div className="chat-panel-toolbar" aria-label="AI Chat controls">
+          <div className="chat-panel-actions">
+            <span
+              className={`workspace-status-dot status-${status}`}
+              title={`AI Chat status: ${status}`}
+              aria-label={`AI Chat status: ${status}`}
+            />
+            {/* W1: session list + 新对话 — the conversation is durable & resumable. */}
+            <ChatSessionSwitcher api={chatSessions} />
+            <PanelMenu label="AI Chat actions" align="right">
+              {/* Keep non-note utilities out of the main conversation surface. */}
+              <details className="patch-fold">
+                <summary>
+                  <ListRestart size={14} /> Edit source (patch)
+                </summary>
+                <textarea
+                  className="patch-input"
+                  value={patchHtml}
+                  onChange={(event) => setPatchHtml(event.target.value)}
+                />
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={() => void dispatch("anchor.create-patch", { newContent: patchHtml, oldText: draftQuote })}
+                  disabled={!focus.draft && !focus.anchor}
+                >
+                  <ListRestart size={16} />
+                  Create Patch
+                </button>
+                <div className="record-list patch-list">
+                  {activePatches.map((patch) => (
+                    <article key={patch.id} className="record-card">
+                      <strong>{patch.status}</strong>
+                      <code>{patch.id}</code>
+                      <p>{patch.newContent}</p>
+                      <div className="row-actions">
+                        <button type="button" onClick={() => void changePatchStatus(patch, "applied")}>
+                          Apply
+                        </button>
+                        <button type="button" onClick={() => void changePatchStatus(patch, "reverted")}>
+                          <RotateCcw size={14} />
+                          Revert
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </details>
+              <div className="panel-menu-sep" />
+              <div className="panel-title terminal-box-title">
+                <TerminalSquare size={16} />
+                AI Terminal
+                <button
+                  className="link-button"
+                  type="button"
+                  onClick={() => setShowTerminal((value) => !value)}
+                >
+                  {showTerminal ? "Hide" : "Show"}
+                </button>
               </div>
-            </details>
-            <div className="panel-menu-sep" />
-            <div className="panel-title terminal-box-title">
-              <TerminalSquare size={16} />
-              AI Terminal
-              <button
-                className="link-button"
-                type="button"
-                onClick={() => setShowTerminal((value) => !value)}
-              >
-                {showTerminal ? "Hide" : "Show"}
-              </button>
-            </div>
-            {showTerminal ? <TerminalPanel defaultCwd={activeFileDir} /> : null}
-          </PanelMenu>
+              {showTerminal ? <TerminalPanel defaultCwd={activeFileDir} /> : null}
+            </PanelMenu>
+          </div>
         </div>
         {/* The passage everything below acts on — auto-filled from the reader
             selection (its anchor is created lazily when you ask or save). */}

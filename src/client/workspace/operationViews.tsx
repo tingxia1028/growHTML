@@ -36,6 +36,7 @@ import { listNoteContentSpecs } from "../../core/notes/contentTypes";
 import { kitSurfaceItems } from "../../kits/clientContext";
 import { productKits } from "../../kits/clientKits";
 import type { KitPrompt } from "../../kits/types";
+import { resolveText } from "../i18n";
 
 // —— built-in prompt lookup (React-free data, read for params + fork seeding) ——————————
 // The 4 textbook prompts are固化 code; their command id IS their prompt id, so a surface
@@ -60,7 +61,7 @@ function listBuiltinActions(): BuiltinAction[] {
   const source = kitSurfaceItems("source-actions").map((item) => ({ item, scope: "source" as const }));
   return [...selection, ...source].map(({ item, scope }) => {
     const prompt = builtinPromptsById.get(item.commandId);
-    return { id: item.commandId, title: item.title, scope, outputType: prompt?.outputType, params: prompt?.params ?? [] };
+    return { id: item.commandId, title: resolveText(item.title), scope, outputType: prompt?.outputType, params: prompt?.params ?? [] };
   });
 }
 
@@ -722,14 +723,17 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
                       </div>
                     ) : null}
                   </span>
-                  <label className="operation-toggle-label">
-                    <input
-                      type="checkbox"
-                      className="operation-surface-toggle"
-                      checked={!hidden}
-                      onChange={() => toggleHiddenOnSurface(surfaceTab, action.id)}
-                    />
+                  <label className="operation-toggle-label operation-switch-label">
                     <span className="operation-action-name">{action.title}</span>
+                    <span className="sv-switch">
+                      <input
+                        type="checkbox"
+                        className="operation-surface-toggle sv-switch-input"
+                        checked={!hidden}
+                        onChange={() => toggleHiddenOnSurface(surfaceTab, action.id)}
+                      />
+                      <span className="sv-switch-track" aria-hidden="true" />
+                    </span>
                   </label>
                   <span className="operation-action-tag" data-scope={action.scope}>
                     {action.scope === "source" ? "source" : "passage"}
@@ -910,13 +914,15 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
                   onChange={(event) => updateVariable(variable.name, { default: event.target.value })}
                 />
               ) : null}
-              <label className="operation-var-required">
+              <label className="operation-var-required sv-check">
                 <input
                   type="checkbox"
+                  className="sv-check-input"
                   checked={variable.required}
                   onChange={(event) => updateVariable(variable.name, { required: event.target.checked })}
                 />
-                required
+                <span className="sv-check-box" aria-hidden="true" />
+                <span>required</span>
               </label>
             </div>
           ))}
@@ -975,14 +981,17 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
               >
                 <div className="operation-action-main">
                   <GripVertical size={14} className="operation-drag-handle" />
-                  <label className="operation-toggle-label">
-                    <input
-                      type="checkbox"
-                      className="operation-toggle"
-                      checked={enabled}
-                      onChange={() => toggleEnabled(item.id)}
-                    />
+                  <label className="operation-toggle-label operation-switch-label">
                     <span className="operation-action-name">{item.title}</span>
+                    <span className="sv-switch">
+                      <input
+                        type="checkbox"
+                        className="operation-toggle sv-switch-input"
+                        checked={enabled}
+                        onChange={() => toggleEnabled(item.id)}
+                      />
+                      <span className="sv-switch-track" aria-hidden="true" />
+                    </span>
                   </label>
                   <span className="operation-action-tag" data-scope={item.scope}>
                     {item.scope === "source" ? "source" : "passage"}

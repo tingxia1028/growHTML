@@ -103,7 +103,7 @@ function MistakeEditor({ content, onChange }: NoteEditInput) {
 registerNoteType({
   contentType: MISTAKE_CONTENT_TYPE,
   label: "Mistake",
-  title: "错题",
+  title: { zh: "错题", en: "Mistake" },
   aliases: ["错题本", "订正", "mistake"],
   render: (input) => <MistakeRender {...input} />,
   edit: (input) => <MistakeEditor {...input} />

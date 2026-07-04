@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Sparkles } from "lucide-react";
+import { defineMessages, resolveText, t, useLocale } from "../i18n";
 import { registerView, type WorkspaceContext } from "../workspace/viewRegistry";
 import { navigateShell } from "../workspace/shellNav";
 import { SvpackImportDialog } from "../workspace/svpackViews";
@@ -34,10 +35,33 @@ const EMPTY_DETECTION = {
   noteCount: 0,
   providerKind: null as string | null,
   sealedPackCount: 0,
+  trashItemCount: 0,
+  speechAvailable: false,
+  chatSessionCount: 0,
   events: [] as Array<{ verb: string }>
 };
 
+const onboardingMessages = defineMessages({
+  panelLabel: { zh: "新手引导", en: "Onboarding" },
+  title: { zh: "欢迎使用 Growte", en: "Welcome to Growte" },
+  subtitle: {
+    zh: "按清单走完一个学习闭环：读、搜、记、朗读、分层、恢复、分享、复习。",
+    en: "Complete the learning loop: read, search, note, speak, layer, recover, share, and review."
+  },
+  complete: {
+    zh: "全部完成——学习闭环已经跑通，随时可以从左下角菜单回到这里。",
+    en: "All done. The learning loop is ready; you can return here from the bottom-left menu."
+  },
+  seedFailed: { zh: "载入示例文档失败——请稍后再试。", en: "Failed to load the sample document. Try again later." },
+  done: { zh: "已完成", en: "Done" },
+  seeding: { zh: "载入中…", en: "Loading…" },
+  loadSample: { zh: "载入示例文档", en: "Load Sample Document" },
+  finish: { zh: "完成引导", en: "Finish Onboarding" },
+  skip: { zh: "跳过引导", en: "Skip Onboarding" }
+});
+
 export function OnboardingPanel({ ctx }: { ctx: WorkspaceContext }) {
+  useLocale();
   // Always read the LATEST workspace data without re-subscribing effects to every
   // ctx re-render (the ReviewPanel ctxRef idiom).
   const ctxRef = useRef(ctx);
@@ -102,10 +126,13 @@ export function OnboardingPanel({ ctx }: { ctx: WorkspaceContext }) {
     let cancelled = false;
     const io = getOnboardingIo();
     void (async () => {
-      const [notes, providers, sealed, events] = await Promise.all([
+      const [notes, providers, sealed, trash, speech, sessions, events] = await Promise.all([
         io.fetchAllNotes().catch(() => []),
         io.fetchProviders().catch(() => null),
         io.fetchSealedPacks().catch(() => []),
+        io.fetchTrash().catch(() => ({ sources: [], notes: [] })),
+        io.fetchSpeechStatus().catch(() => null),
+        io.fetchChatSessions().catch(() => []),
         io.fetchEvents().catch(() => [])
       ]);
       if (cancelled) return;
@@ -113,6 +140,9 @@ export function OnboardingPanel({ ctx }: { ctx: WorkspaceContext }) {
         noteCount: notes.length,
         providerKind: providers?.active.kind ?? null,
         sealedPackCount: sealed.length,
+        trashItemCount: trash.sources.length + trash.notes.length,
+        speechAvailable: !!speech?.tts.available,
+        chatSessionCount: sessions.length,
         events
       });
     })();
@@ -127,6 +157,9 @@ export function OnboardingPanel({ ctx }: { ctx: WorkspaceContext }) {
     providerKind: detection.providerKind,
     layers: ctx.sourceLayers,
     sealedPackCount: detection.sealedPackCount,
+    trashItemCount: detection.trashItemCount,
+    speechAvailable: detection.speechAvailable,
+    chatSessionCount: detection.chatSessionCount,
     events: detection.events
   };
 
@@ -184,7 +217,7 @@ export function OnboardingPanel({ ctx }: { ctx: WorkspaceContext }) {
         setDetectTick((tick) => tick + 1);
         if (thenClose) navigateShell({ type: "onboarding", open: false });
       } catch {
-        setSeedError("载入示例文档失败——请稍后再试。");
+        setSeedError(t(onboardingMessages.seedFailed));
       } finally {
         setSeeding(false);
       }
@@ -196,10 +229,14 @@ export function OnboardingPanel({ ctx }: { ctx: WorkspaceContext }) {
   const goTo = (stepId: OnboardingStepId) => {
     switch (stepId) {
       case "import-doc":
+      case "new-document":
         navigateShell({ type: "pane", kind: "library" });
         return;
+      case "search-vault":
+        navigateShell({ type: "modal", kind: "shortcut.help" });
+        return;
       case "connect-ai":
-        navigateShell({ type: "pane", kind: "settings.hub" });
+        navigateShell({ type: "modal", kind: "settings.hub" });
         return;
       case "first-note": {
         // Needs a document in the CENTER slot — activate one (seed if none), then
@@ -213,11 +250,20 @@ export function OnboardingPanel({ ctx }: { ctx: WorkspaceContext }) {
         }
         return;
       }
+      case "speech-tools":
+        navigateShell({ type: "modal", kind: "settings.hub" });
+        return;
       case "see-layers":
-        navigateShell({ type: "pane", kind: "layer.switcher" });
+        navigateShell({ type: "modal", kind: "layer.switcher" });
+        return;
+      case "trash-recovery":
+        navigateShell({ type: "modal", kind: "trash.panel" });
         return;
       case "import-pack":
         setSvpackOpen(true);
+        return;
+      case "chat-history":
+        navigateShell({ type: "pane", kind: "study" });
         return;
       case "review-once":
         navigateShell({ type: "pane", kind: "review.panel" });
@@ -235,22 +281,22 @@ export function OnboardingPanel({ ctx }: { ctx: WorkspaceContext }) {
   const allDone = doneCount === ONBOARDING_STEPS.length;
 
   return (
-    <section className="onboarding-panel" aria-label="新手引导">
+    <section className="onboarding-panel" aria-label={t(onboardingMessages.panelLabel)}>
       <div className="onboarding-card">
         <header className="onboarding-head">
           <span className="onboarding-head-icon" aria-hidden="true">
             <Sparkles size={18} />
           </span>
           <div className="onboarding-head-text">
-            <h2 className="onboarding-title">欢迎使用 Growte</h2>
-            <p className="onboarding-subtitle">六步走完一个学习闭环:读 → 记 → 分层 → 分享 → 复习。</p>
+            <h2 className="onboarding-title">{t(onboardingMessages.title)}</h2>
+            <p className="onboarding-subtitle">{t(onboardingMessages.subtitle)}</p>
           </div>
           <span className="onboarding-progress" data-done={doneCount}>
             {doneCount} / {ONBOARDING_STEPS.length}
           </span>
         </header>
 
-        {allDone ? <p className="onboarding-complete">全部完成——学习闭环已经跑通,随时可以从左下角菜单回到这里。</p> : null}
+        {allDone ? <p className="onboarding-complete">{t(onboardingMessages.complete)}</p> : null}
 
         <ol className="onboarding-steps">
           {ONBOARDING_STEPS.map((step, index) => {
@@ -261,11 +307,11 @@ export function OnboardingPanel({ ctx }: { ctx: WorkspaceContext }) {
                   {done ? "✓" : index + 1}
                 </span>
                 <div className="onboarding-step-body">
-                  <span className="onboarding-step-title">{step.title}</span>
-                  <span className="onboarding-step-hint">{step.hint}</span>
+                  <span className="onboarding-step-title">{resolveText(step.title)}</span>
+                  <span className="onboarding-step-hint">{resolveText(step.hint)}</span>
                 </div>
                 {done ? (
-                  <span className="onboarding-step-done-label">已完成</span>
+                  <span className="onboarding-step-done-label">{t(onboardingMessages.done)}</span>
                 ) : (
                   <button
                     type="button"
@@ -274,7 +320,7 @@ export function OnboardingPanel({ ctx }: { ctx: WorkspaceContext }) {
                     disabled={seeding && step.id === "first-note"}
                     onClick={() => goTo(step.id)}
                   >
-                    {step.goLabel}
+                    {resolveText(step.goLabel)}
                   </button>
                 )}
               </li>
@@ -291,11 +337,11 @@ export function OnboardingPanel({ ctx }: { ctx: WorkspaceContext }) {
             disabled={seeding}
             onClick={() => void loadSample(false)}
           >
-            {seeding ? "载入中…" : "载入示例文档"}
+            {seeding ? t(onboardingMessages.seeding) : t(onboardingMessages.loadSample)}
           </button>
           <span className="onboarding-foot-gap" />
           <button type="button" className="onboarding-dismiss-btn" onClick={dismiss}>
-            {allDone ? "完成引导" : "跳过引导"}
+            {allDone ? t(onboardingMessages.finish) : t(onboardingMessages.skip)}
           </button>
         </footer>
       </div>

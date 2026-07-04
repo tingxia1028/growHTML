@@ -19,12 +19,55 @@
 // mousedown outside closes, focus restores to the trigger on close.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { defineMessages, t, useLocale } from "../i18n";
 import { backupStatusLine, runBackupNow, runExportVault, runImportVault } from "./dataTrust";
 import { navigateShell } from "./shellNav";
 import { getUserMenuIo } from "./userMenuIo";
 
-const LOCAL_USER_NAME = "本地用户";
 const FEEDBACK_ISSUES_URL = "https://github.com/tingxia1028/growHTML/issues";
+
+const userMenuMessages = defineMessages({
+  localUser: { zh: "本地用户", en: "Local User" },
+  userMenu: { zh: "用户菜单", en: "User menu" },
+  noIdentity: { zh: "未创建分享身份", en: "No sharing identity yet" },
+  settings: { zh: "设置", en: "Settings" },
+  plugins: { zh: "插件", en: "Kit & Plugin" },
+  operations: { zh: "操作", en: "Operations" },
+  profile: { zh: "画像与记忆", en: "Profile & Memory" },
+  shareIdentity: { zh: "分享身份", en: "Share Identity" },
+  shareTitle: {
+    zh: "分享/导入 .svpack（层列表里的分享与导入对话框）",
+    en: "Share/import .svpack from the Layers sharing dialogs"
+  },
+  backupNow: { zh: "立即备份", en: "Back Up Now" },
+  backupTitle: {
+    zh: "把当前库打包为一份本地备份（zip，自动轮转保留）",
+    en: "Package this vault as a local backup zip with automatic rotation"
+  },
+  exportVault: { zh: "导出全库…", en: "Export Vault…" },
+  exportTitle: {
+    zh: "下载 .growte-vault.zip（JSONL+资源+配置+清单）",
+    en: "Download a .growte-vault.zip with JSONL, assets, config, and manifest"
+  },
+  importVault: { zh: "导入全库（替换）…", en: "Import Vault (Replace)…" },
+  importTitle: {
+    zh: "从 .growte-vault.zip 完整替换当前库（导入前自动备份）",
+    en: "Replace this vault from a .growte-vault.zip after an automatic backup"
+  },
+  trash: { zh: "回收站", en: "Trash" },
+  trashTitle: {
+    zh: "已删除的文档与笔记（30 天内可恢复，到期自动清除）",
+    en: "Deleted documents and notes are restorable for 30 days before auto-purge"
+  },
+  account: { zh: "账户/积分", en: "Account / Credits" },
+  accountTitle: { zh: "等待托管上线", en: "Waiting for hosted account support" },
+  onboarding: { zh: "帮助/新手引导", en: "Help / Onboarding" },
+  shortcuts: { zh: "快捷键", en: "Shortcuts" },
+  feedback: { zh: "反馈问题", en: "Report Issue" },
+  feedbackTitle: { zh: "在 GitHub 上提交 issue（浏览器打开）", en: "Open GitHub issues in the browser" },
+  about: { zh: "关于", en: "About" },
+  builtin: { zh: "内置", en: "Built in" }
+});
 
 type MenuEntry = {
   id: string;
@@ -36,6 +79,7 @@ type MenuEntry = {
 };
 
 export function UserMenu() {
+  useLocale();
   const [open, setOpen] = useState(false);
   const [identityName, setIdentityName] = useState<string | null>(null);
   const [identityId, setIdentityId] = useState<string | null>(null);
@@ -56,7 +100,7 @@ export function UserMenu() {
         setIdentityId(identity.id);
       })
       .catch(() => {
-        // No identity endpoint / offline — 本地用户 stays.
+        // No identity endpoint / offline — keep the local fallback.
       });
     io.fetchAbout()
       .then(({ version: next }) => {
@@ -102,7 +146,7 @@ export function UserMenu() {
     first?.focus();
   }, [open]);
 
-  const displayName = identityName ?? LOCAL_USER_NAME;
+  const displayName = identityName ?? t(userMenuMessages.localUser);
   const initial = displayName.charAt(0).toUpperCase();
 
   const run = (action?: () => void) => {
@@ -112,62 +156,64 @@ export function UserMenu() {
   };
 
   const entries: MenuEntry[] = [
-    { id: "settings", label: "设置", action: () => navigateShell({ type: "pane", kind: "settings.hub" }) },
-    { id: "plugins", label: "Kit & 插件", action: () => navigateShell({ type: "pane", kind: "plugin.manager" }) },
-    { id: "profile", label: "画像与记忆", action: () => navigateShell({ type: "pane", kind: "profile.panel" }) },
+    { id: "settings", label: t(userMenuMessages.settings), action: () => navigateShell({ type: "modal", kind: "settings.hub" }) },
+    { id: "plugins", label: t(userMenuMessages.plugins), action: () => navigateShell({ type: "modal", kind: "plugin.manager" }) },
+    { id: "operations", label: t(userMenuMessages.operations), action: () => navigateShell({ type: "modal", kind: "operation.manager" }) },
+    { id: "profile", label: t(userMenuMessages.profile), action: () => navigateShell({ type: "pane", kind: "profile.panel" }) },
     {
       id: "share",
-      label: "分享身份",
-      title: "分享/导入 .svpack(层列表里的分享与导入对话框)",
-      action: () => navigateShell({ type: "pane", kind: "layer.switcher" })
+      label: t(userMenuMessages.shareIdentity),
+      title: t(userMenuMessages.shareTitle),
+      action: () => navigateShell({ type: "modal", kind: "layer.switcher" })
     },
     // 数据 (TRUST-1/2, docs/design/data-trust.md) — the Settings Hub 数据 section
     // (status line + backup picker/restore) is deferred while SettingsHub is
     // contended; these entries expose the capability meanwhile (dataTrust.ts).
     {
       id: "backup-now",
-      label: "立即备份",
-      title: backupTitle ?? "把当前库打包为一份本地备份(zip,自动轮转保留)",
+      label: t(userMenuMessages.backupNow),
+      title: backupTitle ?? t(userMenuMessages.backupTitle),
       action: () => {
         void runBackupNow();
       }
     },
     {
       id: "export-vault",
-      label: "导出全库…",
-      title: "下载 .growte-vault.zip(JSONL+资源+配置+清单)",
+      label: t(userMenuMessages.exportVault),
+      title: t(userMenuMessages.exportTitle),
       action: () => {
         void runExportVault();
       }
     },
     {
       id: "import-vault",
-      label: "导入全库(替换)…",
-      title: "从 .growte-vault.zip 完整替换当前库(导入前自动备份)",
+      label: t(userMenuMessages.importVault),
+      title: t(userMenuMessages.importTitle),
       action: () => runImportVault()
     },
     // TRUST-3 回收站 — the registered trash view (trashViews.tsx): deleted
     // documents/notes stay restorable for 30 days before auto-purge.
     {
       id: "trash",
-      label: "回收站",
-      title: "已删除的文档与笔记(30 天内可恢复,到期自动清除)",
-      action: () => navigateShell({ type: "pane", kind: "trash.panel" })
+      label: t(userMenuMessages.trash),
+      title: t(userMenuMessages.trashTitle),
+      action: () => navigateShell({ type: "modal", kind: "trash.panel" })
     },
-    { id: "account", label: "账户/积分", disabled: true, title: "等待托管上线" },
-    { id: "onboarding", label: "帮助/新手引导", action: () => navigateShell({ type: "onboarding", open: true }) },
+    { id: "account", label: t(userMenuMessages.account), disabled: true, title: t(userMenuMessages.accountTitle) },
+    { id: "onboarding", label: t(userMenuMessages.onboarding), action: () => navigateShell({ type: "modal", kind: "onboarding.checklist" }) },
+    { id: "shortcuts", label: t(userMenuMessages.shortcuts), action: () => navigateShell({ type: "modal", kind: "shortcut.help" }) },
     {
       id: "feedback",
-      label: "反馈问题",
-      title: "在 GitHub 上提交 issue(浏览器打开)",
+      label: t(userMenuMessages.feedback),
+      title: t(userMenuMessages.feedbackTitle),
       action: () => {
         window.open(FEEDBACK_ISSUES_URL, "_blank", "noopener");
       }
     },
     {
       id: "about",
-      label: version ? `关于 · v${version}` : "关于",
-      action: () => navigateShell({ type: "pane", kind: "settings.hub" })
+      label: version ? `${t(userMenuMessages.about)} · v${version}` : t(userMenuMessages.about),
+      action: () => navigateShell({ type: "modal", kind: "settings.hub" })
     }
   ];
 
@@ -197,13 +243,13 @@ export function UserMenu() {
   return (
     <div className="shell-menu" ref={rootRef}>
       {open ? (
-        <div className="shell-menu-pop" role="menu" aria-label="用户菜单" ref={popRef} onKeyDown={onPopKeyDown}>
+        <div className="shell-menu-pop" role="menu" aria-label={t(userMenuMessages.userMenu)} ref={popRef} onKeyDown={onPopKeyDown}>
           <div className="shell-menu-identity">
             <span className="shell-menu-identity-name">{displayName}</span>
             {identityId ? (
               <code className="shell-menu-identity-id">{identityId}</code>
             ) : (
-              <span className="shell-menu-identity-hint">未创建分享身份</span>
+              <span className="shell-menu-identity-hint">{t(userMenuMessages.noIdentity)}</span>
             )}
           </div>
           {entries.map((entry) => (

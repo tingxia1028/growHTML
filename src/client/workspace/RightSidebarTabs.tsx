@@ -18,8 +18,9 @@
 // here (its own state + the pure helpers in ./rightSplit); the global dock engine is
 // untouched.
 
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import type { WorkspaceNode } from "../data/entityClient";
+import { defineMessages, resolveText, t, useLocale, type LocalizedText } from "../i18n";
 import { getView, registerView, renderNode, type WorkspaceContext } from "./viewRegistry";
 import { NoteListPanel } from "./NoteListPanel";
 import {
@@ -30,17 +31,33 @@ import {
   type SplitSide
 } from "./rightSplit";
 
-const TABS: ReadonlyArray<{ kind: string; label: string }> = [
-  { kind: "anchor.excerpt", label: "Anchor" },
-  { kind: "note.list", label: "Notes" },
-  { kind: "layer.switcher", label: "Layers" },
-  { kind: "study", label: "AI Chat" }
+const rightSidebarMessages = defineMessages({
+  tabsLabel: { zh: "右侧栏", en: "Right sidebar" },
+  anchor: { zh: "锚点", en: "Anchor" },
+  notes: { zh: "笔记", en: "Notes" },
+  layers: { zh: "层", en: "Layers" },
+  aiChat: { zh: "AI 对话", en: "AI Chat" },
+  splitTop: { zh: "拆到上方", en: "Split top" },
+  splitBottom: { zh: "拆到底部", en: "Split bottom" },
+  mergeBack: { zh: "合回页签", en: "Merge back" },
+  mergeKindBack: { zh: "合回页签", en: "Merge back into tabs" }
+});
+
+const TABS: ReadonlyArray<{ kind: string; label: LocalizedText }> = [
+  { kind: "anchor.excerpt", label: rightSidebarMessages.anchor },
+  { kind: "note.list", label: rightSidebarMessages.notes },
+  { kind: "layer.switcher", label: rightSidebarMessages.layers },
+  { kind: "study", label: rightSidebarMessages.aiChat }
 ];
 
 const TAB_KINDS = TABS.map((t) => t.kind);
-const labelFor = (kind: string): string => TABS.find((t) => t.kind === kind)?.label ?? kind;
+const labelFor = (kind: string): string => {
+  const label = TABS.find((tab) => tab.kind === kind)?.label;
+  return label ? resolveText(label) : kind;
+};
 
 function RightSidebarTabs({ node, ctx }: { node: WorkspaceNode; ctx: WorkspaceContext }) {
+  useLocale();
   const layoutId = ctx.activeLayoutId;
   // Split state ({ poppedKind, side, ratio }) — restored from localStorage on mount.
   const [split, setSplit] = useState(() => loadRightSplit(layoutId, TAB_KINDS));
@@ -49,6 +66,7 @@ function RightSidebarTabs({ node, ctx }: { node: WorkspaceNode; ctx: WorkspaceCo
   const [dragging, setDragging] = useState(false);
   // The zone currently under the pointer (for the dragover highlight).
   const [hoverZone, setHoverZone] = useState<SplitSide | null>(null);
+  const splitRef = useRef<HTMLDivElement | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
 
   // Re-restore when the layout changes (each layout persists its own split).
@@ -126,30 +144,34 @@ function RightSidebarTabs({ node, ctx }: { node: WorkspaceNode; ctx: WorkspaceCo
   // —— divider resize (pointer based, mirrors WorkspaceShell.startDrag) ——
   const ratioRef = useRef(split.ratio);
   ratioRef.current = split.ratio;
-  function onDividerDown(event: ReactMouseEvent) {
+  function onDividerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
     event.preventDefault();
-    const body = bodyRef.current;
-    if (!body) return;
-    const rect = body.getBoundingClientRect();
-    const onMove = (e: MouseEvent) => {
+    const splitEl = splitRef.current;
+    if (!splitEl) return;
+    const rect = splitEl.getBoundingClientRect();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    const onMove = (e: PointerEvent) => {
       const raw = rect.height > 0 ? (e.clientY - rect.top) / rect.height : ratioRef.current;
       setSplit((prev) => ({ ...prev, ratio: clampRatio(raw) }));
     };
     const onUp = () => {
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
       // Persist the final ratio.
       setSplit((prev) => {
         saveRightSplit(layoutId, prev);
         return prev;
       });
     };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointercancel", onUp);
   }
 
   const tabBar = (
-    <div className="right-tabs-bar" role="tablist" aria-label="Right sidebar">
+    <div className="right-tabs-bar" role="tablist" aria-label={t(rightSidebarMessages.tabsLabel)}>
       {groupTabs.map((tab) => (
         <button
           key={tab.kind}
@@ -162,7 +184,7 @@ function RightSidebarTabs({ node, ctx }: { node: WorkspaceNode; ctx: WorkspaceCo
           onDragStart={(e) => onTabDragStart(e, tab.kind)}
           onDragEnd={onTabDragEnd}
         >
-          {tab.label}
+          {resolveText(tab.label)}
         </button>
       ))}
     </div>
@@ -183,7 +205,7 @@ function RightSidebarTabs({ node, ctx }: { node: WorkspaceNode; ctx: WorkspaceCo
               onDragLeave={() => setHoverZone((z) => (z === "top" ? null : z))}
               onDrop={(e) => onZoneDrop(e, "top")}
             >
-              <span className="right-tabs-dropzone-label">Split top</span>
+              <span className="right-tabs-dropzone-label">{t(rightSidebarMessages.splitTop)}</span>
             </div>
             <div
               className={`right-tabs-dropzone bottom${hoverZone === "bottom" ? " over" : ""}`}
@@ -191,7 +213,7 @@ function RightSidebarTabs({ node, ctx }: { node: WorkspaceNode; ctx: WorkspaceCo
               onDragLeave={() => setHoverZone((z) => (z === "bottom" ? null : z))}
               onDrop={(e) => onZoneDrop(e, "bottom")}
             >
-              <span className="right-tabs-dropzone-label">Split bottom</span>
+              <span className="right-tabs-dropzone-label">{t(rightSidebarMessages.splitBottom)}</span>
             </div>
           </div>
         ) : null}
@@ -212,8 +234,8 @@ function RightSidebarTabs({ node, ctx }: { node: WorkspaceNode; ctx: WorkspaceCo
         <button
           type="button"
           className="right-tabs-popped-merge"
-          aria-label={`Merge ${labelFor(split.poppedKind)} back into tabs`}
-          title="Merge back"
+          aria-label={`${labelFor(split.poppedKind)} ${t(rightSidebarMessages.mergeKindBack)}`}
+          title={t(rightSidebarMessages.mergeBack)}
           onClick={mergeBack}
         >
           ×
@@ -228,19 +250,23 @@ function RightSidebarTabs({ node, ctx }: { node: WorkspaceNode; ctx: WorkspaceCo
   const topPct = clampRatio(split.ratio) * 100;
   const topPane = split.side === "top" ? poppedPane : groupPane;
   const bottomPane = split.side === "top" ? groupPane : poppedPane;
+  const splitStyle = {
+    "--right-tabs-top-size": `calc(${topPct}% - 3px)`,
+    "--right-tabs-bottom-size": `calc(${100 - topPct}% - 3px)`
+  } as CSSProperties;
 
   return (
-    <div className="right-tabs right-tabs-split">
-      <div className="right-tabs-pane right-tabs-pane-top" style={{ flexBasis: `${topPct}%` }}>
+    <div className="right-tabs right-tabs-split" ref={splitRef} style={splitStyle}>
+      <div className="right-tabs-pane right-tabs-pane-top">
         {topPane}
       </div>
       <div
         className="right-tabs-divider"
         role="separator"
         aria-orientation="horizontal"
-        onMouseDown={onDividerDown}
+        onPointerDown={onDividerDown}
       />
-      <div className="right-tabs-pane right-tabs-pane-bottom" style={{ flexBasis: `${100 - topPct}%` }}>
+      <div className="right-tabs-pane right-tabs-pane-bottom">
         {bottomPane}
       </div>
     </div>

@@ -119,15 +119,23 @@ describe("entityClient", () => {
       to: { type: "concept", id: "c2" },
       relationKind: "depends_on"
     });
+    await entityClient.deleteConcept("concept_old");
+    await entityClient.mergeConcept("concept_old", "concept_new");
     await entityClient.deleteRelation("rel_1");
     await entityClient.importAsset("/tmp/x.png");
     await entityClient.saveWorkspace({ activeLayoutId: "", layouts: [] });
 
     expect(calls[0]).toMatchObject({ url: "/api/concepts", method: "POST" });
     expect(calls[1]).toMatchObject({ url: "/api/relations", method: "POST" });
-    expect(calls[2]).toMatchObject({ url: "/api/relations/rel_1", method: "DELETE" });
-    expect(calls[3]).toMatchObject({ url: "/api/assets/local-file", method: "POST", body: { path: "/tmp/x.png" } });
-    expect(calls[4]).toMatchObject({ url: "/api/workspace", method: "PUT" });
+    expect(calls[2]).toMatchObject({ url: "/api/concepts/concept_old", method: "DELETE" });
+    expect(calls[3]).toMatchObject({
+      url: "/api/concepts/concept_old/merge",
+      method: "POST",
+      body: { targetConceptId: "concept_new" }
+    });
+    expect(calls[4]).toMatchObject({ url: "/api/relations/rel_1", method: "DELETE" });
+    expect(calls[5]).toMatchObject({ url: "/api/assets/local-file", method: "POST", body: { path: "/tmp/x.png" } });
+    expect(calls[6]).toMatchObject({ url: "/api/workspace", method: "PUT" });
   });
 
   it("hits the right method/url for operation CRUD", async () => {

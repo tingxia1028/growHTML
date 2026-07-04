@@ -14,6 +14,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { ReactElement, ReactNode } from "react";
 import { entityClient, type ConceptRecord, type NoteRecord } from "../data/entityClient";
+import { setLocale } from "../i18n";
 import "../notes/builtinNoteTypes";
 import { ConceptChips, NoteConceptChips } from "./ConceptChips";
 import { FocusOverlay } from "./FocusOverlay";
@@ -69,6 +70,7 @@ function pressEnter(input: HTMLInputElement) {
 }
 
 beforeEach(() => {
+  setLocale("zh");
   document.body.innerHTML = "";
   // The FocusOverlay header mounts a SpeakButton whose status probe fetches — stub
   // fetch to reject so it deterministically resolves "unavailable".
@@ -230,10 +232,21 @@ describe("FocusOverlay — the chips row on the note 大窗口", () => {
     const row = document.querySelector(".sv-center-concepts");
     expect(row).toBeTruthy();
     expect(row!.querySelector(".concept-chip:not(.concept-chip-add)")?.textContent).toBe("Neural Networks");
+    expect(row!.querySelector(".concept-chip-add")).toBeNull();
+
+    const headerConcept = document.querySelector(".sv-center-concept") as HTMLButtonElement;
+    expect(headerConcept).toBeTruthy();
+    expect(headerConcept.getAttribute("aria-label")).toBe("关联一个知元");
+    expect(document.querySelector(".sv-center-bookmark")).toBeNull();
+    expect(document.querySelector(".sv-center-jump")).toBeNull();
+    act(() => headerConcept.click());
+    expect(headerConcept.getAttribute("aria-pressed")).toBe("true");
+    expect(row!.querySelector(".concept-autocomplete-input")).toBeTruthy();
     saved.cleanup();
 
     const draft = mount(<FocusOverlay block={{ contentType: "markdown", content: "hello" }} onClose={() => {}} />);
     expect(document.querySelector(".sv-center-concepts")).toBeNull();
+    expect(document.querySelector(".sv-center-concept")).toBeNull();
     draft.cleanup();
   });
 });

@@ -18,7 +18,7 @@
 // Like every view it reads/writes only through the WorkspaceContext + entity client.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FolderTree, Plus } from "lucide-react";
+import { Network, Plus } from "lucide-react";
 import { entityClient, type ConceptRecord } from "../data/entityClient";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 // Side-effect import: registers the concept / relation inspectors.
@@ -119,8 +119,8 @@ function ConceptListView({ ctx }: { ctx: WorkspaceContext }) {
   return (
     <aside className="concept-panel">
       <div className="panel-title">
-        <FolderTree size={16} />
-        Concepts
+        <Network size={16} />
+        {t(conceptMessages.title)}
       </div>
 
       {error ? <div className="error-box">{error}</div> : null}
@@ -129,7 +129,7 @@ function ConceptListView({ ctx }: { ctx: WorkspaceContext }) {
       <section className="concept-create">
         <input
           className="concept-name-input"
-          placeholder="New concept name…"
+          placeholder={t(conceptMessages.namePlaceholder)}
           value={name}
           onChange={(event) => setName(event.target.value)}
           onKeyDown={(event) => {
@@ -141,7 +141,7 @@ function ConceptListView({ ctx }: { ctx: WorkspaceContext }) {
         />
         <input
           className="concept-description-input"
-          placeholder="Description (optional)"
+          placeholder={t(conceptMessages.descriptionPlaceholder)}
           value={description}
           onChange={(event) => setDescription(event.target.value)}
         />
@@ -152,7 +152,7 @@ function ConceptListView({ ctx }: { ctx: WorkspaceContext }) {
           onClick={() => void createConcept()}
         >
           <Plus size={16} />
-          New concept
+          {t(conceptMessages.createAction)}
         </button>
       </section>
 
@@ -196,7 +196,7 @@ function ConceptListView({ ctx }: { ctx: WorkspaceContext }) {
         {focus.focus?.type === "concept" || focus.focus?.type === "relation" ? (
           renderInspector(focus.focus, ctx)
         ) : (
-          <div className="empty-state">Select a concept to see its notes and relations.</div>
+          <div className="empty-state">{t(conceptMessages.selectEmpty)}</div>
         )}
       </section>
     </aside>

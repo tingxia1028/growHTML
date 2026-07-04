@@ -13,6 +13,8 @@ import "./SettingsHub";
 
 import { getView } from "../workspace/viewRegistry";
 import { registerShellNavigator, type ShellNavTarget } from "../workspace/shellNav";
+import { LocaleProvider, setLocale } from "../i18n";
+import { resetSpeechPreferencesForTests } from "../speech/speechPreferences";
 import { registerSettingsSection } from "./registry";
 import { setSettingsIoForTests } from "./settingsIo";
 
@@ -38,10 +40,45 @@ const stubIo = (over: Parameters<typeof setSettingsIoForTests>[0] = {}) =>
     fetchAbout: async () => ({ app: "ai-study-vault", version: "0.1.0" }),
     fetchMemorySettings: async () => ({ settings: { captureEnabled: true } }),
     saveMemorySettings: async () => ({}),
+    fetchUiPrefs: async () => ({ prefs: { locale: "zh" } }),
+    saveUiPrefs: async () => ({ prefs: { locale: "zh" } }),
+    fetchBackupStatus: async () => ({
+      backups: [
+        {
+          name: "vault-backup-20260704-010203-manual.zip",
+          createdAt: "2026-07-04T01:02:03.000Z",
+          reason: "manual",
+          sizeBytes: 1024
+        }
+      ],
+      lastBackupAt: "2026-07-04T01:02:03.000Z",
+      nextDueAt: "2026-07-05T01:02:03.000Z",
+      backupsDir: "C:/backups"
+    }),
+    restoreBackup: async () => ({
+      ok: true,
+      restoredFrom: "backup.zip",
+      preRestoreBackup: "pre-restore.zip",
+      counts: {}
+    }),
+    fetchSpeechStatus: async () => ({
+      tts: {
+        available: true,
+        lane: "edge",
+        defaultVoice: "zh-CN-XiaoxiaoNeural",
+        voices: [
+          { id: "zh-CN-XiaoxiaoNeural", label: "Xiaoxiao", locale: "zh-CN" },
+          { id: "en-US-JennyNeural", label: "Jenny", locale: "en-US" }
+        ]
+      },
+      stt: { available: false, lane: "local" }
+    }),
     ...over
   });
 
 beforeEach(() => {
+  setLocale("zh");
+  resetSpeechPreferencesForTests();
   stubIo();
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -53,23 +90,46 @@ afterEach(() => {
   container.remove();
   setSettingsIoForTests(null);
   registerShellNavigator(null);
+  resetSpeechPreferencesForTests();
 });
 
 async function renderHub() {
   await act(async () => {
-    root.render(getView("settings.hub")!.render({ id: "settings", kind: "settings.hub" } as never, {} as never) as React.ReactElement);
+    root.render(
+      <LocaleProvider>
+        {getView("settings.hub")!.render({ id: "settings", kind: "settings.hub" } as never, {} as never) as React.ReactElement}
+      </LocaleProvider>
+    );
   });
+  await act(async () => {});
 }
 
 describe("SettingsHub", () => {
-  it("renders the shipped sections in registry order (AI → 记忆 → 数据 → 关于)", async () => {
+  it("renders the shipped sections in registry order (语言 → AI → 记忆 → 数据 → 关于)", async () => {
     await renderHub();
     const ids = Array.from(container.querySelectorAll(".settings-hub-section")).map((el) =>
       el.getAttribute("data-section-id")
     );
-    // Relative order of the four built-ins (extra registered sections may follow).
-    const builtins = ids.filter((id) => ["ai-providers", "memory-privacy", "data", "about"].includes(id ?? ""));
-    expect(builtins).toEqual(["ai-providers", "memory-privacy", "data", "about"]);
+    const builtins = ids.filter((id) => ["language", "ai-providers", "memory-privacy", "data", "speech", "about"].includes(id ?? ""));
+    expect(builtins).toEqual(["language", "ai-providers", "memory-privacy", "data", "speech", "about"]);
+  });
+
+  it("language radio flips the hub chrome immediately and persists through ui-prefs", async () => {
+    const saved: Array<{ locale: "zh" | "en" }> = [];
+    stubIo({ saveUiPrefs: async (prefs) => {
+      saved.push(prefs);
+      return { prefs };
+    } });
+    await renderHub();
+
+    expect(container.querySelector(".panel-title")!.textContent).toContain("设置");
+    await act(async () => {
+      container.querySelector<HTMLInputElement>('input[name="growte-locale"][value="en"]')!.click();
+    });
+
+    expect(saved).toEqual([{ locale: "en" }]);
+    expect(container.querySelector(".panel-title")!.textContent).toContain("Settings");
+    expect(container.querySelector('[data-section-id="language"] .settings-hub-section-title')!.textContent).toBe("Language");
   });
 
   it("AI 提供方 section (the A3b panel that REPLACED the stub) renders active + rows + env banner", async () => {
@@ -88,13 +148,57 @@ describe("SettingsHub", () => {
     expect(rows).toEqual(["mock", "claude-agent"]);
   });
 
-  it("数据 section reads the vault path; 关于 shows the version + a DISABLED 检查更新 stub", async () => {
+  it("数据 section reads backup status and restores through the typed confirm flow", async () => {
+    const restored: string[] = [];
+    stubIo({
+      restoreBackup: async (name, confirm) => {
+        restored.push(`${name}:${confirm}`);
+        return {
+          ok: true,
+          restoredFrom: name,
+          preRestoreBackup: "vault-backup-20260704-020304-pre-restore.zip",
+          counts: {}
+        };
+      }
+    });
+    vi.spyOn(window, "prompt").mockReturnValue("替换全库");
     await renderHub();
     expect(container.querySelector(".settings-vault-path")!.textContent).toBe("C:/vaults/demo");
+
+    expect(container.querySelector(".settings-backup-status")!.textContent).toContain("1");
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(".settings-restore-btn")!.click();
+    });
+    expect(restored).toEqual(["vault-backup-20260704-010203-manual.zip:替换全库"]);
+    expect(container.querySelector('[data-section-id="data"] .settings-hub-note')!.textContent).toContain(
+      "vault-backup-20260704-020304-pre-restore.zip"
+    );
+  });
+
+  it("语音 section stores the selected voice/rate and About check refreshes the version readout", async () => {
+    await renderHub();
+    const voice = container.querySelector<HTMLSelectElement>('[data-section-id="speech"] select')!;
+    await act(async () => {
+      voice.value = "en-US-JennyNeural";
+      voice.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const rate = container.querySelector<HTMLInputElement>('[data-section-id="speech"] input[type="range"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(rate, "1.25");
+      rate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(JSON.parse(localStorage.getItem("growte.speech.preferences") || "{}")).toMatchObject({
+      voice: "en-US-JennyNeural",
+      rate: 1.25
+    });
+
     expect(container.querySelector(".settings-about-version")!.textContent).toContain("v0.1.0");
     const update = container.querySelector<HTMLButtonElement>(".settings-check-update-btn")!;
-    expect(update.disabled).toBe(true);
-    expect(update.title).toContain("X1");
+    expect(update.disabled).toBe(false);
+    await act(async () => {
+      update.click();
+    });
+    expect(container.querySelector('[data-section-id="about"] .settings-hub-note')!.textContent).toContain("v0.1.0");
   });
 
   it("记忆与隐私 mirrors the capture switch (PUT on toggle) and deep-links to profile.panel", async () => {

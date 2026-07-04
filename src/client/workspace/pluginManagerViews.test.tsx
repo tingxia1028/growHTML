@@ -6,7 +6,7 @@
 // CatalogSource("local"), never a direct catalog registry import).
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { getView, type WorkspaceContext } from "./viewRegistry";
@@ -14,6 +14,7 @@ import type { PluginRecord } from "../../kits/plugin";
 import type { PluginPrefs } from "../data/entityClient";
 import { registerCatalogEntry, resetCatalog } from "../../kits/catalog";
 import { resetInstallState, syncInstallState, type CatalogState } from "../../kits/installState";
+import { setLocale } from "../i18n";
 import "./pluginManagerViews";
 
 // The market view's data seams: pluginPrefs (mount refresh) + putPluginCatalog (the
@@ -122,6 +123,10 @@ afterEach(() => {
 
 // —— tests ————————————————————————————————————————————————————————————————————
 
+beforeEach(() => {
+  setLocale("zh");
+});
+
 describe("plugin.manager market view — tabs", () => {
   it("renders the two tabs, 已安装 selected by default", async () => {
     catalogFixture();
@@ -132,6 +137,38 @@ describe("plugin.manager market view — tabs", () => {
     expect(container.querySelector(".market-tab-installed")?.getAttribute("aria-selected")).toBe("true");
     expect(container.querySelector(".market-installed")).toBeTruthy();
     expect(container.querySelector(".market-browse")).toBeNull();
+    cleanup();
+  });
+
+  it("keeps search collapsed as a top-row icon and expands an input below the tabs", async () => {
+    catalogFixture();
+    wireInstallState({ installedPlugins: [], installedKits: ["kit-a"] });
+    const { container, cleanup } = await renderPanel(ctxWith({}));
+
+    expect(container.querySelector(".plugin-search-toggle")).toBeTruthy();
+    expect(container.querySelector(".plugin-search-row")).toBeNull();
+    await click(container.querySelector(".plugin-search-toggle"));
+    const input = container.querySelector<HTMLInputElement>(".plugin-search-row .market-search");
+    expect(input).toBeTruthy();
+    expect(input!.getAttribute("aria-label")).toBe("搜索已安装插件");
+
+    await click(container.querySelector(".market-tab-market"));
+    expect(container.querySelector<HTMLInputElement>(".plugin-search-row .market-search")!.getAttribute("aria-label")).toBe("搜索市场");
+    cleanup();
+  });
+
+  it("flips the top chrome to English when locale changes", async () => {
+    setLocale("en");
+    catalogFixture();
+    wireInstallState({ installedPlugins: [], installedKits: ["kit-a"] });
+    const { container, cleanup } = await renderPanel(ctxWith({}));
+
+    expect(container.querySelector(".panel-title")!.textContent).toContain("Kit & Plugin");
+    expect(container.querySelector(".market-tab-installed")!.textContent).toBe("Installed");
+    await click(container.querySelector(".plugin-search-toggle"));
+    expect(container.querySelector<HTMLInputElement>(".plugin-search-row .market-search")!.getAttribute("aria-label")).toBe(
+      "Search installed plugins"
+    );
     cleanup();
   });
 });
@@ -237,7 +274,7 @@ describe("已安装 (manage) tab", () => {
     catalogFixture();
     wireInstallState({ installedPlugins: [], installedKits: ["kit-a"] });
     const { container, cleanup } = await renderPanel(ctxWith({}));
-    expect(container.textContent).toContain("Viewer conflicts");
+    expect(container.textContent).toContain("Viewer 冲突");
     cleanup();
   });
 });
@@ -277,7 +314,7 @@ describe("市场 (browse) tab", () => {
     await click(container.querySelector(".market-tab-market"));
     const kitCard = container.querySelector('.market-card[data-entry-id="kit-a"]');
     expect(kitCard!.getAttribute("data-kind")).toBe("kit");
-    expect(kitCard!.textContent).toContain("2 plugins");
+    expect(kitCard!.textContent).toContain("2 个插件");
     await click(kitCard!.querySelector(".market-install-btn"));
     expect(writes[0].installedKits).toEqual(["kit-a"]);
 
@@ -293,7 +330,7 @@ describe("市场 (browse) tab", () => {
 
     await click(container.querySelector(".market-tab-market"));
     // Filter to kits only.
-    const kitChip = Array.from(container.querySelectorAll(".market-kind-chip")).find((b) => b.textContent === "Kits");
+    const kitChip = Array.from(container.querySelectorAll(".market-kind-chip")).find((b) => b.textContent === "套件");
     await click(kitChip!);
     await act(async () => {});
     const kinds = Array.from(container.querySelectorAll(".market-card")).map((c) => c.getAttribute("data-kind"));
@@ -301,6 +338,7 @@ describe("市场 (browse) tab", () => {
     expect(kinds.every((k) => k === "kit")).toBe(true);
 
     // Search narrows by title/description.
+    await click(container.querySelector(".plugin-search-toggle"));
     const search = container.querySelector(".market-search") as HTMLInputElement;
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!;

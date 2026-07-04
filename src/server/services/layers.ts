@@ -43,14 +43,14 @@ export type UpdateLayerInput = z.infer<typeof updateLayerRequestSchema>;
 
 /**
  * List the layers over a source, for the multi-select filter switcher. The owned
- * layer and the preset stage axis are created on demand here (lazily, the same way
- * ensureOwnedLayer works) so the switcher always sees them. F7a: the stage axis is
- * no longer a core-hardcoded taxonomy — it is SEEDED FROM THE SOURCE'S ACTIVE KIT.
+ * layer and kit-seeded child layers are created on demand here (lazily, the same way
+ * ensureOwnedLayer works) so the switcher always sees them. F7a: these presets are
+ * no longer a core-hardcoded taxonomy — they are SEEDED FROM THE SOURCE'S ACTIVE KIT.
  * We resolve the active kit ids (metadata.activeKitIds, else the workspace default —
  * which is FALLBACK_DEFAULT_KIT="textbook-learning" server-side, so a default vault
  * still gets 预习/学习/复习/拓展, now KIT-sourced) and ask the kit policies for their
  * combined stagePreset. No active kit / no kit stagePreset ⇒ empty list ⇒ NO preset
- * stages created (owned + custom + imported still work). ensurePresetStages never
+ * child layers created (owned + custom + imported still work). ensurePresetStages never
  * deletes, so pre-existing preset layers in migrated vaults are preserved.
  * Sealed imported layers merge into the result (read model, svpack §7.1).
  */

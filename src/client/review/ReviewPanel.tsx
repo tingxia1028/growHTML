@@ -26,7 +26,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BookOpenCheck } from "lucide-react";
 import { registerView, type WorkspaceContext } from "../workspace/viewRegistry";
+import { ArtifactCard } from "../workspace/ArtifactCard";
 import { getNoteType, type NoteRenderMode } from "../notes/noteTypeRegistry";
+import { defineMessages, resolveText, t, useLocale, type Locale } from "../i18n";
 import { getNoteContentSpec, MISTAKE_CONTENT_TYPE, mistakeSpec } from "../../core/notes/contentTypes";
 import type { MemoryDimensionSummary } from "../../core/memory/digest";
 import type { NoteRecord, ProfileFactView } from "../data/entityClient";
@@ -48,16 +50,89 @@ type ReviewResult = "pass" | "fail" | "skip";
 /** How the outcome was produced: self-graded reveal vs the AI check/grade flow. */
 type ReviewMode = "self" | "ai-check";
 
-const REASON_LABEL: Record<string, string> = {
-  "mistake-new": "新错题",
-  "mistake-failed": "上次答错",
-  due: "待复习"
+const reviewMessages = defineMessages({
+  newMistake: { zh: "新错题", en: "New Mistake" },
+  failedLastTime: { zh: "上次答错", en: "Failed Last Time" },
+  due: { zh: "待复习", en: "Due" },
+  loadQueueFailed: { zh: "加载复习队列失败", en: "Failed to load review queue" },
+  generateCheckFailed: { zh: "生成检验题失败", en: "Failed to generate check question" },
+  gradeFailed: { zh: "判分失败", en: "Failed to grade answer" },
+  explainFailed: { zh: "生成讲解失败", en: "Failed to generate explanation" },
+  detailedExplanation: { zh: "详细讲解", en: "Explain" },
+  outcomePass: { zh: "已记为:对", en: "Marked: correct" },
+  outcomeFail: { zh: "已记为:错", en: "Marked: missed" },
+  outcomeSkip: { zh: "已跳过", en: "Skipped" },
+  showAnswer: { zh: "显示答案", en: "Show Answer" },
+  skip: { zh: "跳过", en: "Skip" },
+  correct: { zh: "我对了", en: "I Got It" },
+  missed: { zh: "我错了", en: "I Missed It" },
+  next: { zh: "下一项", en: "Next" },
+  generating: { zh: "生成中…", en: "Generating…" },
+  aiCheck: { zh: "AI 出一道检验题", en: "AI Check Question" },
+  answerPlaceholder: { zh: "你的答案…", en: "Your answer…" },
+  grading: { zh: "判分中…", en: "Grading…" },
+  submitAnswer: { zh: "提交回答", en: "Submit Answer" },
+  savedPractice: { zh: "已存为练习", en: "Saved as Practice" },
+  savePractice: { zh: "存为练习", en: "Save as Practice" },
+  savedMistake: { zh: "已存为错题", en: "Saved as Mistake" },
+  saveMistake: { zh: "存为错题", en: "Save as Mistake" },
+  panelTitle: { zh: "复习", en: "Review" },
+  scopeLabel: { zh: "复习范围", en: "Review Scope" },
+  currentDocument: { zh: "当前文档", en: "Current Document" },
+  vault: { zh: "全库", en: "Vault" },
+  loading: { zh: "加载中…", en: "Loading…" },
+  weakSpots: { zh: "弱项:", en: "Weak Spots:" },
+  weakGroup: { zh: "弱项", en: "Weak Spots" },
+  emptyWeak: {
+    zh: "该弱项下暂无可复习条目——再点一次弱项标签可清除筛选。",
+    en: "No review items in this weak spot. Click the chip again to clear the filter."
+  },
+  emptyQueue: {
+    zh: "暂无待复习内容。错题、小测、闪卡和复习包会自动进入队列。",
+    en: "No review items yet. Mistakes, quizzes, flashcards, and review packs enter this queue automatically."
+  },
+  progressItem: { zh: "第", en: "Item" },
+  progressSuffix: { zh: "项", en: "" },
+  roundComplete: { zh: "本轮完成:", en: "Round complete:" },
+  right: { zh: "对", en: "correct" },
+  wrong: { zh: "错", en: "missed" },
+  skipped: { zh: "跳过", en: "skipped" },
+  restart: { zh: "再复习一轮", en: "Review Again" },
+  selfMissed: { zh: "自评:没答对", en: "Self grade: missed" }
+});
+
+const REASON_LABEL: Record<string, keyof typeof reviewMessages> = {
+  "mistake-new": "newMistake",
+  "mistake-failed": "failedLastTime",
+  due: "due"
 };
 // REV-2 弱项 reasons are dynamic ("弱项:{bucket}") — they display verbatim via the
 // `?? current.reason` fallback below.
 
 /** How many 弱项 chips the header shows (top by fail ratio). */
 const WEAK_CHIP_LIMIT = 3;
+
+function pendingLabel(count: number, locale: Locale): string {
+  if (locale === "en") return `${count} ${count === 1 ? "item" : "items"} to review`;
+  return `${count} 项待复习`;
+}
+
+function progressLabel(index: number, total: number, locale: Locale): string {
+  if (locale === "en") return `Item ${index} / ${total}`;
+  return `第 ${index} / ${total} 项`;
+}
+
+function reasonLabel(reason: string): string {
+  if (reason.startsWith("弱项:")) return `${t(reviewMessages.weakGroup)}:${reason.slice("弱项:".length)}`;
+  const key = REASON_LABEL[reason];
+  return key ? t(reviewMessages[key]) : reason;
+}
+
+function weakTitle(bucket: ReviewWeakBucket, locale: Locale): string {
+  const ratio = Math.round(bucket.failRatio * 100);
+  if (locale === "en") return `Review fail rate ${ratio}% (${bucket.attempts} attempts) - click to filter`;
+  return `复习错误率 ${ratio}%(${bucket.attempts} 次作答)— 点击筛选`;
+}
 
 // The draft check-question shape (the built-in quiz content). The server already
 // validated it against the quiz spec; this is defensive coercion for rendering/grading.
@@ -112,6 +187,7 @@ type CheckFlow = {
 const EMPTY_CHECK: CheckFlow = { quiz: null, userAnswer: "", grade: null, savedPractice: false, savedMistake: false };
 
 export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
+  const locale = useLocale();
   // Always read the LATEST workspace data at load time without re-building the
   // session whenever ctx re-renders (e.g. 存为错题 refreshes ctx.notes mid-run).
   const ctxRef = useRef(ctx);
@@ -164,7 +240,7 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
       setQueue(buildReviewQueue({ notes, reviewEvents, digestSummaries: summaries }));
     } catch (error) {
       setQueue([]);
-      setLoadError(error instanceof Error ? error.message : "加载复习队列失败");
+      setLoadError(error instanceof Error ? error.message : t(reviewMessages.loadQueueFailed));
     }
     setIndex(0);
     setTally({ pass: 0, fail: 0, skip: 0 });
@@ -246,7 +322,7 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
       });
       setCheck((c) => ({ ...c, quiz: asQuizShape(content) }));
     } catch (error) {
-      setAiError(error instanceof Error ? error.message : "生成检验题失败");
+      setAiError(error instanceof Error ? error.message : t(reviewMessages.generateCheckFailed));
     } finally {
       setBusy(false);
     }
@@ -269,7 +345,7 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
       setCheck((c) => ({ ...c, grade }));
       complete(grade.correct ? "pass" : "fail", "ai-check");
     } catch (error) {
-      setAiError(error instanceof Error ? error.message : "判分失败");
+      setAiError(error instanceof Error ? error.message : t(reviewMessages.gradeFailed));
     } finally {
       setBusy(false);
     }
@@ -292,7 +368,7 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
       });
       setExplanation(typeof content === "string" ? content : JSON.stringify(content));
     } catch (error) {
-      setAiError(error instanceof Error ? error.message : "生成讲解失败");
+      setAiError(error instanceof Error ? error.message : t(reviewMessages.explainFailed));
     } finally {
       setBusy(false);
     }
@@ -339,13 +415,13 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
   // —— presentation ————————————————————————————————————————————————————————
   const typeTitle = (contentType: string): string => {
     const plugin = getNoteType(contentType);
-    return plugin?.title ?? plugin?.label ?? contentType;
+    return plugin?.title ? resolveText(plugin.title) : plugin?.label ? resolveText(plugin.label) : contentType;
   };
 
   const explainButton = (question: string, expected: string | undefined, userAnswer: string) =>
     explanation === null ? (
       <button type="button" className="review-btn review-explain-btn" disabled={busy} onClick={() => void explain(question, expected, userAnswer)}>
-        详细讲解
+        {t(reviewMessages.detailedExplanation)}
       </button>
     ) : null;
 
@@ -358,7 +434,11 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
 
   const outcomeChip = outcome ? (
     <span className={`review-outcome review-outcome-${outcome.result}`}>
-      {outcome.result === "pass" ? "已记为:对" : outcome.result === "fail" ? "已记为:错" : "已跳过"}
+      {outcome.result === "pass"
+        ? t(reviewMessages.outcomePass)
+        : outcome.result === "fail"
+          ? t(reviewMessages.outcomeFail)
+          : t(reviewMessages.outcomeSkip)}
     </span>
   ) : null;
 
@@ -377,27 +457,27 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
       {!revealed ? (
         <div className="review-actions">
           <button type="button" className="review-btn review-primary review-reveal-btn" onClick={() => setRevealed(true)}>
-            显示答案
+            {t(reviewMessages.showAnswer)}
           </button>
           <button type="button" className="review-btn review-skip-btn" onClick={skip}>
-            跳过
+            {t(reviewMessages.skip)}
           </button>
         </div>
       ) : !outcome ? (
         <div className="review-actions">
           <button type="button" className="review-btn review-pass-btn" onClick={() => complete("pass", "self")}>
-            我对了
+            {t(reviewMessages.correct)}
           </button>
           <button type="button" className="review-btn review-fail-btn" onClick={() => complete("fail", "self")}>
-            我错了
+            {t(reviewMessages.missed)}
           </button>
         </div>
       ) : (
         <div className="review-actions review-done">
           {outcomeChip}
-          {outcome.result === "fail" ? explainButton(noteText(item.note), undefined, "自评:没答对") : null}
+          {outcome.result === "fail" ? explainButton(noteText(item.note), undefined, t(reviewMessages.selfMissed)) : null}
           <button type="button" className="review-btn review-primary review-next-btn" onClick={advance}>
-            下一项
+            {t(reviewMessages.next)}
           </button>
         </div>
       )}
@@ -405,7 +485,7 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
     </>
   );
 
-  // A mistake item: the saved mistake (full render) → AI 出一道检验题 → answer →
+  // A mistake item: the saved mistake preview opens in Center View → AI 出一道检验题 → answer →
   // review.grade-answer → verdict + reveal + optional 存为练习 / 存为错题 / 讲解.
   const mistakeItem = (item: ReviewQueueItem<NoteRecord>) => {
     const quiz = check.quiz;
@@ -414,15 +494,21 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
     return (
       <>
         <div className="review-item-content">
-          <RenderContent contentType={item.note.contentType} content={item.note.content} note={item.note} mode="full" />
+          <ArtifactCard
+            block={{
+              contentType: item.note.contentType,
+              content: item.note.content,
+              note: item.note
+            }}
+          />
         </div>
         {!quiz ? (
           <div className="review-actions">
             <button type="button" className="review-btn review-primary review-ai-check-btn" disabled={busy} onClick={() => void generateCheck()}>
-              {busy ? "生成中…" : "AI 出一道检验题"}
+              {busy ? t(reviewMessages.generating) : t(reviewMessages.aiCheck)}
             </button>
             <button type="button" className="review-btn review-skip-btn" onClick={skip}>
-              跳过
+              {t(reviewMessages.skip)}
             </button>
           </div>
         ) : !grade ? (
@@ -432,7 +518,7 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
             </div>
             <input
               className="review-answer-input"
-              placeholder="你的答案…"
+              placeholder={t(reviewMessages.answerPlaceholder)}
               value={check.userAnswer}
               onChange={(e) => setCheck((c) => ({ ...c, userAnswer: e.target.value }))}
             />
@@ -443,10 +529,10 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
                 disabled={busy || !check.userAnswer.trim()}
                 onClick={() => void submitAnswer()}
               >
-                {busy ? "判分中…" : "提交回答"}
+                {busy ? t(reviewMessages.grading) : t(reviewMessages.submitAnswer)}
               </button>
               <button type="button" className="review-btn review-skip-btn" onClick={skip}>
-                跳过
+                {t(reviewMessages.skip)}
               </button>
             </div>
           </div>
@@ -460,15 +546,15 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
               {outcomeChip}
               {!grade.correct ? explainButton(quiz.question, expected, check.userAnswer.trim()) : null}
               <button type="button" className="review-btn review-save-practice-btn" disabled={check.savedPractice} onClick={savePractice}>
-                {check.savedPractice ? "已存为练习" : "存为练习"}
+                {check.savedPractice ? t(reviewMessages.savedPractice) : t(reviewMessages.savePractice)}
               </button>
               {!grade.correct ? (
                 <button type="button" className="review-btn review-save-mistake-btn" disabled={check.savedMistake} onClick={saveMistake}>
-                  {check.savedMistake ? "已存为错题" : "存为错题"}
+                  {check.savedMistake ? t(reviewMessages.savedMistake) : t(reviewMessages.saveMistake)}
                 </button>
               ) : null}
               <button type="button" className="review-btn review-primary review-next-btn" onClick={advance}>
-                下一项
+                {t(reviewMessages.next)}
               </button>
             </div>
             {explanationBlock}
@@ -482,11 +568,11 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
     <aside className="review-panel">
       <div className="panel-title">
         <BookOpenCheck size={16} />
-        复习
+        {t(reviewMessages.panelTitle)}
       </div>
 
       <div className="review-toolbar">
-        <div className="review-scope" role="group" aria-label="复习范围">
+        <div className="review-scope" role="group" aria-label={t(reviewMessages.scopeLabel)}>
           <button
             type="button"
             className={`review-scope-btn${scope === "source" ? " active" : ""}`}
@@ -494,7 +580,7 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
             aria-pressed={scope === "source"}
             onClick={() => setScope("source")}
           >
-            当前文档
+            {t(reviewMessages.currentDocument)}
           </button>
           <button
             type="button"
@@ -502,15 +588,15 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
             aria-pressed={scope === "vault"}
             onClick={() => setScope("vault")}
           >
-            全库
+            {t(reviewMessages.vault)}
           </button>
         </div>
-        <span className="review-count">{queue === null ? "加载中…" : `${remaining} 项待复习`}</span>
+        <span className="review-count">{queue === null ? t(reviewMessages.loading) : pendingLabel(remaining, locale)}</span>
       </div>
 
       {weakChips.length > 0 ? (
-        <div className="review-weak-header" role="group" aria-label="弱项">
-          <span className="review-weak-label">弱项:</span>
+        <div className="review-weak-header" role="group" aria-label={t(reviewMessages.weakGroup)}>
+          <span className="review-weak-label">{t(reviewMessages.weakSpots)}</span>
           {weakChips.map((bucket) => {
             const active =
               weakFilter !== null && weakFilter.dimension === bucket.dimension && weakFilter.bucket === bucket.bucket;
@@ -522,7 +608,7 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
                 aria-pressed={active}
                 data-dimension={bucket.dimension}
                 data-bucket={bucket.bucket}
-                title={`复习错误率 ${Math.round(bucket.failRatio * 100)}%(${bucket.attempts} 次作答)— 点击筛选`}
+                title={weakTitle(bucket, locale)}
                 onClick={() => toggleWeakFilter(bucket)}
               >
                 {bucket.dimension === "contentType" ? typeTitle(bucket.bucket) : bucket.bucket}
@@ -538,17 +624,17 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
       {queue === null ? null : items.length === 0 ? (
         <div className="empty-state review-empty">
           {weakFilter
-            ? "该弱项下暂无可复习条目——再点一次弱项标签可清除筛选。"
-            : "暂无待复习内容。错题、小测、闪卡和复习包会自动进入队列。"}
+            ? t(reviewMessages.emptyWeak)
+            : t(reviewMessages.emptyQueue)}
         </div>
       ) : current ? (
         <section className="review-item" data-note-id={current.note.id} data-reason={current.reason}>
           <header className="review-item-head">
             <span className="review-progress">
-              第 {index + 1} / {items.length} 项
+              {progressLabel(index + 1, items.length, locale)}
             </span>
             <span className="review-reason" data-reason={current.reason}>
-              {REASON_LABEL[current.reason] ?? current.reason}
+              {reasonLabel(current.reason)}
             </span>
             <span className="review-type">{typeTitle(current.note.contentType)}</span>
           </header>
@@ -557,10 +643,12 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
       ) : (
         <section className="review-summary">
           <p className="review-summary-line">
-            本轮完成:{tally.pass} 对 / {tally.fail} 错{tally.skip ? `(跳过 ${tally.skip})` : ""}
+            {t(reviewMessages.roundComplete)}
+            {tally.pass} {t(reviewMessages.right)} / {tally.fail} {t(reviewMessages.wrong)}
+            {tally.skip ? ` (${t(reviewMessages.skipped)} ${tally.skip})` : ""}
           </p>
           <button type="button" className="review-btn review-primary review-restart-btn" onClick={() => void load(scope)}>
-            再复习一轮
+            {t(reviewMessages.restart)}
           </button>
         </section>
       )}

@@ -124,14 +124,25 @@ export const emptyOnboardingState: OnboardingState = {
   sampleSourceId: null
 };
 
+// uiPrefs — small app-shell preferences that are not layout state. Kept as a
+// separate field group so a stale WorkspaceContext layout PUT cannot clobber the
+// user's language choice.
+export const uiPrefsSchema = z.object({
+  locale: z.enum(["zh", "en"]).default("zh")
+});
+export type UiPrefs = z.infer<typeof uiPrefsSchema>;
+export const emptyUiPrefs: UiPrefs = { locale: "zh" };
+
 export const workspaceStateSchema = z.object({
   activeLayoutId: z.string(),
   layouts: z.array(workspaceLayoutSchema),
   // Optional so pre-SHELL-2 files (and the layout writer's body) stay valid.
-  onboarding: onboardingStateSchema.optional()
+  onboarding: onboardingStateSchema.optional(),
+  // Optional so pre-I18N files and layout PUT bodies stay valid.
+  uiPrefs: uiPrefsSchema.optional()
 });
 export type WorkspaceState = z.infer<typeof workspaceStateSchema>;
-export const emptyWorkspaceState = { activeLayoutId: "", layouts: [] };
+export const emptyWorkspaceState: WorkspaceState = { activeLayoutId: "", layouts: [], uiPrefs: emptyUiPrefs };
 
 const operationPrefsPath = (vault: StudyVault) => path.join(vault.paths.studyDir, "operation-prefs.json");
 const pluginPrefsPath = (vault: StudyVault) => path.join(vault.paths.studyDir, "plugin-prefs.json");
@@ -205,13 +216,14 @@ export async function writeWorkspace({ vault }: WorkspaceDeps, state: WorkspaceS
 }
 
 // —— single-writer-per-field-group merges (SHELL-2, same M1 rule as plugin-prefs) ——
-// workspace.json now has TWO independent client writers: the layout persistence in
+// workspace.json now has independent client writers: the layout persistence in
 // WorkspaceContext (a full-body PUT of {activeLayoutId, layouts} from React state)
-// and the onboarding checklist (dismiss/progress writes). Each route owns only its
+// the onboarding checklist (dismiss/progress writes), and uiPrefs (locale). Each route owns only its
 // field group and merges against the STORED file, so a stale layout PUT can never
-// clobber onboarding progress and vice versa:
+// clobber onboarding progress / locale and vice versa:
 //   • PUT /api/workspace            → owns activeLayoutId + layouts
 //   • PUT /api/workspace/onboarding → owns the onboarding block
+//   • PUT /api/workspace/ui-prefs   → owns uiPrefs
 // GET always returns the whole merged file.
 
 /** The layout write: body's layout fields over the STORED onboarding block. A body
@@ -242,4 +254,17 @@ export async function writeWorkspaceOnboarding(
   const stored = await readWorkspace(deps);
   await writeWorkspace(deps, { ...stored, onboarding });
   return onboarding;
+}
+
+/** Read just the app-shell prefs block (absent block ⇒ the default locale). */
+export async function readWorkspaceUiPrefs(deps: WorkspaceDeps): Promise<UiPrefs> {
+  const stored = await readWorkspace(deps);
+  return stored.uiPrefs ?? emptyUiPrefs;
+}
+
+/** The uiPrefs write: prefs over the STORED layout/onboarding fields. */
+export async function writeWorkspaceUiPrefs(deps: WorkspaceDeps, uiPrefs: UiPrefs): Promise<UiPrefs> {
+  const stored = await readWorkspace(deps);
+  await writeWorkspace(deps, { ...stored, uiPrefs });
+  return uiPrefs;
 }

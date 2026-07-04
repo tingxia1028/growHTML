@@ -25,6 +25,7 @@ import "../../kits/clientKits";
 import "./ReviewPanel";
 
 import { getView, type WorkspaceContext } from "../workspace/viewRegistry";
+import { setLocale } from "../i18n";
 import type { MemoryDimensionSummary } from "../../core/memory/digest";
 import type { MemoryEventInput, NoteRecord, ProfileFactView } from "../data/entityClient";
 import {
@@ -122,6 +123,7 @@ function generateStub(responses?: { gradeCorrect?: boolean }) {
 let posted: MemoryEventInput[][];
 
 beforeEach(() => {
+  setLocale("zh");
   posted = [];
   resetMemoryCaptureForTests();
   setMemoryTransportForTests(async (events) => {
@@ -163,10 +165,10 @@ async function renderPanel(ctx: WorkspaceContext) {
     container.remove();
   };
   const click = async (selector: string) => {
-    const btn = container.querySelector(selector) as HTMLButtonElement | null;
-    expect(btn, `missing button ${selector}`).toBeTruthy();
+    const target = container.querySelector(selector) as HTMLElement | null;
+    expect(target, `missing clickable ${selector}`).toBeTruthy();
     await act(async () => {
-      btn!.click();
+      target!.click();
     });
   };
   const type = async (selector: string, value: string) => {
@@ -214,6 +216,22 @@ describe("ReviewPanel — queue rendering", () => {
     );
     expect(container.querySelector(".review-empty")).toBeTruthy();
     expect(container.querySelector(".review-count")!.textContent).toBe("0 项待复习");
+    cleanup();
+  });
+
+  it("flips review chrome to English without Chinese residue", async () => {
+    setLocale("en");
+    setReviewIoForTests({ fetchEvents: async () => [], generate: generateStub() });
+    const { container, cleanup } = await renderPanel(ctxWith({ notes: [] }));
+
+    expect(container.querySelector(".panel-title")!.textContent).toContain("Review");
+    expect(container.querySelector(".review-scope")!.textContent).toContain("Current Document");
+    expect(container.querySelector(".review-scope")!.textContent).toContain("Vault");
+    expect(container.querySelector(".review-count")!.textContent).toBe("0 items to review");
+    expect(container.querySelector(".review-empty")!.textContent).toContain("No review items yet");
+    expect(container.textContent).not.toContain("复习");
+    expect(container.textContent).not.toContain("当前文档");
+    expect(container.textContent).not.toContain("暂无待复习");
     cleanup();
   });
 
@@ -302,8 +320,14 @@ describe("ReviewPanel — AI check flow (mistake items)", () => {
       ctxWith({ notes: [mistakeNote("n_m1", { anchorIds: ["anc_1"] })] })
     );
 
-    // The mistake renders in full (it IS the review subject) + offers the AI check.
+    // The mistake stays compact in the side panel; clicking opens the full Center View.
+    expect(container.querySelector(".review-item-content .sv-preview-card")).toBeTruthy();
+    expect(container.querySelector(".review-item-content .tb-card.tb-mistake")).toBeNull();
     expect(container.textContent).toContain("浮力等于什么?");
+
+    await click(".review-item-content .sv-preview-card");
+    expect(document.body.querySelector(".sv-center-dialog .tb-card.tb-mistake")).toBeTruthy();
+    expect(document.body.querySelector(".sv-center-dialog")!.textContent).toContain("排开液体的重力");
     await click(".review-ai-check-btn");
     expect(generate).toHaveBeenCalledWith(
       expect.objectContaining({

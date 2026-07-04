@@ -2,10 +2,10 @@
 //
 // A layer carries an optional `parentId` (study-layer.ts). These helpers turn the flat
 // per-source layer list into a tree, and answer the three questions the Lens UI asks of
-// every parent row: which leaves does it cover (cascade target), is it on / off / mixed
-// (checkbox + indeterminate), and how many notes roll up under it (count). Filter
-// semantics stay per-LEAF (enabled-OR over leaf layers); a parent's checkbox is purely a
-// cascade master switch + roll-up — never a membership target.
+// every parent row: which layers does it cover (cascade target), is it on / off / mixed
+// (checkbox + indeterminate), and how many notes roll up under it (count). A parent can
+// also carry notes itself (Mine is both the owned layer and a parent), so roll-ups include
+// the parent id plus descendants.
 
 import type { NoteRecord, StudyLayerRecord } from "../data/entityClient";
 
@@ -49,27 +49,30 @@ export function buildLayerTree(layers: StudyLayerRecord[]): LayerNode[] {
   return roots;
 }
 
-// The leaf layer ids under a node (a leaf = a node with no children). A leaf node returns
-// its own id. These are the layers the parent's cascade toggle actually flips, and whose
-// membership the enabled-OR filter reads.
-export function descendantLeafIds(node: LayerNode): string[] {
-  if (node.children.length === 0) return [node.layer.id];
-  return node.children.flatMap(descendantLeafIds);
+// The layer ids covered by a tree node: itself plus every descendant. A parent row can be
+// both a container and a real note membership target, so Mine must include its own id.
+export function coveredLayerIds(node: LayerNode): string[] {
+  return [node.layer.id, ...node.children.flatMap(coveredLayerIds)];
 }
 
-// A parent's tri-state from its descendant leaves' enabled set: all on / none on / mixed.
+// Backward-compatible alias for older callers/tests. It now returns the same covered set,
+// not leaf-only ids, because parent layers are allowed to hold notes.
+export function descendantLeafIds(node: LayerNode): string[] {
+  return coveredLayerIds(node);
+}
+
+// A parent's tri-state from its covered layers' enabled set: all on / none on / mixed.
 export function parentToggleState(node: LayerNode, enabledIds: Set<string>): ParentToggleState {
-  const leaves = descendantLeafIds(node);
-  if (leaves.length === 0) return "off";
-  const on = leaves.filter((id) => enabledIds.has(id)).length;
+  const layerIds = coveredLayerIds(node);
+  const on = layerIds.filter((id) => enabledIds.has(id)).length;
   if (on === 0) return "off";
-  if (on === leaves.length) return "on";
+  if (on === layerIds.length) return "on";
   return "mixed";
 }
 
 // Count of DISTINCT non-bookmark notes whose membership intersects `layerIds` — the Lens
-// row count. For a leaf that's its own count; for a parent it's the roll-up over its
-// descendant leaves (distinct, so a note shared across two leaves isn't double-counted).
+// row count. For a parent it's the roll-up over itself + descendants (distinct, so a note
+// shared across two child layers isn't double-counted).
 export function countNotesInLayers(
   notes: NoteRecord[],
   layerIds: Iterable<string>,

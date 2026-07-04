@@ -10,8 +10,15 @@ import {
   type AiProvidersConfigView,
   type AiProvidersInfo,
   type AiTestConnectionResult,
-  type MemorySettings
+  type MemorySettings,
+  type UiPrefs
 } from "../data/entityClient";
+import {
+  getDataTrustIo,
+  type BackupRestoreOutcome,
+  type BackupStatusInfo
+} from "../workspace/dataTrust";
+import { getSpeechStatus, type SpeechStatusView } from "../speech/speechStatus";
 
 export type SettingsIo = {
   /** GET /api/ai/providers — active provider + registry + stored config + key-store mode. */
@@ -36,6 +43,16 @@ export type SettingsIo = {
   fetchMemorySettings(): Promise<{ settings: MemorySettings }>;
   /** PUT /api/memory/settings — the same write the 画像页 switch performs. */
   saveMemorySettings(settings: MemorySettings): Promise<unknown>;
+  /** GET /api/workspace/ui-prefs — app-shell language preference. */
+  fetchUiPrefs(): Promise<{ prefs: UiPrefs }>;
+  /** PUT /api/workspace/ui-prefs — app-shell language preference. */
+  saveUiPrefs(prefs: UiPrefs): Promise<{ prefs: UiPrefs }>;
+  /** GET /api/backup/status — backup status line + restore picker source. */
+  fetchBackupStatus(): Promise<BackupStatusInfo>;
+  /** POST /api/backup/restore — restore an existing backup after typed confirmation. */
+  restoreBackup(name: string, confirm: string): Promise<BackupRestoreOutcome>;
+  /** GET /api/speech/status — voice list for TTS preferences. */
+  fetchSpeechStatus(): Promise<SpeechStatusView>;
 };
 
 const defaultIo: SettingsIo = {
@@ -49,7 +66,12 @@ const defaultIo: SettingsIo = {
   fetchVaultInfo: () => entityClient.vaultInfo(),
   fetchAbout: () => entityClient.about(),
   fetchMemorySettings: () => entityClient.memorySettings(),
-  saveMemorySettings: (settings) => entityClient.putMemorySettings(settings)
+  saveMemorySettings: (settings) => entityClient.putMemorySettings(settings),
+  fetchUiPrefs: () => entityClient.uiPrefs(),
+  saveUiPrefs: (prefs) => entityClient.putUiPrefs(prefs),
+  fetchBackupStatus: () => getDataTrustIo().fetchBackupStatus(),
+  restoreBackup: (name, confirm) => getDataTrustIo().restoreBackup(name, confirm),
+  fetchSpeechStatus: () => getSpeechStatus()
 };
 
 let io: SettingsIo = defaultIo;

@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Bookmark, ExternalLink, MoreHorizontal, X } from "lucide-react";
+import { MoreHorizontal, Network, X } from "lucide-react";
 import type { NoteRecord } from "../data/entityClient";
 import { getNoteContentSpec } from "../../core/notes/contentTypes";
 // 朗读 (SPEECH-1b 朗读通用化): ONE speaker affordance on the SHARED shell header — the
@@ -35,6 +35,8 @@ import { resolveViewer, NOTETYPE_SENTINEL } from "../notes/viewerRegistry";
 // CONCEPT-UX-1 §2: a saved note's linked concepts as clickable chips (+ the ＋
 // autocomplete to link one) directly on the 大窗口 — no dialog, no form.
 import { NoteConceptChips } from "./ConceptChips";
+import { conceptMessages } from "./conceptMessages";
+import { t, useLocale } from "../i18n";
 
 export type FocusOverlayBlock = {
   /** The registered contentType deciding which plugin renders (the discriminator). */
@@ -63,6 +65,7 @@ const FOCUSABLE =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export function FocusOverlay({ block, onClose }: { block: FocusOverlayBlock; onClose(): void }) {
+  useLocale();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   // The element focused before the overlay opened — focus returns here on close.
   const openerRef = useRef<Element | null>(typeof document !== "undefined" ? document.activeElement : null);
@@ -73,6 +76,7 @@ export function FocusOverlay({ block, onClose }: { block: FocusOverlayBlock; onC
   // (ws === null) never render it. Menu open/close is local UI state.
   const ws = useWorkspaceOptional();
   const [openWith, setOpenWith] = useState(false);
+  const [conceptAdding, setConceptAdding] = useState(false);
 
   // Esc to close + a Tab focus trap that keeps focus within the dialog.
   const onKeyDown = useCallback(
@@ -153,6 +157,7 @@ export function FocusOverlay({ block, onClose }: { block: FocusOverlayBlock; onC
       : block.section
         ? block.section
         : null;
+  const conceptActionLabel = t(conceptMessages.addConcept);
 
   return createPortal(
     <div
@@ -190,23 +195,16 @@ export function FocusOverlay({ block, onClose }: { block: FocusOverlayBlock; onC
               text={getNoteContentSpec(block.contentType)?.toSearchText(block.content) ?? ""}
               size={16}
             />
-            <button
-              type="button"
-              className="sv-center-action sv-center-bookmark"
-              aria-label="Bookmark note"
-              title="Bookmark"
-            >
-              <Bookmark size={16} />
-            </button>
-            {block.onJumpToAnchor ? (
+            {block.note ? (
               <button
                 type="button"
-                className="sv-center-action sv-center-jump"
-                aria-label="Jump to source anchor"
-                title="Jump to source anchor"
-                onClick={block.onJumpToAnchor}
+                className={`sv-center-action sv-center-concept${conceptAdding ? " active" : ""}`}
+                aria-label={conceptActionLabel}
+                aria-pressed={conceptAdding}
+                title={conceptActionLabel}
+                onClick={() => setConceptAdding((open) => !open)}
               >
-                <ExternalLink size={16} />
+                <Network size={16} />
               </button>
             ) : null}
             {showOpenWith ? (
@@ -267,7 +265,13 @@ export function FocusOverlay({ block, onClose }: { block: FocusOverlayBlock; onC
             contract) and closes the overlay so the Concepts pane/inspector is visible. */}
         {block.note ? (
           <div className="sv-center-concepts">
-            <NoteConceptChips note={block.note} onNavigated={onClose} />
+            <NoteConceptChips
+              note={block.note}
+              onNavigated={onClose}
+              adding={conceptAdding}
+              onAddingChange={setConceptAdding}
+              showAddButton={false}
+            />
           </div>
         ) : null}
         <div className="sv-focus-body sv-center-body">{body}</div>

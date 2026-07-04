@@ -124,10 +124,13 @@ async function mountStudy(ctx: WorkspaceContext): Promise<HTMLElement> {
   return container;
 }
 
-const openSwitcher = async (host: HTMLElement) => {
+const openSwitcher = async (host: HTMLElement): Promise<HTMLElement> => {
   const trigger = host.querySelector(".chat-session-switcher .panel-menu-trigger") as HTMLButtonElement;
   expect(trigger).toBeTruthy();
   await act(async () => trigger.click());
+  const popover = document.body.querySelector(".panel-menu-popover") as HTMLElement | null;
+  expect(popover).toBeTruthy();
+  return popover!;
 };
 
 describe("StudyView — chat session history + switcher (W1)", () => {
@@ -141,10 +144,24 @@ describe("StudyView — chat session history + switcher (W1)", () => {
     expect(messages[1].textContent).toContain("酶是生物催化剂，能加速化学反应。");
   });
 
+  it("keeps AI Chat status/history first and the overflow menu last", async () => {
+    const host = await mountStudy(makeCtx(makeApi()));
+    const toolbar = host.querySelector(".chat-panel-toolbar") as HTMLElement;
+    const actions = toolbar.querySelector(".chat-panel-actions") as HTMLElement;
+    expect(toolbar.children).toHaveLength(1);
+    expect(toolbar.firstElementChild).toBe(actions);
+
+    const children = Array.from(actions.children);
+    expect(children).toHaveLength(3);
+    expect(children[0].classList.contains("workspace-status-dot")).toBe(true);
+    expect(children[1].classList.contains("chat-session-switcher")).toBe(true);
+    expect(children[2].classList.contains("panel-menu")).toBe(true);
+  });
+
   it("lists the sessions (title + time) and marks the active one", async () => {
     const host = await mountStudy(makeCtx(makeApi()));
-    await openSwitcher(host);
-    const rows = host.querySelectorAll(".chat-session-row");
+    const popover = await openSwitcher(host);
+    const rows = popover.querySelectorAll(".chat-session-row");
     expect(rows).toHaveLength(2);
     expect(rows[0].getAttribute("data-session-id")).toBe(fixtureSession.id);
     expect(rows[0].className).toContain("active");
@@ -157,8 +174,8 @@ describe("StudyView — chat session history + switcher (W1)", () => {
   it("clicking a history row RESUMES that session (select) ", async () => {
     const api = makeApi();
     const host = await mountStudy(makeCtx(api));
-    await openSwitcher(host);
-    const open = host.querySelector(
+    const popover = await openSwitcher(host);
+    const open = popover.querySelector(
       `.chat-session-row[data-session-id="${otherSummary.id}"] .chat-session-open`
     ) as HTMLButtonElement;
     await act(async () => open.click());
@@ -168,8 +185,8 @@ describe("StudyView — chat session history + switcher (W1)", () => {
   it("新对话 starts a fresh conversation", async () => {
     const api = makeApi();
     const host = await mountStudy(makeCtx(api));
-    await openSwitcher(host);
-    const newButton = host.querySelector(".chat-session-new") as HTMLButtonElement;
+    const popover = await openSwitcher(host);
+    const newButton = popover.querySelector(".chat-session-new") as HTMLButtonElement;
     await act(async () => newButton.click());
     expect(api.startNew).toHaveBeenCalledOnce();
   });
@@ -177,8 +194,8 @@ describe("StudyView — chat session history + switcher (W1)", () => {
   it("delete asks for confirmation — confirmed removes, cancelled keeps", async () => {
     const api = makeApi();
     const host = await mountStudy(makeCtx(api));
-    await openSwitcher(host);
-    const deleteButton = host.querySelector(
+    const popover = await openSwitcher(host);
+    const deleteButton = popover.querySelector(
       `.chat-session-row[data-session-id="${otherSummary.id}"] .chat-session-delete`
     ) as HTMLButtonElement;
 

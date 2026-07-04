@@ -17,13 +17,29 @@ import {
   Square,
   X
 } from "lucide-react";
+import { defineMessages, t, useLocale } from "../i18n";
 import type { WorkspaceContext } from "./viewRegistry";
 
 export type TopBarProps = {
   ctx: WorkspaceContext;
 };
 
+const topBarMessages = defineMessages({
+  readingMode: { zh: "阅读模式", en: "Reading mode" },
+  notesOverlay: { zh: "笔记叠层", en: "Notes Overlay" },
+  anchorFocus: { zh: "锚点聚焦", en: "Anchor Focus" },
+  anchorFocusTitle: { zh: "聚焦当前锚点", en: "Focus the current anchor" },
+  windowControls: { zh: "窗口控制", en: "Window controls" },
+  minimizeWindow: { zh: "最小化窗口", en: "Minimize window" },
+  minimize: { zh: "最小化", en: "Minimize" },
+  maximizeWindow: { zh: "最大化或还原窗口", en: "Maximize or restore window" },
+  maximizeRestore: { zh: "最大化 / 还原", en: "Maximize / Restore" },
+  closeWindow: { zh: "关闭窗口", en: "Close window" },
+  close: { zh: "关闭", en: "Close" }
+});
+
 export function TopBar({ ctx }: TopBarProps) {
+  useLocale();
   const {
     setAnnotationMode,
     focus
@@ -48,7 +64,7 @@ export function TopBar({ ctx }: TopBarProps) {
         <span className="topbar-wordmark">Growte</span>
       </div>
 
-      <div className="topbar-center" role="tablist" aria-label="Reading mode">
+      <div className="topbar-center" role="tablist" aria-label={t(topBarMessages.readingMode)}>
         <button
           type="button"
           role="tab"
@@ -62,14 +78,14 @@ export function TopBar({ ctx }: TopBarProps) {
           }}
         >
           <PanelRight size={15} aria-hidden="true" />
-          Notes Overlay
+          {t(topBarMessages.notesOverlay)}
         </button>
         <button
           type="button"
           role="tab"
           aria-selected={focusActive}
           className={`topbar-tab${focusActive ? " active" : ""}`}
-          title="Focus the current anchor"
+          title={t(topBarMessages.anchorFocusTitle)}
           onClick={() => {
             // Re-reveal the focused anchor (bumps revealSeq → the reader scrolls the
             // passage into view). Presentation mode is untouched — overlay stays on.
@@ -78,17 +94,17 @@ export function TopBar({ ctx }: TopBarProps) {
           }}
         >
           <Crosshair size={15} aria-hidden="true" />
-          Anchor Focus
+          {t(topBarMessages.anchorFocus)}
         </button>
       </div>
 
       {windowControls ? (
-        <div className="topbar-window-controls" aria-label="Window controls">
+        <div className="topbar-window-controls" aria-label={t(topBarMessages.windowControls)}>
           <button
             type="button"
             className="window-control-btn"
-            aria-label="Minimize window"
-            title="Minimize"
+            aria-label={t(topBarMessages.minimizeWindow)}
+            title={t(topBarMessages.minimize)}
             onClick={() => windowControls.minimize()}
           >
             <Minus size={14} strokeWidth={1.9} />
@@ -96,8 +112,8 @@ export function TopBar({ ctx }: TopBarProps) {
           <button
             type="button"
             className="window-control-btn"
-            aria-label="Maximize or restore window"
-            title="Maximize / Restore"
+            aria-label={t(topBarMessages.maximizeWindow)}
+            title={t(topBarMessages.maximizeRestore)}
             onClick={() => windowControls.toggleMaximize()}
           >
             <Square size={12} strokeWidth={1.9} />
@@ -105,8 +121,8 @@ export function TopBar({ ctx }: TopBarProps) {
           <button
             type="button"
             className="window-control-btn window-control-close"
-            aria-label="Close window"
-            title="Close"
+            aria-label={t(topBarMessages.closeWindow)}
+            title={t(topBarMessages.close)}
             onClick={() => windowControls.close()}
           >
             <X size={14} strokeWidth={1.9} />

@@ -6,15 +6,18 @@ Use this file as the live status board for implementation work.
 
 - Goal: land the shell modal/configuration batch now that the explicit avoid lines are confirmed.
 - Active plan: work serially because the shell context, settings hub, user menu, and concept client share type surfaces; preserve all existing dirty-tree changes; avoid `markerOverlay`, `annotations`, `anchorViews`, `webview-preload`, `sourceEditor`, `library*`, `readerForSource`, `sources` services, `playwright.electron*`, and e2e infrastructure.
-- Active task: SHELL-4 code reconnaissance.
-- Verification target: focused Vitest suites for changed surfaces, then `npm run check`; run `npm run build` if type/tests are clean within the session.
+- Active task: Complete.
+- Result: rail reduced to Library/Review/Concepts/Profile; `WorkspaceShell` now hosts registered views in a centered modal with Escape/backdrop/close handling; Settings, Kit & Plugin, Operations, Layers, Trash, Onboarding, Shortcut Help, and About now route through modal surfaces where appropriate.
+- Result: SettingsHub gained backup status/restore list controls, current-version/check-update, and speech voice/rate preferences consumed by speak text. Concept delete/merge is available through server routes, entity client methods, and ConceptInspector actions. Marker concept notes render with a compact chip in the note list.
+- Result: onboarding now covers Ctrl+K search, new document, read-aloud/pinyin, trash, and chat history with bilingual step text and completion detection. `?` and the user menu open a bilingual shortcut help modal. X1 icon config was inspected and already points to `electron/assets/growte-anchor.ico` with the real Growte anchor assets.
+- Verification target: focused Vitest suites, full Vitest suite, and `npm run check` passed; e2e/playwright infrastructure deliberately untouched.
 
 ## Current Status
 
 - Date: 2026-07-04
-- Phase: I18N-1 Global UI language switch
+- Phase: SHELL-4 configuration modal + follow-up batch
 - Active task: None
-- Overall status: Complete. The app now has a live zh/en locale store, a Settings language radio, workspace-scoped `ui-prefs` persistence, and bilingual chrome coverage for TopBar, IconRail, UserMenu, RightSidebarTabs, SettingsHub, Plugin Manager, and Onboarding.
+- Overall status: Complete. Shell modal routing, Settings follow-ups, concept delete/merge, marker-note styling, onboarding refresh, shortcut help, speech preferences, and X1 icon verification are complete.
 
 ## 2026-07-04 - I18N-1 Global UI language switch
 

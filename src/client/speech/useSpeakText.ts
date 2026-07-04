@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getSpeechStatus, type SpeechTtsStatus } from "./speechStatus";
+import { getSpeechPreferences } from "./speechPreferences";
 
 export type { SpeechTtsStatus } from "./speechStatus";
 export { resetSpeechStatusCacheForTests } from "./speechStatus";
@@ -21,7 +22,7 @@ export function getSpeechTtsStatus(): Promise<SpeechTtsStatus> {
 
 export type SpeakTextControls = {
   /** Speak this text (stops any current utterance first). Failures are surfaced on `error`. */
-  speak(text: string, options?: { voice?: string }): Promise<void>;
+  speak(text: string, options?: { voice?: string; rate?: number }): Promise<void>;
   /** Stop the current utterance (and cancel an in-flight synthesis). */
   stop(): void;
   /** True from the moment speak() is called until playback ends/stops/fails. */
@@ -68,11 +69,14 @@ export function useSpeakText(): SpeakTextControls {
   useEffect(() => stop, [stop]);
 
   const speak = useCallback(
-    async (text: string, options?: { voice?: string }) => {
+    async (text: string, options?: { voice?: string; rate?: number }) => {
       const trimmed = text.trim();
       if (!trimmed) return;
       stop(); // one utterance at a time — also bumps the seq, cancelling stale fetches
       const seq = seqRef.current;
+      const prefs = getSpeechPreferences();
+      const voice = options?.voice ?? prefs.voice;
+      const rate = options?.rate ?? prefs.rate;
       setError(null);
       setSpeaking(true);
       try {
@@ -81,7 +85,8 @@ export function useSpeakText(): SpeakTextControls {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             text: trimmed.slice(0, MAX_SPEAK_CHARS),
-            ...(options?.voice ? { voice: options.voice } : {})
+            ...(voice ? { voice } : {}),
+            ...(rate !== 1 ? { rate } : {})
           })
         });
         if (!response.ok) {

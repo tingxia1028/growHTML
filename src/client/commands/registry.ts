@@ -19,6 +19,7 @@ import type { FocusContextValue } from "../focus/FocusContext";
 import { draftQuoteText } from "../focus/FocusContext";
 import { BOOKMARK_CONTENT_TYPE } from "../../core/notes/contentTypes";
 import { recordCommandMemory } from "../memory/commandCapture";
+import type { LocalizedText } from "../i18n";
 import {
   collapseConceptText,
   conceptNameFromSelection,
@@ -182,7 +183,7 @@ const conceptRef = (id: string): NodeRef => ({ type: "concept", id });
 
 export type Command = {
   id: string;
-  title: string;
+  title: LocalizedText;
   group?: string;
   isAvailable(ctx: CommandContext): boolean;
   run(ctx: CommandContext): Promise<void> | void;

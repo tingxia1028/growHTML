@@ -16,6 +16,7 @@ import { getView, type WorkspaceContext } from "../workspace/viewRegistry";
 import { registerShellNavigator, type ShellNavTarget } from "../workspace/shellNav";
 import type { OnboardingState, SourceRecord } from "../data/entityClient";
 import { SAMPLE_SOURCE_TITLE } from "../../core/demo/sampleDoc";
+import { setLocale } from "../i18n";
 import { setOnboardingIoForTests, type OnboardingIo } from "./onboardingIo";
 
 let container: HTMLDivElement;
@@ -41,6 +42,9 @@ function stubIo(over: IoOverrides = {}) {
     fetchAllNotes: async () => [],
     fetchEvents: async () => [],
     fetchSealedPacks: async () => [],
+    fetchTrash: async () => ({ retentionDays: 30, sources: [], notes: [] }),
+    fetchSpeechStatus: async () => ({ tts: { available: false, lane: "edge" }, stt: { available: false, lane: "local" } }),
+    fetchChatSessions: async () => [],
     fetchProviders: async () => ({ active: { id: "mock", kind: "mock" }, providers: [], envProviderId: null }),
     seedSample: vi.fn(async (title: string) => source("src_seeded", title)),
     ...over
@@ -64,6 +68,7 @@ function ctxWith(over: Partial<Record<keyof WorkspaceContext, unknown>> = {}): W
 }
 
 beforeEach(() => {
+  setLocale("zh");
   targets = [];
   registerShellNavigator((target) => targets.push(target));
   container = document.createElement("div");
@@ -92,17 +97,45 @@ describe("OnboardingPanel", () => {
     await renderPanel(ctxWith());
 
     const ids = Array.from(container.querySelectorAll(".onboarding-step")).map((el) => el.getAttribute("data-step-id"));
-    expect(ids).toEqual(["import-doc", "connect-ai", "first-note", "see-layers", "import-pack", "review-once"]);
-    expect(container.querySelector(".onboarding-progress")!.textContent).toContain("0 / 6");
-    expect(container.querySelectorAll(".onboarding-go-btn")).toHaveLength(6);
+    expect(ids).toEqual([
+      "import-doc",
+      "new-document",
+      "search-vault",
+      "connect-ai",
+      "first-note",
+      "speech-tools",
+      "see-layers",
+      "trash-recovery",
+      "import-pack",
+      "chat-history",
+      "review-once"
+    ]);
+    expect(container.querySelector(".onboarding-progress")!.textContent).toContain("0 / 11");
+    expect(container.querySelectorAll(".onboarding-go-btn")).toHaveLength(11);
     expect(container.querySelector(".onboarding-complete")).toBeNull();
+  });
+
+  it("flips onboarding copy to English when locale changes", async () => {
+    setLocale("en");
+    stubIo();
+    await renderPanel(ctxWith());
+
+    expect(container.querySelector(".onboarding-title")!.textContent).toBe("Welcome to Growte");
+    expect(container.querySelector(".onboarding-step-title")!.textContent).toBe("Import Your First Document");
+    expect(container.querySelector(".onboarding-go-btn")!.textContent).toBe("Import");
   });
 
   it("derives done badges from the injected data and LATCHES them via the scoped write seam", async () => {
     const io = stubIo({
       fetchAllNotes: async () => [{ id: "n1" }] as never,
-      fetchEvents: async () => [{ verb: "note.review" }] as never,
+      fetchEvents: async () => [{ verb: "search" }, { verb: "note.review" }] as never,
       fetchSealedPacks: async () => [{ packId: "p1" }] as never,
+      fetchTrash: async () => ({ retentionDays: 30, sources: [{ id: "trash_src" }], notes: [] }) as never,
+      fetchSpeechStatus: async () => ({
+        tts: { available: true, lane: "edge" },
+        stt: { available: false, lane: "local" }
+      }),
+      fetchChatSessions: async () => [{ id: "chat_1" }] as never,
       fetchProviders: async () => ({ active: { id: "claude-agent", kind: "cli-agent" }, providers: [], envProviderId: "claude-agent" })
     });
     const ctx = ctxWith({
@@ -112,17 +145,22 @@ describe("OnboardingPanel", () => {
     await renderPanel(ctx);
 
     // All six detected done → banner + 6/6 + the completedAt-stamping latch PUT.
-    expect(container.querySelectorAll(".onboarding-step.done")).toHaveLength(6);
-    expect(container.querySelector(".onboarding-progress")!.textContent).toContain("6 / 6");
+    expect(container.querySelectorAll(".onboarding-step.done")).toHaveLength(11);
+    expect(container.querySelector(".onboarding-progress")!.textContent).toContain("11 / 11");
     expect(container.querySelector(".onboarding-complete")).not.toBeNull();
 
     const saved = (io.saveState as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0] as OnboardingState;
     expect(saved.doneSteps).toEqual([
       "import-doc",
+      "new-document",
+      "search-vault",
       "connect-ai",
       "first-note",
+      "speech-tools",
       "see-layers",
+      "trash-recovery",
       "import-pack",
+      "chat-history",
       "review-once"
     ]);
     expect(saved.completedAt).not.toBeNull();
@@ -140,7 +178,7 @@ describe("OnboardingPanel", () => {
 
     const saved = (io.saveState as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0] as OnboardingState;
     // The latch APPENDS the newly-done steps after the stored ones.
-    expect(saved.doneSteps).toEqual(["review-once", "import-doc", "first-note"]);
+    expect(saved.doneSteps).toEqual(["review-once", "import-doc", "new-document", "first-note"]);
     expect(saved.sampleSourceId).toBe("src_sample"); // untouched
     expect(saved.dismissed).toBe(false);
     // Latched review-once renders done even though no event data backs it now.
@@ -148,7 +186,7 @@ describe("OnboardingPanel", () => {
   });
 
   it("does not PUT at all when the stored block already reflects the data", async () => {
-    const io = stubIo({ fetchState: async () => freshState({ doneSteps: ["import-doc"] }) });
+    const io = stubIo({ fetchState: async () => freshState({ doneSteps: ["import-doc", "new-document"] }) });
     await renderPanel(ctxWith({ sources: [source("src_1", "Doc")] }));
     expect(io.saveState).not.toHaveBeenCalled();
   });
@@ -232,13 +270,23 @@ describe("OnboardingPanel", () => {
     };
 
     await go("import-doc");
+    await go("new-document");
+    await go("search-vault");
     await go("connect-ai");
+    await go("speech-tools");
     await go("see-layers");
+    await go("trash-recovery");
+    await go("chat-history");
     await go("review-once");
     expect(targets).toEqual([
       { type: "pane", kind: "library" },
-      { type: "pane", kind: "settings.hub" },
-      { type: "pane", kind: "layer.switcher" },
+      { type: "pane", kind: "library" },
+      { type: "modal", kind: "shortcut.help" },
+      { type: "modal", kind: "settings.hub" },
+      { type: "modal", kind: "settings.hub" },
+      { type: "modal", kind: "layer.switcher" },
+      { type: "modal", kind: "trash.panel" },
+      { type: "pane", kind: "study" },
       { type: "pane", kind: "review.panel" }
     ]);
 

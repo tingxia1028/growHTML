@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildLayerTree,
   countNotesInLayers,
+  coveredLayerIds,
   descendantLeafIds,
   parentToggleState,
   type LayerNode
@@ -40,17 +41,18 @@ describe("buildLayerTree", () => {
 });
 
 describe("descendantLeafIds", () => {
-  it("returns own id for a leaf, and all leaf descendants for a parent", () => {
+  it("returns the covered layer ids: parent itself plus descendants", () => {
     const [p] = buildLayerTree([L("p"), L("a", { parentId: "p" }), L("b", { parentId: "p" })]);
-    expect(descendantLeafIds(p).sort()).toEqual(["a", "b"]);
+    expect(coveredLayerIds(p).sort()).toEqual(["a", "b", "p"]);
+    expect(descendantLeafIds(p).sort()).toEqual(["a", "b", "p"]);
     expect(descendantLeafIds(p.children[0])).toEqual(["a"]);
   });
 });
 
 describe("parentToggleState", () => {
   const [p] = buildLayerTree([L("p"), L("a", { parentId: "p" }), L("b", { parentId: "p" })]);
-  it("on when all leaves enabled, off when none, mixed otherwise", () => {
-    expect(parentToggleState(p, new Set(["a", "b"]))).toBe("on");
+  it("on when all covered layers are enabled, off when none, mixed otherwise", () => {
+    expect(parentToggleState(p, new Set(["p", "a", "b"]))).toBe("on");
     expect(parentToggleState(p, new Set())).toBe("off");
     expect(parentToggleState(p, new Set(["a"]))).toBe("mixed");
   });

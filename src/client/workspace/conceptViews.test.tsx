@@ -2,7 +2,7 @@
 // CONCEPT-UX-1 §4 — concept list usability. Covers:
 //   • sorting by linked-note count DESC (then updatedAt DESC) with a count badge per row
 //   • the client-side name filter (normalized substring, aliases included)
-//   • the empty-state guidance line (选中文字 → 标为概念)
+//   • the empty-state guidance line (选中文字 → 标为知元)
 // Rendered through the registered view (getView("concept.list")), with the entity
 // client's reads spied — the same seam the view uses at runtime.
 
@@ -11,6 +11,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { ReactElement, ReactNode } from "react";
 import { entityClient, type ConceptRecord, type NoteRecord, type WorkspaceNode } from "../data/entityClient";
+import { setLocale } from "../i18n";
 import { getView } from "./viewRegistry";
 import type { WorkspaceContext } from "./viewRegistry";
 import "./conceptViews";
@@ -86,6 +87,7 @@ function updateInput(input: HTMLInputElement, value: string) {
 }
 
 beforeEach(() => {
+  setLocale("zh");
   document.body.innerHTML = "";
 });
 
@@ -147,16 +149,16 @@ describe("concept.list view", () => {
     updateInput(filter, "zzz");
     names = Array.from(container.querySelectorAll(".concept-item-name")).map((el) => el.textContent);
     expect(names).toEqual([]);
-    expect(container.querySelector(".concept-list .empty-state")?.textContent).toBe("没有匹配的概念。");
+    expect(container.querySelector(".concept-list .empty-state")?.textContent).toBe("没有匹配的知元。");
     cleanup();
   });
 
-  it("empty vault → ONE guidance line pointing at 标为概念", async () => {
+  it("empty vault → ONE guidance line pointing at 标为知元", async () => {
     vi.spyOn(entityClient, "concepts").mockResolvedValue({ concepts: [] });
     vi.spyOn(entityClient, "allNotes").mockResolvedValue({ notes: [] });
 
     const { container, cleanup } = await renderConceptList();
-    expect(container.querySelector(".concept-empty-guidance")?.textContent).toBe("选中文字 → 标为概念");
+    expect(container.querySelector(".concept-empty-guidance")?.textContent).toBe("选中文字 → 标为知元");
     cleanup();
   });
 });

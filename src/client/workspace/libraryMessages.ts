@@ -46,7 +46,7 @@ export const libraryMessages = defineMessages({
   chipMarkdown: { zh: "MD", en: "MD" },
   chipWord: { zh: "Word", en: "Word" },
   chipCode: { zh: "代码", en: "Code" },
-  removeDocument: { zh: "移除这份资料", en: "Remove this document" },
+  closeDocumentRow: { zh: "从列表移除", en: "Remove from list" },
   closeFolder: { zh: "关闭文件夹", en: "Close folder" },
 
   // —— 新建文档 seed ——

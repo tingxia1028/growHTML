@@ -58,7 +58,7 @@ import { DEFAULT_THEME_ID } from "../theme/builtins";
 import { listThemes } from "../theme/registry";
 import { setActiveTheme as applyActiveTheme, THEME_STORAGE_KEY } from "../theme/applyTheme";
 import { renderAnnotationNotePreview } from "./annotationNotePreview";
-import { t } from "../i18n";
+import { defineMessages, resolveText, t, useLocale } from "../i18n";
 import { conceptMessages } from "./conceptMessages";
 // W1 (ai-workspace §2.1/§2.2): the chat-session domain module — the first F1 slice.
 // Transcript + session list/load/save live in src/client/chat; this provider only
@@ -88,6 +88,13 @@ export type ToolbarAction = {
 };
 
 const EMPTY_OPERATION_PREFS: OperationPrefs = { order: [], disabled: [], params: {}, surfaces: {}, icons: {} };
+
+const workspaceActionMessages = defineMessages({
+  bookmark: { zh: "书签", en: "Bookmark" },
+  createNoteGroup: { zh: "创建笔记", en: "Create Note" },
+  bookmarkHint: { zh: "为当前聚焦段落添加书签", en: "Bookmark the focused passage" },
+  customActions: { zh: "我的操作", en: "Custom Actions" }
+});
 
 /** The surface keys an action list can be configured for. The inline selection toolbar
     and the Anchor bar SHARE one key, `"passage"` (both act on the current passage/anchor),
@@ -295,6 +302,7 @@ export type WorkspaceContextValue = {
   setActiveSourceId(id: string): void;
   loadSources(): Promise<void>;
   deleteSourceItem(sourceId: string, title: string): Promise<void>;
+  removeRecentSourceId(sourceId: string): void;
   /** SRC-2 (source-authoring.md): re-run the ACTIVE source's workspace load (rendered
       HTML + anchors + notes) — the authored editor calls this after a save so the
       reader reflects the new content and the re-projected anchors. */
@@ -532,6 +540,7 @@ const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const focus = useFocus();
+  const locale = useLocale();
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState("");
   const [sources, setSources] = useState<SourceRecord[]>([]);
@@ -1532,10 +1541,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const selectionActions = useMemo<ToolbarAction[]>(() => {
     const builtin: ToolbarAction[] = kitSurfaceItems("selection-toolbar", activeKitIds).map((item) => ({
       id: item.commandId,
-      title: item.title,
+      title: resolveText(item.title),
       icon: operationPrefs.icons?.[item.commandId] ?? item.icon,
       group: item.group,
-      description: item.description,
+      description: item.description ? resolveText(item.description) : undefined,
       kind: "builtin",
       scope: "anchor"
     }));
@@ -1545,14 +1554,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         id: op.id,
         title: op.name,
         icon: operationPrefs.icons?.[op.id],
-        group: "Custom Actions",
+        group: t(workspaceActionMessages.customActions),
         description: op.description,
         kind: "operation",
         scope: "anchor",
         outputType: op.outputContentType,
         variables: op.declaredVariables
       }));
-    const bookmark: ToolbarAction = { ...BOOKMARK_ACTION, icon: operationPrefs.icons?.[BOOKMARK_ACTION.id] ?? BOOKMARK_ACTION.icon };
+    const bookmark: ToolbarAction = {
+      ...BOOKMARK_ACTION,
+      title: t(workspaceActionMessages.bookmark),
+      group: t(workspaceActionMessages.createNoteGroup),
+      description: t(workspaceActionMessages.bookmarkHint),
+      icon: operationPrefs.icons?.[BOOKMARK_ACTION.id] ?? BOOKMARK_ACTION.icon
+    };
     // 标为概念 (CONCEPT-UX-1): the second core passage action — built inside the memo
     // (not a module const) so its title/description resolve through t() at render
     // assembly time. Icon overridable like every action.
@@ -1560,7 +1575,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       id: CONCEPT_MARK_COMMAND_ID,
       title: t(conceptMessages.markAction),
       icon: operationPrefs.icons?.[CONCEPT_MARK_COMMAND_ID] ?? "hash",
-      group: "Create Note",
+      group: t(workspaceActionMessages.createNoteGroup),
       description: t(conceptMessages.markActionHint),
       kind: "builtin",
       scope: "anchor"
@@ -1570,7 +1585,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     // selection toolbar AND the Anchor bar both render, so the two surfaces always show
     // the identical ordered list + show/hide (its own per-surface prefs, else global).
     return orderActionsForSurface([bookmark, conceptAction, ...builtin, ...custom], operationPrefs, "passage");
-  }, [activeKitIds, operations, operationPrefs]);
+  }, [activeKitIds, locale, operations, operationPrefs]);
 
   // The Anchor Action Bar renders the SAME ordered "passage" list as the inline selection
   // toolbar — one shared surface, one config. Aliased to `selectionActions` so there is a
@@ -1581,10 +1596,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const sourceActions = useMemo<ToolbarAction[]>(() => {
     const builtin: ToolbarAction[] = kitSurfaceItems("source-actions", activeKitIds).map((item) => ({
       id: item.commandId,
-      title: item.title,
+      title: resolveText(item.title),
       icon: operationPrefs.icons?.[item.commandId] ?? item.icon,
       group: item.group,
-      description: item.description,
+      description: item.description ? resolveText(item.description) : undefined,
       kind: "builtin",
       scope: "source"
     }));
@@ -1594,7 +1609,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         id: op.id,
         title: op.name,
         icon: operationPrefs.icons?.[op.id],
-        group: "Custom Actions",
+        group: t(workspaceActionMessages.customActions),
         description: op.description,
         kind: "operation",
         scope: "source",
@@ -1602,7 +1617,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         variables: op.declaredVariables
       }));
     return orderActionsForSurface([...builtin, ...custom], operationPrefs, "source");
-  }, [activeKitIds, operations, operationPrefs]);
+  }, [activeKitIds, locale, operations, operationPrefs]);
 
   // Fire a merged action: a built-in dispatches its command id directly; a custom op
   // goes through the generic operation.run command (which materializes the passage,
@@ -1659,6 +1674,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setActiveSourceId,
       loadSources,
       deleteSourceItem,
+      removeRecentSourceId: forgetSourceId,
       reloadActiveSource,
       renderedHtml,
       anchors: visibleAnchors,
@@ -1762,6 +1778,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       activeViewer,
       loadSources,
       deleteSourceItem,
+      forgetSourceId,
       reloadActiveSource,
       renderedHtml,
       visibleAnchors,

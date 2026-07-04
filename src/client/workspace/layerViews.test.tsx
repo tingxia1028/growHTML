@@ -27,7 +27,24 @@ import "./layerViews";
 
 const LAYERS = [
   { id: "layer_own", title: "My Notes", visibility: "private", importMode: "owned", enabled: true },
-  { id: "layer_custom", title: "错题", visibility: "private", importMode: "owned", enabled: true, role: "custom" },
+  {
+    id: "layer_preview",
+    title: "预习",
+    visibility: "private",
+    importMode: "owned",
+    enabled: true,
+    role: "preset",
+    parentId: "layer_own"
+  },
+  {
+    id: "layer_custom",
+    title: "错题",
+    visibility: "private",
+    importMode: "owned",
+    enabled: true,
+    role: "custom",
+    parentId: "layer_own"
+  },
   { id: "layer_shared", title: "同学的层", visibility: "private", importMode: "imported", enabled: true, role: "shared" },
   {
     id: "layer_sealed",
@@ -71,8 +88,10 @@ function makeCtx(): WorkspaceContext {
   return {
     activeSourceId: "src_1",
     layersVersion: 0,
+    enabledLayerIds: new Set(LAYERS.filter((layer) => layer.enabled).map((layer) => layer.id)),
     refreshLayers: vi.fn(),
-    toggleLayerFilter: vi.fn()
+    toggleLayerFilter: vi.fn(),
+    setLayersEnabled: vi.fn(async () => undefined)
   } as unknown as WorkspaceContext;
 }
 
@@ -86,6 +105,19 @@ async function mountSwitcher(): Promise<HTMLElement> {
 }
 
 describe("layerViews svpack entry points", () => {
+  it("renders the parentId tree without a fixed Stages group", async () => {
+    const container = await mountSwitcher();
+
+    expect(container.textContent).not.toContain("Stages");
+    expect(container.textContent).toContain("Mine");
+
+    const items = Array.from(container.querySelectorAll<HTMLElement>(".layer-item"));
+    const mine = items.find((item) => item.textContent?.includes("My Notes"));
+    const preview = items.find((item) => item.textContent?.includes("预习"));
+    expect(mine?.style.paddingLeft).toBe("10px");
+    expect(preview?.style.paddingLeft).toBe("24px");
+  });
+
   it("shows 分享… only on non-shared, non-sealed rows and 导入 .svpack in the header", async () => {
     const container = await mountSwitcher();
 

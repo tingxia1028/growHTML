@@ -5,6 +5,7 @@ import type { ReactElement, ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { AnyAnchor, NoteRecord, WorkspaceNode } from "../data/entityClient";
 import type { FocusContextValue } from "../focus/FocusContext";
+import { setLocale } from "../i18n";
 import { getAnchorGlyphVisibility, setAnchorGlyphVisibility } from "../markerOverlay";
 import { getView } from "./viewRegistry";
 import type { WorkspaceContext } from "./viewRegistry";
@@ -77,6 +78,7 @@ function ctxWithLinkedNote() {
 describe("anchor.excerpt linked notes", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
+    setLocale("zh");
   });
 
   it("clicking a linked note focuses the note viewer and re-reveals the source anchor", () => {
@@ -104,6 +106,10 @@ describe("anchor.excerpt linked notes", () => {
 // re-lay-out; guests get it over sv:anchors) and persists via the annotations.ts
 // localStorage helper so the choice survives reloads.
 describe("anchor panel 显示锚点标记 switch", () => {
+  beforeEach(() => {
+    setLocale("zh");
+  });
+
   afterEach(() => {
     window.localStorage.removeItem("sv-anchor-glyph-markers");
     setAnchorGlyphVisibility(true);
@@ -116,17 +122,19 @@ describe("anchor panel 显示锚点标记 switch", () => {
     const node = { id: "anchor", kind: "anchor.excerpt" } as WorkspaceNode;
     const { container, cleanup } = mount(<>{plugin!.render(node, ctx)}</>);
 
-    const input = container.querySelector(".anchor-glyph-switch-input") as HTMLInputElement;
-    expect(input).toBeTruthy();
-    expect(input.checked).toBe(true); // default: anchor glyphs visible
+    const button = container.querySelector(".anchor-glyph-switch") as HTMLButtonElement;
+    expect(button).toBeTruthy();
+    expect(container.querySelector(".anchor-panel-toolbar .anchor-glyph-switch")).toBe(button);
+    expect(container.querySelector(".anchor-action-bar > .anchor-glyph-switch")).toBeNull();
+    expect(button.getAttribute("aria-pressed")).toBe("true"); // default: anchor glyphs visible
 
-    act(() => input.click());
-    expect(input.checked).toBe(false);
+    act(() => button.click());
+    expect(button.getAttribute("aria-pressed")).toBe("false");
     expect(getAnchorGlyphVisibility()).toBe(false);
     expect(window.localStorage.getItem("sv-anchor-glyph-markers")).toBe("hidden");
 
-    act(() => input.click());
-    expect(input.checked).toBe(true);
+    act(() => button.click());
+    expect(button.getAttribute("aria-pressed")).toBe("true");
     expect(getAnchorGlyphVisibility()).toBe(true);
     expect(window.localStorage.getItem("sv-anchor-glyph-markers")).toBe("shown");
     cleanup();
@@ -140,7 +148,29 @@ describe("anchor panel 显示锚点标记 switch", () => {
     const node = { id: "anchor", kind: "anchor.excerpt" } as WorkspaceNode;
     const { container, cleanup } = mount(<>{plugin!.render(node, ctx)}</>);
     expect(container.querySelector(".anchor-excerpt-empty")).toBeTruthy();
-    expect(container.querySelector(".anchor-glyph-switch-input")).toBeTruthy();
+    expect(container.querySelector(".anchor-glyph-switch")).toBeTruthy();
+    expect(container.querySelector(".anchor-panel-toolbar .anchor-glyph-switch")).toBeTruthy();
+    expect(container.querySelector(".anchor-action-bar > .anchor-glyph-switch")).toBeNull();
+    cleanup();
+  });
+
+  it("renders the marker switch and anchor chrome in English when locale is English", () => {
+    setLocale("en");
+    const plugin = getView("anchor.excerpt");
+    expect(plugin).toBeTruthy();
+    const { ctx } = ctxWithLinkedNote();
+    const node = { id: "anchor", kind: "anchor.excerpt" } as WorkspaceNode;
+    const { container, cleanup } = mount(<>{plugin!.render(node, ctx)}</>);
+
+    const markerButton = container.querySelector(".anchor-glyph-switch") as HTMLButtonElement;
+    expect(markerButton.textContent).toBe("");
+    expect(markerButton.getAttribute("title")).toBe("Show anchor markers");
+    expect(markerButton.getAttribute("aria-label")).toBe("Show anchor markers");
+    expect(container.querySelector(".anchor-linked-label")!.textContent).toBe("Linked notes");
+    expect((container.querySelector(".anchor-context-jump") as HTMLButtonElement).getAttribute("aria-label")).toBe("Reveal this anchor in the reader");
+    expect(container.textContent).not.toContain("Show anchor markers");
+    expect(container.textContent).not.toContain("显示锚点标记");
+    expect(container.textContent).not.toContain("关联笔记");
     cleanup();
   });
 });
