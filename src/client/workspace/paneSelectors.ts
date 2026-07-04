@@ -11,10 +11,48 @@
 // WorkspaceContext.
 
 import type { AnyAnchor, NoteRecord, StudyLayerRecord } from "../data/entityClient";
-import type { PaintAnchor } from "../surfaces/types";
+import type { PaintAnchor, PaintAnchorStyle } from "../surfaces/types";
 import { BOOKMARK_CONTENT_TYPE } from "../../core/notes/contentTypes";
 import { noteText } from "./WorkspaceContext";
 import { renderAnnotationNotePreview } from "./annotationNotePreview";
+
+// D3a (note-presentation-unified §D3) — resolve the PAINT style for one anchor from its
+// NOTES' enabled layers. An anchor has no layer of its own; its lens membership is the
+// UNION of its notes' `layerIds` (note.ts:66 — NOT the deprecated `anchor.layerId`). We
+// pick the first ENABLED layer (by `order`, undefined last — server list order is not
+// guaranteed, delta 3) that carries a paint style, and read its color with the precedence
+// style.color > layer.color, plus its style.decoration. Returns undefined when no such
+// layer exists — the caller then omits the `style` key entirely (delta 7), so an un-styled
+// PaintAnchor is byte-identical to the pre-D3a shape.
+export function resolveAnchorPaintStyle(
+  anchorNotes: NoteRecord[],
+  sourceLayers: StudyLayerRecord[],
+  enabledLayerIds: ReadonlySet<string>
+): PaintAnchorStyle | undefined {
+  // The layer ids this anchor's notes claim (deduped).
+  const layerIds = new Set<string>();
+  for (const note of anchorNotes) for (const id of note.layerIds) layerIds.add(id);
+  if (layerIds.size === 0) return undefined;
+
+  // Candidate layers: this anchor's, enabled, in a STABLE order (order asc, undefined
+  // last) so two colored enabled layers resolve deterministically regardless of the
+  // server's list order.
+  const candidates = sourceLayers
+    .filter((layer) => layerIds.has(layer.id) && enabledLayerIds.has(layer.id))
+    .sort((a, b) => (a.order ?? Number.POSITIVE_INFINITY) - (b.order ?? Number.POSITIVE_INFINITY));
+
+  for (const layer of candidates) {
+    const color = layer.style?.color ?? layer.color;
+    const decoration = layer.style?.decoration;
+    if (color || decoration) {
+      const style: PaintAnchorStyle = {};
+      if (color) style.color = color;
+      if (decoration) style.decoration = decoration;
+      return style;
+    }
+  }
+  return undefined;
+}
 
 // The enabled-layer "on" set for a bundle's layers (the multi-select filter). Mirrors the
 // `enabledLayerIds` memo.
@@ -67,9 +105,12 @@ export function buildBookmarkOnlyAnchorIds(notes: NoteRecord[]): Set<string> {
 function mapPaintAnchor(
   anchor: AnyAnchor,
   notesByAnchorId: Map<string, NoteRecord[]>,
-  sourceLayers: StudyLayerRecord[]
+  sourceLayers: StudyLayerRecord[],
+  enabledLayerIds: ReadonlySet<string>
 ): PaintAnchor {
   const anchorNotes = notesByAnchorId.get(anchor.id) ?? [];
+  // D3a: the resolved paint style, or undefined when no enabled layer styles this anchor.
+  const style = resolveAnchorPaintStyle(anchorNotes, sourceLayers, enabledLayerIds);
   return {
     id: anchor.id,
     anchorKind: anchor.anchorKind,
@@ -85,7 +126,10 @@ function mapPaintAnchor(
       contentType: note.contentType ?? "markdown",
       text: noteText(note.content),
       html: renderAnnotationNotePreview(note, anchor, sourceLayers)
-    }))
+    })),
+    // Omit the key unless defined (delta 7) — keeps an un-styled PaintAnchor byte-
+    // identical to the pre-D3a shape (the existing toEqual byte-lock stays green).
+    ...(style ? { style } : {})
   };
 }
 
@@ -114,7 +158,9 @@ export function buildPaintPipeline(input: PaintPipelineInput): {
   const bookmarkOnlyAnchorIds = buildBookmarkOnlyAnchorIds(notes);
   const paintAnchors = visibleAnchors
     .filter((anchor) => !bookmarkOnlyAnchorIds.has(anchor.id))
-    .map((anchor) => mapPaintAnchor(anchor, notesByAnchorId, sourceLayers));
-  const revealAnchors = visibleAnchors.map((anchor) => mapPaintAnchor(anchor, notesByAnchorId, sourceLayers));
+    .map((anchor) => mapPaintAnchor(anchor, notesByAnchorId, sourceLayers, enabledLayerIds));
+  const revealAnchors = visibleAnchors.map((anchor) =>
+    mapPaintAnchor(anchor, notesByAnchorId, sourceLayers, enabledLayerIds)
+  );
   return { paintAnchors, revealAnchors };
 }

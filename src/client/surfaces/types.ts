@@ -50,6 +50,21 @@ export type PaintAnchor = {
   // The card previews of every visible non-bookmark note hanging off this anchor.
   // Built in the host React realm, then consumed as inert HTML by the annotation layer.
   notePreviews?: PaintNotePreview[];
+  // D3a (note-presentation-unified §D3) — the RESOLVED paint style for this anchor,
+  // derived from its notes' enabled layers (resolveAnchorPaintStyle). A reader sets
+  // `--sv-anchor-color` + the `sv-deco-*` class on the painted element from this. OMITTED
+  // when the anchor resolves to no layer style — an un-styled PaintAnchor stays byte-
+  // identical to the pre-D3a shape (paneSelectors' "omit key unless defined").
+  style?: PaintAnchorStyle;
+};
+
+// The resolved per-anchor paint style (D3a): the highlight color + decoration shape a
+// reader applies. `color` is a CSS color (a layer's style.color or its chip color);
+// `decoration` picks the highlight/underline/both CSS rule. Both optional — a style with
+// only a color still tints; a style with only a decoration uses the default color.
+export type PaintAnchorStyle = {
+  color?: string;
+  decoration?: "highlight" | "underline" | "both";
 };
 
 // The uniform props EVERY reader component accepts. `anchors` is the host's single

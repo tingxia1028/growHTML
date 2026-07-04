@@ -6,6 +6,7 @@ import workerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 import "pdfjs-dist/web/pdf_viewer.css";
 import {
   applyHighlight,
+  applyPaintStyle,
   buildAnchorSlotHtml,
   buildNoteSlotHtml,
   clearAnnotations,
@@ -129,6 +130,9 @@ export function PdfReader({
         const box = document.createElement("div");
         box.className = "pdf-region-box";
         placeRegionBox(box, anchor.rect, anchor.note, anchor.id, annotationPayload(anchor));
+        // D3a: tint the region box from the anchor's resolved layer style (the box CSS
+        // reads --sv-anchor-color; the deco class is inert for a box but kept uniform).
+        applyPaintStyle(box, anchor.style);
         pageEl.appendChild(box);
         markers.push({
           anchorId: anchor.id,
@@ -151,6 +155,8 @@ export function PdfReader({
         // card (same layer the HTML reader and webview guest use).
         span.classList.add("pdf-anchor-hit");
         applyHighlight(span, anchor.note, anchor.id, annotationPayload(anchor, index === 0));
+        // D3a: paint the span with the anchor's resolved layer color/decoration.
+        applyPaintStyle(span, anchor.style);
       });
       if (matches.length)
         markers.push({

@@ -8,7 +8,8 @@ import { renderAnnotationNotePreview } from "./annotationNotePreview";
 import {
   buildPaintPipeline,
   enabledLayerIdsOf,
-  notesForSource
+  notesForSource,
+  resolveAnchorPaintStyle
 } from "./paneSelectors";
 
 // The pre-F1 inline mapping (copied VERBATIM from the WorkspaceContext memos as they were
@@ -162,5 +163,112 @@ describe("paneSelectors — the extracted paint pipeline (regression lock)", () 
   it("notesForSource keeps a no-layer note always (never orphaned)", () => {
     const notes = [note({ id: "n1", layerIds: [] })];
     expect(notesForSource(notes, new Set<string>()).map((n) => n.id)).toEqual(["n1"]);
+  });
+});
+
+// D3a (note-presentation-unified §D3) — resolveAnchorPaintStyle picks the paint style from
+// the anchor's NOTES' enabled layers, with precedence style.color > layer.color > (none),
+// a stable order-asc sort, and undefined when neither applies.
+describe("resolveAnchorPaintStyle (D3a per-layer paint)", () => {
+  const layer = (over: Partial<StudyLayerRecord>): StudyLayerRecord => ({ id: "L", enabled: true, ...over } as StudyLayerRecord);
+
+  it("picks the enabled layer's style.color over its chip color", () => {
+    const notes = [note({ id: "n1", anchorIds: ["a1"], layerIds: ["L1"] })];
+    const layers = [layer({ id: "L1", color: "#111111", style: { color: "#ff0000", decoration: "underline" } })];
+    expect(resolveAnchorPaintStyle(notes, layers, new Set(["L1"]))).toEqual({ color: "#ff0000", decoration: "underline" });
+  });
+
+  it("falls back to the layer chip color when there is no style.color", () => {
+    const notes = [note({ id: "n1", anchorIds: ["a1"], layerIds: ["L1"] })];
+    const layers = [layer({ id: "L1", color: "#00aa00" })];
+    expect(resolveAnchorPaintStyle(notes, layers, new Set(["L1"]))).toEqual({ color: "#00aa00" });
+  });
+
+  it("returns undefined when neither a style nor a chip color exists", () => {
+    const notes = [note({ id: "n1", anchorIds: ["a1"], layerIds: ["L1"] })];
+    const layers = [layer({ id: "L1" })];
+    expect(resolveAnchorPaintStyle(notes, layers, new Set(["L1"]))).toBeUndefined();
+  });
+
+  it("ignores a DISABLED layer's style (not in the enabled set)", () => {
+    const notes = [note({ id: "n1", anchorIds: ["a1"], layerIds: ["L1"] })];
+    const layers = [layer({ id: "L1", style: { color: "#ff0000" } })];
+    expect(resolveAnchorPaintStyle(notes, layers, new Set<string>())).toBeUndefined();
+  });
+
+  it("resolves deterministically by order (undefined last), regardless of list order", () => {
+    const notes = [note({ id: "n1", anchorIds: ["a1"], layerIds: ["A", "B"] })];
+    // Server list order puts B first, but A has the lower order → A wins.
+    const layers = [
+      layer({ id: "B", order: 2, style: { color: "#2222ff" } }),
+      layer({ id: "A", order: 1, style: { color: "#ff2222" } })
+    ];
+    expect(resolveAnchorPaintStyle(notes, layers, new Set(["A", "B"]))).toEqual({ color: "#ff2222" });
+    // A layer with an explicit order beats one with no order (undefined sorts last).
+    const layers2 = [
+      layer({ id: "A", style: { color: "#ff2222" } }), // no order → last
+      layer({ id: "B", order: 5, style: { color: "#2222ff" } })
+    ];
+    expect(resolveAnchorPaintStyle(notes, layers2, new Set(["A", "B"]))).toEqual({ color: "#2222ff" });
+  });
+
+  it("returns undefined for an anchor whose notes claim no layers", () => {
+    const notes = [note({ id: "n1", anchorIds: ["a1"], layerIds: [] })];
+    const layers = [layer({ id: "L1", style: { color: "#ff0000" } })];
+    expect(resolveAnchorPaintStyle(notes, layers, new Set(["L1"]))).toBeUndefined();
+  });
+});
+
+// The styled PaintAnchor's SHAPE — a NEW test (delta 7): the byte-lock's oldPipeline never
+// emits `style`, so this asserts a HAND-ROLLED expectation of the whole PaintAnchor with
+// the `style` key present, proving buildPaintPipeline threads the resolved style through.
+describe("buildPaintPipeline styled PaintAnchor (D3a)", () => {
+  it("emits a `style` key on an anchor whose enabled layer carries a paint color", () => {
+    const anchors = [htmlAnchor("a1", "s1", "First")];
+    const notes = [note({ id: "n1", anchorIds: ["a1"], layerIds: ["L1"], content: "note one" })];
+    const layers: StudyLayerRecord[] = [
+      { id: "L1", enabled: true, style: { color: "#ff0000", decoration: "highlight" } } as StudyLayerRecord
+    ];
+    const { paintAnchors } = buildPaintPipeline({
+      visibleAnchors: anchors,
+      notes,
+      sourceLayers: layers,
+      enabledLayerIds: enabledLayerIdsOf(layers)
+    });
+    // HAND-ROLLED (not oldPipeline, which never emits style): the full styled anchor.
+    expect(paintAnchors).toEqual([
+      {
+        id: "a1",
+        anchorKind: "html_selection",
+        quote: "First",
+        contextBefore: undefined,
+        contextAfter: undefined,
+        studyId: "sid-a1",
+        page: undefined,
+        rect: undefined,
+        note: "note one",
+        notePreviews: [
+          {
+            id: "n1",
+            contentType: "markdown",
+            text: "note one",
+            html: renderAnnotationNotePreview(notes[0], anchors[0], layers)
+          }
+        ],
+        style: { color: "#ff0000", decoration: "highlight" }
+      }
+    ]);
+  });
+
+  it("OMITS the `style` key when no enabled layer styles the anchor (byte-identical shape)", () => {
+    const anchors = [htmlAnchor("a1", "s1", "First")];
+    const notes = [note({ id: "n1", anchorIds: ["a1"], content: "note one" })];
+    const { paintAnchors } = buildPaintPipeline({
+      visibleAnchors: anchors,
+      notes,
+      sourceLayers: [],
+      enabledLayerIds: new Set<string>()
+    });
+    expect("style" in paintAnchors[0]).toBe(false);
   });
 });

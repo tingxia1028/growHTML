@@ -42,6 +42,18 @@ export const studyLayerSchema = recordEnvelopeSchema("layer", layerIdSchema).ext
   role: z.enum(["preset", "custom", "shared"]).optional(),
   color: z.string().optional(),
   order: z.number().optional(),
+  // D3a (note-presentation-unified §D3) — per-layer PAINT style: the color anchors in
+  // this layer highlight with, and the decoration shape. Additive + optional (all
+  // pre-D3a layers keep the global default). `color` here is the PAINT color (distinct
+  // from the UI chip `color` above); precedence at paint time is
+  // style.color > color > the global #3474e6 default. D3b (deferred) adds a per-anchor
+  // styleOverride envelope + a named-token palette + a global default in Settings.
+  style: z
+    .object({
+      decoration: z.enum(["highlight", "underline", "both"]).optional(),
+      color: z.string().optional()
+    })
+    .optional(),
   // Hierarchy (R7, additive): the parent layer this one nests under in the Layer Lens
   // tree. Empty/undefined = a top-level layer. Kit-seeded preset/custom owned layers
   // hang under the owned/Mine layer; importing a `.studypack` hangs the imported layer

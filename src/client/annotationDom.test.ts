@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   applyHighlight,
+  applyPaintStyle,
   clampGeom,
   clearAnnotations,
   clearMarginNotes,
@@ -88,6 +89,46 @@ describe("clearAnnotations", () => {
     expect(el?.classList.contains("sv-annotated")).toBe(false);
     expect(el?.hasAttribute("data-sv-note")).toBe(false);
     expect(el?.hasAttribute("data-sv-note-count")).toBe(false);
+  });
+});
+
+describe("applyPaintStyle (D3a per-layer paint)", () => {
+  it("sets --sv-anchor-color + the sv-deco-* class on the painted element", () => {
+    document.body.innerHTML = '<p id="t">x</p>';
+    const el = document.getElementById("t") as HTMLElement;
+    applyHighlight(el, "note", "a1");
+    applyPaintStyle(el, { color: "#ff0000", decoration: "underline" });
+    expect(el.style.getPropertyValue("--sv-anchor-color")).toBe("#ff0000");
+    expect(el.classList.contains("sv-deco-underline")).toBe(true);
+  });
+
+  it("clears the previous decoration class when the shape changes (no stacking)", () => {
+    document.body.innerHTML = '<p id="t">x</p>';
+    const el = document.getElementById("t") as HTMLElement;
+    applyPaintStyle(el, { color: "#00ff00", decoration: "highlight" });
+    applyPaintStyle(el, { color: "#0000ff", decoration: "both" });
+    expect(el.classList.contains("sv-deco-highlight")).toBe(false);
+    expect(el.classList.contains("sv-deco-both")).toBe(true);
+    expect(el.style.getPropertyValue("--sv-anchor-color")).toBe("#0000ff");
+  });
+
+  it("a null/empty style clears the var + class (revert to the default blue)", () => {
+    document.body.innerHTML = '<p id="t">x</p>';
+    const el = document.getElementById("t") as HTMLElement;
+    applyPaintStyle(el, { color: "#123456", decoration: "both" });
+    applyPaintStyle(el, null);
+    expect(el.style.getPropertyValue("--sv-anchor-color")).toBe("");
+    expect(el.className).not.toContain("sv-deco-");
+  });
+
+  it("clearAnnotations strips the paint var + deco class along with the highlight", () => {
+    document.body.innerHTML = '<p id="t">x</p>';
+    const el = document.getElementById("t") as HTMLElement;
+    applyHighlight(el, "note", "a1");
+    applyPaintStyle(el, { color: "#abcabc", decoration: "highlight" });
+    clearAnnotations(document.body);
+    expect(el.style.getPropertyValue("--sv-anchor-color")).toBe("");
+    expect(el.className).not.toContain("sv-deco-");
   });
 });
 

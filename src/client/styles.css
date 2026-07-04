@@ -1850,8 +1850,12 @@ button {
   cursor: crosshair;
 }
 
+/* D3a: the PDF text-highlight visual tints from the per-anchor --sv-anchor-color (set
+   inline by applyPaintStyle), falling back to the product blue. Kept !important because it
+   overrides pdf.js's own text-layer background; the color-mix var is what makes it
+   per-layer. .sv-selected/.sv-active still win (they carry their own !important shadow). */
 .pdf-anchor-hit {
-  background: rgba(52, 116, 230, 0.18) !important;
+  background: color-mix(in srgb, var(--sv-anchor-color, #3474e6) 18%, transparent) !important;
   border-radius: 2px;
 }
 
@@ -1865,11 +1869,14 @@ button {
   z-index: 5;
 }
 
+/* D3a: a saved region box tints from the per-anchor --sv-anchor-color (set inline by
+   applyPaintStyle), falling back to the region-warn accent so an un-styled box is
+   unchanged. */
 .pdf-region-box,
 .image-region-box {
   position: absolute;
-  border: 2px solid var(--sv-warn-region);
-  background: rgba(52, 116, 230, 0.14);
+  border: 2px solid var(--sv-anchor-color, var(--sv-warn-region));
+  background: color-mix(in srgb, var(--sv-anchor-color, #3474e6) 14%, transparent);
   border-radius: 2px;
   cursor: pointer;
   z-index: 4;

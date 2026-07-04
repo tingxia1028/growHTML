@@ -410,6 +410,10 @@ export type StudyLayerRecord = {
   role?: "preset" | "custom" | "shared";
   color?: string;
   order?: number;
+  // D3a (note-presentation-unified §D3): per-layer PAINT style — the highlight color +
+  // decoration shape anchors in this layer paint with. Additive/optional; precedence at
+  // paint time is style.color > color > the global #3474e6 default (resolveAnchorPaintStyle).
+  style?: { decoration?: "highlight" | "underline" | "both"; color?: string };
   // Layer Lens hierarchy (R7): the parent layer this nests under (undefined = top-level).
   // Preset/custom owned layers hang under Mine; imported layers hang under Imported.
   parentId?: string;

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   applyHighlight,
+  applyPaintStyle,
   buildAnchorSlotHtml,
   buildNoteSlotHtml,
   ensureAnnotationLayer,
@@ -180,7 +181,12 @@ export function ImageReader({ src, sourceId, anchors, onSelect, onMarkerAction, 
 function ImageRegionBox({ anchor }: { anchor: PaintAnchor }) {
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (ref.current) applyHighlight(ref.current, anchor.note, anchor.id, annotationPayload(anchor));
+    if (ref.current) {
+      applyHighlight(ref.current, anchor.note, anchor.id, annotationPayload(anchor));
+      // D3a: tint the box from the anchor's resolved layer style (the box CSS reads
+      // --sv-anchor-color).
+      applyPaintStyle(ref.current, anchor.style);
+    }
   }, [anchor]);
   const [x, y, w, h] = (anchor.rect ?? [0, 0, 0, 0]) as NormalizedRect;
   return (

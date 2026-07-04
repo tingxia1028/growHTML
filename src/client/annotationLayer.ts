@@ -14,10 +14,30 @@ import { resolveTextQuote, type TextQuoteSelector } from "../adapters/web/textQu
 export const ANNOTATION_STYLE_ID = "sv-annot-style";
 
 export const ANNOTATION_CSS = `
+/* D3a (note-presentation-unified §D3) — per-layer PAINT color + decoration. The color
+   comes from an inline --sv-anchor-color the reader sets on the painted element (from the
+   anchor's resolved layer style); it FALLS BACK to the product blue #3474e6 so a note
+   with no layer style paints exactly as before. color-mix tints the background from that
+   single variable. The .sv-deco-* classes (also set inline by the reader) pick the shape:
+   highlight = tint only, underline = the 2px baseline only, both = tint + underline. The
+   BARE .sv-annotated (no deco class) keeps the historical both look so an un-styled anchor
+   is unchanged. NO !important + lower specificity than .sv-selected/.sv-active so the
+   focus-blue selection/flash always wins. */
 .sv-annotated {
-  background: rgba(52, 116, 230, 0.18);
-  box-shadow: inset 0 -2px 0 #3474e6;
+  background: color-mix(in srgb, var(--sv-anchor-color, #3474e6) 18%, transparent);
+  box-shadow: inset 0 -2px 0 var(--sv-anchor-color, #3474e6);
   cursor: pointer;
+}
+.sv-annotated.sv-deco-highlight {
+  box-shadow: none;
+}
+.sv-annotated.sv-deco-underline {
+  background: transparent;
+  box-shadow: inset 0 -2px 0 var(--sv-anchor-color, #3474e6);
+}
+.sv-annotated.sv-deco-both {
+  background: color-mix(in srgb, var(--sv-anchor-color, #3474e6) 18%, transparent);
+  box-shadow: inset 0 -2px 0 var(--sv-anchor-color, #3474e6);
 }
 /* The currently SELECTED / focused anchor — persistent UI-blue highlight (the
    product accent #3474e6) so clicking/focusing an anchor gives immediate "this is
@@ -891,6 +911,23 @@ export function rectToOverlayLocal(
   };
 }
 
+// D3a (note-presentation-unified §D3) — the per-anchor PAINT style a reader applies to a
+// highlighted element: set the `--sv-anchor-color` CSS variable (the ANNOTATION_CSS reads
+// it, falling back to the product blue) and the `sv-deco-*` decoration class. Framework-
+// free + idempotent: an undefined/empty style CLEARS both, so a repaint after a layer's
+// color was removed reverts to the default blue. Only the three known decoration shapes
+// are honored (anything else clears the deco class). The single seam both overlay readers
+// call, so the var/class contract lives in exactly one place.
+export type PaintStyle = { color?: string; decoration?: "highlight" | "underline" | "both" };
+const DECO_CLASSES = ["sv-deco-highlight", "sv-deco-underline", "sv-deco-both"] as const;
+export function applyPaintStyle(element: Element, style?: PaintStyle | null): void {
+  const el = element as HTMLElement;
+  if (style?.color) el.style.setProperty("--sv-anchor-color", style.color);
+  else el.style.removeProperty("--sv-anchor-color");
+  el.classList.remove(...DECO_CLASSES);
+  if (style?.decoration) el.classList.add(`sv-deco-${style.decoration}`);
+}
+
 // Mark an already-resolved element as annotated and stash the note text for the
 // card. `noteText` may be empty (highlight only). Markers are NO LONGER painted into
 // the content here — each reader mounts a MarkerOverlay (view-layer sibling) and
@@ -975,6 +1012,9 @@ export function clearAnnotations(root: ParentNode): void {
   });
   root.querySelectorAll(".sv-annotated").forEach((el) => {
     el.classList.remove("sv-annotated");
+    // D3a: strip the paint-style var + decoration class too, so a rewrap doesn't inherit
+    // a stale layer color/shape (applyPaintStyle re-sets them from the fresh anchor style).
+    applyPaintStyle(el, null);
     el.removeAttribute("data-sv-note");
     el.removeAttribute("data-sv-key");
     el.removeAttribute("data-sv-note-count");
