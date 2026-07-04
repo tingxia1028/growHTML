@@ -42,6 +42,10 @@ import "./libraryBuiltins";
 import "./library.css";
 import { readerForSource } from "./readerForSource";
 import { BookmarkIndex } from "./BookmarkIndex";
+// N5/§10: per-source hide-all (D11) + notes/anchors export (D10) reader-toolbar
+// controls, each a small self-contained component (keeps this hot file's diff tight).
+import { HideAllNotesToggle } from "./HideAllNotesToggle";
+import { ExportNotesButton } from "./ExportNotesButton";
 // Side-effect import: registers the 12 built-in client NoteType plugins so the note
 // list + composer can render/edit every content type through the registry.
 import "../notes/builtinNoteTypes";
@@ -313,6 +317,9 @@ function SourceViewerView({ ctx }: { ctx: WorkspaceContext }) {
             left as-is this pass. */}
         <div className="reader-toolbar">
           {activeSource ? <BookmarkIndex /> : null}
+          {/* D11 hide-all + D10 export (§10) — per-source reader controls. */}
+          {activeSource ? <HideAllNotesToggle sourceId={activeSource.id} /> : null}
+          {activeSource ? <ExportNotesButton ctx={ctx} /> : null}
           <PanelMenu label="Reader actions">
             {activeSource ? (
               <div className="panel-menu-field">

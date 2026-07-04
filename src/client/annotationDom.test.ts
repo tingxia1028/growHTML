@@ -7,12 +7,16 @@ import {
   clearMarginNotes,
   ensureAnnotationLayer,
   highlightQuote,
+  isAllNotesHidden,
   isAnchorNotesHidden,
   packColumn,
   paintMarginNotes,
   readCardGeom,
+  restorePinnedNoteCards,
   revealAnchorInDoc,
+  setAllNotesHidden,
   setAnchorNotesHidden,
+  setCardOpenState,
   setSelectedAnchorInDoc,
   writeCardGeom
 } from "./annotationLayer";
@@ -22,6 +26,8 @@ beforeEach(() => {
   document.body.innerHTML = "";
   document.head.innerHTML = "";
   window.localStorage.clear();
+  // D11 store is module-level (realm-local) — reset so one test never leaks into the next.
+  setAllNotesHidden(false);
 });
 
 function freshReaderDocument(): Document {
@@ -263,6 +269,160 @@ describe("card geometry persistence", () => {
     expect(card.querySelector(".sv-note-card-bar")).toBeNull();
     expect(card.querySelector(".sv-note-content")?.textContent).toContain("Preview card");
     expect(card.querySelector(".sv-note-card-body")?.textContent).not.toContain("fallback text");
+  });
+});
+
+// D10 — a note's OPEN state persists alongside its geometry (setCardOpenState writes
+// the flag into the same per-anchor CardGeom record; restorePinnedNoteCards re-pins
+// on the next paint). Composes with N1a (a toggled-off anchor restores nothing) and
+// D11 (hide-all restores nothing).
+describe("card open-state persistence (D10)", () => {
+  it("setCardOpenState round-trips the open flag on the geometry record", () => {
+    writeCardGeom(document, "k1", { left: 10, top: 20, width: 100, height: 60 });
+    setCardOpenState(document, "k1", true);
+    expect(readCardGeom(document, "k1")?.open).toBe(true);
+    // Flipping open off clears the flag but preserves the geometry.
+    setCardOpenState(document, "k1", false);
+    const geom = readCardGeom(document, "k1");
+    expect(geom?.open).toBeUndefined();
+    expect(geom).toMatchObject({ left: 10, top: 20, width: 100, height: 60 });
+  });
+
+  it("creates a minimal record when open is set before any geometry exists", () => {
+    expect(readCardGeom(document, "k-new")).toBeNull();
+    setCardOpenState(document, "k-new", true);
+    expect(readCardGeom(document, "k-new")?.open).toBe(true);
+    // Setting open:false on a non-existent record writes nothing (no phantom entry).
+    setCardOpenState(document, "k-fresh", false);
+    expect(readCardGeom(document, "k-fresh")).toBeNull();
+  });
+
+  it("pinning a card writes open:true; un-pinning clears it (reload round-trip)", () => {
+    const doc = freshReaderDocument();
+    doc.body.innerHTML = '<p id="t">hello</p>';
+    ensureAnnotationLayer(doc);
+    const el = doc.getElementById("t")!;
+    Object.defineProperty(el, "getBoundingClientRect", {
+      value: () => ({ left: 40, top: 80, right: 90, bottom: 104, width: 50, height: 24 })
+    });
+    applyHighlight(el, "note", "k-pin-persist", { noteHtml: "<div>Body</div>", noteCount: 1 });
+
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true })); // pin
+    expect(readCardGeom(doc, "k-pin-persist")?.open).toBe(true);
+
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true })); // un-pin (click same target)
+    expect(readCardGeom(doc, "k-pin-persist")?.open).toBeUndefined();
+  });
+
+  it("restorePinnedNoteCards re-pins the remembered-open card on the next paint", () => {
+    const doc = freshReaderDocument();
+    doc.body.innerHTML = '<p id="t">hello</p>';
+    ensureAnnotationLayer(doc);
+    const el = doc.getElementById("t")!;
+    Object.defineProperty(el, "getBoundingClientRect", {
+      value: () => ({ left: 40, top: 80, right: 90, bottom: 104, width: 50, height: 24 })
+    });
+    applyHighlight(el, "note", "k-restore", { noteHtml: "<div>Restored body</div>", noteCount: 1 });
+    setCardOpenState(doc, "k-restore", true);
+
+    const card = doc.getElementById("sv-note-card")!;
+    expect(card.classList.contains("sv-note-card-show")).toBe(false); // not shown until restore
+
+    restorePinnedNoteCards(doc, ["k-restore"]);
+    expect(card.classList.contains("sv-note-card-show")).toBe(true);
+    expect(card.querySelector(".sv-note-card-body")!.innerHTML).toContain("Restored body");
+    // The card is PINNED (survives a mouse-out — proves it's not a transient hover).
+    el.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
+    expect(card.classList.contains("sv-note-card-show")).toBe(true);
+  });
+
+  it("does NOT restore a note-hidden (N1a) anchor, and none while hide-all (D11) is on", () => {
+    const doc = freshReaderDocument();
+    doc.body.innerHTML = '<p id="t">hello</p>';
+    ensureAnnotationLayer(doc);
+    const el = doc.getElementById("t")!;
+    Object.defineProperty(el, "getBoundingClientRect", {
+      value: () => ({ left: 40, top: 80, right: 90, bottom: 104, width: 50, height: 24 })
+    });
+    applyHighlight(el, "note", "k-guard", { noteHtml: "<div>Body</div>", noteCount: 1 });
+    setCardOpenState(doc, "k-guard", true);
+    const card = doc.getElementById("sv-note-card")!;
+
+    setAnchorNotesHidden(doc, "k-guard", true);
+    restorePinnedNoteCards(doc, ["k-guard"]);
+    expect(card.classList.contains("sv-note-card-show")).toBe(false);
+    setAnchorNotesHidden(doc, "k-guard", false);
+
+    setAllNotesHidden(true);
+    restorePinnedNoteCards(doc, ["k-guard"]);
+    expect(card.classList.contains("sv-note-card-show")).toBe(false);
+    setAllNotesHidden(false);
+  });
+});
+
+// D11 — the per-source "hide all notes" flag masks every card (hover/pinned/margin)
+// via the shared annotationLayer store, distinct from N1a's glyph switch (which hides
+// anchor GLYPHS). Composes with the N1a per-anchor toggle and N1b card-open state.
+describe("setAllNotesHidden (D11 hide-all)", () => {
+  it("suppresses hover + click-pin for EVERY anchor while on; restores all on off", () => {
+    const doc = freshReaderDocument();
+    doc.body.innerHTML = '<p id="a">one</p><p id="b">two</p>';
+    ensureAnnotationLayer(doc);
+    const a = doc.getElementById("a")!;
+    const b = doc.getElementById("b")!;
+    applyHighlight(a, "n1", "ha-a", { noteHtml: "<div>Body A</div>", noteCount: 1 });
+    applyHighlight(b, "n2", "ha-b", { noteHtml: "<div>Body B</div>", noteCount: 1 });
+    const card = doc.getElementById("sv-note-card")!;
+
+    setAllNotesHidden(true);
+    expect(isAllNotesHidden()).toBe(true);
+    a.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    expect(card.classList.contains("sv-note-card-show")).toBe(false);
+    b.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(card.classList.contains("sv-note-card-show")).toBe(false);
+
+    setAllNotesHidden(false);
+    a.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    expect(card.classList.contains("sv-note-card-show")).toBe(true);
+    expect(card.querySelector(".sv-note-card-body")!.innerHTML).toContain("Body A");
+  });
+
+  it("dismisses an OPEN pinned card the instant hide-all turns on", () => {
+    const doc = freshReaderDocument();
+    doc.body.innerHTML = '<p id="t">hello</p>';
+    ensureAnnotationLayer(doc);
+    const el = doc.getElementById("t")!;
+    applyHighlight(el, "note", "ha-pin", { noteHtml: "<div>Pinned</div>", noteCount: 1 });
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true })); // pin
+    const card = doc.getElementById("sv-note-card")!;
+    expect(card.classList.contains("sv-note-card-show")).toBe(true);
+
+    setAllNotesHidden(true);
+    expect(card.classList.contains("sv-note-card-show")).toBe(false);
+    setAllNotesHidden(false);
+  });
+
+  it("drops the margin gutter while on and re-packs it on off (composing with N1a filtering)", () => {
+    document.body.innerHTML = '<p id="a">one</p><p id="b">two</p>';
+    // The margin re-pack on a hide-all flip rides the wired card's subscriber, which
+    // production always establishes via ensureAnnotationLayer before a margin paint.
+    ensureAnnotationLayer(document);
+    paintMarginNotes(document, [
+      { element: document.getElementById("a")!, noteText: "first", noteHtml: "<p>first</p>", key: "hm-a" },
+      { element: document.getElementById("b")!, noteText: "second", noteHtml: "<p>second</p>", key: "hm-b" }
+    ]);
+    expect(document.querySelectorAll("#sv-margin-layer .sv-margin-note")).toHaveLength(2);
+
+    setAllNotesHidden(true);
+    expect(document.getElementById("sv-margin-layer")).toBeNull();
+
+    // N1a toggle applied WHILE hidden: on restore, m-a stays filtered, only m-b returns.
+    setAnchorNotesHidden(document, "hm-a", true);
+    setAllNotesHidden(false);
+    const cards = document.querySelectorAll("#sv-margin-layer .sv-margin-note");
+    expect(cards).toHaveLength(1);
+    expect(cards[0].getAttribute("data-sv-key")).toBe("hm-b");
+    setAnchorNotesHidden(document, "hm-a", false);
   });
 });
 

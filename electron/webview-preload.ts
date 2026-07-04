@@ -15,6 +15,8 @@ import {
   clearAnnotations,
   ensureAnnotationLayer,
   highlightQuote,
+  restorePinnedNoteCards,
+  setAllNotesHidden,
   setSelectedAnchorInDoc
 } from "../src/client/annotationLayer";
 import {
@@ -161,20 +163,30 @@ function paintGuestAnchors(anchors: WebAnchorMsg[]): void {
     }
   }
   ensureGuestSurface().overlay.setMarkers(markers);
+  // D10: re-pin any card the guest realm's geometry store remembers as open (the
+  // marks were just re-created, so the anchor elements now exist).
+  restorePinnedNoteCards(
+    document,
+    anchors.map((anchor) => anchor.id).filter((id): id is string => Boolean(id))
+  );
   // Re-apply the selection after the repaint (the marks were just re-created).
   setSelectedAnchorInDoc(document, selectedAnchorId);
 }
 
 // Additive second payload on sv:anchors (see webviewSelection.ts WebAnchorPrefs):
-// the host's global 显示锚点标记 switch. This bundle is its own realm, so the shared
-// markerOverlay module store must be driven from here — the guest page's own
-// localStorage never sees the host's persisted choice. Older hosts send no prefs;
-// the default ("visible") stands.
-type AnchorPrefsMsg = { anchorGlyphsVisible?: boolean };
+// the host's global 显示锚点标记 switch AND the D11 hide-all flag. This bundle is its
+// own realm, so the shared module stores must be driven from here — the guest page's
+// own state never sees the host's live choices. Older hosts send no prefs; the
+// defaults (glyphs visible / notes shown) stand. Set the stores BEFORE paint so the
+// repaint applies the current visibility in one pass.
+type AnchorPrefsMsg = { anchorGlyphsVisible?: boolean; notesHidden?: boolean };
 
 ipcRenderer.on("sv:anchors", (_event, anchors: WebAnchorMsg[], prefs?: AnchorPrefsMsg) => {
   if (prefs && typeof prefs.anchorGlyphsVisible === "boolean") {
     setAnchorGlyphVisibility(prefs.anchorGlyphsVisible);
+  }
+  if (prefs && typeof prefs.notesHidden === "boolean") {
+    setAllNotesHidden(prefs.notesHidden);
   }
   ensureGuestSurface().adapter.paint(anchors ?? []);
 });

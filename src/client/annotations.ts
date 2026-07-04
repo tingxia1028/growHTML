@@ -16,6 +16,7 @@ import {
   ensureAnnotationLayer,
   highlightQuote,
   paintMarginNotes,
+  restorePinnedNoteCards,
   type HighlightPayload,
   type MarginItem
 } from "./annotationLayer";
@@ -64,6 +65,33 @@ export function persistAnchorGlyphVisibility(visible: boolean): void {
     globalThis.localStorage?.setItem(ANCHOR_GLYPH_STORAGE_KEY, visible ? "shown" : "hidden");
   } catch {
     // storage unavailable — the in-memory overlay store still drives the paint.
+  }
+}
+
+// D11 hide-all — a PER-SOURCE "hide all notes" view flag (note-presentation-unified
+// §10 D11). Device-local (localStorage), keyed by sourceId: the exported truth is
+// each note's display.open, so a reader who hid everything still ships the author's
+// pins. The LIVE value is the annotationLayer module store (isAllNotesHidden /
+// setAllNotesHidden), which every card/overlay in the realm subscribes to; these
+// helpers only seed it from — and persist it to — storage. Reading never throws.
+const NOTES_HIDDEN_STORAGE_PREFIX = "sv-notes-hidden:";
+
+export function readStoredNotesHidden(sourceId: string): boolean {
+  if (!sourceId) return false;
+  try {
+    return globalThis.localStorage?.getItem(NOTES_HIDDEN_STORAGE_PREFIX + sourceId) === "hidden";
+  } catch {
+    return false; // storage unavailable — default to shown
+  }
+}
+
+export function persistNotesHidden(sourceId: string, hidden: boolean): void {
+  if (!sourceId) return;
+  try {
+    if (hidden) globalThis.localStorage?.setItem(NOTES_HIDDEN_STORAGE_PREFIX + sourceId, "hidden");
+    else globalThis.localStorage?.removeItem(NOTES_HIDDEN_STORAGE_PREFIX + sourceId);
+  } catch {
+    // storage unavailable — the in-memory store still drives the paint.
   }
 }
 
@@ -155,6 +183,14 @@ const htmlHighlightRenderer: AnnotationRenderer = {
           }))
         : []
     );
+    // D10: in floating mode, re-pin any card the geometry store remembers as open
+    // (margin mode already renders every note in the gutter — no floating pin).
+    if (mode !== "margin") {
+      restorePinnedNoteCards(
+        doc,
+        resolved.map(({ key }) => key).filter(Boolean)
+      );
+    }
   }
 };
 

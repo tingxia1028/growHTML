@@ -33,6 +33,23 @@ export const noteSchema = recordEnvelopeSchema("note", noteIdSchema).extend({
 
   visibility: visibilitySchema.default("private"),
 
+  // Presentation (D10, note-presentation-unified.md §10) — OPTIONAL + additive, so
+  // every pre-existing note parses unchanged (zero migration). A note pinned open at
+  // a remembered position carries its own layout here so it travels with the vault
+  // jsonl and (once portableNoteSchema forwards it) rides an export to a recipient's
+  // device. `offset` is ANCHOR-RELATIVE (never absolute px): absolute pixels break on
+  // reflow / zoom / font-size / screen and are meaningless on another device, while a
+  // relative offset survives all of them. `open` = pinned open (vs collapsed to a D2
+  // chip); `size` = the card's resized box. The device-local ephemeral fallback for
+  // an un-pinned card stays in the annotationLayer CardGeom localStorage store.
+  display: z
+    .object({
+      open: z.boolean().optional(),
+      offset: z.object({ dx: z.number(), dy: z.number() }).optional(),
+      size: z.object({ w: z.number(), h: z.number() }).optional()
+    })
+    .optional(),
+
   // Study Layer membership (multi). A note's lens(es); a note is visible iff
   // layerIds intersects the enabled layers (OR across its layers). Defaults empty;
   // migration backfills the source's "owned" layer. Mirrors anchorIds/conceptIds.

@@ -14,6 +14,7 @@ import {
   type WebviewIpcMessage
 } from "./webviewSelection";
 import { setAnchorGlyphVisibility } from "../markerOverlay";
+import { setAllNotesHidden } from "../annotationLayer";
 import type { PaintAnchor } from "../surfaces/types";
 
 // A minimal stand-in for an Electron <webview>: a real EventTarget (so the shared
@@ -49,13 +50,15 @@ function fakeWebview(url = "https://example.test/page"): FakeWebview {
 afterEach(() => {
   // Remove any preload url injected onto the shared bridge surface.
   delete (window as { studyVault?: unknown }).studyVault;
-  // Restore the module-level glyph-visibility default (flip tests change it).
+  // Restore the module-level defaults (flip tests change them).
   setAnchorGlyphVisibility(true);
+  setAllNotesHidden(false);
 });
 
 // The prefs object every sv:anchors push now carries alongside the anchors
-// (additive payload extension — the guest mirrors the host's 显示锚点标记 switch).
-const VISIBLE_PREFS = { anchorGlyphsVisible: true };
+// (additive payload extension — the guest mirrors the host's 显示锚点标记 switch AND
+// the D11 hide-all flag).
+const VISIBLE_PREFS = { anchorGlyphsVisible: true, notesHidden: false };
 
 describe("normalizeWebSelection", () => {
   it("keeps a non-blank quote with its prefix/suffix", () => {
@@ -332,10 +335,28 @@ describe("bindWebviewAnchors", () => {
 
     setAnchorGlyphVisibility(false);
     expect(webview.send).toHaveBeenCalledTimes(1);
-    expect(webview.send).toHaveBeenCalledWith("sv:anchors", anchors, { anchorGlyphsVisible: false });
+    expect(webview.send).toHaveBeenCalledWith("sv:anchors", anchors, { anchorGlyphsVisible: false, notesHidden: false });
 
     dispose();
     setAnchorGlyphVisibility(true);
+    expect(webview.send).toHaveBeenCalledTimes(1); // unsubscribed by dispose
+    webview.remove();
+  });
+
+  // —— The D11 hide-all flag reaching an already-painted guest ——
+
+  it("re-pushes with the hide-all flag when it flips (connected webview)", () => {
+    const webview = fakeWebview();
+    document.body.appendChild(webview); // connected — the subscription stays live
+    const anchors = [anchor("a1")];
+    const { dispose } = bindWebviewAnchors(webview, () => anchors);
+
+    setAllNotesHidden(true);
+    expect(webview.send).toHaveBeenCalledTimes(1);
+    expect(webview.send).toHaveBeenCalledWith("sv:anchors", anchors, { anchorGlyphsVisible: true, notesHidden: true });
+
+    dispose();
+    setAllNotesHidden(false);
     expect(webview.send).toHaveBeenCalledTimes(1); // unsubscribed by dispose
     webview.remove();
   });

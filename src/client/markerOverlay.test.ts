@@ -8,6 +8,7 @@ import {
   isAnchorNotesHidden,
   MARKER_GLYPHS,
   rectToOverlayLocal,
+  setAllNotesHidden,
   setAnchorNotesHidden
 } from "./annotationLayer";
 import {
@@ -29,8 +30,10 @@ function flushFrame(): Promise<void> {
 }
 
 afterEach(() => {
-  // The glyph-visibility store is module-level (realm-local); restore the default.
+  // The glyph-visibility + hide-all stores are module-level (realm-local); restore
+  // the defaults so one test never leaks its state into the next.
   setAnchorGlyphVisibility(true);
+  setAllNotesHidden(false);
 });
 
 describe("rectToOverlayLocal", () => {
@@ -372,6 +375,51 @@ describe("MarkerOverlay", () => {
     setAnchorGlyphVisibility(true);
     await flushFrame();
     for (const chip of anchorChips) expect(chip.style.display).not.toBe("none");
+    overlay.destroy();
+  });
+
+  // —— D11 hide-all (INVERSE split of the glyph switch): hides NOTE-slot chips, keeps
+  //    anchor glyphs. Composes with N1a's per-anchor toggle. ——
+  it("hide-all hides ALL note-slot chips while anchor glyphs STAY; off restores", async () => {
+    const host = makeHost();
+    stubAnchor(host, "hd-1", { left: 200, top: 120, right: 260, width: 60, height: 18 });
+    stubAnchor(host, "hd-2", { left: 200, top: 220, right: 260, width: 60, height: 18 });
+    const overlay = new MarkerOverlay(host);
+    overlay.setMarkers([
+      { anchorId: "hd-1", ...slots({ noteTypes: ["markdown"], noteCount: 1 }) },
+      { anchorId: "hd-2", ...slots({ noteTypes: ["quiz"], noteCount: 1 }) }
+    ]);
+    stubOverlayRect(host);
+    overlay.reposition();
+    await flushFrame();
+
+    const anchorChips = Array.from(host.querySelectorAll('[data-sv-slot="anchor"]')) as HTMLElement[];
+    const noteChips = Array.from(host.querySelectorAll('[data-sv-slot="note"]')) as HTMLElement[];
+
+    setAllNotesHidden(true); // the overlay subscribed — no manual reposition
+    await flushFrame();
+    for (const chip of noteChips) expect(chip.style.display).toBe("none"); // CARDS/notes hidden
+    for (const chip of anchorChips) expect(chip.style.display).not.toBe("none"); // glyphs STAY
+
+    setAllNotesHidden(false);
+    await flushFrame();
+    for (const chip of noteChips) expect(chip.style.display).not.toBe("none");
+    overlay.destroy();
+  });
+
+  it("hide-all + glyph switch off ⇒ nothing shows (the two masks are orthogonal)", async () => {
+    const host = makeHost();
+    stubAnchor(host, "ho-1", { left: 200, top: 120, right: 260, width: 60, height: 18 });
+    const overlay = new MarkerOverlay(host);
+    overlay.setMarkers([{ anchorId: "ho-1", ...slots({ noteTypes: ["markdown"], noteCount: 1 }) }]);
+    stubOverlayRect(host);
+    setAllNotesHidden(true);
+    setAnchorGlyphVisibility(false);
+    overlay.reposition();
+    await flushFrame();
+
+    expect((host.querySelector('[data-sv-slot="anchor"]') as HTMLElement).style.display).toBe("none");
+    expect((host.querySelector('[data-sv-slot="note"]') as HTMLElement).style.display).toBe("none");
     overlay.destroy();
   });
 

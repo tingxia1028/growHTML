@@ -1,0 +1,39 @@
+/* D11 hide-all toggle — a ghost icon button in the reader-toolbar (views.tsx),
+   matching the .bookmark-index-strip ghost look sitting next to it. Active (notes
+   masked) reads on the accent ramp so the hidden state is obvious at a glance. */
+.hide-all-notes-toggle {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--sv-radius, 8px);
+  background: transparent;
+  color: var(--sv-icon-muted, #647084);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.hide-all-notes-toggle:hover {
+  border-color: var(--sv-border, #d9e0eb);
+  background: var(--sv-surface-muted, #f1f4f9);
+  color: var(--sv-text, #202124);
+}
+
+.hide-all-notes-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(52, 116, 230, 0.16);
+}
+
+.hide-all-notes-toggle.active {
+  border-color: rgba(52, 116, 230, 0.35);
+  background: var(--sv-accent-soft, #eaf2ff);
+  color: var(--sv-accent, #3474e6);
+}

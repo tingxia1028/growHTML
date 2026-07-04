@@ -39,9 +39,11 @@
 import {
   ANCHOR_GLYPH,
   CARD_OPEN_ATTR,
+  isAllNotesHidden,
   isAnchorNotesHidden,
   rectToOverlayLocal,
   setAnchorNotesHidden,
+  subscribeAllNotesHidden,
   type MarkerRole
 } from "./annotationLayer";
 import { readStoredAnchorGlyphVisibility } from "./annotations";
@@ -219,6 +221,8 @@ export class MarkerOverlay {
     }
     // The global anchor-glyph switch re-runs layout (anchor chips hide/show).
     this.unsubscribes.push(subscribeAnchorGlyphVisibility(() => this.reposition()));
+    // D11 hide-all re-runs layout too (note-slot chips hide/show; anchor glyphs stay).
+    this.unsubscribes.push(subscribeAllNotesHidden(() => this.reposition()));
     // Card-open suppression (D2): wireNoteCard flips data-sv-card-open on the realm
     // body as the shared card shows/hides an anchor — watch that ONE attribute and
     // re-layout so the open anchor's chips hide (and restore on close). The observer
@@ -367,6 +371,10 @@ export class MarkerOverlay {
     const origin = { left: overlayRect.left, top: overlayRect.top };
     const doc = this.hostEl.ownerDocument;
     const glyphsVisible = getAnchorGlyphVisibility();
+    // D11 hide-all: the per-source flag masks EVERY note-slot chip (the CARDS/notes),
+    // while anchor glyphs stay so passages remain findable — the inverse split of the
+    // N1a global switch (which hides glyphs and keeps note slots).
+    const notesAllHidden = isAllNotesHidden();
     // Card-open suppression (D2): the anchor whose card the shared #sv-note-card is
     // currently showing (hover or pinned) hides BOTH its chips — wireNoteCard stamps
     // the id on the realm body; the constructor's MutationObserver re-ran us here.
@@ -402,9 +410,10 @@ export class MarkerOverlay {
       }
       // RIGHT slot: the note-type icons at the LAST line's right edge (top-right
       // hang, same as the old single chip). Hidden while the anchor's notes are
-      // toggled off. NOT affected by the global switch (note slots stay).
+      // toggled off (N1a) OR the source has hide-all on (D11). NOT affected by the
+      // global glyph switch (note slots stay for that one — inverse of hide-all).
       if (chips.note) {
-        if (notesHidden) {
+        if (notesHidden || notesAllHidden) {
           chips.note.style.display = "none";
         } else {
           const local = rectToOverlayLocal(rects.last, origin);

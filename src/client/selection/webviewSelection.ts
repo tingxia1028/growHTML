@@ -15,6 +15,7 @@
 // guest protocol stays an implementation detail of the webview surface.
 
 import type { AnchorDraft } from "../focus/FocusContext";
+import { isAllNotesHidden, subscribeAllNotesHidden } from "../annotationLayer";
 import { getAnchorGlyphVisibility, subscribeAnchorGlyphVisibility } from "../markerOverlay";
 import type { PaintAnchor } from "../surfaces/types";
 
@@ -68,10 +69,12 @@ export type WebAnchorMsg = {
 };
 
 // Additive second payload on sv:anchors: host-side marker preferences the guest
-// realm can't read itself (its module store is a separate bundle). Currently just
-// the global anchor-glyph switch (显示锚点标记); extend additively.
+// realm can't read itself (its module store is a separate bundle). The global
+// anchor-glyph switch (显示锚点标记) and the per-source D11 hide-all flag; extend
+// additively (older guests ignore an unknown field, older hosts omit it → default).
 export type WebAnchorPrefs = {
   anchorGlyphsVisible: boolean;
+  notesHidden: boolean;
 };
 
 // The preload file:// url the host attaches to each guest webview so it captures
@@ -135,10 +138,13 @@ export function bindWebviewAnchors(
 ): { dispose: () => void; push: () => void } {
   const push = () => {
     try {
-      // The prefs ride ALONGSIDE the anchors (additive payload extension): the
-      // guest realm mirrors the host's 显示锚点标记 switch from here, since its own
-      // module store can't see the host's localStorage.
-      const prefs: WebAnchorPrefs = { anchorGlyphsVisible: getAnchorGlyphVisibility() };
+      // The prefs ride ALONGSIDE the anchors (additive payload extension): the guest
+      // realm mirrors the host's 显示锚点标记 switch AND the D11 hide-all flag from
+      // here, since its own module stores can't see the host's live state.
+      const prefs: WebAnchorPrefs = {
+        anchorGlyphsVisible: getAnchorGlyphVisibility(),
+        notesHidden: isAllNotesHidden()
+      };
       webview.send("sv:anchors", getAnchors(), prefs);
     } catch {
       // Guest not ready yet; sv:ready / dom-ready will retry.
@@ -149,22 +155,28 @@ export function bindWebviewAnchors(
   };
   webview.addEventListener("ipc-message", onReady);
   webview.addEventListener("dom-ready", push);
-  // The global anchor-glyph switch must reach an ALREADY-painted guest: re-push
-  // (with the new flag) whenever it flips. Self-cleaning: a webview removed
-  // without dispose() (tab close in WebviewReader) unsubscribes on the next flip.
-  const unsubscribeGlyphs: () => void = subscribeAnchorGlyphVisibility(() => {
+  // The global anchor-glyph switch AND the D11 hide-all flag must reach an ALREADY-
+  // painted guest: re-push (with the new prefs) whenever either flips. Self-cleaning:
+  // a webview removed without dispose() (tab close in WebviewReader) unsubscribes on
+  // the next flip.
+  const repushIfConnected = (unsubscribe: () => void) => () => {
     if (!webview.isConnected) {
-      unsubscribeGlyphs();
+      unsubscribe();
       return;
     }
     push();
-  });
+  };
+  let unsubscribeGlyphs: () => void = () => {};
+  let unsubscribeNotesHidden: () => void = () => {};
+  unsubscribeGlyphs = subscribeAnchorGlyphVisibility(repushIfConnected(() => unsubscribeGlyphs()));
+  unsubscribeNotesHidden = subscribeAllNotesHidden(repushIfConnected(() => unsubscribeNotesHidden()));
   return {
     push,
     dispose: () => {
       webview.removeEventListener("ipc-message", onReady);
       webview.removeEventListener("dom-ready", push);
       unsubscribeGlyphs();
+      unsubscribeNotesHidden();
     }
   };
 }

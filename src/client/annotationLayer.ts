@@ -307,6 +307,12 @@ export interface CardGeom {
   height: number;
   anchorDx?: number;
   anchorDy?: number;
+  // D10 (note-presentation-unified.md §10): the card's OPEN state persists alongside
+  // its geometry, so a pinned card reopens where the user left it after a reload /
+  // source-reopen. Stored in the SAME per-anchor localStorage record as the geometry
+  // (device-local ephemeral fallback; the vault-carried truth is note.display). A
+  // paint reads this and re-pins the card at the remembered anchor-relative offset.
+  open?: boolean;
 }
 
 export type HighlightPayload = {
@@ -421,7 +427,8 @@ export function readCardGeom(doc: Document, key: string): CardGeom | null {
         width: parsed.width,
         height: parsed.height,
         anchorDx: typeof parsed.anchorDx === "number" ? parsed.anchorDx : undefined,
-        anchorDy: typeof parsed.anchorDy === "number" ? parsed.anchorDy : undefined
+        anchorDy: typeof parsed.anchorDy === "number" ? parsed.anchorDy : undefined,
+        open: parsed.open === true ? true : undefined
       };
     }
   } catch {
@@ -437,6 +444,24 @@ export function writeCardGeom(doc: Document, key: string, geom: CardGeom): void 
     store.setItem(CARD_GEOM_PREFIX + key, JSON.stringify(geom));
   } catch {
     // quota / unavailable — ignore
+  }
+}
+
+// D10 open-state persistence: flip just the `open` flag on an anchor's stored geom
+// record without disturbing its size/offset. Pinning writes open:true (so the card
+// reopens at the remembered offset next paint); un-pinning writes open:false. A
+// record that doesn't exist yet is created open with defaults so the flag survives
+// even before the user drags/resizes. Keyed the SAME way as the geometry, so the
+// two travel together in the per-realm localStorage store.
+export function setCardOpenState(doc: Document, key: string, open: boolean): void {
+  if (!key) return;
+  const existing = readCardGeom(doc, key);
+  if (existing) {
+    writeCardGeom(doc, key, { ...existing, open: open ? true : undefined });
+  } else if (open) {
+    // No geometry yet — remember only the open intent (position derives from the live
+    // anchor rect). Zeroed box is ignored on restore (clampGeom uses the live rect).
+    writeCardGeom(doc, key, { left: 0, top: 0, width: 0, height: 0, open: true });
   }
 }
 
@@ -470,7 +495,10 @@ const hiddenNoteAnchorsByDoc = new WeakMap<Document, Set<string>>();
 // wireNoteCard registers a tiny per-document controller so the toggle can dismiss
 // the shared card when it currently shows the toggled anchor — reusing the card's
 // own dismiss() + currentKey instead of a new state store.
-const noteCardControllers = new WeakMap<Document, { dismissIfKey: (key: string) => void }>();
+const noteCardControllers = new WeakMap<
+  Document,
+  { dismissIfKey: (key: string) => void; openPinned: (key: string) => void }
+>();
 // The last paintMarginNotes input per document, so a toggle can re-run the gutter
 // layout (with the hidden anchor filtered out, and back in on restore) without
 // the caller re-decorating.
@@ -479,6 +507,45 @@ const lastMarginItems = new WeakMap<Document, MarginItem[]>();
 export function isAnchorNotesHidden(doc: Document | null | undefined, anchorId: string): boolean {
   if (!doc || !anchorId) return false;
   return hiddenNoteAnchorsByDoc.get(doc)?.has(anchorId) ?? false;
+}
+
+// --- D11 hide-all (per-document "hide all notes" toggle) ----------------------
+// A SINGLE realm-local flag that masks EVERY note card/overlay for the source —
+// distinct from N1a's 显示锚点标记 switch (which hides anchor GLYPHS): hide-all
+// hides the CARDS/notes (hover, pinned, margin) AND the note-slot chips, while the
+// anchor glyph chips STAY so the passages remain findable. Because each anchor's
+// own toggled/open state is untouched, "打开的打开、关闭还是关闭" is preserved for
+// free — the flag only masks, it never loses per-anchor state.
+//
+// The live value is a module-level (realm-local) store every consumer in this JS
+// realm shares — wireNoteCard (suppress hover/pin), paintMarginNotes (drop the
+// gutter), and MarkerOverlay (hide note-slot chips) all read it and re-render when
+// it flips. The Electron webview guest is a separate bundle/realm: its copy is
+// driven by the host over the sv:anchors payload (electron/webview-preload.ts),
+// exactly like the glyph switch. Persistence (device-local, per the doc — the
+// exported truth is each note's display.open) lives with the caller's storage; this
+// store is only the live value plus subscribers.
+let notesHiddenAll = false;
+const notesHiddenListeners = new Set<() => void>();
+
+export function isAllNotesHidden(): boolean {
+  return notesHiddenAll;
+}
+
+export function setAllNotesHidden(hidden: boolean): void {
+  if (notesHiddenAll === hidden) return;
+  notesHiddenAll = hidden;
+  // Notify subscribers (each wired card dismisses its own open card when hidden turns
+  // on; margins re-pack; overlays re-layout). WeakMap has no iteration, so the card's
+  // OWN subscribe callback handles dismissal rather than a central controller sweep.
+  for (const listener of [...notesHiddenListeners]) listener();
+}
+
+export function subscribeAllNotesHidden(listener: () => void): () => void {
+  notesHiddenListeners.add(listener);
+  return () => {
+    notesHiddenListeners.delete(listener);
+  };
 }
 
 export function setAnchorNotesHidden(doc: Document | null | undefined, anchorId: string, hidden: boolean): void {
@@ -497,6 +564,21 @@ export function setAnchorNotesHidden(doc: Document | null | undefined, anchorId:
   // is cleared by floating-mode paints, so this never resurrects a stale gutter.
   const marginItems = lastMarginItems.get(doc);
   if (marginItems?.length) paintMarginNotes(doc, marginItems);
+}
+
+// D10 open-state restore: after a paint, re-pin the shared card for any anchor the
+// per-anchor geometry store remembers as open (CardGeom.open). Called by the reader
+// paint path once the highlighted elements exist. The single shared #sv-note-card
+// means only one card is pinned; the controller pins the last remembered-open anchor
+// among `keys` (document order), matching the one card the user left open. No-op in a
+// realm without a wired card, or when hide-all masks everything.
+export function restorePinnedNoteCards(doc: Document | null | undefined, keys: readonly string[]): void {
+  if (!doc || !keys.length || isAllNotesHidden()) return;
+  const controller = noteCardControllers.get(doc);
+  if (!controller) return;
+  for (const key of keys) {
+    if (readCardGeom(doc, key)?.open) controller.openPinned(key);
+  }
 }
 
 // Inject the stylesheet once and wire the single floating note card (shown on
@@ -628,16 +710,43 @@ function wireNoteCard(doc: Document): void {
   };
 
   // The notes-visibility toggle (setAnchorNotesHidden) dismisses an open card for
-  // a just-hidden anchor through this controller — no new state store.
+  // a just-hidden anchor through this controller — no new state store. dismissAny
+  // is the D11 hide-all hook: masking all notes collapses whatever card is open.
   noteCardControllers.set(doc, {
     dismissIfKey: (key) => {
       if (key && currentKey === key && card.classList.contains("sv-note-card-show")) dismiss();
+    },
+    // D10 open-state restore: re-pin the card for an anchor the store remembers as
+    // open. Only ONE card can be pinned at a time (the shared #sv-note-card), so the
+    // restore path pins the LAST such anchor the paint reports — matching the single
+    // pinned card the user actually left open. Guarded by the same hide/suppress
+    // rules: a source with hide-all on, or an anchor toggled off, restores nothing.
+    openPinned: (key) => {
+      if (!key || isAllNotesHidden() || isAnchorNotesHidden(doc, key)) return;
+      if (marginActive()) return; // margin mode has no floating pinned card
+      const target = doc.querySelector(`[data-sv-key="${key.replace(/"/g, '\\"')}"]`);
+      if (!target || !target.isConnected) return;
+      pinned = true;
+      show(target);
     }
+  });
+
+  // D11 hide-all: on ANY flip, dismiss this realm's open card if the mask is now on,
+  // and re-run the margin layout from the remembered paint input — paintMarginNotes
+  // itself drops the gutter while hidden and re-packs it when shown, so ON clears the
+  // gutter and OFF restores it. Wired here (the card's home realm) so every wired
+  // document reacts to the shared store.
+  subscribeAllNotesHidden(() => {
+    if (isAllNotesHidden() && card.classList.contains("sv-note-card-show")) dismiss();
+    const marginItems = lastMarginItems.get(doc);
+    if (marginItems?.length) paintMarginNotes(doc, marginItems);
   });
 
   // D2 user amendment: an anchor whose notes are toggled hidden shows NO card —
   // hover and click-pin are both suppressed until the anchor chip restores them.
-  const notesHidden = (target: Element) => isAnchorNotesHidden(doc, target.getAttribute("data-sv-key") ?? "");
+  // D11: hide-all suppresses EVERY anchor's card (cards masked source-wide).
+  const notesHidden = (target: Element) =>
+    isAllNotesHidden() || isAnchorNotesHidden(doc, target.getAttribute("data-sv-key") ?? "");
 
   // Remember user resizes (CSS `resize: both`) for the active key.
   const view = doc.defaultView as (Window & { ResizeObserver?: typeof ResizeObserver }) | null;
@@ -672,6 +781,9 @@ function wireNoteCard(doc: Document): void {
     if (target) {
       if (notesHidden(target)) return; // toggled off — no pin until restored
       if (pinned && currentTarget === target) {
+        // Un-pin: collapse the card AND clear the persisted open-state (D10) so it
+        // does NOT reopen on the next reload / source-reopen.
+        setCardOpenState(doc, currentKey, false);
         pinned = false;
         currentTarget = null;
         card.classList.remove("sv-note-card-show");
@@ -679,10 +791,17 @@ function wireNoteCard(doc: Document): void {
       } else {
         pinned = true;
         show(target);
+        // Pin: remember this card as open at its (anchor-relative) geometry so it
+        // reopens here after a reload / source-reopen (D10 open-state persist).
+        setCardOpenState(doc, currentKey, true);
       }
       return;
     }
-    if (!closestMatch(event.target, "#sv-note-card")) dismiss();
+    if (!closestMatch(event.target, "#sv-note-card")) {
+      // Outside click dismisses a pinned card — clear its persisted open-state too.
+      if (pinned && currentKey) setCardOpenState(doc, currentKey, false);
+      dismiss();
+    }
   });
 
   // No drag bar (content-only card). A mousedown on the card is a resize gesture
@@ -962,6 +1081,9 @@ export function paintMarginNotes(doc: Document, items: MarginItem[]): void {
   // clears the memo, so a stale margin layout can't be resurrected.
   lastMarginItems.set(doc, items);
   clearMarginNotes(doc);
+  // D11 hide-all: with the per-source flag on, no gutter cards paint at all (the
+  // memo above is still kept, so flipping hide-all back off re-packs the gutter).
+  if (isAllNotesHidden()) return;
   // Margin item filtering (D2 toggle): a toggled-off anchor contributes no gutter
   // card and the column re-packs around it.
   const visible = items.filter((item) => !item.key || !isAnchorNotesHidden(doc, item.key));

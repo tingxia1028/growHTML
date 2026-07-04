@@ -77,6 +77,15 @@ export type NoteRecord = {
   // layerIds intersect the enabled layers (OR). Empty = "always visible" (the
   // server never orphans a note to invisibility).
   layerIds: string[];
+  // D10 (note-presentation-unified.md §10): the note's persisted presentation —
+  // pinned-open state + anchor-relative offset + size. Optional/additive; a note
+  // without it renders as a D2 chip. Rides the vault jsonl (and, once
+  // portableNoteSchema forwards it, an export). Mirrors src/core/schema/note.ts.
+  display?: {
+    open?: boolean;
+    offset?: { dx: number; dy: number };
+    size?: { w: number; h: number };
+  };
 };
 
 export type PatchRecord = {
