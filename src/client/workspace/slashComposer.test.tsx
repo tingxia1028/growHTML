@@ -32,7 +32,16 @@ function makeCtx(overrides: Record<string, unknown> = {}): WorkspaceContext {
     status: "idle",
     draftQuote: "",
     chatMessages: [],
-    chatSessions: { list: [], activeId: null, startNew: vi.fn(), select: vi.fn(), remove: vi.fn() },
+    chatSessions: {
+      list: [],
+      activeId: null,
+      startNew: vi.fn(),
+      select: vi.fn(),
+      remove: vi.fn(),
+      attachments: [],
+      addAttachment: vi.fn(),
+      removeAttachment: vi.fn()
+    },
     dispatch: vi.fn().mockResolvedValue(undefined),
     chatInput: "",
     setChatInput: vi.fn(),

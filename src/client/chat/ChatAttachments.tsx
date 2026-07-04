@@ -22,13 +22,15 @@ export function ChatAttachments({
   api: ChatSessionsApi;
   sources?: AttachableSource[];
 }) {
-  const attachedIds = new Set(api.attachments.map((item) => item.sourceId));
+  // Defensive against a legacy/partial api (older fixtures predate the W2 fields).
+  const attached = api.attachments ?? [];
+  const attachedIds = new Set(attached.map((item) => item.sourceId));
   const titleById = new Map(sources.map((source) => [source.id, source.title]));
   const attachable = sources.filter((source) => !attachedIds.has(source.id));
 
   return (
     <div className="chat-attachments" aria-label={t(chatSessionMessages.attachedTitle)}>
-      {api.attachments.map((attachment) => {
+      {attached.map((attachment) => {
         const title = titleById.get(attachment.sourceId) || attachment.sourceId;
         return (
           <span key={attachment.sourceId} className="chat-attachment-chip" data-source-id={attachment.sourceId}>
