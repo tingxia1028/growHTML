@@ -1,4 +1,5 @@
 import { attachmentsBlock } from "./buildPrompt";
+import { defaultSynthesisDoc, SYNTHESIS_PROMPT_MARKER } from "./synthesizePrompt";
 import type { ChatRequest, ChatResponse, ModelProvider, StructuredRequest } from "./provider";
 
 // The `contentType` marker the form-router request carries (it is NOT a stored note
@@ -86,10 +87,20 @@ export class MockModelProvider implements ModelProvider {
   // sample is supplied for the router contentType, synthesize the FIRST valid union
   // member (a markdown note) so the call still yields a parseable union member rather
   // than an empty object — keeping unit + e2e deterministic without a real provider.
+  //
+  // W3 synthesis determinism (ai-workspace §W3): a synthesis request validates against
+  // {title, markdown} (both min(1)), so an empty `{}` would 400. When no sample is
+  // supplied yet the prompt is a SYNTHESIS one (its system message carries the stable
+  // marker), return a small default doc WITH headings — the same "yield a parseable
+  // object offline" precedent as the form-router default, so a real 生成文档 click stays
+  // deterministic without a live provider.
   async completeStructured(request: StructuredRequest): Promise<{ json: string }> {
     if (request.sample !== undefined) return { json: JSON.stringify(request.sample) };
     if (request.contentType === FORM_ROUTER_CONTENT_TYPE) {
       return { json: JSON.stringify({ form: "markdown", markdown: "" }) };
+    }
+    if (request.messages.some((message) => message.content.includes(SYNTHESIS_PROMPT_MARKER))) {
+      return { json: JSON.stringify(defaultSynthesisDoc(request.messages)) };
     }
     return { json: JSON.stringify({}) };
   }

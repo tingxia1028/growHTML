@@ -20,7 +20,9 @@ export { MockModelProvider, FORM_ROUTER_CONTENT_TYPE } from "./mockProvider";
 export {
   synthesisDocSchema,
   buildSynthesisMessages,
+  defaultSynthesisDoc,
   SYNTHESIS_TRANSCRIPT_CAP,
+  SYNTHESIS_PROMPT_MARKER,
   type SynthesisDoc,
   type BuildSynthesisMessagesInput
 } from "./synthesizePrompt";

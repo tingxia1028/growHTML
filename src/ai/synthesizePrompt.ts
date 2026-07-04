@@ -31,12 +31,20 @@ export type SynthesisDoc = z.infer<typeof synthesisDocSchema>;
  */
 export const SYNTHESIS_TRANSCRIPT_CAP = 24_000;
 
+// A stable phrase the synthesis system instruction carries. The offline MOCK detects it
+// (a request whose messages contain this marker) to return a DETERMINISTIC default
+// {title, markdown} when the caller supplied no `sample` — the exact precedent the
+// form-router default sets (mockProvider.ts), so a real button click (no sample) still
+// yields a schema-valid document offline instead of an empty `{}` that would 400. Real
+// providers ignore it; a supplied `sample` always wins.
+export const SYNTHESIS_PROMPT_MARKER = "study-document synthesizer";
+
 // The system instruction: synthesize the whole conversation + the attached sources into
 // ONE cohesive markdown document, using `#`/`##` headings as the table of contents, and
 // return it as {title, markdown}. Named so the JSON-only wrapper (structured.ts) still
 // applies; this is the DOMAIN instruction that rides on top.
 const SYNTHESIS_INSTRUCTION =
-  "You are a study-document synthesizer. Read the ENTIRE conversation below (and any " +
+  `You are a ${SYNTHESIS_PROMPT_MARKER}. Read the ENTIRE conversation below (and any ` +
   "attached sources) and write ONE cohesive Markdown document that organizes and " +
   "consolidates what was discussed. Use `#` and `##` Markdown headings to structure it — " +
   "those headings ARE the document's table of contents, so make them meaningful. Return a " +
@@ -84,6 +92,21 @@ function capTranscript(transcript: ChatMessage[]): ChatMessage[] {
   }
   kept.sort((a, b) => a - b);
   return kept.map((i) => transcript[i]);
+}
+
+/**
+ * The deterministic OFFLINE default the mock returns for a synthesis request that
+ * carried no `sample`: a small {title, markdown} doc WITH `#`/`##` headings (so the
+ * reader outline is exercised) that echoes the final user turn. Real providers never
+ * use this; a supplied `sample` always wins.
+ */
+export function defaultSynthesisDoc(messages: ChatMessage[]): SynthesisDoc {
+  const lastUser = [...messages].reverse().find((m) => m.role === "user");
+  const ask = (lastUser?.content ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+  return {
+    title: ask ? `Synthesized: ${ask.slice(0, 40)}` : "Synthesized Document",
+    markdown: `# Synthesized Document\n\n## Summary\n\n${ask || "A synthesized study document."}`
+  };
 }
 
 export type BuildSynthesisMessagesInput = {

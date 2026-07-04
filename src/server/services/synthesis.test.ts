@@ -113,6 +113,20 @@ describe("synthesizeDocument", () => {
     expect(requests[0].contentType).toBe("");
   });
 
+  it("with NO sample, the mock returns a deterministic default doc WITH headings (button-click path)", async () => {
+    // The 生成文档 button dispatches with no payload.content → no sample. The mock detects
+    // the synthesis prompt marker and returns a valid {title, markdown} default, so the
+    // real click path still creates a source offline (never a 400 on an empty {}).
+    const { source } = await synthesizeDocument(
+      { provider: new MockModelProvider(), vault },
+      { messages: transcript }
+    );
+    expect(source.sourceType).toBe("markdown");
+    const html = projectedHtmlForSource(source, await readSourceContent(vault, source));
+    expect(html).toContain("<h1");
+    expect(html).toContain("<h2");
+  });
+
   it("rejects a bare file-path markdown result (DELTA 5 cli-agent degrade guard)", async () => {
     await expect(
       synthesizeDocument(
