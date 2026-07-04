@@ -12,7 +12,8 @@ import type { WorkspaceContext } from "./viewRegistry";
 
 const mocks = vi.hoisted(() => ({
   layers: vi.fn(),
-  sealedImports: vi.fn()
+  sealedImports: vi.fn(),
+  patchLayer: vi.fn()
 }));
 
 vi.mock("../data/entityClient", async (importOriginal) => {
@@ -82,6 +83,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.layers.mockResolvedValue({ layers: LAYERS });
   mocks.sealedImports.mockResolvedValue({ packs: [] });
+  mocks.patchLayer.mockResolvedValue({ layer: LAYERS[0] });
 });
 
 function makeCtx(): WorkspaceContext {
@@ -102,6 +104,18 @@ async function mountSwitcher(): Promise<HTMLElement> {
   const container = mount(<>{plugin!.render(node, makeCtx())}</>);
   await flush();
   return container;
+}
+
+// Same as mountSwitcher but hands back the ctx too, so a test can assert on its spies
+// (refreshLayers) after driving the paint controls.
+async function mountSwitcherWithCtx(): Promise<{ container: HTMLElement; ctx: WorkspaceContext }> {
+  const plugin = getView("layer.switcher");
+  expect(plugin).toBeTruthy();
+  const node = { id: "layers", kind: "layer.switcher" } as WorkspaceNode;
+  const ctx = makeCtx();
+  const container = mount(<>{plugin!.render(node, ctx)}</>);
+  await flush();
+  return { container, ctx };
 }
 
 describe("layerViews svpack entry points", () => {
@@ -154,5 +168,78 @@ describe("layerViews svpack entry points", () => {
     const dialog = document.querySelector(".svpack-dialog");
     expect(dialog?.getAttribute("aria-label")).toContain("导入 .svpack");
     expect(mocks.sealedImports).toHaveBeenCalled();
+  });
+});
+
+// R7min (N2 D3a made reachable): the per-layer PAINT control (highlight color + decoration)
+// lives on the reachable LayerSwitcherView editable rows, writing `style` through
+// patchLayer and repainting via refreshLayers.
+describe("layerViews D3a paint control", () => {
+  const byTitle = (container: HTMLElement, title: string) =>
+    Array.from(container.querySelectorAll<HTMLElement>(".layer-item")).find((item) =>
+      item.textContent?.includes(title)
+    );
+
+  // Fire a React-controlled change: use the native value setter so React sees the update.
+  function setInputValue(el: HTMLInputElement | HTMLSelectElement, value: string) {
+    const proto = el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, "value")!.set!;
+    setter.call(el, value);
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  it("renders the paint controls on editable rows and NOT on shared/protected rows", async () => {
+    const container = await mountSwitcher();
+
+    // Editable (owned Mine + custom) rows carry both controls.
+    expect(byTitle(container, "My Notes")?.querySelector(".layer-paint-input")).toBeTruthy();
+    expect(byTitle(container, "My Notes")?.querySelector(".layer-deco-select")).toBeTruthy();
+    expect(byTitle(container, "错题")?.querySelector(".layer-paint-input")).toBeTruthy();
+    expect(byTitle(container, "错题")?.querySelector(".layer-deco-select")).toBeTruthy();
+
+    // Preset (owned but role=preset) is not editable → no paint control.
+    expect(byTitle(container, "预习")?.querySelector(".layer-paint-input")).toBeNull();
+    // Shared + sealed/protected rows → no paint control.
+    expect(byTitle(container, "同学的层")?.querySelector(".layer-paint-input")).toBeNull();
+    expect(byTitle(container, "同学的层")?.querySelector(".layer-deco-select")).toBeNull();
+    expect(byTitle(container, "王老师的层")?.querySelector(".layer-paint-input")).toBeNull();
+    expect(byTitle(container, "王老师的层")?.querySelector(".layer-deco-select")).toBeNull();
+  });
+
+  it("changing the paint color patches style.color (merged) and refreshes the paint pipeline", async () => {
+    const { container, ctx } = await mountSwitcherWithCtx();
+    const input = byTitle(container, "My Notes")!.querySelector(".layer-paint-input") as HTMLInputElement;
+    await act(async () => setInputValue(input, "#ff0000"));
+    await flush();
+
+    expect(mocks.patchLayer).toHaveBeenCalledWith("layer_own", { style: { color: "#ff0000" } });
+    // The paint style feeds the pipeline → the reader must re-tint.
+    expect(ctx.refreshLayers).toHaveBeenCalled();
+  });
+
+  it("changing the decoration patches style.decoration and refreshes the paint pipeline", async () => {
+    const { container, ctx } = await mountSwitcherWithCtx();
+    const select = byTitle(container, "My Notes")!.querySelector(".layer-deco-select") as HTMLSelectElement;
+    await act(async () => setInputValue(select, "underline"));
+    await flush();
+
+    expect(mocks.patchLayer).toHaveBeenCalledWith("layer_own", { style: { decoration: "underline" } });
+    expect(ctx.refreshLayers).toHaveBeenCalled();
+  });
+
+  it("merges the new patch onto the layer's EXISTING style (color keeps decoration)", async () => {
+    // A layer that already carries a decoration in its style.
+    mocks.layers.mockResolvedValue({
+      layers: [{ ...LAYERS[0], style: { decoration: "underline" } }, ...LAYERS.slice(1)]
+    });
+    const { container } = await mountSwitcherWithCtx();
+    const input = byTitle(container, "My Notes")!.querySelector(".layer-paint-input") as HTMLInputElement;
+    await act(async () => setInputValue(input, "#00ff00"));
+    await flush();
+
+    // Setting the color preserves the pre-existing decoration.
+    expect(mocks.patchLayer).toHaveBeenCalledWith("layer_own", {
+      style: { decoration: "underline", color: "#00ff00" }
+    });
   });
 });
