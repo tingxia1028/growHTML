@@ -70,24 +70,68 @@ describe("Textbook Kit render", () => {
     expect(html).toContain("it is not breathing");
   });
 
-  it("exercise renders question, options, marked answer, difficulty", () => {
+  // N4-D7: the FULL exercise HIDES the answer behind a "show answer" button — the
+  // question/options/difficulty show immediately, but `Answer:` + explanation appear only
+  // after the reveal. (Was static: the answer was always visible.) Paired update.
+  it("exercise FULL hides the answer behind a reveal, then shows it on click", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() =>
+      root.render(
+        getNoteType("textbook.exercise")!.render({
+          content: {
+            question: "2+2?",
+            type: "single-choice",
+            options: ["3", "4"],
+            answer: "4",
+            explanation: "Add.",
+            difficulty: "easy",
+            relatedKnowledgePoints: []
+          }
+        }) as React.ReactElement
+      )
+    );
+
+    // Question / options / difficulty show immediately; the answer stays hidden.
+    expect(container.innerHTML).toContain("2+2?");
+    expect(container.innerHTML).toContain("tb-exercise-options");
+    expect(container.innerHTML).toContain("easy");
+    expect(container.innerHTML).not.toContain("Answer:");
+    expect(container.querySelector(".tb-exercise-answer")).toBeNull();
+
+    // Click "show answer" → the answer + explanation appear.
+    const btn = container.querySelector(".sv-reveal-btn") as HTMLButtonElement;
+    expect(btn).toBeTruthy();
+    act(() => btn.click());
+    expect(container.innerHTML).toContain("Answer:");
+    expect(container.querySelector(".tb-exercise-answer")).toBeTruthy();
+    expect(container.textContent).toContain("Add."); // explanation revealed too
+
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  // N4-D7: the review-pack RENDERS the parsed exercises[] (previously parsed then dropped
+  // at the render — the regression the audit flagged). Schema is z.array(z.string()) →
+  // a practice checklist of prompt strings (no per-exercise answer-reveal).
+  it("review-pack FULL renders the exercises[] checklist (previously dropped)", () => {
     const html = renderToHtml(
-      getNoteType("textbook.exercise")!.render({
+      getNoteType("textbook.review-pack")!.render({
         content: {
-          question: "2+2?",
-          type: "single-choice",
-          options: ["3", "4"],
-          answer: "4",
-          explanation: "Add.",
-          difficulty: "easy",
-          relatedKnowledgePoints: []
+          title: "Cell Biology",
+          scope: { sourceId: "src_1" },
+          summary: "The cell is the unit of life.",
+          keyPoints: ["Membrane is selective"],
+          weakPoints: [],
+          flashcards: [{ front: "ATP?", back: "energy currency" }],
+          exercises: ["Explain osmosis.", "Compare mitosis and meiosis."]
         }
       })
     );
-    expect(html).toContain("2+2?");
-    expect(html).toContain("tb-exercise-options");
-    expect(html).toContain("Answer:");
-    expect(html).toContain("easy");
+    expect(html).toContain("tb-review-exercises");
+    expect(html).toContain("Explain osmosis.");
+    expect(html).toContain("Compare mitosis and meiosis.");
   });
 
   it("mistake renders wrong vs correct + mastery", () => {

@@ -5,6 +5,7 @@
 
 import { renderNoteContent } from "../../adapters/notes/render";
 import type { NoteEditInput, NoteRenderInput } from "../../client/notes/noteTypeRegistry";
+import { Reveal } from "../../client/notes/noteInteractive";
 import type { KitNoteTypePlugin } from "../types";
 import type { ExerciseContent, ExplanationContent, ReviewPackContent } from "./contentTypes";
 
@@ -153,10 +154,23 @@ function ExerciseRender({ content, mode }: NoteRenderInput) {
           {c.options.map((option, i) => <li key={i}>{option}</li>)}
         </ul>
       ) : null}
-      <p className="tb-exercise-answer">
-        <strong>Answer:</strong> {answer}
-      </p>
-      {c.explanation ? <Prose text={c.explanation} /> : null}
+      {/* N4-D7: FULL mode HIDES the answer behind a "show answer" button (all 4 exercise
+          types — the answer string may not map cleanly to an option, so this is
+          reveal-only, not option-picking). The tb-exercise-answer node + the explanation
+          live INSIDE the revealed content, so nothing appears until the user tries first.
+          Ephemeral useState — a remount resets to hidden. */}
+      <Reveal
+        className="tb-exercise-reveal"
+        trigger="Show answer"
+        hidden={
+          <>
+            <p className="tb-exercise-answer">
+              <strong>Answer:</strong> {answer}
+            </p>
+            {c.explanation ? <Prose text={c.explanation} /> : null}
+          </>
+        }
+      />
     </div>
   );
 }
@@ -267,6 +281,21 @@ function ReviewPackRender({ content, mode }: NoteRenderInput) {
             {c.flashcards.map((f, i) => (
               <li key={i}>
                 <strong>{f.front}</strong> — {f.back}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {/* N4-D7: RENDER the parsed exercises[] (previously dropped). The core schema is
+          z.array(z.string()) — plain prompt strings with NO answer sub-structure — so
+          this is a practice CHECKLIST of prompts, not per-exercise answer-reveal. */}
+      {c.exercises.length ? (
+        <div className="tb-section tb-review-exercises-section">
+          <strong>Practice</strong>
+          <ul className="tb-review-exercises">
+            {c.exercises.map((exercise, i) => (
+              <li key={i} className="tb-review-exercise">
+                {exercise}
               </li>
             ))}
           </ul>
