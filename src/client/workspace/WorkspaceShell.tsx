@@ -74,6 +74,9 @@ import { FloatingNoteEditor } from "./FloatingNoteEditor";
 import { ConceptMarkToast } from "./ConceptMarkToast";
 import { GlobalSpeakSelection } from "../speech/GlobalSpeakSelection";
 import { GlobalSearch } from "../search/GlobalSearch";
+// N6/§D12: the Anchor Focus board overlay — mounted once here (like the floating editor /
+// global search above), opened by the TopBar's Anchor Focus tab via the shared store.
+import { AnchorBoardMount } from "./AnchorFocusBoard";
 
 // px size overrides keyed by dock child key (leaf nodeId, else its tree path).
 const SIZES_KEY = "sv-panel-widths";
@@ -451,6 +454,9 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
           single shell mount; no per-view wiring) and dispatches through the existing
           contracts only (focus.setAnchor / setActiveSourceId / navigateShell). */}
       <GlobalSearch />
+      {/* N6/§D12: the Anchor Focus board overlay (renders nothing until the TopBar tab
+          opens it) — a read-only anchors+notes surface reusing the §10 PreviewCard. */}
+      <AnchorBoardMount />
       {modalKind ? (
         <div
           className="shell-modal-backdrop"

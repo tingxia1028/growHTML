@@ -4,11 +4,11 @@
 //     the document (user decision 2026-07-04): the old "Document" tab (annotationMode
 //     "floating", a notes-less reading mode) is gone; annotationMode stays "margin".
 //       - Notes Overlay → the default reading surface (gutter / margin cards).
-//       - Anchor Focus  → re-reveals the currently-focused anchor (scrolls the passage
-//         into view) without changing the presentation mode.
+//       - Anchor Focus  → opens the Anchor Focus BOARD (N6/§D12): a full anchors+notes
+//         surface (document-order rows / stage-layer columns), replacing the old weak
+//         one-anchor reveal. Presentation mode is untouched.
 //   • Right: native desktop window controls only.
 
-import { useState } from "react";
 import {
   Anchor,
   Crosshair,
@@ -19,6 +19,10 @@ import {
 } from "lucide-react";
 import { defineMessages, t, useLocale } from "../i18n";
 import type { WorkspaceContext } from "./viewRegistry";
+// N6/§D12: the "Anchor Focus" tab now opens the Anchor Focus BOARD (a real anchors+notes
+// surface), replacing the weak one-anchor reveal. The board mounts in the shell overlay;
+// this store is the open-state seam both share (keeps WorkspaceContext untouched).
+import { useAnchorBoardOpen, setAnchorBoardOpen } from "./anchorFocusBoardStore";
 
 export type TopBarProps = {
   ctx: WorkspaceContext;
@@ -28,7 +32,7 @@ const topBarMessages = defineMessages({
   readingMode: { zh: "阅读模式", en: "Reading mode" },
   notesOverlay: { zh: "笔记叠层", en: "Notes Overlay" },
   anchorFocus: { zh: "锚点聚焦", en: "Anchor Focus" },
-  anchorFocusTitle: { zh: "聚焦当前锚点", en: "Focus the current anchor" },
+  anchorFocusTitle: { zh: "打开锚点聚焦看板", en: "Open the Anchor Focus board" },
   windowControls: { zh: "窗口控制", en: "Window controls" },
   minimizeWindow: { zh: "最小化窗口", en: "Minimize window" },
   minimize: { zh: "最小化", en: "Minimize" },
@@ -40,18 +44,15 @@ const topBarMessages = defineMessages({
 
 export function TopBar({ ctx }: TopBarProps) {
   useLocale();
-  const {
-    setAnnotationMode,
-    focus
-  } = ctx;
+  const { setAnnotationMode } = ctx;
 
   // Two tabs, one presentation mode: the overlay (annotationMode "margin") is the
-  // document. Anchor Focus is a transient selection (an explicit click, not derived
-  // from focus.anchor — having a focused anchor is the normal reading state, so it
-  // must NOT silently flip the active tab) that re-reveals the focused passage.
-  const [tab, setTab] = useState<"overlay" | "anchor">("overlay");
-  const overlayActive = tab === "overlay";
-  const focusActive = tab === "anchor";
+  // document. Anchor Focus now OPENS THE BOARD (§D12) — a full anchors+notes surface,
+  // not the old one-anchor reveal. The active tab follows the board's open-state (shared
+  // store), so opening/closing the board flips the segmented control without local state.
+  const boardOpen = useAnchorBoardOpen();
+  const overlayActive = !boardOpen;
+  const focusActive = boardOpen;
 
   const windowControls = typeof window !== "undefined" ? window.studyVault?.windowControls : undefined;
 
@@ -71,9 +72,9 @@ export function TopBar({ ctx }: TopBarProps) {
           aria-selected={overlayActive}
           className={`topbar-tab${overlayActive ? " active" : ""}`}
           onClick={() => {
-            setTab("overlay");
-            // The overlay is the document; keep the presentation mode pinned to margin
-            // (self-heals any stale "floating" state left by the removed Document tab).
+            // The overlay is the document; close the board and keep the presentation mode
+            // pinned to margin (self-heals any stale "floating" state).
+            setAnchorBoardOpen(false);
             setAnnotationMode("margin");
           }}
         >
@@ -87,10 +88,9 @@ export function TopBar({ ctx }: TopBarProps) {
           className={`topbar-tab${focusActive ? " active" : ""}`}
           title={t(topBarMessages.anchorFocusTitle)}
           onClick={() => {
-            // Re-reveal the focused anchor (bumps revealSeq → the reader scrolls the
-            // passage into view). Presentation mode is untouched — overlay stays on.
-            setTab("anchor");
-            if (focus.anchor) focus.setAnchor(focus.anchor);
+            // Open the Anchor Focus board (§D12) — the anchors+notes surface. Presentation
+            // mode is untouched; the shell-mounted board reads the shared open-state.
+            setAnchorBoardOpen(true);
           }}
         >
           <Crosshair size={15} aria-hidden="true" />

@@ -1,0 +1,301 @@
+/* Anchor Focus board (N6 / D12) — a full-surface overlay board over the reader area.
+   Two layouts (document rows / stage-layer columns), reusing the shipped §10 PreviewCard
+   for every note. Scoped under `.anchor-board`; the shell mounts it inside a backdrop. */
+
+.anchor-board-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  padding: 40px;
+  background: color-mix(in srgb, var(--sv-bg) 55%, rgba(15, 23, 42, 0.55));
+}
+
+.anchor-board {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  margin: auto;
+  max-width: 1180px;
+  max-height: 100%;
+  background: var(--sv-surface, #fff);
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+  overflow: hidden;
+}
+
+.anchor-board-fullscreen {
+  max-width: none;
+  max-height: none;
+  height: 100%;
+  border-radius: 0;
+}
+
+.anchor-board-fullscreen.anchor-board {
+  /* Fill the backdrop edge-to-edge; the backdrop keeps its padding removed below. */
+}
+
+.anchor-board-backdrop:has(.anchor-board-fullscreen) {
+  padding: 0;
+}
+
+/* —— header: title · layout toggle · filters —————————————————————————————— */
+.anchor-board-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--sv-border);
+  background: var(--sv-surface-muted, #f4f5f7);
+}
+
+.anchor-board-head-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin-right: auto;
+}
+
+.anchor-board-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--sv-text);
+}
+
+.anchor-board-source {
+  font-size: 12px;
+  color: var(--sv-text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 380px;
+}
+
+.anchor-board-layout-toggle {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--sv-surface, #fff);
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-pill);
+}
+
+.anchor-board-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: none;
+  background: transparent;
+  border-radius: var(--sv-radius-pill);
+  font-size: 12px;
+  color: var(--sv-text-muted);
+  cursor: pointer;
+}
+
+.anchor-board-tab:hover {
+  color: var(--sv-text);
+}
+
+.anchor-board-tab.active {
+  background: var(--sv-accent);
+  color: #fff;
+}
+
+.anchor-board-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.anchor-board-only-layer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--sv-text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.anchor-board-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--sv-surface, #fff);
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-pill);
+  color: var(--sv-text-faint);
+}
+
+.anchor-board-search-input {
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 12px;
+  color: var(--sv-text);
+  width: 160px;
+}
+
+.anchor-board-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-sm);
+  background: var(--sv-surface, #fff);
+  color: var(--sv-text-muted);
+  cursor: pointer;
+}
+
+.anchor-board-icon-btn:hover {
+  color: var(--sv-text);
+  border-color: var(--sv-accent-border, var(--sv-accent));
+}
+
+/* —— body ———————————————————————————————————————————————————————————————— */
+.anchor-board-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+.anchor-board-empty {
+  padding: 48px 16px;
+  text-align: center;
+  color: var(--sv-text-faint);
+}
+
+.anchor-board-empty-notes {
+  font-size: 12px;
+  color: var(--sv-text-faint);
+  padding: 6px 2px;
+}
+
+/* —— layout A: document rows ——————————————————————————————————————————————— */
+.anchor-board-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.anchor-board-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) 1fr;
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface, #fff);
+}
+
+.anchor-board-passage {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.anchor-board-passage-index {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: var(--sv-radius-pill);
+  background: var(--sv-surface-muted, #eef0f3);
+  color: var(--sv-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.anchor-board-quote {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--sv-text);
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.anchor-board-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-content: flex-start;
+}
+
+/* —— layout B: stage-layer columns ————————————————————————————————————————— */
+.anchor-board-columns {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  min-height: 100%;
+}
+
+.anchor-board-column {
+  flex: 0 0 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius);
+  background: var(--sv-surface-muted, #f4f5f7);
+}
+
+.anchor-board-column-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--sv-border);
+}
+
+.anchor-board-column-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.anchor-board-column-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sv-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.anchor-board-column-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--sv-text-faint);
+  background: var(--sv-surface, #fff);
+  border-radius: var(--sv-radius-pill);
+  padding: 1px 8px;
+}
+
+.anchor-board-column-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.anchor-board-column[data-unlayered="true"] {
+  background: var(--sv-surface, #fff);
+  border-style: dashed;
+}

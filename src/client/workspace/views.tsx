@@ -42,6 +42,11 @@ import "./libraryBuiltins";
 import "./library.css";
 import { readerForSource } from "./readerForSource";
 import { BookmarkIndex } from "./BookmarkIndex";
+// N6/§D12: the Anchor Focus board — a read-only surface over the active source's
+// anchors+notes (document-order rows / stage-layer columns), registered as a view and
+// mounted in the shell overlay via AnchorBoardMount. Board logic lives in the new file.
+import { AnchorFocusBoard } from "./AnchorFocusBoard";
+import { setAnchorBoardOpen } from "./anchorFocusBoardStore";
 // N5/§10: per-source hide-all (D11) + notes/anchors export (D10) reader-toolbar
 // controls, each a small self-contained component (keeps this hot file's diff tight).
 import { HideAllNotesToggle } from "./HideAllNotesToggle";
@@ -668,3 +673,6 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
 registerView({ kind: "library", render: (_node, ctx) => <LibraryView ctx={ctx} /> });
 registerView({ kind: "source.viewer", render: (_node, ctx) => <SourceViewerView ctx={ctx} /> });
 registerView({ kind: "study", render: (_node, ctx) => <StudyView ctx={ctx} /> });
+// N6/§D12: the Anchor Focus board as a registered view (a preset MAY dock it directly);
+// the primary entry is the TopBar's Anchor Focus tab → AnchorBoardMount shell overlay.
+registerView({ kind: "anchor.focus.board", render: (_node, _ctx) => <AnchorFocusBoard onClose={() => setAnchorBoardOpen(false)} /> });
