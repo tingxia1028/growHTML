@@ -34,15 +34,19 @@ export default defineConfig({
       timeout: 60_000,
       // Space out mock stream chunks so the streaming-chat spec can observe the
       // reply arriving progressively (deterministic; content is unchanged).
-      // Pin the MOCK provider for e2e regardless of any local `.env` (which may set
+      // Pin the MOCK-AGENT provider for e2e regardless of any local `.env` (which may set
       // STUDY_VAULT_AI_PROVIDER=claude-cli for real dev) — specs assert deterministic
       // mock replies, and a real provider would be slow/non-deterministic and bill the
       // user's subscription. (dotenv never overrides env vars that are already set.)
+      // A4b (DELTA 2): mock-agent EXTENDS the mock — it delegates complete/stream/
+      // completeStructured to a held MockModelProvider byte-identically, so every
+      // non-agent spec's deterministic reply is UNCHANGED — and it ALSO ships the
+      // tool-calling loop, so agent-tools.spec has a network-free provider to drive.
       env: {
         PORT: String(API_PORT),
         STUDY_VAULT_ROOT: E2E_VAULT_ROOT,
         STUDY_VAULT_MOCK_STREAM_DELAY_MS: "60",
-        STUDY_VAULT_AI_PROVIDER: "mock",
+        STUDY_VAULT_AI_PROVIDER: "mock-agent",
         // TRUST-1 kill switch: the ephemeral e2e vault must never seed an
         // auto-backup into a backups/ dir on boot.
         STUDY_VAULT_AUTO_BACKUP: "0"

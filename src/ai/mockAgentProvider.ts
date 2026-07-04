@@ -71,10 +71,19 @@ export class MockAgentProvider implements ModelProvider {
     const lastUser = [...request.messages].reverse().find((message) => message.role === "user");
     const query = lastUser?.content.trim() ?? "";
     const searchTool = request.tools?.find((tool) => tool.name === "search_notes");
+    // Optional per-event pacing (STUDY_VAULT_MOCK_STREAM_DELAY_MS) — the SAME knob the
+    // mock's stream() honors — so a browser e2e can OBSERVE the transcript's tool card
+    // + streamed text before the turn settles. Unset (all unit tests) runs instantly;
+    // the delay never changes the events, only their spacing.
+    const delayMs = Number(process.env.STUDY_VAULT_MOCK_STREAM_DELAY_MS ?? 0);
+    const pace = async () => {
+      if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    };
 
     yield { type: "step", index: 0 };
     if (searchTool) {
       const callId = "mock-agent-call-1";
+      await pace();
       yield { type: "tool-call", toolName: "search_notes", args: { query }, id: callId };
       // Execute the REAL registered tool so the result reflects the actual vault
       // (empty vault → total 0). Deterministic and offline (the tools are read-only).
@@ -84,12 +93,16 @@ export class MockAgentProvider implements ModelProvider {
       } catch (error) {
         result = { error: error instanceof Error ? error.message : "search failed" };
       }
+      await pace();
       yield { type: "tool-result", id: callId, result };
     }
     yield { type: "step", index: 1 };
     // Stream the fixed answer in a couple of chunks so the client sees progressive text.
     for (const chunk of [MOCK_AGENT_FINAL_ANSWER.slice(0, 20), MOCK_AGENT_FINAL_ANSWER.slice(20)]) {
-      if (chunk) yield { type: "text-delta", delta: chunk };
+      if (chunk) {
+        await pace();
+        yield { type: "text-delta", delta: chunk };
+      }
     }
     yield { type: "done", message: { role: "assistant", content: MOCK_AGENT_FINAL_ANSWER } };
   }

@@ -1722,10 +1722,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               setAgentTurn((turn) => reduceAgentEvent(turn ?? initialAgentTurn(), { type: "tool-result", ...result }))
           }
         );
-        // The final answer is the ONE persisted assistant turn (Add-as-note / regenerate
-        // keep working). Mark the transcript done, then drop the tool cards.
+        // The final answer becomes the ONE real assistant turn — appended to the visible
+        // chat log AND persisted via appendAssistant (Add-as-note / regenerate keep
+        // working). Unlike the streaming ask path there were no applyChunk deltas
+        // building a visible bubble (the transcript did), so append (not persist) here.
+        // Mark the transcript done, then drop the tool cards.
         setAgentTurn((turn) => reduceAgentEvent(turn ?? initialAgentTurn(), { type: "done", message, provider: "" }));
-        chatDomain.persistAssistant(message);
+        chatDomain.appendAssistant(message);
         setAgentTurn(null);
         setStatus("idle");
       } catch (err) {
