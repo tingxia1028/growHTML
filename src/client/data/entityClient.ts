@@ -679,6 +679,19 @@ export type ChatContext = {
   sources?: ChatContextSource[];
 };
 
+/**
+ * The typed handler set entityClient.agentStream dispatches the six agent SSE events
+ * to (A4b). argsJson/resultJson ride as the PRE-SERIALIZED, capped strings the wire
+ * carries; the caller's reducer guards the parse (DELTA 3). `onStep` is optional
+ * (a loop boundary with no visible row); the rest are required by the transcript.
+ */
+export type AgentStreamHandlers = {
+  onStep?(index: number): void;
+  onTextDelta(delta: string): void;
+  onToolCall(call: { id: string; toolName: string; argsJson: string; truncated: boolean }): void;
+  onToolResult(result: { id: string; resultJson: string; truncated: boolean }): void;
+};
+
 /** GET /api/sources/:id/bundle — a source's chat-context bundle (server SourceBundle). */
 export type SourceBundle = {
   sourceId: string;
@@ -1172,6 +1185,105 @@ export const entityClient = {
 
     if (streamError) throw new Error(streamError);
     if (!result) throw new Error("Stream ended without a result");
+    return result;
+  },
+
+  // —— Agent loop (A4b) ————————————————————————————————————————————————————————
+  // Streaming AGENT turn over SSE (POST /api/agent/stream). Mirrors chatStream's
+  // fetch + `\n\n` frame buffering (frames straddling read() boundaries are handled)
+  // but dispatches the RICHER six-event agent set to typed handlers so the client can
+  // render tool-call/result cards + the streamed answer. DELTA 3: the wire names are
+  // agent-specific — `text-delta`/`{delta}` (NOT chat's `chunk`), plus
+  // step/tool-call/tool-result/done/error — a blind chatStream copy that kept `chunk`
+  // would compile yet silently drop every token. argsJson/resultJson ride as-is
+  // (pre-serialized, capped strings) to the handler; the caller's reducer guards the
+  // parse. No chat fallback: a 501 (provider without runAgent) throws a TYPED
+  // agent_unsupported error the UI surfaces once (the button should never have shown).
+  async agentStream(
+    input: { messages: ChatMessage[]; context?: ChatContext; maxSteps?: number },
+    handlers: AgentStreamHandlers
+  ): Promise<{ message: ChatMessage; provider: string }> {
+    const response = await fetch("/api/agent/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input)
+    });
+    if (!response.ok || !response.body) {
+      if (response.status === 501) {
+        const body = await response.json().catch(() => ({}));
+        const error = new Error(body.error ?? "此提供方不支持工具调用") as Error & { code?: string; provider?: string };
+        error.code = "agent_unsupported";
+        error.provider = body.provider;
+        throw error;
+      }
+      // A 400 (validation) or any other non-OK is a hard failure — no chat fallback.
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.error ?? `Request failed: /api/agent/stream (${response.status})`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let result: { message: ChatMessage; provider: string } | null = null;
+    let streamError: string | null = null;
+
+    const handleEvent = (block: string) => {
+      let event = "message";
+      const dataLines: string[] = [];
+      for (const line of block.split("\n")) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+      }
+      if (dataLines.length === 0) return;
+      const payload = JSON.parse(dataLines.join("\n"));
+      switch (event) {
+        case "step":
+          handlers.onStep?.(payload.index as number);
+          break;
+        case "text-delta":
+          handlers.onTextDelta(payload.delta as string);
+          break;
+        case "tool-call":
+          handlers.onToolCall({
+            id: payload.id as string,
+            toolName: payload.toolName as string,
+            argsJson: payload.argsJson as string,
+            truncated: Boolean(payload.truncated)
+          });
+          break;
+        case "tool-result":
+          handlers.onToolResult({
+            id: payload.id as string,
+            resultJson: payload.resultJson as string,
+            truncated: Boolean(payload.truncated)
+          });
+          break;
+        case "done":
+          result = payload as { message: ChatMessage; provider: string };
+          break;
+        case "error":
+          streamError = (payload.error as string) ?? "agent stream failed";
+          break;
+        default:
+          break;
+      }
+    };
+
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let sep = buffer.indexOf("\n\n");
+      while (sep >= 0) {
+        handleEvent(buffer.slice(0, sep));
+        buffer = buffer.slice(sep + 2);
+        sep = buffer.indexOf("\n\n");
+      }
+    }
+    if (buffer.trim()) handleEvent(buffer);
+
+    if (streamError) throw new Error(streamError);
+    if (!result) throw new Error("Agent stream ended without a result");
     return result;
   },
 
