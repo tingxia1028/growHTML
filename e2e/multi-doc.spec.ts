@@ -173,6 +173,82 @@ test("multi-doc (b+c): two docs split, independent paint (A absent in B), shared
   await expect(activeTab).toHaveText(docB.title);
 });
 
+test("multi-doc (F-1): hide-all + glyph switch are PER-PANE (flipping A leaves B painted)", async ({
+  page,
+  request
+}) => {
+  const stamp = uid();
+  const passA = `Per-pane A passage ${stamp}`;
+  const passB = `Per-pane B passage ${stamp}`;
+
+  const docA = await seedHtmlSource(request, `PPA ${stamp}`, `<article><section><p>${passA}</p></section></article>`);
+  const docB = await seedHtmlSource(request, `PPB ${stamp}`, `<article><section><p>${passB}</p></section></article>`);
+  const aAnchor = await seedAnchor(request, docA.id, passA);
+  await seedNote(request, docA.id, [aAnchor.id], `A note ${stamp}`);
+  const bAnchor = await seedAnchor(request, docB.id, passB);
+  await seedNote(request, docB.id, [bAnchor.id], `B note ${stamp}`);
+
+  await page.setViewportSize({ width: 1500, height: 900 });
+  await page.goto("/");
+
+  await openSource(page, docA);
+  await expect(page.locator(".reader-tab.active .reader-tab-title")).toHaveText(docA.title);
+  await openSourceInNewPane(page, docB);
+  await expect(page.locator(".reader-tab")).toHaveCount(2);
+
+  const splitBtn = page.locator(".reader-split-btn");
+  await expect(splitBtn).toBeEnabled();
+  await splitBtn.click();
+  await expect(page.locator(".source-split")).toBeVisible();
+  await expect(page.locator(READER)).toHaveCount(2);
+
+  // Layout: focused pane (docB, last opened) is LEFT; docA popped to the RIGHT.
+  const left = page.frameLocator(LEFT_READER); // docB
+  const right = page.frameLocator(RIGHT_READER); // docA
+
+  // Both panes paint their own note (baseline).
+  await expect(left.locator(".sv-annotated", { hasText: passB })).toHaveCount(1);
+  await expect(right.locator(".sv-annotated", { hasText: passA })).toHaveCount(1);
+  const leftNoteChip = left.locator('.sv-anchor-markers[data-sv-slot="note"]').first();
+  const rightNoteChip = right.locator('.sv-anchor-markers[data-sv-slot="note"]').first();
+  const leftAnchorChip = left.locator('.sv-anchor-markers[data-sv-slot="anchor"]').first();
+  const rightAnchorChip = right.locator('.sv-anchor-markers[data-sv-slot="anchor"]').first();
+  await expect(leftNoteChip).toBeAttached();
+  await expect(rightNoteChip).toBeAttached();
+
+  // —— HIDE-ALL is PER-PANE —— flip the LEFT (docB) pane's toggle: its note chip +
+  // gutter hide; the RIGHT (docA) pane is untouched.
+  const leftHideAll = page.locator(".source-split-left .hide-all-notes-toggle").first();
+  await expect(leftHideAll).toHaveAttribute("aria-pressed", "false");
+  await leftHideAll.click();
+  await expect(leftHideAll).toHaveAttribute("aria-pressed", "true");
+  await expect(left.locator("#sv-margin-layer .sv-margin-note")).toHaveCount(0); // A(left)'s gutter gone
+  await expect(leftNoteChip).toBeHidden();
+  await expect(rightNoteChip).toBeVisible(); // B(right) untouched
+  await expect(right.locator("#sv-margin-layer .sv-margin-note").first()).toBeVisible();
+
+  // Restore the left pane so the glyph assertions start clean.
+  await leftHideAll.click();
+  await expect(leftHideAll).toHaveAttribute("aria-pressed", "false");
+
+  // —— GLYPH SWITCH is PER-PANE —— focus the LEFT pane, then flip the anchor-glyph
+  // switch (the RIGHT column's anchor panel, driven by the focused source): the LEFT
+  // pane's anchor glyph hides; the RIGHT pane's glyph stays.
+  await page.locator(".source-split-left").click({ position: { x: 5, y: 5 } });
+  const glyphSwitch = page.locator(".anchor-glyph-switch").first();
+  await expect(glyphSwitch).toHaveAttribute("aria-pressed", "true");
+  await expect(leftAnchorChip).toBeVisible();
+  await expect(rightAnchorChip).toBeVisible();
+  await glyphSwitch.click();
+  await expect(glyphSwitch).toHaveAttribute("aria-pressed", "false");
+  await expect(leftAnchorChip).toBeHidden(); // focused (left) pane's glyph hidden
+  await expect(rightAnchorChip).toBeVisible(); // other pane's glyph stays
+
+  // Cleanup so the dev/e2e vault doesn't accumulate the fixtures.
+  await request.delete(`${SERVER}/api/sources/${docA.id}`);
+  await request.delete(`${SERVER}/api/sources/${docB.id}`);
+});
+
 test("multi-doc (d): the host-realm gate refuses a second concurrent host-realm pane (分屏 disabled)", async ({
   page,
   request
