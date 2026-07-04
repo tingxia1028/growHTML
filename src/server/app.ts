@@ -29,6 +29,7 @@ import * as operationsService from "./services/operations";
 import * as patchesService from "./services/patches";
 import * as assetsService from "./services/assets";
 import * as workspaceService from "./services/workspace";
+import * as searchService from "./services/search";
 import * as aiService from "./services/ai";
 import * as aiProvidersService from "./services/aiProviders";
 import * as speechService from "./services/speech";
@@ -624,6 +625,19 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
         }
       );
       res.json({ notes });
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  // Global search (SEARCH-1): ONE linear-scan query across notes (per-spec
+  // toSearchText + anchor quotes) and sources (title/type) — ranked + capped per
+  // family in the service. The commands family is client-side (the palette owns it).
+  app.get("/api/search", async (req, res, next) => {
+    try {
+      const q = typeof req.query.q === "string" ? req.query.q : "";
+      const hits = await searchService.searchVault({ vault, sealed }, { q });
+      res.json({ hits });
     } catch (error) {
       if (!handleServiceError(res, error)) next(error);
     }

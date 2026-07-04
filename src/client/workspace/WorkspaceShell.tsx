@@ -67,6 +67,7 @@ import { IconRail } from "./IconRail";
 import { SelectionFloatingToolbar } from "./SelectionFloatingToolbar";
 import { ConceptMarkToast } from "./ConceptMarkToast";
 import { GlobalSpeakSelection } from "../speech/GlobalSpeakSelection";
+import { GlobalSearch } from "../search/GlobalSearch";
 
 // px size overrides keyed by dock child key (leaf nodeId, else its tree path).
 const SIZES_KEY = "sv-panel-widths";
@@ -367,6 +368,11 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
           the reader pane (chat replies, note lists, panels — 读=所有文本的可读能力).
           Reader selections keep their own toolbar above; this never double-serves. */}
       <GlobalSpeakSelection />
+      {/* SEARCH-1 全局搜索: the Cmd/Ctrl+K palette (notes/文档/命令) — host chrome like
+          the chips above. It owns its own global hotkey (registered once here via the
+          single shell mount; no per-view wiring) and dispatches through the existing
+          contracts only (focus.setAnchor / setActiveSourceId / navigateShell). */}
+      <GlobalSearch />
     </div>
   );
 }

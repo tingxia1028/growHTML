@@ -32,6 +32,7 @@
 //             DELETE /api/notes/:noteId               · delete + orphan-anchor cascade
 //   layers    GET   /api/sources/:sourceId/layers     · per-source list (lazy owned/presets)
 //             PATCH /api/layers/:layerId              · enabled/title/color/order
+//   search    GET  /api/search                        · SEARCH-1 cross-vault query (notes+sources)
 //   memory    POST /api/memory/events                 · batch append (capture-off ⇒ 204/undefined)
 //             GET  /api/memory/events                 · since/limit read-back
 //             GET  /api/memory/settings               · capture switch
@@ -67,6 +68,7 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from ".
 import * as anchorsService from "./anchors";
 import * as layersService from "./layers";
 import * as notesService from "./notes";
+import * as searchService from "./search";
 import * as sourcesService from "./sources";
 
 export type DirectTransportDeps = {
@@ -274,6 +276,16 @@ const routes: DirectRoute[] = [
     schema: layersService.updateLayerRequestSchema,
     call: async ({ deps, params, input }) => ({
       layer: await layersService.updateLayer(deps, { layerId: params.layerId, ...input })
+    })
+  }),
+
+  // —— Global search (SEARCH-1) — parity with GET /api/search so mobile searches
+  // identically (design §2's direct-transport requirement). ——
+  route({
+    method: "GET",
+    pattern: "/api/search",
+    call: async ({ deps, query }) => ({
+      hits: await searchService.searchVault(deps, { q: query.get("q") ?? "" })
     })
   }),
 

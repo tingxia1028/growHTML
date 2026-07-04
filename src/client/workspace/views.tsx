@@ -156,7 +156,8 @@ function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
     <aside className="library-panel">
       <div className="library-head">
         <h1 className="library-title">{t(libraryMessages.title)}</h1>
-        {/* SEARCH-1 mounts here — the Cmd+K palette will replace/feed this input. */}
+        {/* SEARCH-1 shipped: Cmd/Ctrl+K (GlobalSearch, WorkspaceShell chrome) is the
+            GLOBAL search entry — this input stays the Library's LOCAL section filter. */}
         <input
           className="library-search"
           type="search"

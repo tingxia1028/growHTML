@@ -1,5 +1,10 @@
 # Global Search — 全局搜索 / Cmd+K
 
+> **Status: SEARCH-1 ✅ shipped 2026-07-04 (SEARCH-1-001).** Endpoint (`GET /api/search`
+> in services + direct-transport parity) · Cmd/Ctrl+K palette (shell chrome, SC-0 idioms)
+> · all three families (notes via `toSearchText`+anchor quotes / sources / navigation
+> commands) · keyboard flow. SEARCH-2 (pinyin/fuzzy/filters/recents) remains.
+
 Verified gap (2026-07-02): AI has `search_notes` (agentTools), readers have in-document find —
 but the USER has no cross-vault search surface at all. Table stakes for a knowledge tool;
 pain grows with every note. Grounded in what exists: `toSearchText` on every content spec,
@@ -26,8 +31,16 @@ Anchors surface through their notes (a bare anchor hit shows as its quote).
   perf gate: if scan > 50ms at real vault size, add an in-memory inverted map (still no dep).
 
 ## 3. Phasing
-- **SEARCH-1:** endpoint + palette + notes/sources/commands families + keyboard flow
-  (global hotkey lives in a clean shell file — verify; the WorkspaceShell keydown idiom).
+- **SEARCH-1 ✅ (2026-07-04, SEARCH-1-001):** endpoint + palette + notes/sources/commands
+  families + keyboard flow. As built: pure rank core `src/core/search/rank.ts` (exact >
+  prefix > word-boundary > substring; recency tiebreak; snippet) shared by the server
+  engine (`src/server/services/search.ts`, cap 20/family, anchor quotes as note fields)
+  and the client commands family; palette `src/client/search/` (GlobalSearchPalette +
+  injected deps seam), mounted once in WorkspaceShell chrome — the hotkey lives in the
+  palette component (one window listener via the single shell mount, no per-view wiring).
+  Commands V1 = navigation targets only (navigateShell — 打开复习/画像/设置…, arg-free by
+  construction); the "/"-passthrough to the slash composer's entries rides SC-1's mount.
+  The Library header input stays a LOCAL section filter (seam comment updated in views.tsx).
 - **SEARCH-2:** pinyin + fuzzy (SC-3 fusion) + per-type filters (`type:错题 浮力`) + recent
   searches (workspace prefs, field-group safe).
 
