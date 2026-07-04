@@ -20,7 +20,7 @@
 
 import { useState } from "react";
 import { escapeHtml, renderNoteContent } from "../../adapters/notes/render";
-import { useChoiceQuiz } from "./noteInteractive";
+import { FlipCard, useChoiceQuiz } from "./noteInteractive";
 import { videoEmbedSrc, type VideoProvider } from "../../core/notes/parseVideoUrl";
 import { DiagramNote } from "../DiagramNote";
 import { entityClient } from "../data/entityClient";
@@ -251,19 +251,32 @@ function FlashcardRender({ content, mode }: NoteRenderInput) {
       </div>
     );
   }
+  // FULL is INTERACTIVE (N4-D7): a flip card — the front shows until the user flips it,
+  // then the back. One face at a time (the back is genuinely absent pre-flip), via the
+  // shared <FlipCard>. Keeps the sv-flashcard-* classes so existing CSS still matches.
   return (
     <div className="note-rendered sv-flashcard sv-flashcard-expanded">
-      <section className="sv-flashcard-face">
-        <span className="sv-flashcard-face-label">Front</span>
-        <p>{card.front || "(empty flashcard)"}</p>
-      </section>
-      <span className="sv-flashcard-swap" aria-hidden="true">
-        ↔
-      </span>
-      <section className="sv-flashcard-face">
-        <span className="sv-flashcard-face-label">Back</span>
-        <p>{card.back || "(empty back)"}</p>
-      </section>
+      <FlipCard
+        className="sv-flashcard-flip"
+        front={
+          <section className="sv-flashcard-face">
+            <span className="sv-flashcard-face-label">Front</span>
+            <p>{card.front || "(empty flashcard)"}</p>
+            <span className="sv-flashcard-swap" aria-hidden="true">
+              ↔
+            </span>
+          </section>
+        }
+        back={
+          <section className="sv-flashcard-face">
+            <span className="sv-flashcard-face-label">Back</span>
+            <p>{card.back || "(empty back)"}</p>
+            <span className="sv-flashcard-swap" aria-hidden="true">
+              ↔
+            </span>
+          </section>
+        }
+      />
     </div>
   );
 }

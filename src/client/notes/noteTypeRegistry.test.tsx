@@ -181,12 +181,30 @@ describe("NoteType render — sample content per type", () => {
     expect(html).toContain("B1");
   });
 
-  it("flashcard renders front + back (flip card)", () => {
-    const html = renderToHtml(getNoteType("flashcard")!.render({ content: { front: "Q?", back: "A!" } }));
-    expect(html).toContain("sv-flashcard-expanded");
-    expect(html).toContain("sv-flashcard-face-label");
-    expect(html).toContain("Q?");
-    expect(html).toContain("A!");
+  // N4-D7: the FULL flashcard is now an INTERACTIVE flip card — the front shows first and
+  // the back appears only after a flip (one face at a time). (Was static: it rendered BOTH
+  // faces side-by-side, so the "answer" was visible without flipping — the bug this commit
+  // fixes; the paired assertion is updated in the same commit.)
+  it("flashcard FULL is a flip card — front first, back only after a flip", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(getNoteType("flashcard")!.render({ content: { front: "Q?", back: "A!" } }) as React.ReactElement));
+
+    expect(container.innerHTML).toContain("sv-flashcard-expanded");
+    expect(container.innerHTML).toContain("sv-flashcard-face-label");
+    const card = container.querySelector(".sv-flip") as HTMLElement;
+    expect(card.getAttribute("data-face")).toBe("front");
+    expect(container.textContent).toContain("Q?");
+    expect(container.textContent).not.toContain("A!"); // back absent until flipped
+
+    act(() => card.click());
+    expect(card.getAttribute("data-face")).toBe("back");
+    expect(container.textContent).toContain("A!");
+    expect(container.textContent).not.toContain("Q?");
+
+    act(() => root.unmount());
+    container.remove();
   });
 
   it("mermaid / markmap delegate to DiagramNote with the source string", () => {
