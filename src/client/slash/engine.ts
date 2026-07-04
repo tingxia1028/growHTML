@@ -4,8 +4,17 @@
 // operation sources through adapters.ts), so the engine stays unit-testable and
 // source-agnostic ("one entry enumerates every type" — the enumeration itself is
 // the caller's).
+//
+// SC-3 (slash-composer.md §2/§5 "breadth"): a `/提` query now also matches by
+// PINYIN — full 全拼 (tigan) AND 首字母 initials (tg) — over an entry's 中文 title
+// and aliases, reusing SEARCH-2's shipped `pinyinForms` helper (pinyin-pro; no new
+// dep, no second pinyin util). Pinyin is the LOWEST match tier so a real ASCII
+// substring hit always outranks a romanization guess. Ranking otherwise stays the
+// caller's injected order (active-kit-first is applied upstream in the adapter).
 
-/** What a palette row stands for. "operation" rows arrive with SC-3. */
+import { pinyinForms, isRomanQuery } from "../../core/search/pinyin";
+
+/** What a palette row stands for. Operation rows (SC-3) run the shipped operation.run. */
 export type SlashEntryKind = "noteType" | "operation";
 
 // One palette entry, DERIVED from a registry (never hardcoded — design §2).
@@ -17,6 +26,10 @@ export type SlashEntryKind = "noteType" | "operation";
 //   icon    — an optional glyph STRING (kept React-free; the palette component
 //             falls back to the central noteTypeIcon map when absent).
 //   kitId   — the owning kit for the row badge (absent for built-ins).
+//   scope   — OPERATION rows only (SC-3): where operation.run materializes —
+//             "anchor" reads the focused passage, "source" synthesizes over the whole
+//             source. Absent on note-type rows. Threaded so the mount's pick can hand
+//             it straight to operation.run (operationRunPayload) without re-deriving it.
 export type SlashEntry = {
   kind: SlashEntryKind;
   id: string;
@@ -24,6 +37,7 @@ export type SlashEntry = {
   aliases: string[];
   icon?: string;
   kitId?: string;
+  scope?: "anchor" | "source";
 };
 
 export type SlashInput = {
@@ -58,11 +72,28 @@ export function parseSlashInput(raw: string): SlashInput | null {
 
 // Match tiers, best (lowest) first. Secondary order is the caller's input order,
 // so the injected list's own ranking (active kit first, memory recency later —
-// design §2) survives resolution untouched.
+// design §2) survives resolution untouched. RANK_PINYIN sits BELOW substring so a
+// literal ASCII hit always beats a romanization (SEARCH-2's "pinyin never outranks
+// a real text hit" stance, reused here).
 const RANK_EXACT_ID = 0;
 const RANK_EXACT_ALIAS = 1;
 const RANK_PREFIX = 2;
 const RANK_SUBSTRING = 3;
+const RANK_PINYIN = 4;
+
+// A roman query hits an entry's PINYIN when either romanization form (full 全拼 or
+// 首字母 initials) of any 中文 match key (title + aliases) contains it. "tigan"/"tg"
+// both find 提干; a purely-ASCII entry (no CJK keys) yields no pinyin and never
+// matches here. Only reached for roman queries (isRomanQuery) — a CJK/mixed query
+// already hits literally, so we skip the pinyin-pro work for it entirely.
+function pinyinHit(query: string, entry: SlashEntry): boolean {
+  for (const key of [entry.title, ...entry.aliases]) {
+    const forms = pinyinForms(key);
+    if (!forms) continue;
+    if (forms.full.includes(query) || forms.initials.includes(query)) return true;
+  }
+  return false;
+}
 
 // All matching is case-folded (English ids/aliases are case-insensitive; toLowerCase
 // is a no-op on CJK). Exact-title matches are covered by the prefix tier.
@@ -78,6 +109,9 @@ function matchRank(query: string, entry: SlashEntry): number | null {
   if (id.includes(query) || title.includes(query) || aliases.some((a) => a.includes(query))) {
     return RANK_SUBSTRING;
   }
+  // Pinyin is the last resort, and only for a romanization-shaped query (the
+  // literal tiers above already covered CJK/mixed input).
+  if (isRomanQuery(query) && pinyinHit(query, entry)) return RANK_PINYIN;
   return null;
 }
 

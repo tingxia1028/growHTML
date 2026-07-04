@@ -123,6 +123,50 @@ describe("resolveSlashEntries — 中文 + case folding", () => {
   });
 });
 
+describe("resolveSlashEntries — pinyin (SC-3)", () => {
+  // A fixture with a distinct romanization per entry (no shared initials/full clashes).
+  const py: SlashEntry[] = [
+    entry("op.tigan", "提干", ["题目主干"]), // tigan / tg
+    entry("op.zongjie", "总结", []), // zongjie / zj
+    entry("markdown", "文本", ["md"]) // md is an exact ASCII alias
+  ];
+
+  it("matches a CJK title by FULL pinyin (tigan → 提干)", () => {
+    expect(ids(resolveSlashEntries("tigan", py))).toEqual(["op.tigan"]);
+  });
+
+  it("matches a CJK title by INITIALS (tg → 提干, zj → 总结)", () => {
+    expect(ids(resolveSlashEntries("tg", py))).toEqual(["op.tigan"]);
+    expect(ids(resolveSlashEntries("zj", py))).toEqual(["op.zongjie"]);
+  });
+
+  it("matches a CJK ALIAS by pinyin too (题目主干 → timuzhugan initials tmzg)", () => {
+    expect(ids(resolveSlashEntries("timu", py))).toEqual(["op.tigan"]);
+    expect(ids(resolveSlashEntries("tmzg", py))).toEqual(["op.tigan"]);
+  });
+
+  it("a non-matching roman query still misses (xyz hits nothing)", () => {
+    expect(resolveSlashEntries("xyzq", py)).toEqual([]);
+  });
+
+  it("pinyin is the LOWEST tier — a literal ASCII hit outranks a pinyin hit", () => {
+    // "md" is an exact ASCII alias of markdown (RANK_EXACT_ALIAS); it is ALSO the
+    // pinyin initials of 文本? no — 文本 = wenben (wb). Use a query that is both a
+    // literal alias of one entry AND the pinyin of another: "md" only matches markdown.
+    const mixed: SlashEntry[] = [
+      entry("op.mudi", "目的", []), // pinyin mudi / md
+      entry("markdown", "文本", ["md"]) // exact ASCII alias "md"
+    ];
+    // "md": exact ASCII alias of markdown (tier 1) beats the pinyin-initials hit on 目的.
+    expect(ids(resolveSlashEntries("md", mixed))).toEqual(["markdown", "op.mudi"]);
+  });
+
+  it("a CJK query never triggers the pinyin path (it hits literally, or not at all)", () => {
+    expect(ids(resolveSlashEntries("提", py))).toEqual(["op.tigan"]); // literal prefix
+    expect(resolveSlashEntries("啊啊", py)).toEqual([]); // no literal hit, no pinyin for CJK
+  });
+});
+
 describe("resolveSlashEntries — edges", () => {
   it("empty query → ALL entries in injected order (a fresh array)", () => {
     const all = resolveSlashEntries("", ENTRIES);
