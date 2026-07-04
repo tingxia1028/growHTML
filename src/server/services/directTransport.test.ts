@@ -352,6 +352,37 @@ describe("direct transport acceptance — entityClient with no HTTP", () => {
     expect((bad as ApiError).message).toBe(httpBad.error);
   });
 
+  it("lists PRO-1 triggers with HTTP parity (empty vault ⇒ [], seeded ⇒ same body)", async () => {
+    // Fresh vaults on both sides ⇒ no trigger definitions ⇒ [].
+    expect((await entityClient.triggers()).triggers).toEqual([]);
+    expect((await request(app).get("/api/triggers").expect(200)).body.triggers).toEqual([]);
+
+    // Seed the SAME definition into both stores directly (no user-authoring route in
+    // PRO-1) and compare the list bodies byte-for-byte.
+    const seed = {
+      id: "trigger_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      type: "trigger" as const,
+      schemaVersion: 1 as const,
+      createdAt: "2026-07-01T08:00:00.000Z",
+      updatedAt: "2026-07-01T08:00:00.000Z",
+      createdBy: "system" as const,
+      name: "复习推动",
+      description: "",
+      enabled: true,
+      when: { kind: "schedule" as const, atLocalTime: "19:00" },
+      actionRef: { kind: "navigate" as const, target: "review.panel" },
+      reason: "该复习了",
+      constraints: { dailyCap: 2, quietHours: { start: "22:00", end: "08:00" }, minGapMinutes: 180, onlyWhenIdle: true },
+      metadata: {}
+    };
+    await directVault.stores.triggers.upsert(seed);
+    await httpVault.stores.triggers.upsert(seed);
+    const direct = (await entityClient.triggers()).triggers;
+    const http = (await request(app).get("/api/triggers").expect(200)).body.triggers;
+    expect(JSON.stringify(direct)).toBe(JSON.stringify(http));
+    expect(direct[0].when).toEqual({ kind: "schedule", atLocalTime: "19:00" });
+  });
+
   it("maps typed service failures to the SAME ApiError(status/message) http produces", async () => {
     // NotFound: identical status AND message, and the client-facing class is ApiError
     // exactly as if the http transport had parsed a 404 response.

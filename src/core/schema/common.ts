@@ -23,6 +23,7 @@ export const relationIdSchema = idSchema("relation");
 export const assetIdSchema = idSchema("asset");
 export const layerIdSchema = idSchema("layer");
 export const operationIdSchema = idSchema("operation");
+export const triggerIdSchema = idSchema("trigger");
 export const memoryEventIdSchema = idSchema("memory");
 export const chatSessionIdSchema = idSchema("chatSession");
 

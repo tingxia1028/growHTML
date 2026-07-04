@@ -170,6 +170,34 @@ export type OperationInput = {
   scope?: "anchor" | "source";
 };
 
+// —— Triggers (PRO-1, proactive-learning §1: proactive-learning trigger DEFINITIONS,
+// behavior-as-data extended to TIME). Mirrors src/core/schema/trigger.ts. The client
+// tick reads these, unions the CODE-registered built-ins, and runs the pure core
+// evaluator against the REAL LOCAL clock. `when`/`actionRef` DEFINE event/operation
+// variants for PRO-2 forward-compat; the PRO-1 evaluator only lights up schedule+navigate. ——
+export type TriggerWhen =
+  | { kind: "schedule"; atLocalTime: string }
+  | { kind: "event"; signal: string };
+export type TriggerActionRef =
+  | { kind: "navigate"; target: string }
+  | { kind: "operation"; operationId: string };
+export type TriggerConstraints = {
+  dailyCap: number;
+  quietHours: { start: string; end: string };
+  minGapMinutes: number;
+  onlyWhenIdle: boolean;
+};
+export type TriggerRecord = {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  when: TriggerWhen;
+  actionRef: TriggerActionRef;
+  reason: string;
+  constraints: TriggerConstraints;
+};
+
 // Workspace-level small prefs (mirrors workspace.json): the action ORDER + DISABLED
 // set (built-in command ids + op_ ids) and per-built-in placeholder PARAMS the
 // server merges into generate input before build().
@@ -955,6 +983,12 @@ export const entityClient = {
   /** Action ordering / enable-disable + per-built-in placeholder params. */
   operationPrefs() {
     return getJson<{ prefs: OperationPrefs }>("/api/operation-prefs");
+  },
+
+  // —— Triggers (PRO-1) — the proactive-learning trigger DEFINITION list. The client
+  // tick unions these with the code-registered built-ins and evaluates each locally. ——
+  triggers() {
+    return getJson<{ triggers: TriggerRecord[] }>("/api/triggers");
   },
   saveOperationPrefs(prefs: OperationPrefs) {
     return sendJson<{ prefs: OperationPrefs }>("PUT", "/api/operation-prefs", prefs);

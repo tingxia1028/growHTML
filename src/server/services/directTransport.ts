@@ -448,6 +448,14 @@ const routes: DirectRoute[] = [
     call: ({ deps, body }) => reviewScheduleService.recordReviewGrade(deps, body)
   }),
 
+  // —— Triggers (PRO-1) — parity with GET /api/triggers so a direct-transport host
+  // (mobile) reads the SAME proactive-learning definition list the client tick evaluates. ——
+  route({
+    method: "GET",
+    pattern: "/api/triggers",
+    call: async ({ deps }) => ({ triggers: await deps.vault.stores.triggers.list() })
+  }),
+
   // —— Concept graph (CG-1) — parity with GET /api/graph so mobile assembles the
   // SAME derived graph (same query schema, same service). ——
   route({

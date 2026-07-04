@@ -20,6 +20,7 @@ export * from "./patch";
 export * from "./relation";
 export * from "./source";
 export * from "./study-layer";
+export * from "./trigger";
 export * from "./vault";
 
 // NOTE: memoryEventSchema is deliberately NOT in this union (like operationSchema).
@@ -28,6 +29,8 @@ export * from "./vault";
 // sharing) can ever pick memory records up by accident.
 // chatSessionSchema stays out for the same reason: conversations are private
 // (ai-workspace §2.1); the full-vault backup still carries them via entityFileNames.
+// triggerSchema stays out too (like operationSchema): a trigger is a behavior-as-data
+// definition, not vault content to import/export/share (PRO-1, proactive-learning §1).
 export const vaultEntitySchema = z.discriminatedUnion("type", [
   sourceSchema,
   anchorSchema,

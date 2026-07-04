@@ -1148,6 +1148,19 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
     }
   });
 
+  // —— Triggers (PRO-1, proactive-learning §1) — the DEFINITION list. The client tick
+  // reads it, unions the CODE-registered built-ins, and evaluates each with the pure
+  // core evaluator against the REAL LOCAL clock (build-spec CLIENT-CENTRIC decision).
+  // A bare list over the store (the operations-list idiom); no user-authoring routes in
+  // PRO-1 (no seeded user triggers — the review-push exemplar is a client built-in). ——
+  app.get("/api/triggers", async (_req, res, next) => {
+    try {
+      res.json({ triggers: await vault.stores.triggers.list() });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // —— Plugin prefs (Kit & Plugin: disabled contributions + viewer pins + the M1 market
   // install state). Field-group ownership (see services/workspace.ts): the legacy PUT
   // owns the panel fields and PRESERVES the stored market fields, so a stale full-body
