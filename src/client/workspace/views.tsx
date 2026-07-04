@@ -68,7 +68,7 @@ import { Wrench } from "lucide-react";
 // the same floating editor. The engine/palette are the shipped SC-0 modules.
 import { parseSlashInput, resolveSlashEntries } from "../slash/engine";
 import { slashEntries as buildSlashEntries } from "../slash/adapters";
-import { operationRunPayload } from "../slash/operationAdapter";
+import { dispatchSlashEntry } from "../slash/dispatchSlashEntry";
 import { SlashPalette, slashPaletteKeyDown } from "../slash/SlashPalette";
 import type { SlashEntry } from "../slash/engine";
 // W1 (ai-workspace §2.1): the compact session switcher in the chat panel title row —
@@ -521,27 +521,16 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
   useEffect(() => setSlashIndex(0), [chatInput]);
   const slashOpen = !!slashParsed && slashDismissedFor !== chatInput;
 
-  // A palette pick (Enter on the active row, or a click): bare `/type` = MANUAL —
-  // open the D5 floating editor seeded with the type's createDefault(); with an
-  // instruction = AI — dispatch the form-router generation carrying the picked
-  // type as an explicit hint (the draft parks in the same floating editor).
+  // A palette pick (Enter on the active row, or a click): the branch decision is the
+  // SHARED dispatchSlashEntry (SC-2) — bare `/type` = MANUAL (openManualEditor), with an
+  // instruction = AI (note.generate-block), an operation = operation.run — so the chat
+  // and the SC-2 toolbar mounts route a pick through IDENTICAL logic. This mount owns
+  // only the chat-specific bookkeeping (clear the input, reset the dismiss flag).
   const pickSlashEntry = (entry: SlashEntry) => {
     const instruction = slashParsed?.instruction ?? "";
     setChatInput("");
     setSlashDismissedFor(null);
-    // SC-3: an operation row runs the shipped operation.run (built-in prompt id or op_
-    // id both resolve server-side); scope rides on the entry, output stays AUTO.
-    if (entry.kind === "operation") {
-      const { commandId, payload } = operationRunPayload(entry);
-      void dispatch(commandId, payload);
-      return;
-    }
-    if (entry.kind !== "noteType") return;
-    if (!instruction) {
-      openManualEditor(entry.id);
-      return;
-    }
-    void dispatch("note.generate-block", { text: `以「${entry.title}」(${entry.id}) 的形式：${instruction}` });
+    dispatchSlashEntry(entry, instruction, { dispatch, openManualEditor });
   };
 
   // Bookmarks are notes too, but they surface in the dedicated Bookmarks pane (and as
