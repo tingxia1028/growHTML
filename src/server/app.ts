@@ -600,6 +600,23 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
     }
   });
 
+  // Attachment bundle (ai-workspace.md §W2): a source's bounded body excerpt + its
+  // (sealed-filtered) notes → the widened ChatContext.sources[]. A plain SOURCE read
+  // (consistent with /rendered, /notes) so it rides the VaultTransport + directTransport
+  // parity, not the chat lane. ?includeNotes=false skips the note read.
+  app.get("/api/sources/:sourceId/bundle", async (req, res, next) => {
+    try {
+      const includeNotes = req.query.includeNotes !== "false";
+      const bundle = await sourcesService.buildSourceBundle(
+        { vault, sealed },
+        { sourceId: req.params.sourceId, includeNotes }
+      );
+      res.json({ bundle });
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
   app.post("/api/anchors", async (req, res, next) => {
     try {
       const input = anchorsService.createAnchorRequestSchema.parse(req.body);

@@ -20,6 +20,7 @@
 //   sources   GET  /api/sources                       · list
 //             POST /api/sources/html                  · ingest pasted/imported HTML
 //             GET  /api/sources/:sourceId/rendered    · materialized read model
+//             GET  /api/sources/:sourceId/bundle      · W2 chat-context bundle (excerpt+notes)
 //             DELETE /api/sources/:sourceId           · delete
 //   anchors   POST /api/anchors                       · create (any kind)
 //             GET  /api/sources/:sourceId/anchors     · derived painting list
@@ -197,6 +198,18 @@ const routes: DirectRoute[] = [
     method: "GET",
     pattern: "/api/sources/:sourceId/rendered",
     call: ({ deps, params }) => sourcesService.renderSource({ vault: deps.vault }, { sourceId: params.sourceId })
+  }),
+  // Attachment bundle (ai-workspace.md §W2) — parity with GET /api/sources/:id/bundle so
+  // mobile assembles the SAME chat context (sealed notes filtered in the service).
+  route({
+    method: "GET",
+    pattern: "/api/sources/:sourceId/bundle",
+    call: async ({ deps, params, query }) => ({
+      bundle: await sourcesService.buildSourceBundle(
+        { vault: deps.vault, sealed: deps.sealed },
+        { sourceId: params.sourceId, includeNotes: query.get("includeNotes") !== "false" }
+      )
+    })
   }),
   // —— Source authoring (SRC-1 create / SRC-2 edit pipeline) ——
   route({

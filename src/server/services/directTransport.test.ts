@@ -219,6 +219,43 @@ describe("direct transport acceptance — entityClient with no HTTP", () => {
     expect((await entityClient.sources()).sources).toEqual([]);
   });
 
+  it("serves the W2 attachment bundle (excerpt + notes) with HTTP parity", async () => {
+    // Direct side: ingest a source + a note, then read the bundle over the direct adapter.
+    const { source } = await entityClient.ingestHtml("Bundle Doc", fixtureHtmlBody);
+    await entityClient.createNote({ sourceId: source.id, contentType: "markdown", content: "bundle note" });
+    const direct1 = await direct.request<{ bundle: { title: string; type: string; excerpt?: string; notes: unknown[] } }>(
+      "GET",
+      `/api/sources/${source.id}/bundle`
+    );
+
+    // HTTP side: the SAME flow over the real app.
+    const httpSource = (
+      await request(app).post("/api/sources/html").send({ title: "Bundle Doc", content: fixtureHtmlBody }).expect(201)
+    ).body.source;
+    await request(app)
+      .post("/api/notes")
+      .send({ sourceId: httpSource.id, contentType: "markdown", content: "bundle note" })
+      .expect(201);
+    const http1 = (await request(app).get(`/api/sources/${httpSource.id}/bundle`).expect(200)).body;
+
+    // Same title/type/notes; excerpt is deterministic (study-id injection is stable).
+    expect(direct1.bundle.title).toBe("Bundle Doc");
+    expect(direct1.bundle.title).toBe(http1.bundle.title);
+    expect(direct1.bundle.type).toBe(http1.bundle.type);
+    expect(direct1.bundle.notes).toEqual([{ contentType: "markdown", text: "bundle note" }]);
+    expect(direct1.bundle.notes).toEqual(http1.bundle.notes);
+    expect(direct1.bundle.excerpt).toBe(http1.bundle.excerpt);
+
+    // ?includeNotes=false drops the notes on both backends.
+    const directNoNotes = await direct.request<{ bundle: { notes: unknown[] } }>(
+      "GET",
+      `/api/sources/${source.id}/bundle?includeNotes=false`
+    );
+    const httpNoNotes = (await request(app).get(`/api/sources/${httpSource.id}/bundle?includeNotes=false`).expect(200)).body;
+    expect(directNoNotes.bundle.notes).toEqual([]);
+    expect(httpNoNotes.bundle.notes).toEqual([]);
+  });
+
   it("runs the MEM-2 tier flow (consolidate → digests → profile → overrides → clear) with HTTP parity", async () => {
     // Same seed on both sides: an OLD event (freezes+prunes at the pinned 14d
     // boundary, 2026-06-17) + three graded failures that derive a 弱项 fact.

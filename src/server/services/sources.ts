@@ -6,13 +6,17 @@
 // local-file ingest) intentionally have NO service here — core is the seam for those.
 import { z } from "zod";
 import { injectStudyIds, materializeHtml } from "../../adapters/html/core";
+import { getNoteContentSpec } from "../../core/notes/contentTypes";
 import { sourceSchema, type HtmlSelectionAnchor, type SourceRecord } from "../../core/schema";
 import { ingestBinarySource, ingestHtmlSource, readSourceContent, readSourceFile } from "../../core/store/sources";
 import type { StudyVault } from "../../core/vault";
+import type { SealedRuntime } from "../svpack";
 import { NotFoundError, ValidationError } from "./errors";
+import { listNotes } from "./notes";
 import { projectedHtmlForSource } from "./sourceAuthoring";
 
 export type SourcesDeps = { vault: StudyVault };
+export type SealedSourcesDeps = { vault: StudyVault; sealed: SealedRuntime };
 
 export const ingestHtmlRequestSchema = z.object({
   title: z.string().min(1),
@@ -145,4 +149,119 @@ async function getHtmlAnchorsForSource(vault: StudyVault, sourceId: string) {
   return (await vault.stores.anchors.list()).filter(
     (anchor): anchor is HtmlSelectionAnchor => anchor.sourceId === sourceId && anchor.anchorKind === "html_selection"
   );
+}
+
+// —— Attachment bundle (ai-workspace.md §W2) ——————————————————————————————————
+// The chat-context bundle for ONE attached source: a bounded body excerpt + its notes
+// reduced to text. Consumed by the client's resolveAttachmentBundles → ChatContext
+// .sources[], so the caps here are the FIRST line of the token budget (the pure
+// resolver adds the cross-source total cap on top, dropping tail excerpts).
+
+/** Per-source excerpt cap — a HEAD slice of the body (W2 token budget). Exported for the test. */
+export const BUNDLE_EXCERPT_MAX_CHARS = 4000;
+/** Per-source note-count cap — the highest-signal notes ride, the rest are dropped. Exported for the test. */
+export const BUNDLE_NOTE_COUNT_CAP = 20;
+
+/** Source types whose stored bytes are BINARY (no text excerpt — title + notes only). */
+const BINARY_SOURCE_TYPES = new Set(["pdf", "image", "word"]);
+
+/**
+ * Reduce an HTML-ish body to plain text for the excerpt: drop script/style, strip
+ * tags, decode the few common entities, collapse whitespace. Pure + cheap (no JSDOM);
+ * markdown/plain bodies pass through the same collapse harmlessly. Exported for the test.
+ */
+export function bundleExcerptText(raw: string): string {
+  return raw
+    .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Head-slice an excerpt to the char cap, marking a truncation so the model knows more exists. */
+export function truncateExcerpt(text: string, max = BUNDLE_EXCERPT_MAX_CHARS): string {
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+/** One attached source's chat-context bundle (mirrors the ai ChatContextSource shape). */
+export type SourceBundle = {
+  sourceId: string;
+  title: string;
+  type: string;
+  location?: string;
+  excerpt?: string;
+  notes: { contentType: string; text: string }[];
+};
+
+// Where the source lives (URL / file path), for the model's Location line — the same
+// precedence the client's buildChatContext uses (sourceUrl/normalizedUrl → originalPath).
+function bundleLocation(source: SourceRecord): string | undefined {
+  const meta = (source.metadata ?? {}) as Record<string, unknown>;
+  const url = (meta.sourceUrl ?? meta.normalizedUrl) as string | undefined;
+  const filePath = meta.originalPath as string | undefined;
+  return url || filePath || undefined;
+}
+
+/**
+ * Build the attachment bundle for a source: the (optionally note-carrying) chat context
+ * the widened ChatContext.sources[] rides. Notes come through `listNotes` (the shared
+ * read-model), then:
+ *   • SEALED (protected-import) notes are FILTERED OUT — write-locked content must never
+ *     enter a prompt (W2 delta 5). listNotes flags them `sealed: true`.
+ *   • surviving notes are reduced to plain text via their spec's toSearchText, capped at
+ *     BUNDLE_NOTE_COUNT_CAP;
+ * the source body (text-ish sources only) is stripped to text + head-sliced to
+ * BUNDLE_EXCERPT_MAX_CHARS. `includeNotes:false` skips the note read entirely.
+ */
+export async function buildSourceBundle(
+  { vault, sealed }: SealedSourcesDeps,
+  input: { sourceId: string; includeNotes?: boolean }
+): Promise<SourceBundle> {
+  const source = await vault.stores.sources.get(input.sourceId);
+  if (!source) throw new NotFoundError("Source not found");
+
+  let excerpt: string | undefined;
+  if (!BINARY_SOURCE_TYPES.has(source.sourceType)) {
+    try {
+      const text = bundleExcerptText(await readSourceContent(vault, source));
+      excerpt = text ? truncateExcerpt(text) : undefined;
+    } catch {
+      // A missing/unreadable body must not fail the whole bundle — title + notes still help.
+      excerpt = undefined;
+    }
+  }
+
+  const notes: { contentType: string; text: string }[] = [];
+  if (input.includeNotes !== false) {
+    const listed = await listNotes({ vault, sealed }, { sourceId: source.id });
+    for (const note of listed) {
+      // Delta 5: never surface WRITE-LOCKED protected content to the model.
+      if ((note as { sealed?: boolean }).sealed) continue;
+      if (notes.length >= BUNDLE_NOTE_COUNT_CAP) break;
+      const contentType = note.contentType ?? "markdown";
+      const spec = getNoteContentSpec(contentType);
+      let text = "";
+      try {
+        text = spec ? spec.toSearchText(note.content).trim() : "";
+      } catch {
+        text = "";
+      }
+      if (text) notes.push({ contentType, text });
+    }
+  }
+
+  return {
+    sourceId: source.id,
+    title: source.title,
+    type: source.sourceType,
+    location: bundleLocation(source),
+    excerpt,
+    notes
+  };
 }
