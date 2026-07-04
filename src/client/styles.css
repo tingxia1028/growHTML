@@ -1526,13 +1526,26 @@ button {
   flex: 0 0 auto;
 }
 
-.layer-color-input {
+.layer-color-input,
+.layer-paint-input {
   width: 22px;
   height: 22px;
   padding: 0;
   border: 1px solid var(--sv-border-muted);
   border-radius: var(--sv-radius-xs);
   background: none;
+  cursor: pointer;
+}
+
+/* D3a: the per-layer highlight decoration picker, sized to match the color swatches. */
+.layer-deco-select {
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid var(--sv-border-muted);
+  border-radius: var(--sv-radius-xs);
+  background: var(--sv-surface);
+  color: var(--sv-text);
+  font-size: 11px;
   cursor: pointer;
 }
 

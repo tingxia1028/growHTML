@@ -989,7 +989,17 @@ export const entityClient = {
   },
   /** Toggle a layer on/off (enabled — reused as the filter include/exclude), rename it,
       or set its presentation fields (color/order) for the layer manager. */
-  patchLayer(layerId: string, input: { enabled?: boolean; title?: string; color?: string; order?: number }) {
+  patchLayer(
+    layerId: string,
+    input: {
+      enabled?: boolean;
+      title?: string;
+      color?: string;
+      order?: number;
+      // D3a: the per-layer paint style (highlight color + decoration shape).
+      style?: { decoration?: "highlight" | "underline" | "both"; color?: string };
+    }
+  ) {
     return sendJson<{ layer: StudyLayerRecord }>("PATCH", `/api/layers/${layerId}`, input);
   },
   /** Create a user-defined ("custom") layer over a source — backs the manager. */

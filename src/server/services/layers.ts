@@ -29,15 +29,19 @@ export const updateLayerRequestSchema = z
     enabled: z.boolean().optional(),
     title: z.string().min(1).optional(),
     color: z.string().min(1).optional(),
-    order: z.number().optional()
+    order: z.number().optional(),
+    // D3a (note-presentation-unified §D3): per-layer PAINT style (highlight color +
+    // decoration). Reuses the core studyLayer style shape so the round-trip is one type.
+    style: studyLayerSchema.shape.style
   })
   .refine(
     (input) =>
       input.enabled !== undefined ||
       input.title !== undefined ||
       input.color !== undefined ||
-      input.order !== undefined,
-    { message: "layer update requires enabled, title, color, or order" }
+      input.order !== undefined ||
+      input.style !== undefined,
+    { message: "layer update requires enabled, title, color, order, or style" }
   );
 export type UpdateLayerInput = z.infer<typeof updateLayerRequestSchema>;
 
@@ -105,6 +109,9 @@ export async function updateLayer(
     title: input.title ?? existing.title,
     color: input.color ?? existing.color,
     order: input.order ?? existing.order,
+    // D3a: patch the paint style (undefined = keep existing — this construction does NOT
+    // spread `input`, so the field must be carried explicitly).
+    style: input.style ?? existing.style,
     updatedAt: new Date().toISOString()
   });
   await vault.stores.layers.upsert(layer);

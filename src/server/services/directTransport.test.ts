@@ -214,6 +214,11 @@ describe("direct transport acceptance — entityClient with no HTTP", () => {
     expect(patched.enabled).toBe(false);
     expect((await entityClient.notes(source.id)).notes).toEqual([]); // lens filter applies
     await entityClient.patchLayer(owned!.id, { enabled: true });
+    // D3a: a STYLE-ONLY patch round-trips (must not 400 on the refine guard) and persists.
+    const { layer: styled } = await entityClient.patchLayer(owned!.id, {
+      style: { color: "#ff0000", decoration: "underline" }
+    });
+    expect(styled.style).toEqual({ color: "#ff0000", decoration: "underline" });
     await expect(entityClient.deleteNote(note.id)).resolves.toEqual({ ok: true });
     await expect(entityClient.deleteSource(source.id)).resolves.toEqual({ ok: true });
     expect((await entityClient.sources()).sources).toEqual([]);

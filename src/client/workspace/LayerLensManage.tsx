@@ -61,6 +61,23 @@ export function LayerLensManage({ ctx }: { ctx: WorkspaceContext }) {
     [refreshLayers]
   );
 
+  // D3a (note-presentation-unified §D3): set the layer's PAINT style (highlight color +
+  // decoration). Mirrors recolorLayer but writes `style` — the distinct axis from the UI
+  // chip `color` above. refreshLayers repaints via the [sourceLayers] dep. Merges onto the
+  // existing style so setting the color keeps the decoration and vice-versa.
+  const restyleLayer = useCallback(
+    async (layer: StudyLayerRecord, patch: { color?: string; decoration?: "highlight" | "underline" | "both" }) => {
+      setError("");
+      try {
+        await entityClient.patchLayer(layer.id, { style: { ...layer.style, ...patch } });
+        refreshLayers();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to restyle layer");
+      }
+    },
+    [refreshLayers]
+  );
+
   const reorderLayer = useCallback(
     async (layer: StudyLayerRecord, delta: number) => {
       setError("");
@@ -168,6 +185,31 @@ export function LayerLensManage({ ctx }: { ctx: WorkspaceContext }) {
                   value={layer.color ?? "#2f6f64"}
                   onChange={(event) => void recolorLayer(layer, event.target.value)}
                 />
+                {/* D3a: the layer's PAINT color (what its anchors highlight with) + the
+                    decoration shape. Distinct from the chip color above. */}
+                <input
+                  type="color"
+                  className="layer-paint-input"
+                  aria-label="Highlight color"
+                  title="Highlight color for this layer's anchors"
+                  value={layer.style?.color ?? layer.color ?? "#3474e6"}
+                  onChange={(event) => void restyleLayer(layer, { color: event.target.value })}
+                />
+                <select
+                  className="layer-deco-select"
+                  aria-label="Highlight style"
+                  title="Highlight decoration for this layer's anchors"
+                  value={layer.style?.decoration ?? "both"}
+                  onChange={(event) =>
+                    void restyleLayer(layer, {
+                      decoration: event.target.value as "highlight" | "underline" | "both"
+                    })
+                  }
+                >
+                  <option value="highlight">Highlight</option>
+                  <option value="underline">Underline</option>
+                  <option value="both">Both</option>
+                </select>
                 <button
                   type="button"
                   className="link-button layer-rename-btn"
