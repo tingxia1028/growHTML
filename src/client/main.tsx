@@ -17,6 +17,9 @@ import "./styles.css";
 // BEFORE React mounts. Because styles.css holds the default tokens at :root, any flash is
 // bounded to default->chosen, never unstyled->styled. See docs/design/theme-plugin.md §5.
 import "./theme/builtins";
+// PRO-1 proactive learning: register the CODE-registered built-in triggers (the review-push
+// exemplar) once at startup — the proactive tick (started in WorkspaceShell) evaluates them.
+import "./triggers/builtins";
 import { injectThemeStyles, setActiveTheme, readPersistedThemeId } from "./theme/applyTheme";
 
 injectThemeStyles();
