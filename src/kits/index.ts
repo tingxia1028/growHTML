@@ -15,6 +15,7 @@ import { subjectPrompts } from "./subject/prompts";
 import { subjectDetectionTables } from "./subject/detection";
 import { teachbackContentSpecs } from "./teachback/contentTypes";
 import { teachbackPrompts } from "./teachback/prompts";
+import { mistakePhotoPrompts } from "./mistake-photo/prompts";
 
 // REV-CORE: the review loop is CORE now — its grade spec registers with the core
 // built-ins (src/core/review/contentTypes) and its prompts seed the prompt registry
@@ -25,7 +26,14 @@ export const kitContentSpecs: NoteContentSpec[] = [
   // PRO-2 teach-back kit: teachback.summary + teachback.turn (server validates them).
   ...teachbackContentSpecs
 ];
-export const kitPrompts: KitPrompt[] = [...textbookPrompts, ...subjectPrompts, ...teachbackPrompts];
+export const kitPrompts: KitPrompt[] = [
+  ...textbookPrompts,
+  ...subjectPrompts,
+  ...teachbackPrompts,
+  // V-2 拍错题 kit: the VLM extract prompt (mistake-photo.extract → core `mistake`). The
+  // kit registers NO content spec (mistake is CORE); only this prompt joins the registry.
+  ...mistakePhotoPrompts
+];
 export const kitLayerPolicies: KitLayerPolicy[] = [textbookLayerPolicy];
 // Subject Auto-Switch tables (M-A) — one per kit; M-B adds 英语/数学/史地, M-C adds
 // 语文/理化生 (subject-kits.md §3.3). All five ride `subjectDetectionTables`.
