@@ -796,3 +796,11 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 | 2026-07-05 | V1-001 | ChatMessageBody render | array-content message renders text + an <img /api/assets/:id> thumbnail (no crash on array) | Passed |
 | 2026-07-05 | V1-001 | e2e/vision-chat.spec.ts (mock) | 附加 fixture PNG → send → reply "Saw 1 image." + thumbnail visible | Passed |
 | 2026-07-05 | V1-001 | e2e/agent-tools.spec.ts (A4b regression) | mock-agent=vision:true does NOT break the A4b agent tool-card e2e | Passed |
+| 2026-07-05 | V2-001 | structured seam images | a kit request WITH an image → the built structured message carries an image part (capture-the-wire); text-only kit request → a BARE STRING message (byte-identical, no array wrap) | Passed |
+| 2026-07-05 | V2-001 | generateKitContent gate | mock(vision:true)+image → sample-echoed content, image reached provider; vision:false+image → VisionUnsupportedError 400, provider never called; text-only+no-image → untouched no-op (no gate) | Passed |
+| 2026-07-05 | V2-001 | resolver delegation (regression) | resolveVisionRequest delegates to resolveImageParts; chat path app.test.ts "Saw 1 image." + vision:false 400 (both /api/chat + /stream) stay byte-green; both VisionUnsupportedError strings preserved | Passed |
+| 2026-07-05 | V2-001 | text-kit regression | ai.test.ts REV-2/ACTION-2a capturingProvider .startsWith/.toContain (reads .content as string) unbroken by the conditional branch | Passed (95/95) |
+| 2026-07-05 | V2-001 | extractMistake prompt | build() names the mistake fields + reads the 照片 (no double-brace images); mockContent parses against mistakeSpec.schema (question/wrongAnswer/correctAnswer required) | Passed |
+| 2026-07-05 | V2-001 | kit register | mistake-photo kit installs; the core mistake note renders; capture command registers + available; kitPrompts resolves mistake-photo.extract | Passed |
+| 2026-07-05 | V2-001 | capture UI + gate | pick a photo → dispatches capture with an image ref; on vision:false active provider the 拍错题 affordance stays visible (degrade-not-disappear) | Passed |
+| 2026-07-05 | V2-001 | e2e/mistake-photo.spec.ts (mock) | 附加 fixture 照片 → capture → the extracted mistake draft previews (.tb-mistake) → Save → a rendered mistake card (.tb-mistake-preview) | Passed |
