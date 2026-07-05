@@ -314,6 +314,102 @@ describe("已安装 (manage) tab — kit cards", () => {
   });
 });
 
+describe("+ New kit composer (M2c — §8.5.4)", () => {
+  it("opens the composer, lists pickable member plugins from the read model (not core)", async () => {
+    catalogFixture();
+    wireInstallState({ installedPlugins: [], installedKits: ["kit-a"] });
+    const { container, cleanup } = await renderPanel(ctxWith({}));
+
+    await click(container.querySelector(".new-kit-open-btn"));
+    expect(container.querySelector(".new-kit-composer")).toBeTruthy();
+    const memberIds = Array.from(container.querySelectorAll(".new-kit-member-check")).map((el) =>
+      el.getAttribute("data-member-id")
+    );
+    // m1/m2 have noteType contributions → pickable; "core" is excluded.
+    expect(memberIds).toContain("m1");
+    expect(memberIds).toContain("m2");
+    expect(memberIds).not.toContain("core");
+    expect(memberIds).not.toContain("kit-a"); // kit-a's only contribution is a layout
+    cleanup();
+  });
+
+  it("validates name + at least one member before creating", async () => {
+    catalogFixture();
+    const { writes } = wireInstallState({ installedPlugins: [], installedKits: ["kit-a"] });
+    const { container, cleanup } = await renderPanel(ctxWith({}));
+
+    await click(container.querySelector(".new-kit-open-btn"));
+    // No name, no members → error, no write.
+    await click(container.querySelector(".new-kit-create-btn"));
+    expect(container.querySelector(".new-kit-error")!.textContent).toContain("请填写名称");
+    expect(writes).toHaveLength(0);
+    cleanup();
+  });
+
+  it("creating writes the userKits entry + installs it; members appear as groups in 已安装", async () => {
+    catalogFixture();
+    const { writes } = wireInstallState({ installedPlugins: [], installedKits: ["kit-a"] });
+    // Capture the userKits body too.
+    const userKitWrites: unknown[] = [];
+    vi.mocked(entityClient.putPluginCatalog).mockImplementation((body) => {
+      writes.push(body.catalogState);
+      userKitWrites.push(body.userKits);
+      syncInstallState({ catalogState: body.catalogState, userKits: (body.userKits as UserKitDef[]) ?? [] });
+      return Promise.resolve({
+        prefs: {
+          disabledContributions: [],
+          viewerAssociations: { byContentType: {}, byNoteId: {} },
+          userKits: (body.userKits as unknown[]) ?? [],
+          catalogState: body.catalogState
+        }
+      });
+    });
+    const { container, cleanup } = await renderPanel(ctxWith({}));
+
+    await click(container.querySelector(".new-kit-open-btn"));
+    const nameInput = container.querySelector(".new-kit-name-input") as HTMLInputElement;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!;
+      setter.call(nameInput, "考前冲刺");
+      nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click(container.querySelector('.new-kit-member-check[data-member-id="m1"]'));
+    await click(container.querySelector(".new-kit-create-btn"));
+
+    // A userKits entry was written, id "user:"-prefixed, with the picked member.
+    expect(userKitWrites).toHaveLength(1);
+    const written = (userKitWrites[0] as UserKitDef[])[0];
+    expect(written.id).toMatch(/^user:/);
+    expect(written.name).toBe("考前冲刺");
+    expect(written.members).toEqual(["m1"]);
+    // And the new kit id was installed.
+    expect((writes[0] as CatalogState).installedKits).toContain(written.id);
+
+    // It renders in 已安装 as a card whose member is an implicit group.
+    const card = container.querySelector(`.kit-card[data-kit-id="${written.id}"]`);
+    expect(card).toBeTruthy();
+    expect(card!.textContent).toContain("考前冲刺");
+    expect(card!.querySelector('.kit-group-row[data-group-id="m1"]')).toBeTruthy();
+    cleanup();
+  });
+
+  it("uninstalling a user kit drops it from 已安装", async () => {
+    catalogFixture();
+    const { writes } = wireInstallState(
+      { installedPlugins: [], installedKits: ["user:exam"] },
+      [{ id: "user:exam", name: "Exam Prep", members: ["m1"] }]
+    );
+    const { container, cleanup } = await renderPanel(ctxWith({}));
+    expect(container.querySelector('.kit-card[data-kit-id="user:exam"]')).toBeTruthy();
+
+    await click(container.querySelector('.kit-card[data-kit-id="user:exam"] .kit-uninstall-btn'));
+    await click(container.querySelector(".kit-removal-confirm-btn"));
+    expect((writes[0] as CatalogState).installedKits).toEqual([]);
+    expect(container.querySelector('.kit-card[data-kit-id="user:exam"]')).toBeNull();
+    cleanup();
+  });
+});
+
 describe("市场 (browse) tab — kits only", () => {
   it("lists KIT cards only, badges installed kits, installs by kit id", async () => {
     catalogFixture();

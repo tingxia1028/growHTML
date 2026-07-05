@@ -160,3 +160,79 @@
   max-height: 220px;
   overflow: auto;
 }
+
+/* —— + New kit composer (M2c — plugin-viewer-model §8.5.4) ———————————————— */
+.new-kit-open-btn {
+  display: inline-block;
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.new-kit-composer {
+  border: 1px solid var(--border, #2a2f3a);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: var(--panel-2, rgba(255, 255, 255, 0.03));
+}
+.new-kit-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.new-kit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 8px;
+}
+.new-kit-label {
+  font-size: 11px;
+  opacity: 0.7;
+}
+.new-kit-name-input,
+.new-kit-desc-input {
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #2a2f3a);
+  background: var(--panel, rgba(0, 0, 0, 0.2));
+  color: inherit;
+  font-size: 13px;
+}
+.new-kit-members {
+  margin-bottom: 8px;
+}
+.new-kit-member-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+  max-height: 180px;
+  overflow: auto;
+}
+.new-kit-member-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.new-kit-error {
+  margin-bottom: 8px;
+}
+.new-kit-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.new-kit-create-btn {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--sv-border-muted, rgba(255, 255, 255, 0.18));
+  background: var(--sv-accent, #3b82f6);
+  color: #fff;
+}

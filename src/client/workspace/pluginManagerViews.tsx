@@ -84,6 +84,16 @@ const kitManagerMessages = defineMessages({
     zh: "示例笔记 — 由套件自己的渲染器绘制。",
     en: "Sample notes — drawn by the kit's own renderer."
   },
+  newKit: { zh: "+ 新建套件", en: "+ New kit" },
+  newKitTitle: { zh: "新建自定义套件", en: "New custom kit" },
+  kitNameLabel: { zh: "名称", en: "Name" },
+  kitNamePlaceholder: { zh: "例如:考前冲刺", en: "e.g. Exam Prep" },
+  kitDescLabel: { zh: "描述(可选)", en: "Description (optional)" },
+  pickMembers: { zh: "选择成员插件", en: "Pick member plugins" },
+  noPickableMembers: { zh: "没有可选的成员插件。", en: "No member plugins available to pick." },
+  createKit: { zh: "创建", en: "Create" },
+  nameRequired: { zh: "请填写名称。", en: "Please enter a name." },
+  membersRequired: { zh: "请至少选择一个成员。", en: "Pick at least one member." },
   viewerConflicts: { zh: "Viewer 冲突", en: "Viewer conflicts" },
   noViewerConflicts: { zh: "没有 Viewer 冲突。", en: "No viewer conflicts." },
   defaultNoteType: { zh: "默认（笔记类型）", en: "Default (note type)" },
@@ -142,12 +152,13 @@ function KitManagerView({ ctx }: { ctx: WorkspaceContext }) {
     };
   }, []);
 
-  // The ONE install-state write seam: persist the next catalogState, then re-read the
-  // synced module store (the response refreshed it) so this view re-renders on truth.
-  const persist = (next: CatalogState) => {
+  // The ONE install-state write seam: persist the next catalogState (+ optionally the
+  // userKits list, for the composer create/removal), then re-read the synced module store
+  // (the response refreshed it) so this view re-renders on truth.
+  const persist = (next: CatalogState, userKits?: readonly UserKitDef[]) => {
     setMarketError("");
     entityClient
-      .putPluginCatalog({ catalogState: next })
+      .putPluginCatalog(userKits ? { catalogState: next, userKits: [...userKits] } : { catalogState: next })
       .then(() => setSnapshot(installStateSnapshot()))
       .catch((err) => setMarketError(err instanceof Error ? err.message : t(kitManagerMessages.saveInstallFailed)));
   };
@@ -219,6 +230,138 @@ function KitManagerView({ ctx }: { ctx: WorkspaceContext }) {
   );
 }
 
+// —— + New kit composer (M2c — §8.5.4) ————————————————————————————————————————
+// A user kit = a named bundle of member plugin ids picked from THIS vault's installed
+// plugins (the read model — MH-0-safe; never a catalog import). Persisted as a userKits[]
+// entry (id = "user:<slug>") whose id also enters installedKits, so it installs/uninstalls
+// and refcounts exactly like a catalog kit (§8.3). Members surface as implicit capability
+// groups in 已安装 (kitGroupsFor treats a user kit's members as one-member groups).
+
+/** A stable-ish "user:"-prefixed id from a display name (+ a uniqueness suffix). */
+function userKitId(name: string, existing: readonly UserKitDef[]): string {
+  const slug =
+    name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 32) || "kit";
+  let id = `user:${slug}`;
+  let n = 2;
+  const taken = new Set(existing.map((k) => k.id));
+  while (taken.has(id)) id = `user:${slug}-${n++}`;
+  return id;
+}
+
+function NewKitComposer({
+  ctx,
+  snapshot,
+  persist
+}: {
+  ctx: WorkspaceContext;
+  snapshot: Snapshot;
+  persist(next: CatalogState, userKits?: readonly UserKitDef[]): void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [members, setMembers] = useState<string[]>([]);
+  const [error, setError] = useState("");
+
+  // Pickable members = installed plugins that contribute a note type (the meaningful
+  // capability units), de-duped by id — straight off the runtime read model (MH-0).
+  const pickable = useMemo(() => {
+    const seen = new Set<string>();
+    return ctx.installedPlugins
+      .filter((p) => p.id !== "core" && p.contributions.some((c) => c.kind === "noteType"))
+      .filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)));
+  }, [ctx.installedPlugins]);
+
+  const toggle = (id: string) =>
+    setMembers((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  const reset = () => {
+    setName("");
+    setDescription("");
+    setMembers([]);
+    setError("");
+    setOpen(false);
+  };
+
+  const create = () => {
+    if (!name.trim()) return setError(t(kitManagerMessages.nameRequired));
+    if (members.length === 0) return setError(t(kitManagerMessages.membersRequired));
+    const def: UserKitDef = {
+      id: userKitId(name, snapshot.userKits),
+      name: name.trim(),
+      description: description.trim() || undefined,
+      members
+    };
+    // Persist: add the def to userKits AND install it (its id enters installedKits).
+    persist(withKitInstalled(snapshot.catalogState, def.id), [...snapshot.userKits, def]);
+    reset();
+  };
+
+  if (!open) {
+    return (
+      <button type="button" className="new-kit-open-btn link-button" onClick={() => setOpen(true)}>
+        {t(kitManagerMessages.newKit)}
+      </button>
+    );
+  }
+
+  return (
+    <div className="new-kit-composer">
+      <div className="new-kit-title">{t(kitManagerMessages.newKitTitle)}</div>
+      <label className="new-kit-field">
+        <span className="new-kit-label">{t(kitManagerMessages.kitNameLabel)}</span>
+        <input
+          className="new-kit-name-input"
+          value={name}
+          placeholder={t(kitManagerMessages.kitNamePlaceholder)}
+          onChange={(e) => setName(e.target.value)}
+        />
+      </label>
+      <label className="new-kit-field">
+        <span className="new-kit-label">{t(kitManagerMessages.kitDescLabel)}</span>
+        <input className="new-kit-desc-input" value={description} onChange={(e) => setDescription(e.target.value)} />
+      </label>
+      <div className="new-kit-members">
+        <div className="new-kit-label">{t(kitManagerMessages.pickMembers)}</div>
+        {pickable.length === 0 ? (
+          <div className="empty-state">{t(kitManagerMessages.noPickableMembers)}</div>
+        ) : (
+          <ul className="new-kit-member-list">
+            {pickable.map((plugin) => (
+              <li key={plugin.id} className="new-kit-member-row">
+                <label>
+                  <input
+                    type="checkbox"
+                    className="new-kit-member-check"
+                    data-member-id={plugin.id}
+                    checked={members.includes(plugin.id)}
+                    onChange={() => toggle(plugin.id)}
+                  />
+                  {plugin.name}
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {error ? <div className="error-box new-kit-error">{error}</div> : null}
+      <div className="new-kit-actions">
+        <button type="button" className="new-kit-create-btn" onClick={create}>
+          {t(kitManagerMessages.createKit)}
+        </button>
+        <button type="button" className="link-button" onClick={reset}>
+          {t(kitManagerMessages.cancel)}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // —— 已安装 (manage): one card per installed kit ————————————————————————————————
 
 function InstalledKitsTab({
@@ -232,7 +375,7 @@ function InstalledKitsTab({
   snapshot: Snapshot;
   listings: CatalogListing[] | null;
   search: string;
-  persist(next: CatalogState): void;
+  persist(next: CatalogState, userKits?: readonly UserKitDef[]): void;
 }) {
   const locale = useLocale();
   const [confirmingKitId, setConfirmingKitId] = useState<string | null>(null);
@@ -273,6 +416,7 @@ function InstalledKitsTab({
 
   return (
     <div className="market-installed">
+      <NewKitComposer ctx={ctx} snapshot={snapshot} persist={persist} />
       <div className="plugin-manager-list record-list">
         {visibleCards.map((card) => {
           const isUserKit = snapshot.userKits.some((k) => k.id === card.kitId);
@@ -439,7 +583,7 @@ function MarketTab({
 }: {
   snapshot: Snapshot;
   listings: CatalogListing[] | null;
-  persist(next: CatalogState): void;
+  persist(next: CatalogState, userKits?: readonly UserKitDef[]): void;
 }) {
   const installedKitSet = new Set(snapshot.installedKitIds);
 
