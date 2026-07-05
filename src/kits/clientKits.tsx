@@ -6,6 +6,7 @@ import { installClientKits } from "./clientContext";
 import { textbookLearningKit } from "./textbook-learning";
 import { subjectKits } from "./subject";
 import { teachbackKit } from "./teachback";
+import { mistakePhotoKit } from "./mistake-photo";
 
 // The subject kits (M-B) register like every kit — types render everywhere — but are
 // NOT default-installed (catalog.ts): their create affordances light up on market install.
@@ -16,6 +17,9 @@ import { teachbackKit } from "./teachback";
 // uncataloged ids), so its note types render + its teachback.start command works day-one.
 // The runner PANEL self-registerViews (TeachbackPanel.tsx, shell-imported), not via the
 // dead `views` kit sink.
-export const productKits = [textbookLearningKit, ...subjectKits, teachbackKit];
+// V-2 拍错题 kit (vision-input.md §3): a register-only kit, UNCATALOGED (no market entry)
+// → always-available, so its `mistake-photo.capture` command works day-one. It registers
+// NO note type (the extracted card is the CORE `mistake` type) — only its capture command.
+export const productKits = [textbookLearningKit, ...subjectKits, teachbackKit, mistakePhotoKit];
 
 installClientKits(productKits);
