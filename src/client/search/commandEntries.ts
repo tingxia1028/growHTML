@@ -35,6 +35,9 @@ const NAV_COMMANDS: { kind: string; title: Message; aliases: string[]; modal?: b
   { kind: "operation.manager", title: searchMessages.cmdOperations, aliases: ["operations", "操作", "动作"], modal: true },
   { kind: "plugin.manager", title: searchMessages.cmdPlugins, aliases: ["kits", "plugins", "套件", "插件"], modal: true },
   { kind: "review.panel", title: searchMessages.cmdReview, aliases: ["review", "复习"] },
+  // PRO-2: 教回 runner. The palette list is STATIC in V1 (registry-derivation is deferred
+  // SEARCH-2), so the teachback.start launch needs THIS entry to surface in global search.
+  { kind: "teachback.panel", title: searchMessages.cmdTeachback, aliases: ["teachback", "teach-back", "教回", "费曼", "feynman"] },
   { kind: "profile.panel", title: searchMessages.cmdProfile, aliases: ["profile", "画像", "记忆"] },
   { kind: "settings.hub", title: searchMessages.cmdSettings, aliases: ["settings", "设置"], modal: true },
   { kind: "layer.switcher", title: searchMessages.cmdLayers, aliases: ["layers", "分层", "层"], modal: true },
