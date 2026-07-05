@@ -48,9 +48,16 @@ test("学习报告: generate → preview → edit a highlight → save → re-op
   await page.goto("/");
   await expect(page.locator(".library-panel")).toBeVisible();
 
-  // Baseline: no study-report notes yet.
-  const notesUrl = `${SERVER}/api/notes?contentType=study-report.report`;
-  const before = (await (await request.get(notesUrl)).json()).notes?.length ?? 0;
+  // Baseline: no study-report notes yet. NOTE: the server's GET /api/notes honors
+  // conceptId/anchorId/sourceId only — NOT contentType — so filter to study-report.report
+  // CLIENT-SIDE, exactly as the report.list view does (allNotes() + a client filter). This
+  // keeps the reachability read robust when the shared e2e vault also holds other specs' notes.
+  const reportNotes = async () =>
+    (((await (await request.get(`${SERVER}/api/notes`)).json()).notes ?? []) as {
+      contentType: string;
+      sourceId?: string;
+    }[]).filter((n) => n.contentType === "study-report.report");
+  const before = (await reportNotes()).length;
 
   // Launch the report.list pane from the STATIC NAV_COMMANDS entry (no rail icon — the
   // teachback launch precedent).
@@ -76,13 +83,13 @@ test("学习报告: generate → preview → edit a highlight → save → re-op
   await preview.locator(".gen-preview-save").click();
   await expect(preview).toHaveCount(0);
 
-  // The source-less report persisted (GET /api/notes lists it — the reachability read).
-  await expect
-    .poll(async () => (await (await request.get(notesUrl)).json()).notes?.length ?? 0, { timeout: 15_000 })
-    .toBe(before + 1);
-  // …with NO sourceId (vault-level) — the delta-1 invariant.
-  const saved = (await (await request.get(notesUrl)).json()).notes[0] as { sourceId?: string };
-  expect(saved.sourceId ?? null).toBeNull();
+  // The source-less report persisted (listed among the vault's notes — the reachability read).
+  await expect.poll(async () => (await reportNotes()).length, { timeout: 15_000 }).toBe(before + 1);
+  // …with NO sourceId (vault-level) — the delta-1 invariant. Every study-report.report note is
+  // source-less (the view only ever creates them via createNote with no sourceId).
+  for (const saved of await reportNotes()) {
+    expect(saved.sourceId ?? null).toBeNull();
+  }
 
   // The report now LISTS in its home (the view reloaded in-place after Save) with the edited
   // highlight intact. THIS is the blocker fix: a source-less report is reachable after save.
