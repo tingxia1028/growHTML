@@ -205,11 +205,22 @@ describe("study-report.open + report.list view (delta 1 — reachability)", () =
     container.remove();
   });
 
-  it("the generate button dispatches study-report.generate", async () => {
+  it("the generate button previews then Save persists a SOURCE-LESS report (ungated path)", async () => {
+    // Empty vault + a lying-but-valid AI report (stats overwritten by delta-3 anyway).
     vi.spyOn(entityClient, "allNotes").mockResolvedValue({ notes: [] });
-    const dispatch = vi.fn(async () => {});
+    vi.spyOn(entityClient, "memoryDigests").mockResolvedValue({ digests: [] } as never);
+    vi.spyOn(entityClient, "memoryProfile").mockResolvedValue({ facts: [] } as never);
+    vi.spyOn(entityClient, "generateStructured").mockResolvedValue({
+      content: generateReportPrompt.mockContent!({}),
+      contentType: STUDY_REPORT_CONTENT_TYPE,
+      provider: "mock"
+    } as never);
+    const createNote = vi
+      .spyOn(entityClient, "createNote")
+      .mockResolvedValue({ note: { id: "n_new", contentType: STUDY_REPORT_CONTENT_TYPE } } as never);
+
     const plugin = getView("report.list")!;
-    const ctx = { dispatch } as unknown as WorkspaceContext;
+    const ctx = { dispatch: vi.fn(async () => {}) } as unknown as WorkspaceContext;
     const node = { id: "reports", kind: "report.list" } as WorkspaceNode;
 
     const container = document.createElement("div");
@@ -218,8 +229,21 @@ describe("study-report.open + report.list view (delta 1 — reachability)", () =
     act(() => root.render(<>{plugin.render(node, ctx) as ReactNode}</> as ReactElement));
     await act(async () => {});
 
-    act(() => (container.querySelector(".study-report-generate-btn") as HTMLButtonElement).click());
-    expect(dispatch).toHaveBeenCalledWith("study-report.generate", {});
+    // Generate → the inline preview shows the report card.
+    await act(async () => {
+      (container.querySelector(".study-report-generate-btn") as HTMLButtonElement).click();
+    });
+    expect(container.querySelector(".study-report-preview .sr-report")).toBeTruthy();
+
+    // Save → a SOURCE-LESS createNote (anchorIds:[], NO sourceId key) with the report type.
+    await act(async () => {
+      (container.querySelector(".gen-preview-save") as HTMLButtonElement).click();
+    });
+    expect(createNote).toHaveBeenCalledOnce();
+    const arg = createNote.mock.calls[0][0] as { sourceId?: string; anchorIds: string[]; contentType: string };
+    expect(arg.contentType).toBe(STUDY_REPORT_CONTENT_TYPE);
+    expect(arg.anchorIds).toEqual([]);
+    expect(arg.sourceId).toBeUndefined(); // vault-level: source-less
 
     act(() => root.unmount());
     container.remove();

@@ -36,6 +36,54 @@ async function readMemory(): Promise<{ digestRows: MemoryDigestRow[]; profileFac
   };
 }
 
+/** The `generateStructured` client seam both the command and the view drive. */
+type GenerateStructuredFn = CommandContext["client"]["generateStructured"];
+
+export type GeneratedStudyReport = {
+  /** The prompt input (the assembled report under `report`) — kept for the draft/regenerate. */
+  input: Record<string, unknown>;
+  /** The FINAL content: deterministic stats/period/weakAreas re-merged over the AI prose. */
+  content: StudyReportContent;
+  /** CG-2 suggested concept names (absent = none). */
+  concepts?: string[];
+};
+
+/**
+ * The shared body: read the shipped memory endpoints → assemble DETERMINISTICALLY → run the
+ * structured seam for the prose → RE-MERGE the deterministic stats + period OVER the AI
+ * output (delta 3). The AI owns ONLY summary/highlights/nextSteps; a schema-valid-but-wrong
+ * AI number can never survive this. Used by BOTH the command (onGenerated preview) and the
+ * report.list view (its own source-less save loop — see the delta-1 deviation note).
+ */
+export async function generateStudyReport(generateStructured: GenerateStructuredFn): Promise<GeneratedStudyReport> {
+  const { digestRows, profileFacts } = await readMemory();
+  // Deterministic assembly (本周). The clock is the ONLY impurity, injected here.
+  const computed = assembleReportInput({ digestRows, profileFacts, period: "week", now: Date.now() });
+  const input = { report: computed as unknown as Record<string, unknown> };
+
+  // Structured seam: the AI writes prose against the report schema. Under the mock it
+  // echoes computed verbatim (deterministic).
+  const { content, concepts } = await generateStructured({
+    promptId: STUDY_REPORT_GENERATE_PROMPT,
+    contentType: STUDY_REPORT_CONTENT_TYPE,
+    input
+  });
+
+  // DELTA 3 — re-merge the deterministic stats + period OVER the AI output. reviewsDone is
+  // pinned to attempts (pass+fail).
+  const ai = (content ?? {}) as Partial<StudyReportContent>;
+  const merged: StudyReportContent = {
+    period: computed.period,
+    stats: computed.stats,
+    weakAreas: computed.weakAreas,
+    highlights: Array.isArray(ai.highlights) ? ai.highlights.map(String) : computed.highlights,
+    nextSteps: Array.isArray(ai.nextSteps) ? ai.nextSteps.map(String) : computed.nextSteps,
+    summary: typeof ai.summary === "string" ? ai.summary : computed.summary
+  };
+
+  return { input, content: merged, ...(concepts && concepts.length > 0 ? { concepts } : {}) };
+}
+
 export const generateStudyReportCommand: Command = {
   id: "study-report.generate",
   title: { zh: "生成学习报告", en: "Generate Study Report" },
@@ -43,39 +91,17 @@ export const generateStudyReportCommand: Command = {
   // Always runnable — a vault-level report needs no passage/source.
   isAvailable: () => true,
   run: async (ctx: CommandContext) => {
-    const { digestRows, profileFacts } = await readMemory();
-    // Deterministic assembly (本周). The clock is the ONLY impurity, injected here.
-    const computed = assembleReportInput({ digestRows, profileFacts, period: "week", now: Date.now() });
-    const input = { report: computed as unknown as Record<string, unknown> };
-
-    // Structured seam: the AI writes prose against the report schema. Under the mock it
-    // echoes computed verbatim (deterministic).
-    const { content, concepts } = await ctx.client.generateStructured({
-      promptId: STUDY_REPORT_GENERATE_PROMPT,
-      contentType: STUDY_REPORT_CONTENT_TYPE,
-      input
-    });
-
-    // DELTA 3 — re-merge the deterministic stats + period OVER the AI output. The AI owns
-    // ONLY prose; a wrong AI stat can never reach Save. reviewsDone is pinned to attempts.
-    const ai = (content ?? {}) as Partial<StudyReportContent>;
-    const merged: StudyReportContent = {
-      period: computed.period,
-      stats: computed.stats,
-      weakAreas: computed.weakAreas,
-      highlights: Array.isArray(ai.highlights) ? ai.highlights.map(String) : computed.highlights,
-      nextSteps: Array.isArray(ai.nextSteps) ? ai.nextSteps.map(String) : computed.nextSteps,
-      summary: typeof ai.summary === "string" ? ai.summary : computed.summary
-    };
-
-    // SOURCE-LESS draft (vault-level): anchorId + sourceId undefined → Save parks then
-    // anchor.add-note anchorIds:[] persists it unanchored (the review-pack precedent, but
-    // with NO source). The report.list view surfaces it.
+    const { input, content, concepts } = await generateStudyReport(ctx.client.generateStructured);
+    // SOURCE-LESS draft (vault-level): anchorId + sourceId undefined. This drives the
+    // SHELL's preview loop for callers that DO have a source/focus in context (the shipped
+    // FloatingNoteEditor Save rides anchor.add-note). The report.list view drives its OWN
+    // source-less save instead (that command's Save gate needs a source/focus — the delta-1
+    // deviation), so a vault-level report is reachable even with no source open.
     ctx.actions.onGenerated?.({
       promptId: STUDY_REPORT_GENERATE_PROMPT,
       contentType: STUDY_REPORT_CONTENT_TYPE,
       input,
-      content: merged,
+      content,
       anchorId: undefined,
       sourceId: undefined,
       ...(concepts && concepts.length > 0 ? { concepts } : {})

@@ -4,18 +4,28 @@
 // for its side effect) is the report's HOME: it lists every study-report.report note across
 // the vault via entityClient.allNotes() (the 错题本 cross-source idiom, filtered to the
 // report type), newest-first, each rendered through getNoteType("study-report.report")
-// .render — the ONE adaptive-note contract. A 生成学习报告 button dispatches the generate
-// command (→ the shipped preview→edit→Save loop); Save lands here, so the loop closes.
+// .render — the ONE adaptive-note contract.
 //
-// IRON LAW: it talks only through the shared WorkspaceContext (dispatch) + the registries.
+// DEVIATION (delta 1, noted): the shell's shipped preview→Save loop (FloatingNoteEditor →
+// savePendingDraft → anchor.add-note) GATES on ctx.sourceId || focus (registry.ts:418), so a
+// truly SOURCE-LESS vault-level report can't save through it when no source is open. To
+// preserve source-less + reachability + the adaptive-note render + user-edit-before-save,
+// this view owns its OWN preview loop: generateStudyReport() → an inline preview (the SAME
+// .generation-preview / .gen-preview-* contract + getNoteType render/edit) → Save via
+// entityClient.createNote({ anchorIds: [] }) (source-less, ungated). Register-only kit code;
+// no core edit. The study-report.generate COMMAND (delta-3 re-merge) stays registered for
+// callers that DO have a source in context + global reachability.
+//
+// IRON LAW: it talks only through entityClient + the registries (the mistakeBookView idiom).
 // Registered as kind "report.list".
 
-import { useEffect, useState } from "react";
-import { FileText, Sparkles } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { FileText, Sparkles, X } from "lucide-react";
 import { getNoteType } from "../../client/notes/noteTypeRegistry";
 import { entityClient, type NoteRecord } from "../../client/data/entityClient";
 import { registerView, type WorkspaceContext } from "../../client/workspace/viewRegistry";
 import { STUDY_REPORT_CONTENT_TYPE } from "./contentTypes";
+import { generateStudyReport } from "./commands";
 import "./studyReport.css";
 
 /** createdAt is on the wire (server envelope) even though the client NoteRecord type omits
@@ -25,14 +35,17 @@ function createdAtOf(note: NoteRecord): string {
   return typeof c === "string" ? c : "";
 }
 
-export function ReportListView({ ctx }: { ctx: WorkspaceContext }) {
-  const { dispatch } = ctx;
+export function ReportListView(_props: { ctx: WorkspaceContext }) {
   const [notes, setNotes] = useState<NoteRecord[] | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  // The view-owned preview draft (source-less). Null = list mode.
+  const [draft, setDraft] = useState<unknown>(null);
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
   // Cross-source read (the review panel's 全库 edge, the 错题本 idiom). Degrade to [] on
-  // failure — an empty list is honest; it never breaks the shell. Re-runs on reloadKey so
-  // a just-saved report appears without a manual refresh.
+  // failure. Re-runs on reloadKey so a just-saved report appears without a manual refresh.
   useEffect(() => {
     let live = true;
     void entityClient
@@ -55,12 +68,43 @@ export function ReportListView({ ctx }: { ctx: WorkspaceContext }) {
 
   const plugin = getNoteType(STUDY_REPORT_CONTENT_TYPE);
 
-  const generate = () => {
-    // Fire the generate command → the shell's onGenerated drives the preview→Save loop.
-    // Bump reloadKey so the list re-reads once the user saves (an eventual refresh; the
-    // e2e also re-navigates, which remounts fresh).
-    void dispatch("study-report.generate", {}).then(() => setReloadKey((k) => k + 1));
-  };
+  // Generate → hold the deterministic (delta-3 re-merged) content in the inline preview.
+  const generate = useCallback(async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const { content } = await generateStudyReport(entityClient.generateStructured);
+      setDraft(content);
+      setEditing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "生成失败");
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  // Save the (possibly edited) draft as a SOURCE-LESS note (anchorIds:[], no sourceId), then
+  // reload the list so it appears. This is the ungated source-less path (see the deviation).
+  const save = useCallback(async () => {
+    if (draft === null) return;
+    setBusy(true);
+    setError("");
+    try {
+      await entityClient.createNote({ anchorIds: [], contentType: STUDY_REPORT_CONTENT_TYPE, content: draft });
+      setDraft(null);
+      setEditing(false);
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "保存失败");
+    } finally {
+      setBusy(false);
+    }
+  }, [draft]);
+
+  const discard = useCallback(() => {
+    setDraft(null);
+    setEditing(false);
+  }, []);
 
   return (
     <aside className="study-report-list">
@@ -70,11 +114,45 @@ export function ReportListView({ ctx }: { ctx: WorkspaceContext }) {
       </div>
 
       <div className="study-report-toolbar">
-        <button type="button" className="study-report-generate-btn" onClick={generate}>
+        <button type="button" className="study-report-generate-btn" onClick={() => void generate()} disabled={busy || draft !== null}>
           <Sparkles size={13} />
-          生成学习报告
+          {busy && draft === null ? "生成中…" : "生成学习报告"}
         </button>
       </div>
+
+      {error ? <div className="study-report-error">{error}</div> : null}
+
+      {/* Inline preview (the FloatingNoteEditor contract, view-owned so source-less Save is
+          ungated). Edit toggles the type's registry editor; Save persists source-less. */}
+      {draft !== null ? (
+        <div className="study-report-preview generation-preview" role="dialog" aria-label="study-report draft" data-content-type={STUDY_REPORT_CONTENT_TYPE}>
+          <div className="generation-preview-head">
+            <span className="generation-preview-label">Preview</span>
+            <span className="generation-preview-type">{STUDY_REPORT_CONTENT_TYPE}</span>
+            <button type="button" className="floating-note-editor-close" aria-label="Discard draft" onClick={discard}>
+              <X size={14} />
+            </button>
+          </div>
+          <div className="generation-preview-body">
+            {plugin
+              ? editing
+                ? plugin.edit!({ content: draft, onChange: setDraft })
+                : plugin.render({ content: draft })
+              : null}
+          </div>
+          <div className="generation-preview-actions">
+            <button type="button" className="gen-preview-save" onClick={() => void save()} disabled={busy}>
+              Save
+            </button>
+            <button type="button" className="gen-preview-edit" onClick={() => setEditing((v) => !v)} disabled={!plugin}>
+              {editing ? "Done editing" : "Edit"}
+            </button>
+            <button type="button" className="gen-preview-discard" onClick={discard} disabled={busy}>
+              Discard
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="study-report-list-body record-list">
         {reports.map((note) => (
@@ -82,7 +160,7 @@ export function ReportListView({ ctx }: { ctx: WorkspaceContext }) {
             {plugin ? plugin.render({ content: note.content, note }) : null}
           </div>
         ))}
-        {notes !== null && reports.length === 0 ? (
+        {notes !== null && reports.length === 0 && draft === null ? (
           <div className="study-report-empty">还没有学习报告。点“生成学习报告”,把这段时间的学习总结成一份报告。</div>
         ) : null}
       </div>
