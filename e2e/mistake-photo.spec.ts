@@ -2,7 +2,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 // Canonical zh/en dict for the W1 chat-session switcher (self-updating selectors).
 import { chatSessionMessages } from "../src/client/chat/chatSessionMessages";
 import { SERVER } from "./harness";
-import { openNotesTab, openRailPane } from "./helpers";
+import { openNotesTab } from "./helpers";
 
 // V-2 (vision-input.md §3) — the 拍错题 killer flow, end to end in web mode against the
 // offline mock (mock-agent DELEGATES to the vision mock, so it accepts image input and its
@@ -33,6 +33,22 @@ async function openSource(page: Page, title: string) {
 async function startFreshConversation(page: Page) {
   await page.getByRole("button", { name: chatSessionMessages.menuLabel.zh, exact: true }).click();
   await page.locator(".panel-menu-popover .chat-session-new").click();
+}
+
+// Open the 错题本 (mistake.book) lens via the global-search palette (Ctrl+K). 错题本 is a
+// register-only KIT lens (folded into the mistake-photo kit) — it left the IconRail in
+// 40afa3f, so its launch is the CORE commandEntries.ts NAV entry (`open:mistake.book`),
+// exactly the way study-report.spec opens report.list via search (the STATIC NAV_COMMANDS
+// row). No kit `open` command exists (the palette enumerates NAV_COMMANDS only).
+async function openMistakeBookViaSearch(page: Page) {
+  await page.locator(".library-panel").click();
+  await page.keyboard.press("Control+k");
+  await expect(page.locator(".global-search-input")).toBeVisible();
+  await page.locator(".global-search-input").fill("错题本");
+  const row = page.locator('.global-search-row[data-row-id="open:mistake.book"]');
+  await expect(row).toBeVisible();
+  await row.dispatchEvent("mousedown");
+  await expect(page.locator(".mistake-book")).toBeVisible();
 }
 
 test("拍照错题 → VLM 抽取 → 预览 → 存错题本 (deterministic mock)", async ({ page, request }) => {
@@ -87,9 +103,11 @@ test("拍照错题 → VLM 抽取 → 预览 → 存错题本 (deterministic moc
   await expect(mistakeCard).toBeVisible({ timeout: 15_000 });
   await expect(mistakeCard).toContainText("1/2 + 1/3");
 
-  // 错题本 → 复习错题 loop closure: open the 错题本 rail pane (cross-source browse). The saved
-  // mistake lists there (the FULL tb-mistake card + its mastery badge) — no schedule row yet.
-  await openRailPane(page, "错题本", ".mistake-book");
+  // 错题本 → 复习错题 loop closure: open the 错题本 lens (cross-source browse) via Cmd+K global
+  // search — it left the rail in 40afa3f (register-only KIT lens; the launch is the CORE
+  // commandEntries NAV entry). The saved mistake lists there (the FULL tb-mistake card + its
+  // mastery badge) — no schedule row yet.
+  await openMistakeBookViaSearch(page);
   const bookItem = page.locator(".mistake-book-item").filter({ hasText: "1/2 + 1/3" }).first();
   await expect(bookItem).toBeVisible({ timeout: 15_000 });
   await expect(bookItem.locator(".tb-mistake")).toBeVisible();

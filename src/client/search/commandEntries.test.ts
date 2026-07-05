@@ -1,9 +1,11 @@
 // commandEntries (SEARCH-1) — the STATIC NAV_COMMANDS palette list. V1 derivation is a
-// plain function, so a focused unit test pins the launch entries a core view relies on to
+// plain function, so a focused unit test pins the launch entries a lens relies on to
 // surface in Cmd+K. mistake.book left the rail (SHELL-4 "rail 只留4项") and is now reached
-// ONLY through this palette entry (the report.list / bookmark.list core precedent — a CORE
-// view has no kit commands.ts, so its NAV_COMMANDS entry IS the full launch pattern). The
-// navigateShell edge is mocked (the reviewPush.test / teachback launch.test idiom).
+// ONLY through this palette entry. mistake.book / bookmark.list are register-only KIT
+// lenses (folded into the mistake-photo / bookmarks kits), but the palette enumerates
+// NAV_COMMANDS only (never kit commands), so their launch is this CORE NAV entry — the
+// kind-keyed NAV_COMMANDS entry IS the full launch pattern, view-location-agnostic (the
+// report.list precedent). The navigateShell edge is mocked (the reviewPush.test idiom).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const navigateShell = vi.hoisted(() => vi.fn(() => true));

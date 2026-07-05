@@ -35,9 +35,10 @@ const NAV_COMMANDS: { kind: string; title: Message; aliases: string[]; modal?: b
   { kind: "operation.manager", title: searchMessages.cmdOperations, aliases: ["operations", "操作", "动作"], modal: true },
   { kind: "plugin.manager", title: searchMessages.cmdPlugins, aliases: ["kits", "plugins", "套件", "插件"], modal: true },
   { kind: "review.panel", title: searchMessages.cmdReview, aliases: ["review", "复习"] },
-  // 错题本 (mistake.book): the CORE cross-source mistake browse/manage surface. It left the
-  // rail (SHELL-4 "rail 只留4项") but stays registered — the palette list is STATIC in V1, so
-  // the mistake.book.open launch needs THIS entry to surface in global search (report precedent).
+  // 错题本 (mistake.book): the cross-source mistake browse/manage LENS — a register-only KIT
+  // lens (folded into the mistake-photo kit). It left the rail (SHELL-4 "rail 只留4项"), and
+  // the palette enumerates NAV_COMMANDS only (never kit commands), so this kind-keyed CORE
+  // NAV entry IS its launch — no kit `open` command exists (it would be dead). Report precedent.
   { kind: "mistake.book", title: searchMessages.cmdMistakeBook, aliases: ["mistakes", "mistake book", "错题本", "错题"] },
   // PRO-2: 教回 runner. The palette list is STATIC in V1 (registry-derivation is deferred
   // SEARCH-2), so the teachback.start launch needs THIS entry to surface in global search.
