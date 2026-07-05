@@ -48,7 +48,7 @@ function asVocab(content: unknown): VocabContent {
   };
 }
 
-function VocabRender({ content, mode }: NoteRenderInput) {
+function VocabRender({ content, mode, ctx }: NoteRenderInput) {
   const c = asVocab(content);
   // CARD: front only (word + first definition) + the flip hint — the back stays for
   // the Center View, deliberately isomorphic to the built-in flashcard card (§1.4).
@@ -71,6 +71,7 @@ function VocabRender({ content, mode }: NoteRenderInput) {
     <div className="note-rendered sv-vocab sv-flashcard sv-flashcard-expanded">
       <FlipCard
         className="sv-vocab-flip"
+        initialFlipped={ctx?.initialFace === "back"}
         front={
           <section className="sv-flashcard-face sv-vocab-front">
             <span className="sv-flashcard-face-label">Front</span>

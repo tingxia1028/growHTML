@@ -239,7 +239,7 @@ function asFlashcard(content: unknown): Flashcard {
   const c = (content ?? {}) as Partial<Flashcard>;
   return { front: typeof c.front === "string" ? c.front : "", back: typeof c.back === "string" ? c.back : "" };
 }
-function FlashcardRender({ content, mode }: NoteRenderInput) {
+function FlashcardRender({ content, mode, ctx }: NoteRenderInput) {
   const card = asFlashcard(content);
   // "card" → the front summary + a muted hint; the BACK is never shown until the
   // Center View flips it (§10.3). "full" → the flip card (front + reveal-able back).
@@ -254,10 +254,12 @@ function FlashcardRender({ content, mode }: NoteRenderInput) {
   // FULL is INTERACTIVE (N4-D7): a flip card — the front shows until the user flips it,
   // then the back. One face at a time (the back is genuinely absent pre-flip), via the
   // shared <FlipCard>. Keeps the sv-flashcard-* classes so existing CSS still matches.
+  // The review reveal passes ctx.initialFace="back" → opens straight on the answer.
   return (
     <div className="note-rendered sv-flashcard sv-flashcard-expanded">
       <FlipCard
         className="sv-flashcard-flip"
+        initialFlipped={ctx?.initialFace === "back"}
         front={
           <section className="sv-flashcard-face">
             <span className="sv-flashcard-face-label">Front</span>

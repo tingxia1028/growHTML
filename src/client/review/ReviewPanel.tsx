@@ -27,7 +27,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BookOpenCheck } from "lucide-react";
 import { registerView, type WorkspaceContext } from "../workspace/viewRegistry";
 import { ArtifactCard } from "../workspace/ArtifactCard";
-import { getNoteType, type NoteRenderMode } from "../notes/noteTypeRegistry";
+import { getNoteType, type NoteRenderCtx, type NoteRenderMode } from "../notes/noteTypeRegistry";
 import { defineMessages, resolveText, t, useLocale, type Locale } from "../i18n";
 import { getNoteContentSpec, MISTAKE_CONTENT_TYPE, mistakeSpec } from "../../core/notes/contentTypes";
 import type { MemoryDimensionSummary } from "../../core/memory/digest";
@@ -201,10 +201,25 @@ function noteText(note: NoteRecord): string {
 
 // EVERY display goes through the registry contract; unknown types degrade to an
 // inert text block (they can't be review material, but must never crash the runner).
-function RenderContent({ contentType, content, note, mode }: { contentType: string; content: unknown; note?: NoteRecord; mode: NoteRenderMode }) {
+// `initialFace` is threaded through the render contract's ctx seam: the reveal surface
+// passes "back" so an interactive flip-card (flashcard/vocab full) opens straight on its
+// ANSWER face — 显示答案 lands on the answer, no second manual flip (N4-D7 wrinkle).
+function RenderContent({
+  contentType,
+  content,
+  note,
+  mode,
+  initialFace
+}: {
+  contentType: string;
+  content: unknown;
+  note?: NoteRecord;
+  mode: NoteRenderMode;
+  initialFace?: NoteRenderCtx["initialFace"];
+}) {
   const plugin = getNoteType(contentType);
   if (!plugin) return <div className="review-inert">{typeof content === "string" ? content : JSON.stringify(content)}</div>;
-  return <>{plugin.render({ content, note, mode })}</>;
+  return <>{plugin.render({ content, note, mode, ...(initialFace ? { ctx: { initialFace } } : {}) })}</>;
 }
 
 // Per-item runner state, reset on every advance.
@@ -535,6 +550,9 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
           content={item.note.content}
           note={item.note}
           mode={revealed ? "full" : "card"}
+          // 显示答案 lands on the ANSWER face directly (no second manual flip): the
+          // full render is the answer, so an interactive flip-card opens flipped.
+          initialFace={revealed ? "back" : undefined}
         />
       </div>
       {!revealed ? (

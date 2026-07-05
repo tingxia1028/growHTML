@@ -41,10 +41,20 @@ import type { NoteRecord } from "../data/entityClient";
 //     card for free without bypassing the registry.
 export type NoteRenderMode = "card" | "full";
 
+// An optional render context the HOST threads through render() (design §3.5 — a typed
+// escape hatch, not a new render path). Today its one field is `initialFace`: the review
+// reveal surface passes `"back"` so an interactive FlipCard (flashcard/vocab full) opens
+// straight on its ANSWER face — no second manual flip (N4-D7 wrinkle). It only seeds the
+// starting face; the card still flips freely. Absent (every non-review render) = front.
+export type NoteRenderCtx = {
+  /** The face an interactive flip-card should OPEN on. Absent = its natural front. */
+  initialFace?: "front" | "back";
+};
+
 export type NoteRenderInput = {
   content: unknown;
   note?: NoteRecord;
-  ctx?: unknown;
+  ctx?: NoteRenderCtx;
   /** "full" (default) = the complete interactive view; "card" = a compact preview. */
   mode?: NoteRenderMode;
 };

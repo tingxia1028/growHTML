@@ -18,16 +18,23 @@ import { useState, type KeyboardEvent, type ReactNode } from "react";
 // not a CSS 3D flip) so a test/reader never sees the back before the flip. `role=button`
 // + `aria-pressed` announce the toggle; `data-face` names the visible face. Used by the
 // flashcard + subject-vocab full renders.
+//
+// `initialFlipped` seeds the STARTING face (default front). The review reveal position
+// passes `initialFlipped` so "显示答案" lands straight on the ANSWER (back) face — no
+// second manual flip (N4-D7 known wrinkle). It only seeds the initial state; the card
+// still toggles freely afterward. Normal (non-review) renders omit it → start on front.
 export function FlipCard({
   front,
   back,
-  className
+  className,
+  initialFlipped = false
 }: {
   front: ReactNode;
   back: ReactNode;
   className?: string;
+  initialFlipped?: boolean;
 }) {
-  const [flipped, setFlipped] = useState(false);
+  const [flipped, setFlipped] = useState(initialFlipped);
   const toggle = () => setFlipped((f) => !f);
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {

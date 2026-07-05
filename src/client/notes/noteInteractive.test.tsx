@@ -46,6 +46,21 @@ describe("FlipCard", () => {
     expect(container.textContent).toContain("BACK");
     unmount();
   });
+
+  it("initialFlipped opens on the back face directly (the review reveal — no second flip)", () => {
+    const { container, unmount } = mount(
+      <FlipCard front={<span>FRONT</span>} back={<span>BACK</span>} initialFlipped />
+    );
+    const card = container.querySelector(".sv-flip") as HTMLElement;
+    expect(card.getAttribute("data-face")).toBe("back"); // answer face up front
+    expect(container.textContent).toContain("BACK");
+    expect(container.textContent).not.toContain("FRONT"); // front is the hidden face now
+    // Still freely toggleable — a click flips back to the question face.
+    act(() => card.click());
+    expect(card.getAttribute("data-face")).toBe("front");
+    expect(container.textContent).toContain("FRONT");
+    unmount();
+  });
 });
 
 describe("Reveal", () => {
