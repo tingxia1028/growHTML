@@ -5,7 +5,11 @@
 // its own result shape. Messages are part of the API contract (they become the
 // `{ error } ` body verbatim), so keep them byte-identical when refactoring.
 
-import { VisionUnsupportedError } from "../../ai";
+// NOTE: import the concrete module, NOT the "../../ai" barrel — the barrel re-exports
+// claudeCliProvider (node:child_process / node-pty), which would leak Node deps into every
+// file that imports this errors module (incl 8/12 directTransport services). provider.ts is
+// node-clean. This is the PLAT-LAYER §5.1 barrel-leak fix (prerequisite for the mobile guard).
+import { VisionUnsupportedError } from "../../ai/provider";
 
 /** Entity lookup failed → HTTP 404. */
 export class NotFoundError extends Error {
