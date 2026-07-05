@@ -206,3 +206,21 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* V-2 (拍错题): the photo→mistake capture affordance sits beside 附加图片, styled the
+   same. DEGRADE-NOT-DISAPPEAR — always visible; on a non-vision provider it dims to hint
+   the send will 400 (never hidden). */
+.chat-capture-mistake {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  color: var(--sv-text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.chat-capture-mistake[data-vision="off"] {
+  opacity: 0.6;
+}

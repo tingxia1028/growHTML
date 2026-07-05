@@ -11,6 +11,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  Camera,
   ChevronDown,
   ChevronRight,
   Copy,
@@ -479,6 +480,9 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
     pendingImages = [],
     attachImage,
     removePendingImage,
+    // V-2 (拍错题): default to a no-op so a partial test fixture doesn't crash the render.
+    captureMistakePhoto = async () => {},
+    visionAvailable = false,
     submitComposer,
     composerDisabled,
     addReplyAsNote,
@@ -806,6 +810,29 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 if (file) void attachImage(file);
+                event.target.value = ""; // allow re-picking the same file
+              }}
+            />
+          </label>
+          {/* V-2 (拍错题): pick a photo of a wrong problem → VLM extract → mistake preview.
+              DEGRADE-NOT-DISAPPEAR — visible on EVERY provider; the title HINTS when the
+              active provider can't see images (a non-vision send surfaces the clean 400
+              once). The current composer text rides as an optional hint. Desktop file-pick
+              only (camera = V-3). */}
+          <label
+            className="chat-capture-mistake"
+            title={visionAvailable ? "拍错题(照片抽取错题)" : "拍错题(当前 AI 不支持图片,发送会提示)"}
+            aria-label="Capture mistake photo"
+            data-vision={visionAvailable ? "on" : "off"}
+          >
+            <Camera size={16} />
+            <input
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void captureMistakePhoto(file, chatInput);
                 event.target.value = ""; // allow re-picking the same file
               }}
             />

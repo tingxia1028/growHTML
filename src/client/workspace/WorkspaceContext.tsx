@@ -172,7 +172,9 @@ const GENERATION_COMMAND_IDS = new Set<string>([
   "textbook.explain-concept",
   "textbook.generate-practice",
   "textbook.mark-as-mistake",
-  "textbook.generate-review-pack"
+  "textbook.generate-review-pack",
+  // V-2 拍错题: the photo→mistake extract is an AI structured generation (spinner + preview).
+  "mistake-photo.capture"
 ]);
 
 /** True for a command that triggers AI structured generation (drives `generating`). */
@@ -479,6 +481,16 @@ export type WorkspaceContextValue = {
   attachImage(file: File): Promise<void>;
   /** V-1: drop a staged pending image before sending. */
   removePendingImage(assetId: string): void;
+  /**
+   * V-2 (拍错题, vision-input.md §3): import a picked PHOTO and run the VLM extract → the
+   * extracted `mistake` draft parks in the generation preview (preview-then-Save). `hint`
+   * is optional user text folded into the prompt. Degrade-not-disappear on a non-vision
+   * provider (the clean 400 surfaces via `error`).
+   */
+  captureMistakePhoto(file: File, hint?: string): Promise<void>;
+  /** V-2: whether the ACTIVE provider advertises IMAGE input — a UI HINT only (the 拍错题
+      affordance stays visible regardless; a non-vision send surfaces the clean 400). */
+  visionAvailable: boolean;
   patchHtml: string;
   setPatchHtml(html: string): void;
   showTerminal: boolean;
@@ -803,6 +815,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // when true (a provider that lacks runAgent would 501).
   const [agentTurn, setAgentTurn] = useState<AgentTurnState | null>(null);
   const [agentAvailable, setAgentAvailable] = useState(false);
+  // V-2 (拍错题): a mount read of the ACTIVE provider's `vision` capability. The 拍错题
+  // capture affordance stays visible regardless (degrade-not-disappear); this flag only
+  // lets the UI HINT when a non-vision provider would surface the clean 400 on send.
+  const [visionAvailable, setVisionAvailable] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);
   const [patchHtml, setPatchHtml] = useState("");
   const [importUrl, setImportUrl] = useState("");
@@ -1305,9 +1321,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         const active = info.providers.find((provider) => provider.id === info.active.id);
         setAgentAvailable(active?.capabilities?.tools === true);
+        // V-2: the same readout feeds the 拍错题 vision hint (degrade-not-disappear).
+        setVisionAvailable(active?.capabilities?.vision === true);
       })
       .catch(() => {
-        if (!cancelled) setAgentAvailable(false);
+        if (!cancelled) {
+          setAgentAvailable(false);
+          setVisionAvailable(false);
+        }
       });
     return () => {
       cancelled = true;
@@ -1982,6 +2003,32 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setPendingImages((prev) => prev.filter((image) => image.assetId !== assetId));
   }, []);
 
+  // V-2 (拍错题, vision-input.md §3): import a picked PHOTO into the vault and dispatch the
+  // `mistake-photo.capture` command with the image REF as a SIBLING payload — the server
+  // runs the VLM extract prompt and the extracted `mistake` draft parks in the generation
+  // preview (preview-then-Save). Reuses the SAME importImageBase64 path as attachImage (zero
+  // new asset plumbing). DEGRADE-NOT-DISAPPEAR: on a non-vision provider the server surfaces
+  // the clean 400 once (setError), the affordance never hides. `hint` is optional user text.
+  const captureMistakePhoto = useCallback(
+    async (file: File, hint?: string) => {
+      try {
+        const dataBase64 = await fileToBase64(file);
+        const { assetId } = await entityClient.importImageBase64({
+          dataBase64,
+          mimeType: file.type || "image/png",
+          fileName: file.name
+        });
+        await dispatch("mistake-photo.capture", {
+          images: [{ type: "image", assetId, mimeType: file.type || "image/png" }],
+          ...(hint && hint.trim() ? { text: hint.trim() } : {})
+        });
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "错题照片处理失败");
+      }
+    },
+    [dispatch, setError]
+  );
+
   const submitComposer = useCallback(() => {
     if (composerDisabled) return;
     const text = chatInput;
@@ -2401,6 +2448,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       pendingImages,
       attachImage,
       removePendingImage,
+      captureMistakePhoto,
+      visionAvailable,
       patchHtml,
       setPatchHtml,
       showTerminal,
@@ -2523,6 +2572,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       pendingImages,
       attachImage,
       removePendingImage,
+      captureMistakePhoto,
+      visionAvailable,
       patchHtml,
       showTerminal,
       activeFileDir,
