@@ -3,7 +3,7 @@ import express from "express";
 import { z } from "zod";
 import { ingestWebpageFromUrl } from "../adapters/web/ingest";
 import { ingestWebLiveSource } from "../adapters/web/liveSource";
-import { importLocalAsset } from "../core/store/assets";
+import { importAssetBytes, importLocalAsset, MAX_INLINE_IMAGE_BYTES } from "../core/store/assets";
 import { parseRange } from "./httpRange";
 import { createReadStream } from "node:fs";
 import { defaultIdentityDir } from "../core/identity/paths";
@@ -908,6 +908,33 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
   });
 
   // —— Assets ——————————————————————————————————————————————————————————
+  // V-1 (vision-input.md §2): import base64 bytes as an Asset and return its id — the
+  // chat-image lane. The client POSTs a picked image here, then pushes an
+  // {type:"image", assetId} REF onto the pending user message (never base64 in the
+  // message / JSONL). NOT /api/sources/image (that makes a SOURCE — wrong entity for a
+  // chat ref). The size cap runs on the DECODED byte length before writing, so an
+  // oversize paste 400s instead of bloating the vault.
+  app.post("/api/assets", async (req, res, next) => {
+    try {
+      const body = z
+        .object({
+          dataBase64: z.string().min(1),
+          mimeType: z.string().min(1),
+          fileName: z.string().min(1).optional()
+        })
+        .parse(req.body);
+      const byteLength = Buffer.byteLength(body.dataBase64, "base64");
+      if (byteLength > MAX_INLINE_IMAGE_BYTES) {
+        res.status(400).json({ error: `Image too large (max ${MAX_INLINE_IMAGE_BYTES} bytes).` });
+        return;
+      }
+      const asset = await importAssetBytes(vault, body);
+      res.status(201).json({ assetId: asset.id, asset });
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
   // Desktop: import a local file the user picked, copying it into the vault.
   app.post("/api/assets/local-file", async (req, res, next) => {
     try {
@@ -1329,7 +1356,9 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
   app.post("/api/chat", async (req, res, next) => {
     try {
       const input = chatRequestSchema.parse(req.body);
-      res.json(await aiService.chatComplete({ provider: await getProvider() }, input));
+      // V-1: chatComplete resolves image REFs → bytes for vision providers (or gates a
+      // non-vision provider with VisionUnsupportedError → 400 via handleServiceError).
+      res.json(await aiService.chatComplete({ provider: await getProvider(), vault }, input));
     } catch (error) {
       if (!handleServiceError(res, error)) next(error);
     }
@@ -1366,15 +1395,24 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
       next(error);
       return;
     }
+    // V-1: gate a non-vision provider BEFORE the SSE headers commit, so an image sent to
+    // it surfaces a clean 400 (degrade-not-disappear) rather than an in-band error event.
+    let provider: Awaited<ReturnType<typeof getProvider>>;
+    try {
+      provider = await getProvider();
+      aiService.assertVisionSupported(provider, input);
+    } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+      return;
+    }
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
     const send = (event: string, data: unknown) =>
       res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     try {
-      const provider = await getProvider();
       let full = "";
-      for await (const delta of aiService.streamChatDeltas({ provider }, input)) {
+      for await (const delta of aiService.streamChatDeltas({ provider, vault }, input)) {
         full += delta;
         send("chunk", { delta });
       }

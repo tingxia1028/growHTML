@@ -210,6 +210,94 @@ describe("vault server API", () => {
     expect(response.body.message.content).toContain("Render Thread");
   });
 
+  // V-1 (vision-input.md §2) — the base64 import lane + the JIT wire→resolved seam +
+  // the typed non-vision gate, end to end through the routes.
+  it("V-1: POST /api/assets imports base64 image bytes and returns an assetId", async () => {
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 9, 8, 7]);
+    const created = await request(app)
+      .post("/api/assets")
+      .send({ dataBase64: bytes.toString("base64"), mimeType: "image/png" })
+      .expect(201);
+    expect(created.body.assetId).toMatch(/^asset_/);
+    expect(created.body.asset.assetType).toBe("image");
+    expect(created.body.asset.byteSize).toBe(bytes.length);
+    // The bytes are served back by the existing byte route (the chat thumbnail source).
+    const served = await request(app)
+      .get(`/api/assets/${created.body.assetId}`)
+      .buffer(true)
+      .parse(binaryParser)
+      .expect(200);
+    expect(Buffer.from(served.body).equals(bytes)).toBe(true);
+  });
+
+  it("V-1: POST /api/assets rejects an oversize image with 400 (no vault bloat)", async () => {
+    // 8 MiB + 1 byte of decoded payload → over MAX_INLINE_IMAGE_BYTES.
+    const oversize = Buffer.alloc(8 * 1024 * 1024 + 1, 0x41);
+    const res = await request(app)
+      .post("/api/assets")
+      .send({ dataBase64: oversize.toString("base64"), mimeType: "image/png" })
+      .expect(400);
+    expect(res.body.error).toMatch(/too large/i);
+  });
+
+  it("V-1: chat with an image part under the mock (vision) → provider sees a resolved part → 'Saw 1 image.'", async () => {
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+    const { body } = await request(app)
+      .post("/api/assets")
+      .send({ dataBase64: bytes.toString("base64"), mimeType: "image/png" })
+      .expect(201);
+    const res = await request(app)
+      .post("/api/chat")
+      .send({
+        messages: [
+          { role: "user", content: [{ type: "text", text: "what is this?" }, { type: "image", assetId: body.assetId }] }
+        ]
+      })
+      .expect(200);
+    // The mock echoes the deterministic vision ack — proving a RESOLVED part reached it.
+    expect(res.body.message.content).toContain("Saw 1 image.");
+    expect(res.body.message.content).toContain("You asked: what is this?");
+  });
+
+  it("V-1: chat with an image under a vision:false provider → 400 VisionUnsupportedError (degrade-not-disappear)", async () => {
+    const noVision = {
+      id: "no-vision",
+      capabilities: {
+        chat: true,
+        agentic: false,
+        streaming: true,
+        structured: false,
+        tools: false,
+        vision: false,
+        kind: "cli-agent" as const
+      },
+      async complete() {
+        return { message: { role: "assistant" as const, content: "should never be called" } };
+      }
+    };
+    const gatedApp = createApp({ vault, modelProvider: noVision });
+    const { body } = await request(gatedApp)
+      .post("/api/assets")
+      .send({ dataBase64: Buffer.from([1, 2, 3]).toString("base64"), mimeType: "image/png" })
+      .expect(201);
+    // Non-stream route: a clean 400 via handleServiceError.
+    const res = await request(gatedApp)
+      .post("/api/chat")
+      .send({ messages: [{ role: "user", content: [{ type: "image", assetId: body.assetId }] }] })
+      .expect(400);
+    expect(res.body.error).toMatch(/image input/i);
+    // Stream route: the gate runs BEFORE SSE headers commit → also a 400, not an error event.
+    await request(gatedApp)
+      .post("/api/chat/stream")
+      .send({ messages: [{ role: "user", content: [{ type: "image", assetId: body.assetId }] }] })
+      .expect(400);
+    // A text-only turn under the SAME provider still works (degrade-not-disappear).
+    await request(gatedApp)
+      .post("/api/chat")
+      .send({ messages: [{ role: "user", content: "text only, no image" }] })
+      .expect(200);
+  });
+
   it("synthesizes a chat transcript into a new markdown source (POST /api/chat/synthesize)", async () => {
     // The default mock echoes the `sample` as the {title, markdown} doc → deterministic.
     const sample = { title: "Synthesized Doc", markdown: "# Overview\n\nBody.\n\n## More\n\nDetails." };

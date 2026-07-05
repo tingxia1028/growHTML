@@ -19,6 +19,71 @@ export type ImportLocalAssetInput = {
 };
 
 /**
+ * Cap on an inline (base64) asset import (V-1, vision-input.md §2). An image attached
+ * to a chat rides the wire as base64 and is imported into the vault via
+ * `importAssetBytes`; the route enforces this cap BEFORE decoding/writing so a huge
+ * paste can't bloat the vault (8 MiB — comfortably above a phone photo, below abuse).
+ */
+export const MAX_INLINE_IMAGE_BYTES = 8 * 1024 * 1024;
+
+export type ImportAssetBytesInput = {
+  /** Raw base64 (no data-URL prefix) of the asset bytes. */
+  dataBase64: string;
+  mimeType: string;
+  /** Optional display name; defaults to `<id><ext-from-mime>`. */
+  fileName?: string;
+  createdAt?: string;
+};
+
+const EXT_BY_MIME: Record<string, string> = {
+  "image/png": ".png",
+  "image/jpeg": ".jpg",
+  "image/webp": ".webp",
+  "image/gif": ".gif"
+};
+
+/**
+ * Import in-memory (base64) bytes into the vault as an Asset — the net-new sibling of
+ * importLocalAsset for the chat-image lane (there is no disk path). Replicates the
+ * hash-dedup + writeBytes + assetSchema.parse block: same-bytes reuse, a `<id><ext>`
+ * file under `assets/`, and a parsed AssetRecord. Iron rule: pure core store code — the
+ * route decodes+caps; this persists.
+ */
+export async function importAssetBytes(vault: StudyVault, input: ImportAssetBytesInput): Promise<AssetRecord> {
+  const buffer = Buffer.from(input.dataBase64, "base64");
+  const contentHash = `sha256:${sha256Hex(buffer)}`;
+
+  // Same bytes already imported → reuse it (dedup, matching importLocalAsset).
+  const existing = (await vault.stores.assets.list()).find((asset) => asset.contentHash === contentHash);
+  if (existing) return existing;
+
+  const id = createEntityId("asset");
+  const ext = EXT_BY_MIME[input.mimeType] ?? "";
+  const fileName = `${id}${ext}`;
+  const relativePath = path.posix.join("assets", fileName);
+  await vault.storage.writeBytes(path.join(vault.paths.assetsDir, fileName), buffer);
+
+  const now = input.createdAt ?? new Date().toISOString();
+  const record = assetSchema.parse({
+    id,
+    type: "asset",
+    schemaVersion: 1,
+    createdAt: now,
+    updatedAt: now,
+    createdBy: "user",
+    assetType: assetTypeFromMime(input.mimeType),
+    fileName: input.fileName ?? fileName,
+    mimeType: input.mimeType,
+    byteSize: buffer.length,
+    path: relativePath,
+    contentHash
+  });
+
+  await vault.stores.assets.upsert(record);
+  return record;
+}
+
+/**
  * Import a local file into the vault as an Asset: read the bytes, copy them under
  * `assets/<id><ext>`, and record an AssetRecord. The file is *copied* (not just
  * referenced) so a media note survives the original being moved or deleted.

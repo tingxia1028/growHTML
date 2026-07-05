@@ -5,6 +5,8 @@
 // its own result shape. Messages are part of the API contract (they become the
 // `{ error } ` body verbatim), so keep them byte-identical when refactoring.
 
+import { VisionUnsupportedError } from "../../ai";
+
 /** Entity lookup failed → HTTP 404. */
 export class NotFoundError extends Error {
   constructor(message: string) {
@@ -67,6 +69,12 @@ export function handleServiceError(res: JsonResponder, error: unknown): boolean 
   }
   if (error instanceof ConflictError) {
     res.status(409).json(error.body ?? { error: error.message });
+    return true;
+  }
+  // V-1 (vision-input.md §2): an image was sent to a non-vision provider (or the
+  // attached asset vanished) → 400, a client/capability problem, not a server fault.
+  if (error instanceof VisionUnsupportedError) {
+    res.status(400).json({ error: error.message });
     return true;
   }
   return false;

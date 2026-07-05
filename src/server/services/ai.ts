@@ -8,7 +8,10 @@ import {
   chatContextSchema,
   chatRequestSchema,
   generateStructured,
+  messageHasImage,
   FORM_ROUTER_CONTENT_TYPE,
+  VisionUnsupportedError,
+  type ChatMessage,
   type ModelProvider
 } from "../../ai";
 import {
@@ -18,12 +21,15 @@ import {
   type FormRouterOutput
 } from "../../core/notes/formRouter";
 import { getNoteContentSpec } from "../../core/notes/contentTypes";
+import { readAssetBytes } from "../../core/store/assets";
 import { generateOperationContent, StructuredGenerationError } from "../../kits/structured";
 import type { StudyVault } from "../../core/vault";
 import { composeAutoContext } from "./autoContext";
 import { readOperationPrefs } from "./workspace";
 
 export type ChatDeps = { provider: ModelProvider };
+/** Chat deps that can resolve image REFs → bytes (V-1) need the vault too. */
+export type ChatVisionDeps = { provider: ModelProvider; vault: StudyVault };
 export type KitGenerateDeps = { vault: StudyVault; provider: ModelProvider };
 
 export type ChatRequestInput = z.infer<typeof chatRequestSchema>;
@@ -51,27 +57,86 @@ export const generateBlockSchema = z.object({
 });
 export type GenerateBlockInput = z.infer<typeof generateBlockSchema>;
 
-/** One-shot chat completion. */
-export async function chatComplete({ provider }: ChatDeps, input: ChatRequestInput) {
-  const response = await provider.complete(input);
+/**
+ * V-1 (vision-input.md §2) — the JIT wire→resolved seam at the ai.ts choke point,
+ * beside applyProfileContextGate. If NO message carries an image part, the request
+ * passes through UNCHANGED (text-only is byte-identical — the resolver never touches
+ * it). If any message DOES:
+ *   • a non-vision provider → throw VisionUnsupportedError (a clean 400 at the edge,
+ *     BEFORE any provider call — degrade-not-disappear);
+ *   • a vision provider → replace each `{type:"image", assetId}` REF with an in-process
+ *     RESOLVED part `{type:"image", data, mimeType}` (bytes read from the asset store).
+ * IRON RULE: this resolution happens SERVER-side; src/ai/** never imports the store, so
+ * providers only ever see already-resolved parts.
+ */
+async function resolveVisionRequest(
+  provider: ModelProvider,
+  vault: StudyVault,
+  input: ChatRequestInput
+): Promise<ChatRequestInput> {
+  const anyImage = input.messages.some((message) => messageHasImage(message.content));
+  if (!anyImage) return input; // text-only: untouched, byte-identical
+  if (!provider.capabilities.vision) throw new VisionUnsupportedError();
+
+  const messages = await Promise.all(
+    input.messages.map(async (message): Promise<ChatMessage> => {
+      if (!Array.isArray(message.content)) return message;
+      const parts = await Promise.all(
+        message.content.map(async (part) => {
+          if (part.type !== "image") return part;
+          const asset = await vault.stores.assets.get(part.assetId);
+          if (!asset) throw new VisionUnsupportedError(`Attached image not found: ${part.assetId}`);
+          const bytes = await readAssetBytes(vault, asset);
+          // The RESOLVED part is an src/ai-local shape (never persisted); cast through
+          // the wire type so the provider receives {data, mimeType} at runtime.
+          return {
+            type: "image",
+            data: bytes.toString("base64"),
+            mimeType: part.mimeType ?? asset.mimeType
+          } as unknown as (typeof message.content)[number];
+        })
+      );
+      return { ...message, content: parts };
+    })
+  );
+  return { ...input, messages };
+}
+
+/**
+ * V-1 pre-flight gate: throw VisionUnsupportedError NOW (before any transport commits,
+ * e.g. before the SSE route writes its headers) when the request carries an image but
+ * the provider can't see it. A no-op for text-only or a vision provider. Lets the
+ * stream route surface a clean 400 instead of an in-band `error` event.
+ */
+export function assertVisionSupported(provider: ModelProvider, input: ChatRequestInput): void {
+  const anyImage = input.messages.some((message) => messageHasImage(message.content));
+  if (anyImage && !provider.capabilities.vision) throw new VisionUnsupportedError();
+}
+
+/** One-shot chat completion. Resolves image REFs → bytes for vision providers first. */
+export async function chatComplete({ provider, vault }: ChatVisionDeps, input: ChatRequestInput) {
+  const resolved = await resolveVisionRequest(provider, vault, input);
+  const response = await provider.complete(resolved);
   return { message: response.message, provider: provider.id };
 }
 
 /**
  * Produce the chat reply as a stream of text deltas. Providers without `stream()`
  * fall back to a single delta from `complete()`. The transport (SSE route today,
- * mobile direct-call tomorrow) owns framing/accumulation.
+ * mobile direct-call tomorrow) owns framing/accumulation. V-1: image REFs are resolved
+ * (or the non-vision provider is gated) BEFORE the first delta.
  */
 export async function* streamChatDeltas(
-  { provider }: ChatDeps,
+  { provider, vault }: ChatVisionDeps,
   input: ChatRequestInput
 ): AsyncGenerator<string, void, undefined> {
+  const resolved = await resolveVisionRequest(provider, vault, input);
   if (provider.stream) {
-    for await (const delta of provider.stream(input)) {
+    for await (const delta of provider.stream(resolved)) {
       yield delta;
     }
   } else {
-    yield (await provider.complete(input)).message.content;
+    yield (await provider.complete(resolved)).message.content;
   }
 }
 
