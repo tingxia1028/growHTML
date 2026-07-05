@@ -13,6 +13,7 @@ export * from "./asset";
 export * from "./chatSession";
 export * from "./common";
 export * from "./concept";
+export * from "./contentPart";
 export * from "./memory";
 export * from "./note";
 export * from "./operation";

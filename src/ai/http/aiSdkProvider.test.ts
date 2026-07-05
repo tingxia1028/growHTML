@@ -208,6 +208,7 @@ describe("AiSdkProvider — capabilities + message mapping", () => {
       streaming: true,
       structured: true,
       tools: true,
+      vision: true,
       kind: "http"
     });
     expect(typeof provider.runAgent).toBe("function");

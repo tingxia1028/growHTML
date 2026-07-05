@@ -34,7 +34,7 @@ afterEach(async () => {
 function providerOf(kind: ProviderCapabilities["kind"]): ModelProvider {
   return {
     id: `fake-${kind}`,
-    capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, kind },
+    capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, vision: false, kind },
     async complete() {
       return { message: { role: "assistant" as const, content: "" } };
     }

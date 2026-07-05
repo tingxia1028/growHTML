@@ -63,6 +63,7 @@ describe("MockModelProvider", () => {
       streaming: true,
       structured: true,
       tools: false,
+      vision: true,
       kind: "mock"
     });
   });

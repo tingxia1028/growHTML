@@ -102,7 +102,7 @@ describe("review.grade-answer — grade schema roundtrip", () => {
     let calls = 0;
     const flaky: ModelProvider = {
       id: "flaky",
-      capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, kind: "mock" },
+      capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, vision: false, kind: "mock" },
       async complete(): Promise<ChatResponse> {
         calls += 1;
         const content =
@@ -124,7 +124,7 @@ describe("review.grade-answer — grade schema roundtrip", () => {
   it("persistently invalid grade output exhausts attempts and throws", async () => {
     const bad: ModelProvider = {
       id: "bad",
-      capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, kind: "mock" },
+      capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, vision: false, kind: "mock" },
       async complete(): Promise<ChatResponse> {
         return { message: { role: "assistant", content: '{"correct":"nope"}' } };
       }
@@ -194,9 +194,11 @@ describe("review.explain — REV-2 profileContext weave", () => {
     const seen: string[] = [];
     const capturing: ModelProvider = {
       id: "capturing",
-      capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, kind: "mock" },
+      capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, vision: false, kind: "mock" },
       async complete(request): Promise<ChatResponse> {
-        seen.push(request.messages[1].content); // [0] is the JSON-only system message
+        // [0] is the JSON-only system message; these tests only send text content, so
+        // the content is a bare string (V-1 union widened the type; assert the string arm).
+        seen.push(request.messages[1].content as string);
         return { message: { role: "assistant", content: '"**为什么错了** …"' } };
       }
     };

@@ -21,7 +21,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { attachmentsBlock, passageBlock, sourceBlock } from "../buildPrompt";
+import { attachmentsBlock, messageText, passageBlock, sourceBlock } from "../buildPrompt";
 import type { ChatRequest, ModelProvider } from "../provider";
 
 export type CliAgentDetectResult = { ok: boolean; version?: string };
@@ -75,7 +75,9 @@ export function buildCleanEnv(
 // ---------------------------------------------------------------------------
 
 function lastUserMessage(request: ChatRequest): string {
-  return [...request.messages].reverse().find((message) => message.role === "user")?.content ?? "";
+  const last = [...request.messages].reverse().find((message) => message.role === "user");
+  // V-1: an image part degrades to a `[image]` placeholder in the text prompt.
+  return last ? messageText(last.content) : "";
 }
 
 /**
@@ -90,7 +92,7 @@ export function flattenPrompt(request: ChatRequest): string {
     attachmentsBlock(request.context)
   ].filter(Boolean);
   for (const message of request.messages) {
-    parts.push(`${message.role.toUpperCase()}: ${message.content}`);
+    parts.push(`${message.role.toUpperCase()}: ${messageText(message.content)}`);
   }
   return parts.join("\n\n");
 }

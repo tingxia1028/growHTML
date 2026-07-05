@@ -104,10 +104,23 @@ export type PatchRecord = {
   summary?: string;
 };
 
+/** V-1 (vision-input.md §2): the WIRE multimodal content parts, mirrored client-side.
+    An image part is a REF into the asset store (`GET /api/assets/:assetId`), never bytes. */
+export type ContentPart = { type: "text"; text: string } | { type: "image"; assetId: string; mimeType?: string };
+
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
-  content: string;
+  // V-1: request content widens to `string | ContentPart[]` (an image message rides an
+  // array). Assistant REPLIES are always plain strings (no provider emits image parts).
+  content: string | ContentPart[];
 };
+
+/** Collapse a (possibly multimodal) content to its TEXT for a plain-string sink
+    (image → `[image]` placeholder). The client mirror of src/ai messageText. */
+export function chatContentText(content: string | ContentPart[]): string {
+  if (typeof content === "string") return content;
+  return content.map((part) => (part.type === "text" ? part.text : "[image]")).join("\n");
+}
 
 export type ConceptRecord = {
   id: string;
@@ -629,6 +642,8 @@ export type AiProviderCapabilities = {
   streaming: boolean;
   structured: boolean;
   tools: boolean;
+  /** V-1 (vision-input.md §2): the provider accepts IMAGE input. */
+  vision: boolean;
   kind: string;
 };
 

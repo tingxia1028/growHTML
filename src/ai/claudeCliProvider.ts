@@ -55,6 +55,9 @@ export class ClaudeCliProvider implements ModelProvider {
     streaming: false,
     structured: false,
     tools: false,
+    // cli-agent binaries take text prompts; image parts degrade to a `[image]`
+    // placeholder in the flattened prompt (a native image-block adapter is deferred).
+    vision: false,
     kind: "cli-agent"
   } as const;
 

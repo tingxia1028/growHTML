@@ -237,6 +237,7 @@ describe("claudeAgentSpec (§9.2 contract)", () => {
       streaming: true,
       structured: false,
       tools: false,
+      vision: false,
       kind: "cli-agent"
     });
   });

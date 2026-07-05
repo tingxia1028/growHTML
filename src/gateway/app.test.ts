@@ -160,6 +160,7 @@ const STREAMING_CAPS: ProviderCapabilities = {
   streaming: true,
   structured: false,
   tools: false,
+  vision: false,
   kind: "mock"
 };
 

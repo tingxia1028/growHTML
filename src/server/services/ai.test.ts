@@ -45,9 +45,11 @@ function capturingProvider(
   const prompts: string[] = [];
   const provider: ModelProvider = {
     id: `fake-${kind}`,
-    capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, kind },
+    capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, vision: false, kind },
     async complete(request: ChatRequest) {
-      prompts.push(request.messages[1].content); // [0] is the engine's JSON-only system message
+      // [0] is the engine's JSON-only system message; these tests send text-only content
+      // (V-1 union widened the type — assert the string arm).
+      prompts.push(request.messages[1].content as string);
       return { message: { role: "assistant" as const, content: reply } };
     }
   };

@@ -83,7 +83,7 @@ function stubSessionApi(seed: ChatSessionRecord[] = []) {
         const firstUser = messages.find((m) => m.role === "user");
         const session: ChatSessionRecord = {
           id: `chat_created_${nextId++}`,
-          title: (body.title as string) || firstUser?.content || "",
+          title: (body.title as string) || (typeof firstUser?.content === "string" ? firstUser.content : "") || "",
           createdAt: T2,
           updatedAt: T2,
           messages: messages.map((m) => ({ ...m, ts: T2 })),

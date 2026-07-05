@@ -101,6 +101,8 @@ export class CodexAgentProvider implements ModelProvider {
     streaming: true,
     structured: false,
     tools: false,
+    // Text prompt only through this seam; image parts degrade to `[image]`.
+    vision: false,
     kind: "cli-agent"
   } as const;
 

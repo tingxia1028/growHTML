@@ -10,6 +10,7 @@
 
 import { z } from "zod";
 import { chatSessionIdSchema, isoDateTimeSchema, recordEnvelopeSchema, sourceIdSchema } from "./common";
+import { messageContentSchema } from "./contentPart";
 
 // Mirrors src/ai/provider.ts `chatMessageSchema` ({role, content}) — core must not
 // import from src/ai — PLUS the persistence-side `ts` stamp (when the turn landed).
@@ -17,7 +18,11 @@ import { chatSessionIdSchema, isoDateTimeSchema, recordEnvelopeSchema, sourceIdS
 // server on append), and a persisted message structurally satisfies ChatMessage.
 export const chatSessionMessageSchema = z.object({
   role: z.enum(["system", "user", "assistant"]),
-  content: z.string().min(1),
+  // V-1 (vision-input.md §2): the PERSISTED content widens to `string | ContentPart[]`.
+  // An image message's content is an ARRAY whose image part carries an assetId REF
+  // (never base64 in JSONL — roadmap.md:159 guard); a text-only message stays a bare
+  // string so its JSONL is byte-identical to the pre-V-1 record.
+  content: messageContentSchema,
   ts: isoDateTimeSchema
 });
 export type ChatSessionMessage = z.infer<typeof chatSessionMessageSchema>;

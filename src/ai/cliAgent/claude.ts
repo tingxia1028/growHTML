@@ -125,6 +125,9 @@ export class ClaudeAgentProvider implements ModelProvider {
     streaming: true,
     structured: false,
     tools: false,
+    // Text prompt only through this seam; image parts degrade to `[image]` (a native
+    // Agent-SDK image-block adapter is deferred to a later phase).
+    vision: false,
     kind: "cli-agent"
   } as const;
 

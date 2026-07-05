@@ -21,6 +21,7 @@ import {
 } from "react";
 import {
   entityClient,
+  chatContentText,
   type AnyAnchor,
   type ChatContext,
   type ChatMessage,
@@ -1696,7 +1697,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const regenerateChatReply = useCallback(() => {
     const lastUser = [...chatMessages].reverse().find((message) => message.role === "user");
     if (!lastUser) return;
-    void dispatch("anchor.ask-ai", { text: lastUser.content });
+    // V-1: collapse a multimodal turn to text for the re-ask (image → `[image]`).
+    void dispatch("anchor.ask-ai", { text: chatContentText(lastUser.content) });
   }, [chatMessages, dispatch]);
 
   // A4b: run ONE agent turn (the 🛠 用工具 button). Invoked DIRECTLY here — not through

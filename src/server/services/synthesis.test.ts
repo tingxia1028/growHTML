@@ -47,7 +47,7 @@ function capturingStructuredProvider(sample: unknown): {
   const requests: StructuredRequest[] = [];
   const provider: ModelProvider = {
     id: "capture",
-    capabilities: { chat: true, agentic: false, streaming: false, structured: true, tools: false, kind: "mock" },
+    capabilities: { chat: true, agentic: false, streaming: false, structured: true, tools: false, vision: false, kind: "mock" },
     async complete(_request: ChatRequest) {
       return { message: { role: "assistant" as const, content: JSON.stringify(sample) } };
     },

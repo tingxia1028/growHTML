@@ -1289,6 +1289,7 @@ describe("form router — html path result degrades, never saved as html", () =>
       streaming: false,
       structured: true,
       tools: false,
+      vision: false,
       kind: "cli-agent" as const
     },
     async complete() {
@@ -1323,6 +1324,7 @@ describe("form router — html path result degrades, never saved as html", () =>
         streaming: false,
         structured: true,
         tools: false,
+        vision: false,
         kind: "mock" as const
       },
       async complete() {

@@ -11,6 +11,7 @@
 // `Attached:`, all structured-gen defaults). It ADDS a scripted runAgent + honest
 // capabilities (agentic/tools true, structured kept true).
 
+import { messageText } from "./buildPrompt";
 import { MockModelProvider } from "./mockProvider";
 import type {
   AgentRequest,
@@ -36,6 +37,8 @@ export class MockAgentProvider implements ModelProvider {
     streaming: true,
     structured: true,
     tools: true,
+    // The agent-loop mock is text-only; image parts route to the vision mock instead.
+    vision: false,
     kind: "mock"
   };
 
@@ -69,7 +72,7 @@ export class MockAgentProvider implements ModelProvider {
    */
   async *runAgent(request: AgentRequest): AsyncIterable<AgentStepEvent> {
     const lastUser = [...request.messages].reverse().find((message) => message.role === "user");
-    const query = lastUser?.content.trim() ?? "";
+    const query = lastUser ? messageText(lastUser.content).trim() : "";
     const searchTool = request.tools?.find((tool) => tool.name === "search_notes");
     // Optional per-event pacing (STUDY_VAULT_MOCK_STREAM_DELAY_MS) — the SAME knob the
     // mock's stream() honors — so a browser e2e can OBSERVE the transcript's tool card

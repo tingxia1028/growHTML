@@ -4,16 +4,57 @@
 // behind it. Tests run against the mock so they are deterministic and offline.
 
 import { z } from "zod";
+import { messageContentSchema } from "../core/schema/contentPart";
 import type { ToolDefinition } from "./tools";
+
+// The WIRE multimodal content shape lives in a PURE core schema module so BOTH this
+// provider seam and the persisted chatSession record share ONE definition (iron rule
+// intact: this imports a pure core SCHEMA, never src/server or src/core/store). The
+// PROVIDER-FACING RESOLVED shape (assetId → bytes) is an src/ai-local type below.
+export type { ContentPart, ImageContentPart, TextContentPart, MessageContent } from "../core/schema/contentPart";
+import type { ContentPart } from "../core/schema/contentPart";
 
 export const chatRoleSchema = z.enum(["system", "user", "assistant"]);
 export type ChatRole = z.infer<typeof chatRoleSchema>;
 
 export const chatMessageSchema = z.object({
   role: chatRoleSchema,
-  content: z.string().min(1)
+  // V-1 (vision-input.md §2): content widens from a bare string to `string |
+  // ContentPart[]`. Text-only messages stay a bare string (byte-identical to the
+  // pre-V-1 contract); an image ATTACHMENT rides an ARRAY carrying an image REF part.
+  content: messageContentSchema
 });
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
+
+/**
+ * The PROVIDER-FACING / RESOLVED image part (vision-input.md §2). EPHEMERAL,
+ * in-process only — the server resolves a wire `{type:"image", assetId}` into this by
+ * reading the asset bytes, ONLY for `capabilities.vision` providers, right before the
+ * provider call. NEVER persisted, NEVER in core. `data` is base64 (what AI SDK v7's
+ * FilePart accepts as a bare `DataContent` shorthand).
+ */
+export type ResolvedImageContentPart = { type: "image"; data: string; mimeType: string };
+/** A message content part as a provider sees it: text verbatim, image already resolved. */
+export type ResolvedContentPart = { type: "text"; text: string } | ResolvedImageContentPart;
+
+/**
+ * A non-vision provider was handed a message carrying an image part. Thrown in the ai
+ * service BEFORE the provider call (beside HttpProviderNotConfiguredError's precedent),
+ * mapped to a clean 400 at the edge — a client/capability problem, not a server fault.
+ * DEGRADE-NOT-DISAPPEAR: the attach affordance stays visible; a non-vision send just
+ * surfaces this once.
+ */
+export class VisionUnsupportedError extends Error {
+  constructor(message = "This AI provider does not support image input.") {
+    super(message);
+    this.name = "VisionUnsupportedError";
+  }
+}
+
+/** True when a message carries at least one image part (so it needs a vision provider). */
+export function messageHasImage(content: string | ContentPart[]): boolean {
+  return Array.isArray(content) && content.some((part) => part.type === "image");
+}
 
 // One attached SOURCE the chat carries as context (ai-workspace.md §W2). Beside the
 // flat single-passage fields (below), a session can attach whole sources — each with
@@ -69,8 +110,15 @@ export const chatRequestSchema = z.object({
 });
 export type ChatRequest = z.infer<typeof chatRequestSchema>;
 
+// The assistant REPLY message. A provider's reply content is ALWAYS a plain string
+// (no provider emits image parts in its answer) — so reply-side readers
+// (`response.message.content` in structured.ts / the gateway / streamChatDeltas'
+// fallback) keep a string and stay untouched by the V-1 content widening. Only the
+// REQUEST-side `ChatMessage.content` (where an image attachment lives) is the union.
+export type AssistantReplyMessage = { role: "assistant"; content: string };
+
 export type ChatResponse = {
-  message: ChatMessage;
+  message: AssistantReplyMessage;
 };
 
 // A request for STRUCTURED (JSON) generation — used by Product Kit AI commands
@@ -110,6 +158,13 @@ export type ProviderCapabilities = {
    */
   tools: boolean;
   /**
+   * True when the provider accepts IMAGE input (vision-input.md §2, V-1/A5). A
+   * message carrying an image part is resolved (assetId → bytes) and passed through
+   * only to vision providers; a non-vision provider handed an image throws
+   * VisionUnsupportedError before any call. Text-only chat is unaffected.
+   */
+  vision: boolean;
+  /**
    * Integration model — drives config UI + key handling.
    * "mock" (offline determinism) | "cli-agent" (locally installed,
    * already-subscribed agent CLI: claude / codex / …) | "http" (BYOK API-key
@@ -127,7 +182,7 @@ export type AgentStepEvent =
   | { type: "tool-call"; toolName: string; args: unknown; id: string }
   | { type: "tool-result"; id: string; result: unknown }
   | { type: "step"; index: number }
-  | { type: "done"; message: ChatMessage };
+  | { type: "done"; message: AssistantReplyMessage };
 
 /** A chat request plus the tools the loop may call and a step budget. */
 export type AgentRequest = ChatRequest & { tools?: ToolDefinition[]; maxSteps?: number };

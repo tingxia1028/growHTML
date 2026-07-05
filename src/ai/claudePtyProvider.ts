@@ -1,3 +1,4 @@
+import { messageText } from "./buildPrompt";
 import type { ChatRequest, ChatResponse, ModelProvider } from "./provider";
 import type { PtySession, PtySessionFactory } from "./pty/session";
 import { extractAnswer } from "./pty/terminalParse";
@@ -25,6 +26,9 @@ export class ClaudePtyProvider implements ModelProvider {
     streaming: false,
     structured: false,
     tools: false,
+    // PTY writes a text prompt to the interactive session; image parts degrade to
+    // `[image]` (no native image-block over the terminal seam).
+    vision: false,
     kind: "cli-agent"
   } as const;
 
@@ -54,7 +58,9 @@ export class ClaudePtyProvider implements ModelProvider {
     const lastUser = [...request.messages].reverse().find((message) => message.role === "user");
 
     this.buffer = "";
-    session.write(`${lastUser?.content ?? ""}\n`);
+    // V-1: write the message TEXT (image parts → `[image]` placeholder) so the PTY
+    // never receives `[object Object]` for a multimodal message.
+    session.write(`${lastUser ? messageText(lastUser.content) : ""}\n`);
     await this.waitForIdle();
 
     return { message: { role: "assistant", content: extractAnswer(this.buffer) } };

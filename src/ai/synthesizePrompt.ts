@@ -8,7 +8,7 @@
 // against lives here too so the pure layer owns the contract.
 
 import { z } from "zod";
-import { contextPreamble } from "./buildPrompt";
+import { contextPreamble, messageText } from "./buildPrompt";
 import type { ChatContext, ChatMessage } from "./provider";
 
 /**
@@ -55,7 +55,8 @@ const SYNTHESIS_INSTRUCTION =
 /** One transcript turn rendered for the prompt: a role label + its content. */
 function renderTurn(message: ChatMessage): string {
   const label = message.role === "user" ? "User" : message.role === "assistant" ? "Assistant" : "System";
-  return `${label}: ${message.content}`;
+  // V-1: collapse a multimodal turn to text (image → `[image]`) for the transcript.
+  return `${label}: ${messageText(message.content)}`;
 }
 
 /**
@@ -102,7 +103,7 @@ function capTranscript(transcript: ChatMessage[]): ChatMessage[] {
  */
 export function defaultSynthesisDoc(messages: ChatMessage[]): SynthesisDoc {
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
-  const ask = (lastUser?.content ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+  const ask = (lastUser ? messageText(lastUser.content) : "").replace(/\s+/g, " ").trim().slice(0, 80);
   return {
     title: ask ? `Synthesized: ${ask.slice(0, 40)}` : "Synthesized Document",
     markdown: `# Synthesized Document\n\n## Summary\n\n${ask || "A synthesized study document."}`

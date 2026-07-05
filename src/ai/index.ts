@@ -11,6 +11,9 @@ import type { ModelProvider } from "./provider";
 import { createRegisteredProvider, registerProvider } from "./registry";
 
 export * from "./provider";
+// V-1 (vision-input.md §2): the shared content-collapse helper — the ONE place a
+// multimodal message's content becomes prompt/title TEXT (image → `[image]`).
+export { messageText, contextPreamble } from "./buildPrompt";
 export {
   generateStructured,
   extractJson,

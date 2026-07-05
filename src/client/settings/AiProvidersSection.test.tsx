@@ -26,7 +26,7 @@ type Calls = {
 };
 
 function baseInfo(): AiProvidersInfo {
-  const http = { chat: true, agentic: true, streaming: true, structured: true, tools: true, kind: "http" };
+  const http = { chat: true, agentic: true, streaming: true, structured: true, tools: true, vision: true, kind: "http" };
   return {
     active: { id: "mock", kind: "mock" },
     activeSource: "default",
@@ -36,13 +36,13 @@ function baseInfo(): AiProvidersInfo {
         id: "mock",
         kind: "mock",
         label: "Mock (offline)",
-        capabilities: { chat: true, agentic: false, streaming: true, structured: true, tools: false, kind: "mock" }
+        capabilities: { chat: true, agentic: false, streaming: true, structured: true, tools: false, vision: true, kind: "mock" }
       },
       {
         id: "claude-agent",
         kind: "cli-agent",
         label: "Claude (subscription, Agent SDK)",
-        capabilities: { chat: true, agentic: true, streaming: true, structured: false, tools: false, kind: "cli-agent" }
+        capabilities: { chat: true, agentic: true, streaming: true, structured: false, tools: false, vision: false, kind: "cli-agent" }
       },
       { id: "managed", kind: "managed", label: "Managed (托管积分)" }
     ],

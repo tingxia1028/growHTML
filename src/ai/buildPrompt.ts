@@ -8,7 +8,20 @@
 // Pure string building over ChatContext; imports nothing but the provider
 // seam (iron rule).
 
-import type { ChatContext, ChatContextSource } from "./provider";
+import type { ChatContext, ChatContextSource, ContentPart } from "./provider";
+
+/**
+ * Collapse a (possibly multimodal) message content to its TEXT (V-1, vision-input.md
+ * §2). A bare string passes through verbatim; a part array joins its text parts and
+ * renders each image part as a `[image]` placeholder — so every REQUEST-SIDE reader
+ * that used to do a raw string op (`.trim()`, `.replace()`, `.includes()`, `.length`,
+ * `${content}`) has a pure string to work over without crashing on an array. Providers
+ * that genuinely see the image (vision, via resolved parts) don't route through here.
+ */
+export function messageText(content: string | ContentPart[]): string {
+  if (typeof content === "string") return content;
+  return content.map((part) => (part.type === "text" ? part.text : "[image]")).join("\n");
+}
 
 /**
  * Identify the source so the model knows what's being discussed: title, type,

@@ -16,7 +16,7 @@ function fakeProvider(reply: string): ModelProvider & { seen: ChatRequest[] } {
   const seen: ChatRequest[] = [];
   return {
     id: "fake",
-    capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, kind: "mock" },
+    capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, vision: false, kind: "mock" },
     seen,
     async complete(request: ChatRequest): Promise<ChatResponse> {
       seen.push(request);

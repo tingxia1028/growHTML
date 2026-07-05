@@ -6,12 +6,15 @@
 // untouched: /api/chat/stream stays the transport; the CLIENT appends the turns
 // here (user message on send, assistant message on stream end).
 import { z } from "zod";
+import { messageText } from "../../ai";
 import { createEntityId } from "../../core/ids";
 import {
   chatSessionAttachmentSchema,
   chatSessionSchema,
+  contentPartSchema,
   type ChatSessionMessage,
-  type ChatSessionRecord
+  type ChatSessionRecord,
+  type MessageContent
 } from "../../core/schema";
 import type { StudyVault } from "../../core/vault";
 import { NotFoundError } from "./errors";
@@ -27,7 +30,9 @@ export const SESSION_TITLE_MAX_CHARS = 40;
 // `ts` is optional — the server stamps arrival time when the client omits it.
 const sessionMessageInputSchema = z.object({
   role: z.enum(["system", "user", "assistant"]),
-  content: z.string().min(1),
+  // V-1: wire input widens to the multimodal union (an image message's content is an
+  // ARRAY carrying an assetId ref part); text-only stays a bare string.
+  content: z.union([z.string().min(1), z.array(contentPartSchema).min(1)]),
   ts: z.string().optional()
 });
 export type SessionMessageInput = z.infer<typeof sessionMessageInputSchema>;
@@ -67,11 +72,13 @@ export type ChatSessionSummary = {
   messageCount: number;
 };
 
-/** Auto title = the first USER message, whitespace-collapsed and truncated. */
-export function deriveSessionTitle(messages: Array<{ role: string; content: string }>): string {
+/** Auto title = the first USER message, whitespace-collapsed and truncated. V-1: the
+    first user turn may be an image-first array — messageText collapses it (image →
+    `[image]`) so titling never crashes on a non-string content. */
+export function deriveSessionTitle(messages: Array<{ role: string; content: MessageContent }>): string {
   const first = messages.find((message) => message.role === "user");
   if (!first) return "";
-  const collapsed = first.content.replace(/\s+/g, " ").trim();
+  const collapsed = messageText(first.content).replace(/\s+/g, " ").trim();
   return collapsed.length > SESSION_TITLE_MAX_CHARS ? `${collapsed.slice(0, SESSION_TITLE_MAX_CHARS)}…` : collapsed;
 }
 

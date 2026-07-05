@@ -1,6 +1,11 @@
-import { attachmentsBlock } from "./buildPrompt";
+import { attachmentsBlock, messageText } from "./buildPrompt";
 import { defaultSynthesisDoc, SYNTHESIS_PROMPT_MARKER } from "./synthesizePrompt";
-import type { ChatRequest, ChatResponse, ModelProvider, StructuredRequest } from "./provider";
+import type { ChatRequest, ChatResponse, ContentPart, ModelProvider, StructuredRequest } from "./provider";
+
+/** Count image parts across a message content (0 for a bare string). */
+function countImages(content: string | ContentPart[]): number {
+  return Array.isArray(content) ? content.filter((part) => part.type === "image").length : 0;
+}
 
 // The `contentType` marker the form-router request carries (it is NOT a stored note
 // type — the router output is a transport envelope unwrapped into a real contentType).
@@ -21,6 +26,10 @@ export class MockModelProvider implements ModelProvider {
     // Native structured path: completeStructured echoes the host-supplied sample.
     structured: true,
     tools: false,
+    // V-1 (vision-input.md §2): the OFFLINE vision proof — the mock accepts image
+    // parts and deterministically echoes "Saw N image(s)." so the demo + tests run
+    // offline without a real VLM (mirrors the "Attached: N source(s)" marker).
+    vision: true,
     kind: "mock"
   } as const;
 
@@ -28,7 +37,12 @@ export class MockModelProvider implements ModelProvider {
   // streamed concatenation is byte-identical to the one-shot reply.
   private answer(request: ChatRequest): string {
     const lastUser = [...request.messages].reverse().find((message) => message.role === "user");
-    const question = lastUser?.content.trim() ?? "";
+    const question = lastUser ? messageText(lastUser.content).trim() : "";
+    // V-1 vision proof: count image parts on the last user turn so the reply carries a
+    // deterministic "Saw N image(s)." marker (the offline analogue of a real VLM's ack;
+    // mirrors the "Attached: N source(s)" attachment marker). Zero when the user sent
+    // no image → nothing prepended, so text-only replies stay byte-identical.
+    const imageCount = lastUser ? countImages(lastUser.content) : 0;
     const quote = request.context?.quote?.trim();
     const sourceTitle = request.context?.sourceTitle?.trim();
     const location = request.context?.location?.trim();
@@ -46,6 +60,11 @@ export class MockModelProvider implements ModelProvider {
     if (attachments) {
       lines.push("");
       lines.push(attachments);
+    }
+    // V-1: deterministic vision ack — proves an image part reached this vision provider.
+    if (imageCount > 0) {
+      lines.push("");
+      lines.push(`Saw ${imageCount} image${imageCount === 1 ? "" : "s"}.`);
     }
     lines.push("");
     lines.push(question ? `You asked: ${question}` : "Ask a question about this passage.");
@@ -99,7 +118,7 @@ export class MockModelProvider implements ModelProvider {
     if (request.contentType === FORM_ROUTER_CONTENT_TYPE) {
       return { json: JSON.stringify({ form: "markdown", markdown: "" }) };
     }
-    if (request.messages.some((message) => message.content.includes(SYNTHESIS_PROMPT_MARKER))) {
+    if (request.messages.some((message) => messageText(message.content).includes(SYNTHESIS_PROMPT_MARKER))) {
       return { json: JSON.stringify(defaultSynthesisDoc(request.messages)) };
     }
     return { json: JSON.stringify({}) };

@@ -30,7 +30,7 @@
 //     text-delta part carries `.text` (the model layer's `.delta` was renamed).
 
 import type { LanguageModel, ModelMessage, ToolSet } from "ai";
-import { contextPreamble } from "../buildPrompt";
+import { contextPreamble, messageText } from "../buildPrompt";
 import type {
   AgentRequest,
   AgentStepEvent,
@@ -58,11 +58,14 @@ async function loadAiCore(): Promise<AiCore> {
 function toModelMessage(message: ChatMessage): ModelMessage {
   switch (message.role) {
     case "system":
-      return { role: "system", content: message.content };
+      return { role: "system", content: messageText(message.content) };
     case "user":
-      return { role: "user", content: message.content };
+      // V-1: the user turn is where image parts live — commit 3 maps them to AI SDK
+      // v7 FileParts here. messageText collapses to text for the text-only path and as
+      // the safe fallback for any non-image array.
+      return { role: "user", content: toUserContent(message.content) };
     case "assistant":
-      return { role: "assistant", content: message.content };
+      return { role: "assistant", content: messageText(message.content) };
   }
 }
 
@@ -74,6 +77,14 @@ function toModelMessage(message: ChatMessage): ModelMessage {
  * context-first order) — every provider kind weaves identical context text.
  * Exported for the colocated unit tests.
  */
+/**
+ * Map a user message's content onto AI SDK v7 user content. V-1 commit 1 collapses to
+ * text (messageText); commit 3 upgrades this to map RESOLVED image parts to FileParts.
+ */
+function toUserContent(content: ChatMessage["content"]): string {
+  return messageText(content);
+}
+
 export function toModelMessages(messages: ChatMessage[], context?: ChatContext): ModelMessage[] {
   const preamble = contextPreamble(context);
   const converted = messages.map(toModelMessage);
@@ -117,6 +128,11 @@ export class AiSdkProvider implements ModelProvider {
     // vendor error honestly rather than degrading silently.
     structured: true,
     tools: true,
+    // V-1: the AI SDK transport carries image FileParts, so this is transport-honest.
+    // MODEL-vision fit is a separate concern — verify each preset's model id is a
+    // vision model at V-2 (e.g. DEFAULT_DEEPSEEK_MODEL="deepseek-v4-flash" in
+    // presets.ts may not be a vision model). Not a V-1 blocker.
+    vision: true,
     kind: "http"
   } as const;
 

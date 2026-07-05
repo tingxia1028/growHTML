@@ -7,12 +7,18 @@
 
 import { createHttpTransport } from "../data/transport";
 
+/** V-1 (vision-input.md §2): the WIRE multimodal content parts, mirrored client-side
+    (the client never imports core/ai). An image part is a REF into the asset store
+    (`GET /api/assets/:assetId`), never inline bytes. */
+export type ContentPart = { type: "text"; text: string } | { type: "image"; assetId: string; mimeType?: string };
+
 /** The ai ChatMessage shape (role/content), structurally compatible with
     entityClient's — defined here so the chat domain never imports the contended
-    entityClient. Persisted messages additionally carry the server's `ts` stamp. */
+    entityClient. Persisted messages additionally carry the server's `ts` stamp.
+    V-1: `content` widens to `string | ContentPart[]` (an image message rides an array). */
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: string | ContentPart[];
 };
 
 export type ChatSessionMessage = ChatMessage & { ts?: string };

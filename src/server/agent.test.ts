@@ -53,6 +53,7 @@ const httpCapabilities = {
   streaming: true,
   structured: false,
   tools: true,
+  vision: false,
   kind: "http"
 } as const;
 

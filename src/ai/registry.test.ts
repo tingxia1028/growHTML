@@ -52,7 +52,7 @@ describe("provider registry — built-ins (Phase 0, zero behavior change)", () =
 function fakeProvider(id: string): ModelProvider {
   return {
     id,
-    capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, kind: "mock" },
+    capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, vision: false, kind: "mock" },
     async complete() {
       return { message: { role: "assistant" as const, content: id } };
     }

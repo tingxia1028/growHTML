@@ -158,6 +158,7 @@ const MOCK_CAPS = {
   streaming: true,
   structured: false,
   tools: false,
+  vision: false,
   kind: "mock"
 } as const;
 
@@ -336,6 +337,7 @@ describe("ManagedProvider — registry (src/ai/index.ts)", () => {
       streaming: true,
       structured: false,
       tools: false,
+      vision: false,
       kind: "managed"
     });
     const request = chatRequest("Registry roundtrip?");

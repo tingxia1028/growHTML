@@ -189,6 +189,10 @@ export class ManagedProvider implements ModelProvider {
     streaming: true,
     structured: false,
     tools: false,
+    // The G-A2 gateway serves TEXT chat over SSE only; vision rides the modality×vendor
+    // pricing table but is not wired yet, so an image send is gated (VisionUnsupportedError)
+    // before ever reaching the gateway. Flip when managed-vision lands (deferred).
+    vision: false,
     kind: "managed"
   } as const;
 

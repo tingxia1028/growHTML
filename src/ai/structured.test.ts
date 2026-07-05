@@ -35,7 +35,7 @@ describe("generateStructured", () => {
     let seen: ChatRequest | null = null;
     const provider: ModelProvider = {
       id: "spy",
-      capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, kind: "mock" },
+      capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, vision: false, kind: "mock" },
       async complete(req: ChatRequest): Promise<ChatResponse> {
         seen = req;
         return { message: { role: "assistant", content: '{"title":"x","n":1}' } };
@@ -50,7 +50,7 @@ describe("generateStructured", () => {
     let calls = 0;
     const flaky: ModelProvider = {
       id: "flaky",
-      capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, kind: "mock" },
+      capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, vision: false, kind: "mock" },
       async complete(req: ChatRequest): Promise<ChatResponse> {
         calls += 1;
         // First reply is malformed; the engine should append a corrective user turn.
@@ -68,7 +68,7 @@ describe("generateStructured", () => {
   it("throws StructuredGenerationError after exhausting attempts", async () => {
     const bad: ModelProvider = {
       id: "bad",
-      capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, kind: "mock" },
+      capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, vision: false, kind: "mock" },
       async complete(): Promise<ChatResponse> {
         return { message: { role: "assistant", content: '{"title":123}' } };
       }
@@ -82,7 +82,7 @@ describe("generateStructured", () => {
     let seen: StructuredRequest | null = null;
     const provider: ModelProvider = {
       id: "structured",
-      capabilities: { chat: true, agentic: false, streaming: false, structured: true, tools: false, kind: "mock" },
+      capabilities: { chat: true, agentic: false, streaming: false, structured: true, tools: false, vision: false, kind: "mock" },
       async complete(): Promise<ChatResponse> {
         throw new Error("complete() should not be called when completeStructured exists");
       },
