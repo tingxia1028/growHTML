@@ -33,7 +33,7 @@ function PracticeView({ ctx }: { ctx: WorkspaceContext }) {
             return (
               <article key={note.id} className="record-card">
                 <strong>{contentType}</strong>
-                {plugin ? plugin.render({ content: note.content, note }) : <InertNote content={note.content} />}
+                {plugin ? plugin.render({ content: note.content, note }) : <InertNote content={note.content} contentType={contentType} />}
               </article>
             );
           })}

@@ -31,6 +31,15 @@ import {
   type NoteRenderInput
 } from "./noteTypeRegistry";
 import { getRecentCategories } from "./recentCategories";
+import { groupOwnerOf, providerOf } from "../../kits/catalog";
+import {
+  installStateSnapshot,
+  isPluginEffectiveInstalled,
+  withKitInstalled,
+  withPluginInstalled
+} from "../../kits/installState";
+import { defineMessages, t, useLocale } from "../i18n";
+import "./builtinNoteTypes.css";
 
 // Whether the desktop file picker is available (media EDIT needs it; render is
 // browser-friendly). Checked lazily so SSR / jsdom without a window don't crash.
@@ -968,8 +977,81 @@ import "../review/gradeNoteType";
 // the core `file-link` type registers WITH the built-ins, visible in the palette.
 import "./fileLinkNoteType";
 
-// Exported only so a host can show an inert fallback for an UNKNOWN contentType
-// (one with no registered plugin) instead of nothing.
-export function InertNote({ content }: { content: unknown }) {
-  return <InertText content={content} />;
+// —— InertNote fallback + the per-note "install to view fully" affordance (M3b) ————
+// docs/design/plugin-viewer-model.md §8.7: the inert fallback for a contentType with no
+// registered renderer. When `contentType` is threaded in AND the catalog knows a provider
+// for it (§8.2 providerOf), the note is not truly unsupported — it just needs its kit
+// installed → the affordance reads "安装 X 以完整查看" and a click installs via the SAME
+// §8.5 seam a market install uses (withKitInstalled / withPluginInstalled). When no
+// provider resolves, it is a genuinely unknown type → "unsupported type". `contentType` is
+// OPTIONAL (additive, back-compat): callers that omit it get the exact prior behavior.
+
+const inertMessages = defineMessages({
+  installToView: { zh: "安装 {name} 以完整查看", en: "Install {name} to view fully" },
+  install: { zh: "安装", en: "Install" },
+  installing: { zh: "安装中…", en: "Installing…" },
+  installFailed: { zh: "安装失败", en: "Install failed" },
+  unsupported: { zh: "不支持的类型", en: "Unsupported type" }
+});
+
+/** The install affordance for a cataloged-but-uninstalled type. Installs the provider's
+    owning KIT (FLAT: install is kit-granular) — or, for a standalone provider with no
+    owning kit, a direct plugin hold. Persists through the market write seam so the module
+    install-state store refreshes exactly as a market install does. */
+function InstallToView({ contentType, providerName }: { contentType: string; providerName: string }) {
+  useLocale();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(false);
+
+  const install = () => {
+    const provider = providerOf(contentType);
+    if (!provider) return;
+    const owner = groupOwnerOf(provider.id);
+    const { catalogState } = installStateSnapshot();
+    const next = owner ? withKitInstalled(catalogState, owner.kitId) : withPluginInstalled(catalogState, provider.id);
+    setBusy(true);
+    setError(false);
+    void entityClient
+      .putPluginCatalog({ catalogState: next })
+      .catch(() => setError(true))
+      .finally(() => setBusy(false));
+  };
+
+  const label = t(inertMessages.installToView).replace("{name}", providerName);
+  return (
+    <div className="note-install-hint" data-content-type={contentType}>
+      <span className="note-install-hint-label">{label}</span>
+      <button type="button" className="note-install-hint-btn" onClick={install} disabled={busy}>
+        {busy ? t(inertMessages.installing) : t(inertMessages.install)}
+      </button>
+      {error ? <span className="note-install-hint-error">{t(inertMessages.installFailed)}</span> : null}
+    </div>
+  );
+}
+
+// Exported so a host can show an inert fallback for an unrendered contentType instead of
+// nothing. `contentType` (optional, additive) unlocks the M3b install affordance.
+export function InertNote({ content, contentType }: { content: unknown; contentType?: string }) {
+  useLocale();
+  const provider = contentType ? providerOf(contentType) : undefined;
+  // A cataloged provider that is NOT yet effective-installed → the install affordance.
+  if (contentType && provider && !isPluginEffectiveInstalled(provider.id)) {
+    return (
+      <div className="note-inert-wrap">
+        <InstallToView contentType={contentType} providerName={provider.name} />
+        <InertText content={content} />
+      </div>
+    );
+  }
+  // No contentType (prior behavior) → bare inert text. Otherwise a genuinely unknown type
+  // (no provider) names itself unsupported; a provider that IS installed (renderer just
+  // missing this session) shows plain inert text.
+  if (contentType == null) return <InertText content={content} />;
+  const unsupported = provider === undefined;
+  return (
+    <div className="note-inert-wrap">
+      {unsupported ? <div className="note-unsupported-type">{t(inertMessages.unsupported)}</div> : null}
+      <InertText content={content} />
+    </div>
+  );
 }

@@ -1,0 +1,54 @@
+/* InertNote fallback affordance (M3b — plugin-viewer-model §8.7). The per-note
+   "install X to view fully" hint + the unsupported-type marker. Core-client styles kept
+   OUT of the shared styles.css (which is codex-owned). */
+
+.note-inert-wrap {
+  display: block;
+}
+
+.note-install-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border: 1px dashed var(--sv-border-muted, rgba(255, 255, 255, 0.14));
+  border-radius: 8px;
+  background: var(--panel-2, rgba(255, 255, 255, 0.03));
+  font-size: 12px;
+}
+
+.note-install-hint-label {
+  opacity: 0.85;
+}
+
+.note-install-hint-btn {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--sv-border-muted, rgba(255, 255, 255, 0.18));
+  background: var(--sv-accent, #3b82f6);
+  color: #fff;
+}
+
+.note-install-hint-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.note-install-hint-error {
+  color: var(--sv-danger, #ef4444);
+  font-size: 11px;
+}
+
+.note-unsupported-type {
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.55;
+}

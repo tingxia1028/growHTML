@@ -130,7 +130,7 @@ export function FocusOverlay({ block, onClose }: { block: FocusOverlayBlock; onC
   // (while the overlay is open). Unknown type → inert fallback (never crashes).
   const body: ReactNode = plugin
     ? plugin.render({ content: block.content, note: block.note, mode: "full" })
-    : <InertNote content={block.content} />;
+    : <InertNote content={block.content} contentType={block.contentType} />;
   const Icon = noteTypeIcon(block.contentType);
   const meta = noteCardMeta(block.contentType, block.content);
   const title = block.title ?? meta.title;
