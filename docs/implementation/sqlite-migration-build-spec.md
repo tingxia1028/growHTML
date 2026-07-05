@@ -145,6 +145,22 @@ Invariant mapping (must match `snapshotStore.ts` EXACTLY):
 - **GUARD:** a WHOLE-VAULT round-trip test (export→import a vault WITH sources/assets/sealed packs/sidecars
   → assert every non-entity file survives — the B1 loss guard) + a dump→load deep-equal per entity incl
   tombstones AND a note/anchor carrying the legacy `layerId` (N2) + the existing TRUST export/import e2e.
+- **✅ LANDED (2026-07-06).** `dumpStoreToJsonl` (hidden DUMP symbol, sqlite-only, mirrors `closeSqliteStore`)
+  materializes `readWithIssues().records` (schema-valid, incl tombstones) → jsonl; `materializeVaultStores`
+  runs it for all 12 stores BEFORE `countVaultEntities` + `walkVaultFiles` in BOTH export paths
+  (`doBackup` + `exportToStream`, `dataTrust.ts`). jsonl default = genuine NO-OP (byte-identical backups,
+  guarded). Import unchanged. **Adversarial CODE review found + FIXED one BLOCKING data-loss bug:** the `.db`
+  exclusion was a loose `/\.db(-wal|-shm)?$/` on ANY basename — but `importLocalAsset` PRESERVES the source
+  extension, so a user's imported `deck.db` → `assets/asset_<ULID>.db` would be silently dropped from every
+  pack (record ships, bytes don't → dangling asset). Fixed: exclusion is now a WHITELIST built from
+  `entityFileNames` (`.study/<entity>.db`/`-wal`/`-shm` only) AND scoped to the study dir; a `.db`-extensioned
+  user asset now provably survives (new guard test). tsc 0 · full vitest green.
+  - **CAVEAT (carried to Stage-3):** the round-trip is proven **jsonl-TARGET** only. A sqlite-runtime import
+    target holds 12 open `.db` handles → Windows can't rename the dir → EPERM. This is the SAME Stage-3
+    `StudyVault.close()` gap (S2); Stage-2 introduces no NEW leak. Sqlite-TARGET import is blocked on Stage-3.
+  - **NIT (recorded):** on a corrupt/tampered blob the engines DIVERGE — the sqlite dump drops a
+    schema-invalid row (readWithIssues excludes it), whereas jsonl export copies the bad line verbatim. Low
+    severity (invalid rows are unusable), engine-dependent backup difference.
 
 **Stage 3 — flip the default engine + one-time `.jsonl → .db` migration (review B3 — trigger fixed).**
 - Trigger keys off **non-empty jsonl content OR a `manifest.json` migration-complete marker** — NOT file

@@ -31,6 +31,8 @@ import express, { type Express } from "express";
 import { z } from "zod";
 import { strFromU8, strToU8, unzipSync, Zip, ZipDeflate } from "fflate";
 import { entityFileNames } from "../core/store/entities";
+import { dumpStoreToJsonl } from "../core/store/sqliteEngine";
+import type { SnapshotRecord, SnapshotStore } from "../core/store/snapshotStore";
 import { vaultManifestSchema, type VaultManifest } from "../core/schema";
 import type { StudyVault } from "../core/vault";
 
@@ -172,8 +174,41 @@ export class VaultImportError extends Error {
  * a backup must never recurse into backups. Symlinks are skipped (no cycles),
  * as are nodeStorage's transient `*.tmp` atomic-write files and any stray
  * top-level transfer manifest from a hand-restored zip.
+ *
+ * STORE-SQL Stage-2: the local sqlite cache (`*.db` + its `-wal`/`-shm` sidecars) is a REBUILDABLE
+ * local cache, NOT portable pack content — the `*.jsonl` dumps are the pack's source of truth (spec
+ * R2), materialized by the export just before this walk. So the `.db` triplet is EXCLUDED (also
+ * dodges zipping a torn `-wal`). For today's default jsonl runtime no such files exist → no-op.
  */
-async function walkVaultFiles(rootDir: string, excludeDirs: string[]): Promise<string[]> {
+
+// The EXACT sqlite entity-store cache filenames: the `.jsonl → .db` siblings of the 12 entity stores
+// plus their `-wal`/`-shm` sidecars. Built from entityFileNames so ONLY these known cache files are
+// ever excluded. CRITICAL: do NOT match `.db` by a loose regex on any basename — importLocalAsset
+// preserves the source extension (assets.ts), so a user's imported `deck.db` lands at
+// `assets/asset_<ULID>.db`, a LEGITIMATE pack file whose bytes must NOT be dropped from the backup.
+const SQLITE_CACHE_BASENAMES = new Set(
+  Object.values(entityFileNames).flatMap((f) => {
+    const db = f.replace(/\.jsonl$/i, ".db");
+    return [db, `${db}-wal`, `${db}-shm`];
+  })
+);
+
+// A file is an excludable sqlite cache file ONLY if it lives DIRECTLY in the study dir AND its
+// basename is one of the known entity-store cache names — so nothing outside `.study/` (assets,
+// sources, sealed blobs, sidecars) can ever be dropped, whatever its extension.
+function isEntityCacheFile(relPath: string, studyDirRel: string): boolean {
+  const slash = relPath.replace(/\\/g, "/");
+  const cut = slash.lastIndexOf("/");
+  const dir = cut === -1 ? "" : slash.slice(0, cut);
+  const base = slash.slice(cut + 1);
+  return dir === studyDirRel && SQLITE_CACHE_BASENAMES.has(base);
+}
+
+async function walkVaultFiles(
+  rootDir: string,
+  excludeDirs: string[],
+  studyDirRel?: string
+): Promise<string[]> {
   const excluded = excludeDirs.map((dir) => path.resolve(dir));
   const out: string[] = [];
   const visit = async (dir: string, rel: string) => {
@@ -193,6 +228,10 @@ async function walkVaultFiles(rootDir: string, excludeDirs: string[]): Promise<s
         await visit(abs, relPath);
       } else if (entry.isFile()) {
         if (entry.name.endsWith(".tmp")) continue;
+        // Exclude the rebuildable sqlite cache ONLY when the caller scopes it (studyDirRel) and the
+        // file is a known entity-store cache under .study/ — jsonl is the pack's truth. Absent
+        // studyDirRel (import/other walks) nothing is excluded — under-match is safe, over-match loses data.
+        if (studyDirRel !== undefined && isEntityCacheFile(relPath, studyDirRel)) continue;
         if (relPath === VAULT_TRANSFER_MANIFEST_NAME) continue;
         out.push(relPath);
       }
@@ -200,6 +239,22 @@ async function walkVaultFiles(rootDir: string, excludeDirs: string[]): Promise<s
   };
   await visit(rootDir, "");
   return out;
+}
+
+/**
+ * STORE-SQL Stage-2 — materialize the pack's source-of-truth jsonl from the runtime stores BEFORE
+ * the zip walk. For a SQLITE-backed vault each `dumpStoreToJsonl` writes the store's current rows
+ * (schema-validated, incl. tombstones) to `<studyDir>/<entity>.jsonl`, so the whole-dir walk zips a
+ * fresh, complete jsonl (the `.db` cache is excluded by {@link walkVaultFiles}). For today's DEFAULT
+ * jsonl runtime every call is a NO-OP — the jsonl file IS the store, already current — so jsonl-vault
+ * export/backup output stays BYTE-IDENTICAL. Non-entity files (sources/assets/sealed/sidecars) are
+ * untouched and ride the walk verbatim regardless of engine.
+ */
+async function materializeVaultStores(vault: StudyVault): Promise<void> {
+  for (const [key, fileName] of Object.entries(entityFileNames)) {
+    const store = vault.stores[key as keyof typeof vault.stores] as SnapshotStore<SnapshotRecord>;
+    await dumpStoreToJsonl(store, path.join(vault.paths.studyDir, fileName), vault.storage);
+  }
 }
 
 /** Non-empty line counts of every entity jsonl — the manifest's `counts`. */
@@ -503,8 +558,12 @@ export function createDataTrustService(deps: DataTrustDeps): DataTrustService {
     const finalPath = path.join(backupsDir, name);
     const tmpPath = `${finalPath}.tmp`;
 
+    // Stage-2: materialize sqlite rows → jsonl (no-op on the jsonl default) BEFORE the manifest
+    // counts (read from the jsonl) and the walk zip them.
+    await materializeVaultStores(vault);
     const manifestJson = await buildManifest("backup", reason);
-    const files = await walkVaultFiles(rootDir, [backupsDir]);
+    const studyDirRel = path.relative(rootDir, vault.paths.studyDir).replace(/\\/g, "/");
+    const files = await walkVaultFiles(rootDir, [backupsDir], studyDirRel);
     const stream = createWriteStream(tmpPath);
     try {
       const { fileCount, skippedFiles } = await streamVaultZip({
@@ -607,8 +666,12 @@ export function createDataTrustService(deps: DataTrustDeps): DataTrustService {
     },
 
     async exportToStream(write) {
+      // Stage-2: materialize sqlite rows → jsonl (no-op on the jsonl default) BEFORE the manifest
+      // counts (read from the jsonl) and the walk zip them.
+      await materializeVaultStores(vault);
       const manifestJson = await buildManifest("export");
-      const files = await walkVaultFiles(rootDir, [backupsDir]);
+      const studyDirRel = path.relative(rootDir, vault.paths.studyDir).replace(/\\/g, "/");
+      const files = await walkVaultFiles(rootDir, [backupsDir], studyDirRel);
       return streamVaultZip({ rootDir, files, manifestJson, write });
     },
 

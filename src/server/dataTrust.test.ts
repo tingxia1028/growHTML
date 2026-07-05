@@ -7,15 +7,21 @@
 // REPLACE semantics on a fixture vault with the automatic pre-import backup, and
 // restore-from-backup with its pre-restore safety backup.
 
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
-import { fixtureHtmlBody } from "../core/fixtures/golden";
-import { openVault, type StudyVault } from "../core/vault";
+import { fixtureAnchor, fixtureConcept, fixtureHtmlBody, fixtureNote, fixtureSource } from "../core/fixtures/golden";
+import { openVault, type StudyVault, type VaultPaths } from "../core/vault";
+import { schemaVersion, studyLayerSchema, vaultManifestSchema, type StudyLayerRecord } from "../core/schema";
+import { createEntityStores, entityFileNames } from "../core/store/entities";
+import { closeSqliteStore, sqliteEngine } from "../core/store/sqliteEngine";
+import type { SnapshotRecord, SnapshotStore } from "../core/store/snapshotStore";
+import { noteSchema, type NoteRecord } from "../core/schema";
+import { nodeStorage } from "../core/storage/nodeStorage";
 import { createApp } from "./app";
 import {
   IMPORT_CONFIRM_PHRASE,
@@ -470,5 +476,183 @@ describe("POST /api/vault/import", () => {
       .send({ name: "vault-backup-20200101-000000-manual.zip", confirm: IMPORT_CONFIRM_PHRASE })
       .expect(404);
     expect(missing.body.code).toBe("backup-not-found");
+  });
+});
+
+// —— STORE-SQL Stage-2: JSONL-as-truth export/import bridge for a SQLITE vault ——————
+//
+// The `.db` is the RUNTIME truth but the PACK's source of truth is the `*.jsonl` dumps (spec R2).
+// The export must MATERIALIZE the sqlite rows to jsonl before the whole-dir zip, EXCLUDE the
+// rebuildable `.db` cache from the pack, and NOT touch the non-entity files (sources/assets). On
+// import the swapped dir holds jsonl (no `.db`) → the next open rebuilds sqlite from jsonl. This
+// suite is the new proof; the jsonl-runtime suites above prove the no-op path is byte-identical.
+
+/** Build a SQLITE-backed StudyVault under `rootDir` (mirrors openVault's dir + manifest setup). */
+async function buildSqliteVault(rootDir: string): Promise<StudyVault> {
+  const studyDir = path.join(rootDir, ".study");
+  const paths: VaultPaths = {
+    rootDir,
+    studyDir,
+    sourcesDir: path.join(rootDir, "sources"),
+    assetsDir: path.join(rootDir, "assets"),
+    exportsDir: path.join(rootDir, "exports"),
+    manifestPath: path.join(studyDir, "manifest.json"),
+    pluginSettingsPath: path.join(studyDir, "plugin-settings.json")
+  };
+  for (const dir of [paths.studyDir, paths.sourcesDir, paths.assetsDir, paths.exportsDir]) {
+    await mkdir(dir, { recursive: true });
+  }
+  const nowIso = new Date().toISOString();
+  const manifest = vaultManifestSchema.parse({ schemaVersion, name: "SQLite Vault", createdAt: nowIso, updatedAt: nowIso });
+  await writeFile(paths.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  return { paths, manifest, stores: createEntityStores(studyDir, nodeStorage, sqliteEngine), storage: nodeStorage };
+}
+
+/** Close every sqlite store's DB handle (Windows can't unlink an open `.db`/`-wal`). */
+function closeVault(vault: StudyVault): void {
+  for (const store of Object.values(vault.stores)) {
+    closeSqliteStore(store as SnapshotStore<SnapshotRecord>);
+  }
+}
+
+async function exportBytes(service: ReturnType<typeof createDataTrustService>): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  await service.exportToStream(async (chunk) => {
+    chunks.push(Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength));
+  });
+  return Buffer.concat(chunks);
+}
+
+describe("STORE-SQL Stage-2 — sqlite whole-vault round-trip (JSONL is the pack's truth)", () => {
+  it("materializes jsonl, excludes the .db cache, and round-trips entities + tombstone + non-entity files", async () => {
+    const parent = await tmp("sqlite-roundtrip");
+    const rootA = path.join(parent, "vaultA");
+    const rootB = path.join(parent, "vaultB");
+
+    const layer: StudyLayerRecord = studyLayerSchema.parse({
+      id: "layer_01ARZ3NDEKTSV4RRFFQ69G5FB2",
+      type: "layer",
+      schemaVersion: 1,
+      createdAt: fixtureNote.createdAt,
+      updatedAt: fixtureNote.updatedAt,
+      createdBy: "user",
+      title: "Owned"
+    });
+    // A note carrying anchor/concept/layer ids AND the DEPRECATED singular note.layerId (N2) —
+    // the legacy id must round-trip losslessly through the json blob.
+    const note: NoteRecord = noteSchema.parse({
+      ...fixtureNote,
+      anchorIds: [fixtureAnchor.id],
+      conceptIds: [fixtureConcept.id],
+      layerIds: [layer.id],
+      layerId: layer.id
+    });
+    // A SOFT-DELETED anchor tombstone — must survive the round-trip (list hides it, listTrashed shows it).
+    const trashedAnchor = { ...fixtureAnchor, id: "anchor_01ARZ3NDEKTSV4RRFFQ69G5FZZ", deletedAt: "2026-07-05T00:00:00.000Z", updatedAt: "2026-07-05T00:00:00.000Z" };
+
+    // 1. Seed a sqlite-backed vault across several entity types (incl. the tombstone).
+    const vaultA = await buildSqliteVault(rootA);
+    const serviceA = createDataTrustService({ vault: vaultA, backupsDir: path.join(parent, "backupsA"), appVersion: "0.0.0-test" });
+    try {
+      await vaultA.stores.sources.upsert(fixtureSource);
+      await vaultA.stores.anchors.upsert(fixtureAnchor);
+      await vaultA.stores.anchors.upsert(trashedAnchor);
+      await vaultA.stores.concepts.upsert(fixtureConcept);
+      await vaultA.stores.layers.upsert(layer);
+      await vaultA.stores.notes.upsert(note);
+
+      // A NON-ENTITY file in the vault dir (the B1 loss guard) — an ingested source + an asset.
+      await writeFile(path.join(vaultA.paths.sourcesDir, "fake.html"), "<p>ingested html</p>", "utf8");
+      await writeFile(path.join(vaultA.paths.assetsDir, "diagram.bin"), Buffer.from([1, 2, 3, 4, 5]));
+      // A user asset with a `.db` EXTENSION (importLocalAsset preserves the source extension, so a
+      // user's imported `deck.db` lands here). It MUST survive — the sqlite-cache exclusion is scoped
+      // to `.study/<entity>.db`, so a loose `.db` match would silently drop these bytes (the over-match bug).
+      await writeFile(path.join(vaultA.paths.assetsDir, "user-backup.db"), Buffer.from([9, 8, 7]));
+
+      // 2. Export — this MATERIALIZES the sqlite rows into `.study/*.jsonl` before the walk.
+      const bytes = await exportBytes(serviceA);
+      const entries = unzipSync(bytes);
+      const names = Object.keys(entries);
+
+      // The pack carries the jsonl dumps …
+      expect(names).toContain(".study/notes.jsonl");
+      expect(names).toContain(".study/anchors.jsonl");
+      // … and NOT the local `.db` cache UNDER .study/ (rebuildable, excluded by the walk) — the
+      // exclusion is scoped to the entity-store cache, so the `.db`-extensioned user asset is kept.
+      expect(names.filter((name) => name.startsWith(".study/") && /\.db(-wal|-shm)?$/i.test(name))).toEqual([]);
+      // The non-entity files rode the walk verbatim.
+      expect(names).toContain("sources/fake.html");
+      expect(names).toContain("assets/diagram.bin");
+      // The `.db`-EXTENSIONED user asset was NOT dropped by the cache exclusion (over-match guard).
+      expect(names).toContain("assets/user-backup.db");
+      // The materialized notes.jsonl actually contains the note (a sqlite dump, not an empty file).
+      const notesLines = strFromU8(entries[".study/notes.jsonl"]).split("\n").filter((l) => l.trim());
+      expect(notesLines).toHaveLength(1);
+      expect(JSON.parse(notesLines[0]).id).toBe(note.id);
+      // The pack passes its own import validator (jsonl line-counts match the manifest).
+      const validated = validateVaultZip(bytes);
+      expect(validated.manifest.counts.notes).toBe(1);
+      expect(validated.manifest.counts.anchors).toBe(2); // live + tombstone (line count, not list())
+
+      // 3. Import into a FRESH vault B (full REPLACE via the real service pipeline). The import is
+      //    an ENGINE-AGNOSTIC whole-dir two-rename swap that validates jsonl lines and never reopens
+      //    stores, so B is a plain jsonl vault (no open `.db` handles to block the Windows rename —
+      //    the production Stage-3 StudyVault.close() closes them before the swap). The sqlite-vs-jsonl
+      //    proof is that we REBUILD sqlite stores from the imported jsonl in step 4.
+      const vaultB = await openVault({ rootDir: rootB });
+      const serviceB = createDataTrustService({ vault: vaultB, backupsDir: path.join(parent, "backupsB"), appVersion: "0.0.0-test" });
+      const result = await serviceB.importVault(bytes);
+      expect(result.ok).toBe(true);
+      expect(result.counts.notes).toBe(1);
+
+      // 4. Read the imported entities back — jsonl is the pack's TRUTH, so a jsonl store reads them
+      //    directly from the swapped dir (pre-Stage-3; the Stage-3 boot builder will rebuild the `.db`
+      //    from this same jsonl). No stale `.db` survived the swap (the pack carried none; the swap
+      //    replaced the whole dir) — the jsonl alone is a complete, portable, restorable copy.
+      expect(existsSync(path.join(rootB, ".study", "notes.db"))).toBe(false);
+      const rebuilt = createEntityStores(path.join(rootB, ".study"), nodeStorage); // jsonl (default)
+      const notes = await rebuilt.notes.list();
+      expect(notes).toHaveLength(1);
+      expect(notes[0].id).toBe(note.id);
+      expect(notes[0].anchorIds).toEqual([fixtureAnchor.id]);
+      expect(notes[0].conceptIds).toEqual([fixtureConcept.id]);
+      expect(notes[0].layerIds).toEqual([layer.id]);
+      expect(notes[0].layerId).toBe(layer.id); // legacy singular survived the blob round-trip
+
+      // The tombstone survived: hidden from list(), present in listTrashed()/getAny().
+      expect((await rebuilt.anchors.list()).map((a) => a.id)).toEqual([fixtureAnchor.id]);
+      expect((await rebuilt.anchors.listTrashed()).map((a) => a.id)).toEqual([trashedAnchor.id]);
+      expect((await rebuilt.anchors.getAny(trashedAnchor.id))?.deletedAt).toBe(trashedAnchor.deletedAt);
+
+      // Other entity types round-tripped.
+      expect((await rebuilt.sources.list()).map((s) => s.id)).toEqual([fixtureSource.id]);
+      expect((await rebuilt.concepts.list()).map((c) => c.id)).toEqual([fixtureConcept.id]);
+      expect((await rebuilt.layers.list()).map((l) => l.id)).toEqual([layer.id]);
+
+      // 5. The non-entity files survived the whole export→import round-trip.
+      expect(await readFile(path.join(rootB, "sources", "fake.html"), "utf8")).toBe("<p>ingested html</p>");
+      expect([...(await readFile(path.join(rootB, "assets", "diagram.bin")))]).toEqual([1, 2, 3, 4, 5]);
+      expect([...(await readFile(path.join(rootB, "assets", "user-backup.db")))]).toEqual([9, 8, 7]);
+    } finally {
+      closeVault(vaultA);
+    }
+  });
+
+  it("jsonl export stays a NO-OP: dumpStoreToJsonl does not rewrite a jsonl store's file", async () => {
+    // A jsonl-backed vault's entity file is already truth; the Stage-2 dump must NOT touch it (so
+    // jsonl-vault backups stay byte-identical). Prove it by capturing the file's mtime+bytes across
+    // an export.
+    const parent = await tmp("jsonl-noop");
+    const vault = await openVault({ rootDir: path.join(parent, "vault") });
+    const service = createDataTrustService({ vault, backupsDir: path.join(parent, "backups"), appVersion: "0.0.0-test" });
+
+    const notesPath = path.join(vault.paths.studyDir, entityFileNames.notes);
+    await vault.stores.notes.upsert(fixtureNote);
+    const before = await readFile(notesPath);
+
+    await exportBytes(service);
+
+    const after = await readFile(notesPath);
+    expect(after.equals(before)).toBe(true); // the jsonl file is untouched by the (no-op) dump
   });
 });
