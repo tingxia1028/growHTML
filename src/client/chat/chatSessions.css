@@ -224,3 +224,51 @@
 .chat-capture-mistake[data-vision="off"] {
   opacity: 0.6;
 }
+
+/* Offline-Mock honesty banner (alpha polish): a single dismissible line above the
+   composer, shown only when the ACTIVE provider is the offline `mock`. The link opens
+   AI 提供方 settings; the ✕ latches the dismiss for the session. Uses the shared tokens. */
+.chat-offline-mock-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0;
+  padding: 4px 8px;
+  border: 1px solid var(--sv-border, #d1d5db);
+  border-radius: var(--sv-radius-sm, 6px);
+  background: var(--sv-surface-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.chat-offline-mock-link {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--sv-accent);
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-offline-mock-link:hover {
+  text-decoration: underline;
+}
+
+.chat-offline-mock-dismiss {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  border-radius: var(--sv-radius-sm, 6px);
+  background: transparent;
+  color: var(--sv-text-muted);
+  cursor: pointer;
+}
+
+.chat-offline-mock-dismiss:hover {
+  color: var(--sv-text, inherit);
+}

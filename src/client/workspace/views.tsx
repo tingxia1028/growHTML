@@ -78,6 +78,11 @@ import type { SlashEntry } from "../slash/engine";
 // session domain (src/client/chat); StudyView only passes the bundled api through.
 import { ChatSessionSwitcher } from "../chat/ChatSessionSwitcher";
 import { ChatAttachments } from "../chat/ChatAttachments";
+// Offline-Mock honesty banner (alpha polish): the one-line hint shown when the active AI
+// provider is the offline `mock`. Its deep-link opens the Settings Hub through the SAME
+// shell-nav the onboarding connect-ai step / user menu use (navigateShell settings.hub).
+import { offlineMockMessages } from "../chat/offlineMockMessages";
+import { navigateShell } from "./shellNav";
 // 语音输入 (SPEECH-2): the mic on the chat composer — which is ALSO the slash
 // composer's main text field ("Type / for commands"), so one mount covers both.
 // The confirmed transcript appends to the SAME chatInput state the keyboard edits.
@@ -483,6 +488,9 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
     // V-2 (拍错题): default to a no-op so a partial test fixture doesn't crash the render.
     captureMistakePhoto = async () => {},
     visionAvailable = false,
+    // Offline-Mock honesty banner: default false so a partial test fixture (or a build
+    // where the readout hasn't resolved) simply shows no banner.
+    offlineMock = false,
     submitComposer,
     composerDisabled,
     addReplyAsNote,
@@ -511,6 +519,24 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
   const slashParsed = parseSlashInput(chatInput);
   const [slashIndex, setSlashIndex] = useState(0);
   const [slashDismissedFor, setSlashDismissedFor] = useState<string | null>(null);
+  // Offline-Mock honesty banner: the ✕ dismiss latches for the SESSION (sessionStorage,
+  // so it stays hidden across a reload within the same tab but returns on a new session).
+  // Seeded lazily; a storage-hostile environment (tests) just starts un-dismissed.
+  const [offlineMockDismissed, setOfflineMockDismissed] = useState(() => {
+    try {
+      return globalThis.sessionStorage?.getItem("growte.offlineMockDismissed") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const dismissOfflineMock = () => {
+    setOfflineMockDismissed(true);
+    try {
+      globalThis.sessionStorage?.setItem("growte.offlineMockDismissed", "1");
+    } catch {
+      // storage may be unavailable (hardened contexts / tests) — in-memory dismiss still holds
+    }
+  };
   // SC-3: the palette now spans note types AND operations (built-in kit actions +
   // custom ops), floated active-kit-first and pinyin-matchable. Rebuilt only when the
   // operation set / prefs / active kit change; the per-keystroke work stays the resolve.
@@ -714,6 +740,31 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
         {/* D5: command-driven generation drafts NO LONGER park here — they open in
             the FloatingNoteEditor next to the passage (mounted once in the shell
             chrome). The chat pane keeps only chat + the slash entry below. */}
+
+        {/* Offline-Mock honesty banner (alpha polish): when the ACTIVE provider is the
+            offline `mock`, its replies are canned echoes — say so, and deep-link the
+            AI 提供方 settings through the SAME shell-nav the onboarding connect-ai step uses.
+            Dismissible for the session (✕). Absent on a real provider or once dismissed. */}
+        {offlineMock && !offlineMockDismissed ? (
+          <div className="chat-offline-mock-banner" role="note">
+            <button
+              type="button"
+              className="chat-offline-mock-link"
+              onClick={() => navigateShell({ type: "modal", kind: "settings.hub" })}
+            >
+              {t(offlineMockMessages.text)}
+            </button>
+            <button
+              type="button"
+              className="chat-offline-mock-dismiss"
+              aria-label={t(offlineMockMessages.dismiss)}
+              title={t(offlineMockMessages.dismiss)}
+              onClick={dismissOfflineMock}
+            >
+              <X size={12} />
+            </button>
+          </div>
+        ) : null}
 
         {/* W2 (ai-workspace §W2): the attachment strip — chips for the session's attached
             sources + a "+" picker. Attaching a source feeds the widened ChatContext the

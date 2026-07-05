@@ -491,6 +491,10 @@ export type WorkspaceContextValue = {
   /** V-2: whether the ACTIVE provider advertises IMAGE input — a UI HINT only (the 拍错题
       affordance stays visible regardless; a non-vision send surfaces the clean 400). */
   visionAvailable: boolean;
+  /** Alpha polish: the ACTIVE AI provider is the offline `mock` (a fresh install with no
+      real provider configured), so its chat replies are canned placeholder echoes. Drives
+      a dismissible honesty hint in the chat surface pointing at AI 提供方 settings. */
+  offlineMock: boolean;
   patchHtml: string;
   setPatchHtml(html: string): void;
   showTerminal: boolean;
@@ -819,6 +823,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // capture affordance stays visible regardless (degrade-not-disappear); this flag only
   // lets the UI HINT when a non-vision provider would surface the clean 400 on send.
   const [visionAvailable, setVisionAvailable] = useState(false);
+  // Offline-Mock honesty (alpha polish): the ACTIVE provider is the deterministic offline
+  // `mock` (fresh install, no real provider configured) — its replies are canned echoes.
+  // Read once from the SAME aiProviders() mount effect (active.kind === "mock"); the chat
+  // surface shows a dismissible hint pointing at AI 提供方 settings. Best-effort: any read
+  // failure leaves it false (no banner — the pre-existing silent behavior).
+  const [offlineMock, setOfflineMock] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);
   const [patchHtml, setPatchHtml] = useState("");
   const [importUrl, setImportUrl] = useState("");
@@ -1323,11 +1333,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setAgentAvailable(active?.capabilities?.tools === true);
         // V-2: the same readout feeds the 拍错题 vision hint (degrade-not-disappear).
         setVisionAvailable(active?.capabilities?.vision === true);
+        // Offline-Mock honesty: the server reports the active provider's capability kind
+        // (aiProviders.ts → active.kind = capabilities.kind), which is "mock" for BOTH the
+        // mock and mock-agent providers — a keyless/offline default. The chat surface hints.
+        setOfflineMock(info.active.kind === "mock");
       })
       .catch(() => {
         if (!cancelled) {
           setAgentAvailable(false);
           setVisionAvailable(false);
+          setOfflineMock(false);
         }
       });
     return () => {
@@ -2450,6 +2465,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       removePendingImage,
       captureMistakePhoto,
       visionAvailable,
+      offlineMock,
       patchHtml,
       setPatchHtml,
       showTerminal,
@@ -2574,6 +2590,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       removePendingImage,
       captureMistakePhoto,
       visionAvailable,
+      offlineMock,
       patchHtml,
       showTerminal,
       activeFileDir,
