@@ -14,17 +14,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { ReactElement, ReactNode } from "react";
-import { entityClient, type NoteRecord, type SourceRecord, type WorkspaceNode } from "../data/entityClient";
-import { setLocale } from "../i18n";
-import { getView, type WorkspaceContext } from "./viewRegistry";
+import { entityClient, type NoteRecord, type SourceRecord, type WorkspaceNode } from "../../client/data/entityClient";
+import { setLocale } from "../../client/i18n";
+import { getView, type WorkspaceContext } from "../../client/workspace/viewRegistry";
 
 const navigateShell = vi.hoisted(() => vi.fn(() => true));
-vi.mock("./shellNav", () => ({ navigateShell }));
+vi.mock("../../client/workspace/shellNav", () => ({ navigateShell }));
 
 // Side effects: the built-in note types (incl. the core mistake render/edit) + the view.
-import "../notes/builtinNoteTypes";
-import "./mistakeBookView";
-import { consumePendingReviewScope } from "../review/reviewScope";
+import "../../client/notes/builtinNoteTypes";
+import "./MistakeBookView";
+import { consumePendingReviewScope } from "../../client/review/reviewScope";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

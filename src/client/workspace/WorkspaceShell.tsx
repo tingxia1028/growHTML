@@ -60,8 +60,10 @@ import "./pluginManagerViews";
 import "./trashViews";
 //   ../review/ReviewPanel → review.panel (the REV-1 复习 runner — reached via the IconRail)
 import "../review/ReviewPanel";
-//   ./mistakeBookView → mistake.book (the 错题本 browse/manage surface — reached via the IconRail)
-import "./mistakeBookView";
+//   ../../kits/mistake-photo/MistakeBookView → mistake.book (the 错题本 cross-source browse/manage
+//   lens — folded into the mistake-photo KIT; launched via the CORE commandEntries.ts NAV entry
+//   (Cmd+K "错题本"), no longer a rail entry. Self-registerViews like report.list; kind unchanged.)
+import "../../kits/mistake-photo/MistakeBookView";
 //   ../../kits/teachback/TeachbackPanel → teachback.panel (the PRO-2 教回 runner — reached
 //   via the teachback.start command / global search + the opt-in teach-back trigger)
 import "../../kits/teachback/TeachbackPanel";

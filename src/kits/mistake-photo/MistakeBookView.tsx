@@ -20,11 +20,11 @@
 import { useEffect, useState } from "react";
 import { BookX, Pencil, Play, Trash2 } from "lucide-react";
 import { getNoteContentSpec } from "../../core/notes/contentTypes";
-import { getNoteType } from "../notes/noteTypeRegistry";
-import { entityClient, type NoteRecord } from "../data/entityClient";
-import { registerView, type WorkspaceContext } from "./viewRegistry";
-import { navigateShell } from "./shellNav";
-import { setPendingReviewScope } from "../review/reviewScope";
+import { getNoteType } from "../../client/notes/noteTypeRegistry";
+import { entityClient, type NoteRecord } from "../../client/data/entityClient";
+import { registerView, type WorkspaceContext } from "../../client/workspace/viewRegistry";
+import { navigateShell } from "../../client/workspace/shellNav";
+import { setPendingReviewScope } from "../../client/review/reviewScope";
 import "./mistakeBook.css";
 
 // The mastery enum is the core mistake spec's own (contentTypes.ts) — "弱项" spans the two

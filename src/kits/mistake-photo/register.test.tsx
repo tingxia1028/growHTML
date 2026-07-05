@@ -12,11 +12,16 @@ import "../clientKits";
 // The CORE note types register via this side-effect (mistakeNoteType is a core built-in,
 // NOT a kit plugin — the kit registers no note type of its own).
 import "../../client/notes/builtinNoteTypes";
+// The 错题本 browse/manage lens now lives in THIS kit (folded from core) — importing it
+// self-registerViews kind "mistake.book" into the shared global registry (the shell does
+// this side-effect import at runtime; here we pin the register-only relocation).
+import "./MistakeBookView";
 // Server-side prompt registration (React-free) — the same path installServerKits rides.
 import { installServerKits } from "../server";
 
 import { getCommand } from "../../client/commands/registry";
 import { getNoteType } from "../../client/notes/noteTypeRegistry";
+import { getView } from "../../client/workspace/viewRegistry";
 import { getKitPrompt } from "../prompts";
 import { getNoteContentSpec, MISTAKE_CONTENT_TYPE } from "../../core/notes/contentTypes";
 import { MISTAKE_PHOTO_EXTRACT_PROMPT } from "./commands";
@@ -35,6 +40,14 @@ describe("mistake-photo kit registration", () => {
     const command = getCommand("mistake-photo.capture");
     expect(command).toBeTruthy();
     expect(command!.group).toBe("mistake-photo");
+  });
+
+  it("the folded 错题本 lens self-registers kind mistake.book; the `mistake` contentType stays CORE", () => {
+    // Register-only relocation: the view moved into this kit's directory but self-registers
+    // into the SAME global registry, so getView(kind) resolves (kind string unchanged).
+    expect(getView("mistake.book")).toBeTruthy();
+    // The contentType stays a CORE spec (the kit does NOT own it — only the browse lens).
+    expect(getNoteContentSpec(MISTAKE_CONTENT_TYPE)).toBeTruthy();
   });
 
   it("capture is available once a photo REF is staged, unavailable otherwise (degrade-not-disappear key)", () => {
