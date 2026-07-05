@@ -65,6 +65,9 @@ import "./mistakeBookView";
 //   ../../kits/teachback/TeachbackPanel → teachback.panel (the PRO-2 教回 runner — reached
 //   via the teachback.start command / global search + the opt-in teach-back trigger)
 import "../../kits/teachback/TeachbackPanel";
+//   ../../kits/study-report/ReportListView → report.list (the REPORT-1 学习报告 list — the
+//   home of source-less report notes; reached via the study-report.open command / global search)
+import "../../kits/study-report/ReportListView";
 //   ../profile/ProfilePanel → profile.panel (the MEM-2 画像/记忆管理 page — IconRail)
 import "../profile/ProfilePanel";
 //   ../settings/SettingsHub → settings.hub (SHELL-1 — reached via the user menu, no rail icon)

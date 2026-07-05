@@ -38,6 +38,9 @@ const NAV_COMMANDS: { kind: string; title: Message; aliases: string[]; modal?: b
   // PRO-2: 教回 runner. The palette list is STATIC in V1 (registry-derivation is deferred
   // SEARCH-2), so the teachback.start launch needs THIS entry to surface in global search.
   { kind: "teachback.panel", title: searchMessages.cmdTeachback, aliases: ["teachback", "teach-back", "教回", "费曼", "feynman"] },
+  // REPORT-1: the 学习报告 list pane (report.list). The palette list is STATIC in V1, so the
+  // study-report.open launch needs THIS entry to surface in global search (the teachback precedent).
+  { kind: "report.list", title: searchMessages.cmdStudyReport, aliases: ["study report", "report", "学习报告", "报告"] },
   { kind: "profile.panel", title: searchMessages.cmdProfile, aliases: ["profile", "画像", "记忆"] },
   { kind: "settings.hub", title: searchMessages.cmdSettings, aliases: ["settings", "设置"], modal: true },
   { kind: "layer.switcher", title: searchMessages.cmdLayers, aliases: ["layers", "分层", "层"], modal: true },
