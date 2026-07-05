@@ -23,6 +23,12 @@ type Calls = {
   deletedKeys: string[];
   tested: string[];
   detected: string[];
+  // Managed (托管积分, G-A3b) seams.
+  managedRequestCode: Array<{ id: string; phone: string }>;
+  managedVerify: Array<{ id: string; phone: string; code: string }>;
+  managedTopup: Array<{ id: string; sku: string; mockNotify?: boolean }>;
+  managedLoggedOut: string[];
+  managedBalances: string[];
 };
 
 function baseInfo(): AiProvidersInfo {
@@ -72,14 +78,35 @@ function installFake(
   overrides: Parameters<typeof setSettingsIoForTests>[0] = {},
   about: { isPackaged?: boolean } = {}
 ): Calls {
-  const calls: Calls = { list: [], active: [], key: [], deletedKeys: [], tested: [], detected: [] };
+  const calls: Calls = {
+    list: [],
+    active: [],
+    key: [],
+    deletedKeys: [],
+    tested: [],
+    detected: [],
+    managedRequestCode: [],
+    managedVerify: [],
+    managedTopup: [],
+    managedLoggedOut: [],
+    managedBalances: []
+  };
   const keyed = new Set(info.config?.providers.filter((entry) => entry.keySet).map((entry) => entry.id));
+  // Track the managed backing entry's session state so the reload reflects login/logout.
+  const managedSessions = new Set(
+    info.config?.providers.filter((entry) => entry.sessionSet).map((entry) => entry.id)
+  );
+  const managedBalance = { balance: 1000, recent: [{ id: "l1", kind: "signup_bonus", amount: 1000, ts: 1 }] };
   setSettingsIoForTests({
     fetchProviders: async () => JSON.parse(JSON.stringify(info)) as AiProvidersInfo,
     fetchAbout: async () => ({ app: "ai-study-vault", version: "0.0.0-test", isPackaged: about.isPackaged === true }),
     saveProviderList: async (providers) => {
       calls.list.push(providers);
-      info.config!.providers = providers.map((entry) => ({ ...entry, keySet: keyed.has(entry.id) }));
+      info.config!.providers = providers.map((entry) => ({
+        ...entry,
+        keySet: keyed.has(entry.id),
+        ...(entry.kind === "managed" ? { sessionSet: managedSessions.has(entry.id) } : {})
+      }));
       return { config: info.config! };
     },
     saveActiveProvider: async (activeProviderId) => {
@@ -110,6 +137,35 @@ function installFake(
     detectProvider: async (id) => {
       calls.detected.push(id);
       return { id, spec: "claude", ok: true, version: "2.1.0" };
+    },
+    managedRequestCode: async (id, phone) => {
+      calls.managedRequestCode.push({ id, phone });
+      return { ok: true };
+    },
+    managedVerify: async (id, phone, code) => {
+      calls.managedVerify.push({ id, phone, code });
+      managedSessions.add(id);
+      info.config!.providers = info.config!.providers.map((entry) =>
+        entry.id === id ? { ...entry, sessionSet: true } : entry
+      );
+      return { ok: true, userId: "usr_1", isNewUser: true };
+    },
+    managedBalance: async (id) => {
+      calls.managedBalances.push(id);
+      return managedBalance;
+    },
+    managedTopup: async (id, sku, mockNotify) => {
+      calls.managedTopup.push({ id, sku, mockNotify });
+      managedBalance.balance += 300;
+      return { paymentId: "pay_1", qrPayload: `mockpay://qr/pay_1`, amountYuan: 30, credits: 300 };
+    },
+    managedLogout: async (id) => {
+      calls.managedLoggedOut.push(id);
+      managedSessions.delete(id);
+      info.config!.providers = info.config!.providers.map((entry) =>
+        entry.id === id ? { ...entry, sessionSet: false } : entry
+      );
+      return { ok: true };
     },
     ...overrides
   });
@@ -167,13 +223,18 @@ describe("AiProvidersSection — rows + picker", () => {
     expect(cliCaps).toEqual(["对话", "流式"]);
   });
 
-  it("managed stays a DISABLED placeholder (G-A3b)", async () => {
+  it("managed (托管积分) is now SELECTABLE with a login sub-panel (G-A3b)", async () => {
     installFake(baseInfo());
     await render();
-    const radio = row("managed").querySelector<HTMLInputElement>(".settings-ai-radio")!;
-    expect(radio.disabled).toBe(true);
-    expect(row("managed").textContent).toContain("托管积分即将上线");
-    expect(row("managed").querySelector(".settings-ai-test-btn")).toBeNull();
+    const managedRow = row("managed");
+    // The radio is ENABLED (no longer the disabled placeholder).
+    expect(managedRow.querySelector<HTMLInputElement>(".settings-ai-radio")!.disabled).toBe(false);
+    // The old "即将上线" placeholder is gone; the status reads 未登录.
+    expect(managedRow.textContent).not.toContain("即将上线");
+    expect(managedRow.querySelector(".settings-ai-managed-status")!.getAttribute("data-logged-in")).toBe("false");
+    // No token → a 登录 affordance (phone step), NOT an error.
+    expect(managedRow.querySelector(".settings-ai-managed-login-btn")).toBeTruthy();
+    expect(managedRow.querySelector(".settings-ai-managed-phone")).toBeTruthy();
   });
 
   it("the ACTIVE radio persists through the /active seam and re-renders checked", async () => {
@@ -202,6 +263,102 @@ describe("AiProvidersSection — rows + picker", () => {
     const banner = container.querySelector(".settings-env-override-note")!;
     expect(banner.textContent).toContain("STUDY_VAULT_AI_PROVIDER = claude-pty");
     expect(banner.textContent).toContain("覆盖");
+  });
+});
+
+describe("AiProvidersSection — managed (托管积分) login / balance / top-up (G-A3b)", () => {
+  const managedRow = () => row("managed");
+
+  /** baseInfo + a logged-in managed backing entry (MANAGED_ENTRY_ID, sessionSet). */
+  function loggedInInfo(active = false): AiProvidersInfo {
+    const info = baseInfo();
+    info.config!.providers.push({
+      id: "managed-account",
+      kind: "managed",
+      preset: "managed",
+      label: "托管积分",
+      keySet: false,
+      sessionSet: true
+    });
+    if (active) info.config!.activeProviderId = "managed-account";
+    return info;
+  }
+
+  it("activating managed provisions the backing entry and activates it (existing saveActiveProvider seam)", async () => {
+    const calls = installFake(baseInfo());
+    await render();
+    await act(async () => {
+      managedRow().querySelector<HTMLInputElement>(".settings-ai-radio")!.click();
+    });
+    // The backing managed config entry was provisioned via the list seam…
+    expect(calls.list).toHaveLength(1);
+    expect(calls.list[0].some((entry) => entry.id === "managed-account" && entry.kind === "managed")).toBe(true);
+    // …and activated by its id (active.id resolves to "managed" server-side).
+    expect(calls.active).toEqual(["managed-account"]);
+  });
+
+  it("no token → shows a 登录 prompt (phone → code → verify), NOT a stream error", async () => {
+    const calls = installFake(baseInfo());
+    await render();
+    // Enter a phone and send the code.
+    setValue(managedRow().querySelector<HTMLInputElement>(".settings-ai-managed-phone")!, "+8613800138000");
+    await act(async () => {
+      managedRow().querySelector<HTMLButtonElement>(".settings-ai-managed-login-btn")!.click();
+    });
+    expect(calls.managedRequestCode).toEqual([{ id: "managed-account", phone: "+8613800138000" }]);
+    // The panel advanced to the code step.
+    const codeInput = managedRow().querySelector<HTMLInputElement>(".settings-ai-managed-code")!;
+    expect(codeInput).toBeTruthy();
+    setValue(codeInput, "123456");
+    await act(async () => {
+      managedRow().querySelector<HTMLButtonElement>(".settings-ai-managed-verify-btn")!.click();
+    });
+    expect(calls.managedVerify).toEqual([{ id: "managed-account", phone: "+8613800138000", code: "123456" }]);
+    // After verify, the status flips 已登录 and the balance auto-loads.
+    expect(managedRow().querySelector(".settings-ai-managed-status")!.getAttribute("data-logged-in")).toBe("true");
+    expect(managedRow().querySelector(".settings-ai-managed-balance")!.textContent).toContain("1000");
+  });
+
+  it("a logged-in managed row renders the balance and auto-fetches it on mount", async () => {
+    const calls = installFake(loggedInInfo());
+    await render();
+    expect(calls.managedBalances).toContain("managed-account");
+    expect(managedRow().querySelector(".settings-ai-managed-status")!.getAttribute("data-logged-in")).toBe("true");
+    expect(managedRow().querySelector(".settings-ai-managed-balance")!.textContent).toContain("1000");
+  });
+
+  it("top-up calls the seam (mock pay) and refreshes the balance", async () => {
+    const calls = installFake(loggedInInfo());
+    await render();
+    await act(async () => {
+      managedRow().querySelector<HTMLButtonElement>('.settings-ai-managed-topup-btn[data-sku="pack_30"]')!.click();
+    });
+    expect(calls.managedTopup).toEqual([{ id: "managed-account", sku: "pack_30", mockNotify: true }]);
+    // The order confirmation renders (the mock QR payload) and the balance re-fetched.
+    expect(managedRow().querySelector(".settings-ai-managed-order")!.textContent).toContain("mockpay://");
+    expect(managedRow().querySelector(".settings-ai-managed-balance")!.textContent).toContain("1300");
+  });
+
+  it("退出登录 clears the session through the logout seam (back to the 登录 prompt)", async () => {
+    const calls = installFake(loggedInInfo());
+    await render();
+    await act(async () => {
+      managedRow().querySelector<HTMLButtonElement>(".settings-ai-managed-logout-btn")!.click();
+    });
+    expect(calls.managedLoggedOut).toEqual(["managed-account"]);
+    expect(managedRow().querySelector(".settings-ai-managed-status")!.getAttribute("data-logged-in")).toBe("false");
+    expect(managedRow().querySelector(".settings-ai-managed-login-btn")).toBeTruthy();
+  });
+
+  it("an active managed entry checks the built-in managed radio (active.id → managed)", async () => {
+    const info = loggedInInfo(true);
+    info.active = { id: "managed", kind: "managed" };
+    info.activeSource = "config";
+    installFake(info);
+    await render();
+    expect(managedRow().querySelector<HTMLInputElement>(".settings-ai-radio")!.checked).toBe(true);
+    // The backing entry is HIDDEN from the row list (it backs the built-in row).
+    expect(container.querySelector('.settings-ai-row[data-provider-id="managed-account"]')).toBeNull();
   });
 });
 
