@@ -60,6 +60,9 @@ import "./pluginManagerViews";
 import "./trashViews";
 //   ../review/ReviewPanel → review.panel (the REV-1 复习 runner — reached via the IconRail)
 import "../review/ReviewPanel";
+//   ../../kits/teachback/TeachbackPanel → teachback.panel (the PRO-2 教回 runner — reached
+//   via the teachback.start command / global search + the opt-in teach-back trigger)
+import "../../kits/teachback/TeachbackPanel";
 //   ../profile/ProfilePanel → profile.panel (the MEM-2 画像/记忆管理 page — IconRail)
 import "../profile/ProfilePanel";
 //   ../settings/SettingsHub → settings.hub (SHELL-1 — reached via the user menu, no rail icon)

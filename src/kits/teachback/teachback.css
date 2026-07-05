@@ -1,0 +1,177 @@
+/* Teach-back runner panel (PRO-2). A NEW stylesheet imported by TeachbackPanel.tsx —
+   NOT src/client/styles.css (codex holds uncommitted edits there). Scoped under
+   .teachback-panel so it never leaks into other surfaces. */
+
+.teachback-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  padding: 12px;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.teachback-panel .panel-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.teachback-loading,
+.teachback-busy {
+  color: var(--sv-text-muted, #6b7280);
+  font-size: 13px;
+}
+
+.teachback-error {
+  color: var(--sv-danger, #b91c1c);
+  font-size: 13px;
+}
+
+/* —— empty state (delta 5) —— */
+.teachback-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--sv-text-muted, #6b7280);
+}
+
+.teachback-empty-title {
+  font-weight: 600;
+  color: var(--sv-text, #111827);
+}
+
+.teachback-empty-hint {
+  font-size: 13px;
+}
+
+/* —— topic pick —— */
+.teachback-pick-prompt {
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+
+.teachback-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.teachback-topic-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--sv-border, #d1d5db);
+  border-radius: 16px;
+  background: var(--sv-surface, #fff);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.teachback-topic-btn:hover:not(:disabled) {
+  border-color: var(--sv-accent, #2563eb);
+  color: var(--sv-accent, #2563eb);
+}
+
+.teachback-topic-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* —— run: transcript + explain —— */
+.teachback-run {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.teachback-transcript {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.teachback-turn {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.teachback-turn-ai {
+  background: var(--sv-surface-alt, #f3f4f6);
+}
+
+.teachback-turn-student {
+  background: var(--sv-accent-soft, #eff6ff);
+}
+
+.teachback-turn-role {
+  flex: 0 0 auto;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--sv-text-muted, #6b7280);
+}
+
+.teachback-turn-text {
+  flex: 1;
+  white-space: pre-wrap;
+}
+
+.teachback-explain-input {
+  width: 100%;
+  min-height: 72px;
+  box-sizing: border-box;
+  padding: 8px;
+  border: 1px solid var(--sv-border, #d1d5db);
+  border-radius: 8px;
+  font: inherit;
+  resize: vertical;
+}
+
+.teachback-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.teachback-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--sv-border, #d1d5db);
+  border-radius: 8px;
+  background: var(--sv-surface, #fff);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.teachback-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.teachback-primary {
+  background: var(--sv-accent, #2563eb);
+  border-color: var(--sv-accent, #2563eb);
+  color: #fff;
+}
+
+/* —— summary —— */
+.teachback-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.teachback-inert {
+  white-space: pre-wrap;
+  font-size: 12px;
+  color: var(--sv-text-muted, #6b7280);
+}

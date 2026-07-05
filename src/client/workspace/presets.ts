@@ -73,6 +73,9 @@ export const studyVaultLayout: WorkspaceLayout = {
     { id: "plugin-manager", kind: "plugin.manager" },
     // Review runner (REV-1 复习环) — reached via the IconRail.
     { id: "review", kind: "review.panel" },
+    // Teach-back runner (PRO-2 教回/费曼) — reached via the teachback.start command /
+    // global search + the opt-in teach-back trigger (navigateShell resolves this node).
+    { id: "teachback", kind: "teachback.panel" },
     // Learner profile 画像 + 记忆管理 (MEM-2) — reached via the IconRail.
     { id: "profile", kind: "profile.panel" },
     // Settings Hub (SHELL-1) — reached via the user menu (left-slot swap), NOT a rail icon.
