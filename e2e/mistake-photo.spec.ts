@@ -2,7 +2,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 // Canonical zh/en dict for the W1 chat-session switcher (self-updating selectors).
 import { chatSessionMessages } from "../src/client/chat/chatSessionMessages";
 import { SERVER } from "./harness";
-import { openNotesTab } from "./helpers";
+import { openNotesTab, openRailPane } from "./helpers";
 
 // V-2 (vision-input.md §3) — the 拍错题 killer flow, end to end in web mode against the
 // offline mock (mock-agent DELEGATES to the vision mock, so it accepts image input and its
@@ -86,4 +86,23 @@ test("拍照错题 → VLM 抽取 → 预览 → 存错题本 (deterministic moc
   const mistakeCard = page.locator(".note-list-row .tb-mistake-preview").first();
   await expect(mistakeCard).toBeVisible({ timeout: 15_000 });
   await expect(mistakeCard).toContainText("1/2 + 1/3");
+
+  // 错题本 → 复习错题 loop closure: open the 错题本 rail pane (cross-source browse). The saved
+  // mistake lists there (the FULL tb-mistake card + its mastery badge) — no schedule row yet.
+  await openRailPane(page, "错题本", ".mistake-book");
+  const bookItem = page.locator(".mistake-book-item").filter({ hasText: "1/2 + 1/3" }).first();
+  await expect(bookItem).toBeVisible({ timeout: 15_000 });
+  await expect(bookItem.locator(".tb-mistake")).toBeVisible();
+  await expect(bookItem.locator(".tb-badge[data-mastery]")).toBeVisible();
+
+  // 复习错题 launches the EXISTING review runner scoped to mistakes. The saved mistake has no
+  // schedule row, so it queues immediately as a NEW mistake (data-reason="mistake-new").
+  await page.locator(".mistake-book-launch").click();
+  await expect(page.locator(".review-panel")).toBeVisible({ timeout: 15_000 });
+  const reviewItem = page.locator(".review-item").first();
+  await expect(reviewItem).toBeVisible({ timeout: 15_000 });
+  await expect(reviewItem).toHaveAttribute("data-reason", "mistake-new");
+  // The review runner renders the mistake through its note type (ArtifactCard card mode →
+  // the .tb-mistake-preview body carrying the extracted question).
+  await expect(reviewItem.locator(".tb-mistake-preview")).toContainText("1/2 + 1/3");
 });
