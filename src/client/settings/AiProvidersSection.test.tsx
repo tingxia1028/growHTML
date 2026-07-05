@@ -65,12 +65,18 @@ function baseInfo(): AiProvidersInfo {
   };
 }
 
-/** Mutable fake IO: writes update `info` so the post-action reload sees them. */
-function installFake(info: AiProvidersInfo, overrides: Parameters<typeof setSettingsIoForTests>[0] = {}): Calls {
+/** Mutable fake IO: writes update `info` so the post-action reload sees them. `about`
+    seeds the /api/about read (isPackaged) the section makes on mount; default = dev. */
+function installFake(
+  info: AiProvidersInfo,
+  overrides: Parameters<typeof setSettingsIoForTests>[0] = {},
+  about: { isPackaged?: boolean } = {}
+): Calls {
   const calls: Calls = { list: [], active: [], key: [], deletedKeys: [], tested: [], detected: [] };
   const keyed = new Set(info.config?.providers.filter((entry) => entry.keySet).map((entry) => entry.id));
   setSettingsIoForTests({
     fetchProviders: async () => JSON.parse(JSON.stringify(info)) as AiProvidersInfo,
+    fetchAbout: async () => ({ app: "ai-study-vault", version: "0.0.0-test", isPackaged: about.isPackaged === true }),
     saveProviderList: async (providers) => {
       calls.list.push(providers);
       info.config!.providers = providers.map((entry) => ({ ...entry, keySet: keyed.has(entry.id) }));
@@ -196,6 +202,49 @@ describe("AiProvidersSection — rows + picker", () => {
     const banner = container.querySelector(".settings-env-override-note")!;
     expect(banner.textContent).toContain("STUDY_VAULT_AI_PROVIDER = claude-pty");
     expect(banner.textContent).toContain("覆盖");
+  });
+});
+
+describe("AiProvidersSection — packaged-build unavailable providers (codex)", () => {
+  /** baseInfo + the codex cli-agent descriptor (the server always lists it). */
+  function infoWithCodex(): AiProvidersInfo {
+    const info = baseInfo();
+    info.providers.push({
+      id: "codex",
+      kind: "cli-agent",
+      label: "Codex (subscription)",
+      capabilities: { chat: true, agentic: true, streaming: true, structured: false, tools: false, vision: false, kind: "cli-agent" }
+    });
+    return info;
+  }
+
+  it("packaged build: codex row is disabled + labelled 需从源码运行 (degrade-not-disappear)", async () => {
+    installFake(infoWithCodex(), {}, { isPackaged: true });
+    await render();
+
+    // Still LISTED (not hidden) — degrade-not-disappear.
+    const codex = row("codex");
+    expect(codex).toBeTruthy();
+    expect(codex.getAttribute("data-unavailable")).toBe("true");
+    expect(codex.querySelector<HTMLInputElement>(".settings-ai-radio")!.disabled).toBe(true);
+    expect(codex.querySelector(".settings-ai-unavailable-note")!.textContent).toContain("需从源码运行");
+    // The disabled row offers no 测试连接 button.
+    expect(codex.querySelector(".settings-ai-test-btn")).toBeNull();
+
+    // The claude-agent row stays fully enabled (only codex is unavailable packaged).
+    expect(row("claude-agent").getAttribute("data-unavailable")).toBeNull();
+    expect(row("claude-agent").querySelector<HTMLInputElement>(".settings-ai-radio")!.disabled).toBe(false);
+  });
+
+  it("dev build (isPackaged=false): codex is a NORMAL selectable row", async () => {
+    installFake(infoWithCodex(), {}, { isPackaged: false });
+    await render();
+
+    const codex = row("codex");
+    expect(codex.getAttribute("data-unavailable")).toBeNull();
+    expect(codex.querySelector<HTMLInputElement>(".settings-ai-radio")!.disabled).toBe(false);
+    expect(codex.querySelector(".settings-ai-unavailable-note")).toBeNull();
+    expect(codex.querySelector(".settings-ai-test-btn")).toBeTruthy(); // 测试连接 offered
   });
 });
 

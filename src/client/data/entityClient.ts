@@ -632,8 +632,10 @@ export type UiPrefs = {
   locale: "zh" | "en";
 };
 
-/** GET /api/about — app id + package.json version (关于 surfaces). */
-export type AboutInfo = { app: string; version: string };
+/** GET /api/about — app id + package.json version (关于 surfaces) + whether this is a
+    PACKAGED desktop build (lets the client degrade features whose native deps aren't
+    shipped packaged, e.g. the codex provider). Optional in the TYPE (pre-flag stubs). */
+export type AboutInfo = { app: string; version: string; isPackaged?: boolean };
 
 /** A provider's declared capability row (mirrors src/ai ProviderCapabilities). */
 export type AiProviderCapabilities = {

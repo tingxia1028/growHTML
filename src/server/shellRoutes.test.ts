@@ -94,9 +94,15 @@ describe("workspace onboarding block (single-writer field groups)", () => {
 });
 
 describe("about + provider readouts", () => {
-  it("GET /api/about reports the package.json version", async () => {
+  it("GET /api/about reports the package.json version + isPackaged:false by default (dev/CLI/web)", async () => {
     const res = await request(app).get("/api/about").expect(200);
-    expect(res.body).toEqual({ app: "ai-study-vault", version: packageJson.version });
+    expect(res.body).toEqual({ app: "ai-study-vault", version: packageJson.version, isPackaged: false });
+  });
+
+  it("GET /api/about reports isPackaged:true when the app runs packaged (Electron main threads it)", async () => {
+    const packagedApp = createApp({ vault, identityDir, isPackaged: true });
+    const res = await request(packagedApp).get("/api/about").expect(200);
+    expect(res.body).toEqual({ app: "ai-study-vault", version: packageJson.version, isPackaged: true });
   });
 
   it("GET /api/ai/providers reports the ACTIVE provider (mock default) + the registry", async () => {

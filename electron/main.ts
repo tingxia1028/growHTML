@@ -47,7 +47,10 @@ async function resolveStartUrl(): Promise<string> {
     port: 0,
     clientDir: path.join(__dirname, "..", "dist"),
     vaultRoot,
-    backups: { auto: app.isPackaged || process.env.STUDY_VAULT_AUTO_BACKUP === "1" }
+    backups: { auto: app.isPackaged || process.env.STUDY_VAULT_AUTO_BACKUP === "1" },
+    // Surface the packaged flag on /api/about so the client can disable features
+    // whose native deps aren't shipped packaged (e.g. codex's @openai/codex-sdk).
+    isPackaged: app.isPackaged
   });
   log.info(`[boot] Growte ${app.getVersion()} server ${started.url} vault ${vaultRoot}`);
   return started.url;

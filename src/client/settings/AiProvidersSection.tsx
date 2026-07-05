@@ -129,8 +129,18 @@ function CapabilityChips({ capabilities }: { capabilities?: AiProviderCapabiliti
   );
 }
 
+/**
+ * Providers whose native deps are NOT shipped in packaged builds → disabled-not-hidden
+ * there (degrade-not-disappear). Today only codex (`@openai/codex-sdk` is a dev/source
+ * dependency; its lazy import fails packaged). The note explains the disable.
+ */
+const PACKAGED_UNAVAILABLE: Record<string, string> = {
+  codex: "需从源码运行（打包版未内置 codex SDK）"
+};
+
 export function AiProvidersSection() {
   const [info, setInfo] = useState<AiProvidersInfo | null>(null);
+  const [isPackaged, setIsPackaged] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -150,6 +160,18 @@ export function AiProvidersSection() {
     } catch {
       if (aliveRef.current) setLoadError("无法读取 AI 提供方状态");
     }
+  }, []);
+
+  // A packaged desktop build doesn't ship some providers' native deps (codex). Read
+  // the flag ONCE and disable-not-hide those rows. A read failure degrades to the dev
+  // default (nothing disabled) — never blocks the section.
+  useEffect(() => {
+    void getSettingsIo()
+      .fetchAbout()
+      .then((about) => {
+        if (aliveRef.current) setIsPackaged(about.isPackaged === true);
+      })
+      .catch(() => null);
   }, []);
 
   useEffect(() => {
@@ -339,6 +361,11 @@ export function AiProvidersSection() {
       <ul className="settings-provider-list settings-ai-rows">
         {rows.map((row) => {
           const isManaged = row.kind === "managed";
+          // A provider whose native dep isn't shipped in THIS (packaged) build →
+          // disabled-not-hidden with a short note (degrade-not-disappear). Dev builds
+          // (isPackaged=false) leave it fully enabled.
+          const unavailableNote = isPackaged ? PACKAGED_UNAVAILABLE[row.id] : undefined;
+          const pickDisabled = isManaged || unavailableNote !== undefined;
           const checked = config?.activeProviderId === row.id;
           const effective = active.id === row.id;
           const test = tests[row.id];
@@ -352,7 +379,8 @@ export function AiProvidersSection() {
               data-provider-kind={row.kind}
               data-selected={checked ? "true" : "false"}
               data-effective={effective ? "true" : "false"}
-              data-disabled={isManaged || !configWritable ? "true" : "false"}
+              data-disabled={pickDisabled || !configWritable ? "true" : "false"}
+              data-unavailable={unavailableNote !== undefined ? "true" : undefined}
               aria-current={effective ? "true" : undefined}
             >
               <div className="settings-ai-row-main">
@@ -362,7 +390,7 @@ export function AiProvidersSection() {
                     name="settings-ai-active"
                     className="settings-ai-radio"
                     checked={checked}
-                    disabled={busy || isManaged || !configWritable}
+                    disabled={busy || pickDisabled || !configWritable}
                     onChange={() => activate(row.id)}
                   />
                   <span className="settings-ai-radio-mark" aria-hidden="true" />
@@ -403,6 +431,11 @@ export function AiProvidersSection() {
                 ) : null}
                 {isManaged ? (
                   <span className="settings-ai-managed-note">托管积分即将上线（G-A3b），暂不可选</span>
+                ) : unavailableNote ? (
+                  // Packaged build without this provider's native dep: disabled-not-hidden.
+                  // Reuses the existing muted-note style (.settings-ai-managed-note) — no
+                  // new CSS — with a semantic hook class for tests/future styling.
+                  <span className="settings-ai-managed-note settings-ai-unavailable-note">{unavailableNote}</span>
                 ) : (
                   <button
                     type="button"

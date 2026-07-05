@@ -32,6 +32,13 @@ export type StartServerOptions = {
    * STUDY_VAULT_AUTO_BACKUP=0 force-disables it either way (e2e harnesses).
    */
   backups?: { dir?: string; auto?: boolean };
+  /**
+   * Whether this runs inside a PACKAGED desktop build (Electron main passes
+   * `app.isPackaged`). Surfaced on /api/about so the client can degrade features
+   * whose native deps are NOT shipped packaged — e.g. the codex provider's
+   * `@openai/codex-sdk` (deliberately dev/source-only). Default false (dev/CLI).
+   */
+  isPackaged?: boolean;
 };
 
 export type StartedServer = {
@@ -58,6 +65,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<Sta
   const app = createApp({
     vault,
     clientDir: options.clientDir,
+    isPackaged: options.isPackaged,
     // A3b: stored provider selection + BYOK config (env vars still override/fallback).
     // Under the packaged desktop app this code runs IN the Electron main process, so
     // the default KeyStore resolves to safeStorage; plain Node (dev/CLI) → env-only.

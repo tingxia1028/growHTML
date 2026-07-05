@@ -115,13 +115,21 @@ export type CreateAppOptions = {
     backupsDir?: string;
     scheduleAuto?: boolean;
   };
+  /**
+   * Whether the app runs inside a PACKAGED desktop build (Electron main passes
+   * `app.isPackaged` through startServer). Surfaced read-only on /api/about so the
+   * client can DISABLE-not-hide features whose native deps aren't shipped packaged
+   * — e.g. the codex provider (`@openai/codex-sdk` is dev/source-only). Default
+   * false (dev/CLI/web/tests) → the UI stays fully enabled.
+   */
+  isPackaged?: boolean;
 };
 
 const ingestUrlRequestSchema = z.object({
   url: z.string().url()
 });
 
-export function createApp({ vault, modelProvider, clientDir, identityDir, now, aiConfig, speech, dataTrust }: CreateAppOptions) {
+export function createApp({ vault, modelProvider, clientDir, identityDir, now, aiConfig, speech, dataTrust, isPackaged }: CreateAppOptions) {
   const app = express();
   // Provider selection (A3b): a small manager replaces the boot-time singleton so
   // the stored config's active pick takes effect per request (memoized by config
@@ -148,8 +156,10 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
   // App identity for the 关于 surfaces (user menu / Settings Hub) — the version is
   // the package.json version, resolved at build/require time. 检查更新 stays a
   // disabled stub until the desktop update channel (X1) wires electron-updater.
+  // `isPackaged` (Electron main → startServer → here) lets the client degrade
+  // features whose native deps aren't shipped packaged (e.g. the codex provider).
   app.get("/api/about", (_req, res) => {
-    res.json({ app: "ai-study-vault", version: packageJson.version });
+    res.json({ app: "ai-study-vault", version: packageJson.version, isPackaged: isPackaged === true });
   });
 
   // —— AI providers (A3b, docs/design/multi-provider-ai-agent.md §4.2/§5 Phase 1) ——
