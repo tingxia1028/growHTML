@@ -32,15 +32,17 @@ PAUSED mobile track. Every stage guarded (guard set in §Guards, corrected per t
   paid NOW; backwards for a desktop-first migration.
 - **Do NOT use `node:sqlite`** — confirmed Release Candidate (Stability 1.2) through Node 26.x as of 2026;
   unsafe for a foundational store + lags Electron's bundled Node.
-- **⚠ Stage-0 GO/NO-GO SPIKE (blocking gate):** `better-sqlite3` prebuilt binaries for **Electron v39+
-  reportedly fail to build**; this project is on **Electron 42** (`package.json:54`). Before committing,
-  PROVE `better-sqlite3` builds/rebuilds for Electron 42 via this project's LOCAL dist/rebuild toolchain
-  (`electron:rebuild` + `electron-builder --win --x64` — there is NO CI config in the repo). If no
-  prebuild → budget a from-source compile locally, or pin. This is go/no-go, not a footnote.
-- **Build-config changes (omitted before; the packaged main bundle breaks without them):** add
-  `better-sqlite3` to the esbuild `--external:` list (`package.json:21`) AND to the `electron:rebuild -w`
-  targets (currently only `node-pty`, `package.json:27`). Confirm vitest (Node env) can load
-  `better-sqlite3` once it's in the test path (Stage 3 makes it the default).
+- **✅ Stage-0 GO/NO-GO SPIKE — DONE, verdict GO (2026-07-05).** `better-sqlite3@12.11.1` verified on BOTH
+  ABIs on this machine: Node 22.17.1 (`npm rebuild better-sqlite3` → loads under node/vitest) AND Electron
+  42.4.1 (`@electron/rebuild -o better-sqlite3` → "✔ Rebuild Complete"). The two overwrite the same `.node`
+  (expected — identical to the existing node-pty operational model): `npm rebuild` for tests/dev, the
+  extended `electron:rebuild` for packaging. FTS5 IS compiled in (virtual-table + `match` smoke passed) and
+  WAL/transactions work. The round-1/2 "Electron 39+ won't build" risk did NOT materialize. Driver = option
+  (a) `better-sqlite3`, confirmed.
+- **✅ Build-config changes DONE:** `--external:better-sqlite3` added to `electron:build:main` (so the
+  Electron-main esbuild bundle doesn't try to bundle the native `.node`); `-w better-sqlite3` added to
+  `electron:rebuild`. `better-sqlite3` in `dependencies`, `@types/better-sqlite3` in `devDependencies`.
+  Vitest (Node ABI) confirmed loading it.
 
 ## Schema (json blob + extracted index columns — note schema UNCHANGED, stored as blob)
 The full record is a `json` blob (so the zod schemas never need a table migration); envelope/index columns
