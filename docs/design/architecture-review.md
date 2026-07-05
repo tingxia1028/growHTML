@@ -19,7 +19,7 @@ An honest assessment of the codebase's foundational abstractions, grounded in th
 ## Coupled half — the real blockers, ranked
 
 ### F1 — WorkspaceContext is a god object · **#1 risk**
-`WorkspaceContext.tsx` = **1753 lines, ~79 value fields, 46 activeSource references.** Every client feature threads through one context + one provider.
+`WorkspaceContext.tsx` = **2680 lines, 128-field `WorkspaceContextValue`, 67 activeSource references** (re-measured 2026-07-05; grew ~50% since the original 1753/79/46). Every client feature threads through one context + one provider. The domain-split plan is in `platform-layering.md` (Part 2).
 - **Single `activeSourceId`** ⇒ multi-doc is a deep refactor (`multidoc-and-concepts.md` Part A is entirely this).
 - Every feature adds fields ⇒ any consumer re-renders on any change; every feature edits this one file ⇒ the merge contention you already see across parallel sessions.
 - Hard to unit-test in isolation.
