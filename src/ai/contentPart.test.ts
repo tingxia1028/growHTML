@@ -84,12 +84,12 @@ describe("messageText collapse (V-1)", () => {
 });
 
 describe("vision capability bit (V-1) — the per-provider literal", () => {
-  it("mock declares vision:true (the offline vision proof)", () => {
+  it("mock + mock-agent declare vision:true (the offline vision proof; mock-agent delegates to the mock)", () => {
     expect(new MockModelProvider().capabilities.vision).toBe(true);
+    expect(new MockAgentProvider().capabilities.vision).toBe(true);
   });
 
-  it("mock-agent / cli-agent / managed declare vision:false", () => {
-    expect(new MockAgentProvider().capabilities.vision).toBe(false);
+  it("cli-agent / managed declare vision:false", () => {
     expect(new ClaudeCliProvider().capabilities.vision).toBe(false);
     expect(new ClaudePtyProvider({ createSession: () => new FakePtySession(() => []) }).capabilities.vision).toBe(false);
     expect(

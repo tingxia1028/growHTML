@@ -114,7 +114,9 @@ function CapabilityChips({ capabilities }: { capabilities?: AiProviderCapabiliti
     capabilities.chat ? "对话" : "",
     capabilities.streaming ? "流式" : "",
     capabilities.structured ? "结构化" : "",
-    capabilities.tools ? "工具" : ""
+    capabilities.tools ? "工具" : "",
+    // V-1 (vision-input.md §2): surface which providers accept image input.
+    capabilities.vision ? "视觉" : ""
   ].filter(Boolean);
   return (
     <span className="settings-ai-caps">

@@ -1199,6 +1199,15 @@ export const entityClient = {
   importAsset(filePath: string) {
     return sendJson<{ asset: AssetRecord }>("POST", "/api/assets/local-file", { path: filePath });
   },
+  /**
+   * V-1 (vision-input.md §2): import base64 image bytes as an Asset and get its id — the
+   * chat-image lane. The composer POSTs a picked image here, then pushes an
+   * {type:"image", assetId} REF onto the pending user message (never base64 in the
+   * message / vault JSONL). The server caps the size (oversize → 400).
+   */
+  importImageBase64(input: { dataBase64: string; mimeType: string; fileName?: string }) {
+    return sendJson<{ assetId: string; asset: AssetRecord }>("POST", "/api/assets", input);
+  },
   assetMeta(assetId: string) {
     return getJson<{ asset: AssetRecord }>(`/api/assets/${assetId}/meta`);
   },

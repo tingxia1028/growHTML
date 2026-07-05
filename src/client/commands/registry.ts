@@ -8,6 +8,7 @@ import type {
   ChatContext,
   ChatMessage,
   ConceptRecord,
+  ContentPart,
   EntityClient,
   NodeRef,
   NoteRecord,
@@ -164,6 +165,14 @@ export type CommandContext = {
      */
     content?: unknown;
     /**
+     * V-1 (vision-input.md §2): image REFs to attach to THIS ask-ai turn. When present,
+     * the user message becomes an ARRAY `[...images, {type:"text", text}]` instead of a
+     * bare string, so the vision seam resolves them server-side. Each is
+     * `{type:"image", assetId}` (a bounded ref, never base64). Ignored by non-chat
+     * commands. An image-only turn (no text) is allowed.
+     */
+    images?: Array<Extract<ContentPart, { type: "image" }>>;
+    /**
      * Explicit anchor ids to attach the note to, bypassing focus materialization.
      * Used by the generation-preview Save: the generating command already created
      * the anchor, so Save reuses it instead of materializing a duplicate. When
@@ -260,11 +269,18 @@ const askAi: Command = {
   id: "anchor.ask-ai",
   title: "Ask AI",
   group: "anchor",
-  isAvailable: (ctx) => !!ctx.payload.text?.trim() && !!ctx.sourceId,
+  // V-1: an image-only turn (no text) is valid too — availability holds when there is
+  // text OR at least one attached image, and a source is focused.
+  isAvailable: (ctx) => (!!ctx.payload.text?.trim() || (ctx.payload.images?.length ?? 0) > 0) && !!ctx.sourceId,
   run: async (ctx) => {
     const text = ctx.payload.text?.trim();
-    if (!text) return;
-    const history: ChatMessage[] = [...(ctx.chatMessages ?? []), { role: "user", content: text }];
+    const images = ctx.payload.images ?? [];
+    if (!text && images.length === 0) return;
+    // V-1: with image attachments the user turn is an ARRAY (images first, then the
+    // text part when present); otherwise the pre-V-1 bare string (byte-identical).
+    const userContent: ChatMessage["content"] =
+      images.length > 0 ? [...images, ...(text ? [{ type: "text" as const, text }] : [])] : text ?? "";
+    const history: ChatMessage[] = [...(ctx.chatMessages ?? []), { role: "user", content: userContent }];
     ctx.actions.onChatHistory?.(history);
     // W2: resolve the session's source attachments into the widened context BEFORE the
     // chat call (feature-detected, like chatStream). When the host wires no resolver, or

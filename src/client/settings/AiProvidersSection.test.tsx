@@ -153,9 +153,10 @@ describe("AiProvidersSection — rows + picker", () => {
     );
     expect(ids).toEqual(["mock", "claude-agent", "managed", "deepseek-1"]);
     expect(row("claude-agent").querySelector(".settings-provider-kind")!.textContent).toBe("本地 CLI（订阅）");
-    // Capability chips: the http entry advertises all four; claude-agent only 对话/流式.
+    // Capability chips: the http entry advertises all five incl. V-1 视觉; claude-agent
+    // (a non-vision cli-agent) only 对话/流式 (no 视觉).
     const httpCaps = Array.from(row("deepseek-1").querySelectorAll(".settings-ai-cap")).map((el) => el.textContent);
-    expect(httpCaps).toEqual(["对话", "流式", "结构化", "工具"]);
+    expect(httpCaps).toEqual(["对话", "流式", "结构化", "工具", "视觉"]);
     const cliCaps = Array.from(row("claude-agent").querySelectorAll(".settings-ai-cap")).map((el) => el.textContent);
     expect(cliCaps).toEqual(["对话", "流式"]);
   });

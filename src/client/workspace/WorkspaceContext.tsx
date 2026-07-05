@@ -344,6 +344,21 @@ function normalizeFolderRoot(root: string): string {
   return root.trim().replace(/[\\/]+$/, "");
 }
 
+// V-1 (vision-input.md §2): a picked File → base64 (strip the data-URL prefix) for the
+// /api/assets import. Small + local so the composer's image-attach carries no extra dep.
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error("读取文件失败"));
+    reader.onload = () => {
+      const url = String(reader.result ?? "");
+      const comma = url.indexOf(",");
+      resolve(comma >= 0 ? url.slice(comma + 1) : url);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 // Note `content` is `unknown` (structured per contentType). For display we want a
 // string: string content passes through; structured content is shown as JSON.
 export function noteText(content: unknown): string {
@@ -458,6 +473,12 @@ export type WorkspaceContextValue = {
   submitNoteContent(): void;
   chatInput: string;
   setChatInput(text: string): void;
+  /** V-1: images picked for the NEXT ask-ai turn (already imported → assetId REFs). */
+  pendingImages: Array<{ assetId: string; mimeType: string }>;
+  /** V-1: import a picked image File into the vault + stage it as a pending attachment. */
+  attachImage(file: File): Promise<void>;
+  /** V-1: drop a staged pending image before sending. */
+  removePendingImage(assetId: string): void;
   patchHtml: string;
   setPatchHtml(html: string): void;
   showTerminal: boolean;
@@ -769,6 +790,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const chatDomain = useChatSessionDomain({ activeSourceId });
   const chatMessages = chatDomain.messages;
   const [chatInput, setChatInput] = useState("");
+  // V-1 (vision-input.md §2): images the user picked for the NEXT ask-ai turn but hasn't
+  // sent yet — each already imported into the vault (so it carries an assetId REF, never
+  // base64). Rendered as removable chips above the composer; folded into the user
+  // message on submit, then cleared. DEGRADE-NOT-DISAPPEAR: the attach affordance stays
+  // visible on every provider; a non-vision send just surfaces the server's 400 once.
+  const [pendingImages, setPendingImages] = useState<Array<{ assetId: string; mimeType: string }>>([]);
+  const attachImageError = useRef("");
   // A4b: the in-flight/last agent turn's render-only transcript (tool cards + streamed
   // text), null when no agent turn has run this session. `agentAvailable` is a mount
   // read of the ACTIVE provider's `tools` capability — the gated 🛠 button shows only
@@ -1922,15 +1950,46 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   // The right-panel composer is pure AI Chat now: no Note mode or note-type routing.
   const composerCommandId = "anchor.ask-ai";
-  const composerCtx = commandContext({ text: chatInput });
+  // V-1: pass the pending images so an image-ONLY turn (empty text) is still available.
+  const composerCtx = commandContext({
+    text: chatInput,
+    images: pendingImages.map((image) => ({ type: "image" as const, assetId: image.assetId, mimeType: image.mimeType }))
+  });
   const composerDisabled = !getCommand(composerCommandId)?.isAvailable(composerCtx);
+
+  // V-1: import a picked image into the vault and stage it as a pending attachment. Reads
+  // the File as base64, POSTs /api/assets (server caps the size → 400 on oversize), and
+  // pushes the returned assetId REF. Errors surface via setError (degrade-not-disappear).
+  const attachImage = useCallback(
+    async (file: File) => {
+      try {
+        attachImageError.current = "";
+        const dataBase64 = await fileToBase64(file);
+        const { assetId } = await entityClient.importImageBase64({
+          dataBase64,
+          mimeType: file.type || "image/png",
+          fileName: file.name
+        });
+        setPendingImages((prev) => [...prev, { assetId, mimeType: file.type || "image/png" }]);
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "图片添加失败");
+      }
+    },
+    [setError]
+  );
+
+  const removePendingImage = useCallback((assetId: string) => {
+    setPendingImages((prev) => prev.filter((image) => image.assetId !== assetId));
+  }, []);
 
   const submitComposer = useCallback(() => {
     if (composerDisabled) return;
     const text = chatInput;
+    const images = pendingImages.map((image) => ({ type: "image" as const, assetId: image.assetId, mimeType: image.mimeType }));
     setChatInput("");
-    void dispatch(composerCommandId, { text });
-  }, [composerDisabled, chatInput, dispatch, composerCommandId]);
+    setPendingImages([]);
+    void dispatch(composerCommandId, { text, images: images.length > 0 ? images : undefined });
+  }, [composerDisabled, chatInput, pendingImages, dispatch, composerCommandId]);
 
   // Switching the note type re-seeds the structured draft from the NEW type's core
   // default (object types only; string types author through the text textarea and
@@ -2339,6 +2398,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       submitNoteContent,
       chatInput,
       setChatInput,
+      pendingImages,
+      attachImage,
+      removePendingImage,
       patchHtml,
       setPatchHtml,
       showTerminal,
@@ -2458,6 +2520,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       noteContent,
       submitNoteContent,
       chatInput,
+      pendingImages,
+      attachImage,
+      removePendingImage,
       patchHtml,
       showTerminal,
       activeFileDir,

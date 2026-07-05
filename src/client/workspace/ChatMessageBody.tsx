@@ -19,13 +19,52 @@
 
 import { FilePlus2, RefreshCw } from "lucide-react";
 import { classifyContent } from "../../core/notes/classifyContent";
-import { chatContentText, type ContentPart } from "../data/entityClient";
+import { type ContentPart } from "../data/entityClient";
 import { getNoteType } from "../notes/noteTypeRegistry";
 import { ArtifactCard } from "./ArtifactCard";
 // 朗读 (SPEECH-1b 朗读通用化): every ASSISTANT reply is readable — the user's law says
 // read-aloud is a property of ALL text, AI answers included. One shared SpeakButton
 // per assistant bubble, riding the existing actions row (compact, status-gated).
 import { SpeakButton } from "../speech/SpeakButton";
+
+/**
+ * The DISPLAY text of a message: a bare string verbatim, or (for a part array) ONLY the
+ * text parts joined — the image parts render as thumbnails (MessageImages), so their
+ * `[image]` placeholder is dropped here to avoid a doubled "[image]" beside the picture.
+ */
+function displayText(content: string | ContentPart[]): string {
+  if (typeof content === "string") return content;
+  return content
+    .filter((part): part is Extract<ContentPart, { type: "text" }> => part.type === "text")
+    .map((part) => part.text)
+    .join("\n");
+}
+
+/**
+ * V-1 (vision-input.md §2): the image THUMBNAILS of a multimodal message. Each image
+ * part renders a `<img src="/api/assets/:assetId">` (the existing byte route) so an
+ * attached image shows in the transcript; a string message has none. Kept in ONE place
+ * (reused by the views/AgentTranscript call sites through ChatMessageBody). Never
+ * crashes on an array.
+ */
+function MessageImages({ content }: { content: string | ContentPart[] }) {
+  if (typeof content === "string") return null;
+  const images = content.filter((part): part is Extract<ContentPart, { type: "image" }> => part.type === "image");
+  if (images.length === 0) return null;
+  return (
+    <div className="chat-msg-images">
+      {images.map((part, index) => (
+        <img
+          key={`${part.assetId}-${index}`}
+          className="chat-msg-image"
+          src={`/api/assets/${part.assetId}`}
+          alt="attached image"
+          loading="lazy"
+        />
+      ))}
+    </div>
+  );
+}
 
 export function ChatMessageBody({
   role,
@@ -46,14 +85,20 @@ export function ChatMessageBody({
   /** Disable the actions while a save/regenerate is already in flight. */
   busy?: boolean;
 }) {
-  // V-1: collapse a (possibly multimodal) content to its text for the markdown /
-  // classify render path (commit 5 adds the image thumbnail on top of this).
-  const text = chatContentText(content);
+  // V-1: the message's DISPLAY text for the markdown / classify path (image parts are
+  // dropped here — they render as thumbnails alongside via MessageImages).
+  const text = displayText(content);
 
   // The user's own prompt is plain text with no actions; only assistant replies are
-  // classified into cards and carry the keep/re-run actions.
+  // classified into cards and carry the keep/re-run actions. An image attachment shows
+  // its thumbnail(s) above the (possibly empty) text.
   if (role !== "assistant") {
-    return <>{getNoteType("markdown")?.render({ content: text }) ?? null}</>;
+    return (
+      <>
+        <MessageImages content={content} />
+        {text ? getNoteType("markdown")?.render({ content: text }) ?? null : null}
+      </>
+    );
   }
 
   const detected = classifyContent(text);

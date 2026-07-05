@@ -16,6 +16,7 @@ import {
   Copy,
   CornerDownLeft,
   FileText,
+  ImagePlus,
   ListRestart,
   Loader2,
   Plus,
@@ -473,6 +474,11 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
     dispatch,
     chatInput,
     setChatInput,
+    // V-1: default to an empty strip / no-op so a partial test fixture (which mocks the
+    // workspace context) doesn't crash the render; real usage always wires these.
+    pendingImages = [],
+    attachImage,
+    removePendingImage,
     submitComposer,
     composerDisabled,
     addReplyAsNote,
@@ -710,6 +716,28 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
             next Ask AI resolves. Additive: renders above the untouched composer bar. */}
         <ChatAttachments api={chatSessions} sources={sources} />
 
+        {/* V-1 (vision-input.md §2): the pending-image strip — thumbnails of images the
+            user picked for the NEXT turn (each already imported → an assetId REF). Each
+            is removable before send; on submit they fold into the user message. */}
+        {pendingImages.length > 0 ? (
+          <div className="chat-image-pending" aria-label="Pending images">
+            {pendingImages.map((image) => (
+              <span key={image.assetId} className="chat-image-pending-chip" data-asset-id={image.assetId}>
+                <img src={`/api/assets/${image.assetId}`} alt="pending attachment" />
+                <button
+                  type="button"
+                  className="chat-image-pending-remove"
+                  aria-label="Remove image"
+                  title="Remove image"
+                  onClick={() => removePendingImage(image.assetId)}
+                >
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
+
         <form
           className="chat-composer-bar"
           onSubmit={(event) => {
@@ -765,6 +793,23 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
               }
             }}
           />
+          {/* V-1: attach an image to the next turn. DEGRADE-NOT-DISAPPEAR — this stays
+              visible on EVERY provider; a non-vision send surfaces the server's clean
+              400 once (the attach affordance never hides). Desktop file-pick only
+              (camera = V-3). */}
+          <label className="chat-attach-image" title="附加图片" aria-label="Attach image">
+            <ImagePlus size={16} />
+            <input
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void attachImage(file);
+                event.target.value = ""; // allow re-picking the same file
+              }}
+            />
+          </label>
           {/* 语音输入 → transcript confirm popover → appends to chatInput (SPEECH-2). */}
           <VoiceInputButton
             className="chat-voice-input"

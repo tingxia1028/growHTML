@@ -37,8 +37,11 @@ export class MockAgentProvider implements ModelProvider {
     streaming: true,
     structured: true,
     tools: true,
-    // The agent-loop mock is text-only; image parts route to the vision mock instead.
-    vision: false,
+    // V-1: mock-agent COMPOSES a MockModelProvider and delegates complete/stream to it
+    // byte-identically — including the vision echo ("Saw N image(s).") — so it honestly
+    // accepts image input too. (This also keeps the pinned-mock-agent e2e able to demo
+    // vision without a second webServer.)
+    vision: true,
     kind: "mock"
   };
 

@@ -213,6 +213,47 @@ describe("command: anchor.ask-ai", () => {
     ).toBe(false);
   });
 
+  // V-1 (vision-input.md §2): an image attachment turns the user message into an ARRAY
+  // (images first, then the text part); the seam resolves the assetId refs server-side.
+  it("V-1: an image attachment builds an ARRAY user message (images first, then text)", async () => {
+    const onChatHistory = vi.fn();
+    const ctx = baseCtx({
+      payload: {
+        text: "what is this?",
+        images: [{ type: "image", assetId: "asset_01ARZ3NDEKTSV4RRFFQ69G5FAV" }]
+      },
+      actions: { onChatHistory, onAssistantMessage: vi.fn() }
+    });
+    await runCommand("anchor.ask-ai", ctx);
+    expect(onChatHistory).toHaveBeenCalledWith([
+      {
+        role: "user",
+        content: [
+          { type: "image", assetId: "asset_01ARZ3NDEKTSV4RRFFQ69G5FAV" },
+          { type: "text", text: "what is this?" }
+        ]
+      }
+    ]);
+  });
+
+  it("V-1: an image-ONLY turn (no text) is available and sends an array with just the image", async () => {
+    const cmd = getCommand("anchor.ask-ai")!;
+    const imageOnly = baseCtx({
+      payload: { images: [{ type: "image", assetId: "asset_01ARZ3NDEKTSV4RRFFQ69G5FAV" }] }
+    });
+    expect(cmd.isAvailable(imageOnly)).toBe(true);
+
+    const onChatHistory = vi.fn();
+    const ctx = baseCtx({
+      payload: { images: [{ type: "image", assetId: "asset_01ARZ3NDEKTSV4RRFFQ69G5FAV" }] },
+      actions: { onChatHistory, onAssistantMessage: vi.fn() }
+    });
+    await runCommand("anchor.ask-ai", ctx);
+    expect(onChatHistory).toHaveBeenCalledWith([
+      { role: "user", content: [{ type: "image", assetId: "asset_01ARZ3NDEKTSV4RRFFQ69G5FAV" }] }
+    ]);
+  });
+
   // W1 (chat sessions): a STREAMED reply must hand hosts the completed turn via
   // onAssistantDone (persist-only — the chunks already built the visible message),
   // and must NOT double-append through onAssistantMessage.
