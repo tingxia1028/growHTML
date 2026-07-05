@@ -41,6 +41,7 @@ import {
   isHttpPresetId,
   listProviderDescriptors,
   makeHttpProviderFromSettings,
+  ManagedProvider,
   type CliAgentDetectResult,
   type ModelProvider,
   type ProviderCapabilities
@@ -232,6 +233,58 @@ export async function setProviderKey(deps: AiProvidersDeps, entryId: string, api
   }
 }
 
+// —— managed session token (G-A3b, blocker 1) ————————————————————————————————
+//
+// The managed session is a BEARER SECRET (access + refresh). It rides the SAME
+// safeStorage keychain the BYOK API keys use (SafeStorageKeyStore → encrypted
+// base64 in ai-provider-keys.json), NEVER `ai-providers.json` and NEVER any JSON
+// in plaintext. In EnvOnlyKeyStore mode (dev/web/vitest) setKey throws
+// KeyNotPersistableError — login-persist is packaged-desktop-only, exactly like a
+// BYOK key; the provider then falls back to env.STUDY_VAULT_MANAGED_TOKEN. The
+// pair is stored as ONE JSON blob under a fixed keyRef derived from the entry id.
+
+/** The keychain ref the managed entry's {access,refresh} token pair is stored under. */
+export function managedSessionKeyRef(entryId: string): string {
+  return `managed_session_${entryId}`;
+}
+
+/** The stored session shape (access + refresh; refresh drives the settings-read refresh-on-401). */
+export type ManagedSession = { accessToken: string; refreshToken?: string };
+
+/**
+ * Persist the managed session token pair (encrypted). Throws KeyNotPersistableError
+ * in env-only mode — the route surfaces that as a typed 409 exactly like a BYOK key
+ * save (the settings UI shows the "本模式下不可持久" affordance, never crashes).
+ */
+export async function setManagedSession(
+  deps: AiProvidersDeps,
+  entryId: string,
+  session: ManagedSession
+): Promise<void> {
+  await deps.keyStore.setKey(managedSessionKeyRef(entryId), JSON.stringify(session));
+}
+
+/** Read the stored managed session (null when absent / env-only / undecryptable). */
+export async function getManagedSession(deps: AiProvidersDeps, entryId: string): Promise<ManagedSession | null> {
+  const raw = await deps.keyStore.getKey(managedSessionKeyRef(entryId));
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<ManagedSession>;
+    if (typeof parsed.accessToken !== "string" || parsed.accessToken.length === 0) return null;
+    return {
+      accessToken: parsed.accessToken,
+      refreshToken: typeof parsed.refreshToken === "string" ? parsed.refreshToken : undefined
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Remove the stored managed session (logout). Idempotent; a no-op in env-only mode. */
+export async function clearManagedSession(deps: AiProvidersDeps, entryId: string): Promise<void> {
+  await deps.keyStore.deleteKey(managedSessionKeyRef(entryId));
+}
+
 /** Remove a stored key (blob + the entry's keyRef pointer). Idempotent. */
 export async function deleteProviderKey(deps: AiProvidersDeps, entryId: string): Promise<void> {
   const { config: stored } = await readAiProvidersConfig(deps);
@@ -250,13 +303,25 @@ export async function deleteProviderKey(deps: AiProvidersDeps, entryId: string):
 
 // —— resolution ———————————————————————————————————————————————————————————————
 
-export type ResolveDeps = { keyStore: KeyStore; env: NodeJS.ProcessEnv };
+export type ResolveDeps = {
+  keyStore: KeyStore;
+  env: NodeJS.ProcessEnv;
+  /**
+   * The managed session token pre-resolved from the keyStore (G-A3b, blocker 2).
+   * providerForEntry stays SYNCHRONOUS (its http/configView/resolveActive callers
+   * expect a sync build), so the async keyStore read happens in the caller and the
+   * pair is threaded through here. Absent → the env token is the sole source.
+   */
+  managedSession?: ManagedSession | null;
+};
 
 /**
  * Construct the ModelProvider for ONE config entry. http entries resolve through
- * the preset factory with the KeyStore→env key chain; every other kind delegates
- * to the registry under `preset`. Construction is cheap and never touches a
- * vendor SDK — config gates throw typed errors on FIRST USE (presets.ts).
+ * the preset factory with the KeyStore→env key chain; managed entries inject the
+ * stored session token (falling back to env) + the stored/env gateway URL; every
+ * other kind delegates to the registry under `preset`. Construction is cheap and
+ * never touches a vendor SDK / the network — config gates throw typed errors on
+ * FIRST USE (presets.ts / managed.ts requireConfig).
  */
 export function providerForEntry(entry: AiProviderEntry, deps: ResolveDeps): ModelProvider {
   if (entry.kind === "http") {
@@ -279,6 +344,19 @@ export function providerForEntry(entry: AiProviderEntry, deps: ResolveDeps): Mod
         }
         return deps.env[HTTP_PRESET_ENV_KEYS[preset]]?.trim() || null;
       }
+    });
+  }
+  if (entry.kind === "managed") {
+    // Token precedence: the STORED phone-login session (encrypted via keyStore)
+    // beats env, which stays a dev/CI fallback (keeps managed.test.ts:324 green).
+    // Read PER CALL so a login/logout under a long-lived provider is picked up
+    // without reconstruction. baseUrl: the stored entry's, else the env URL — never
+    // hardcoded (the token only ever rides to the configured gateway origin).
+    const storedToken = deps.managedSession?.accessToken?.trim() || null;
+    const gatewayBaseUrl = entry.baseUrl?.trim() || deps.env.STUDY_VAULT_MANAGED_GATEWAY_URL || "";
+    return new ManagedProvider({
+      gatewayBaseUrl,
+      getSessionToken: () => storedToken ?? deps.env.STUDY_VAULT_MANAGED_TOKEN ?? null
     });
   }
   return createRegisteredProvider(entry.preset ?? entry.id, { env: deps.env });
@@ -389,9 +467,16 @@ export function createAiProviderManager(options: AiProviderManagerOptions): AiPr
       const entry = config.providers.find((candidate) => candidate.id === activeId);
       if (entry) {
         try {
-          const fingerprint = `config:${JSON.stringify(entry)}`;
+          // A managed entry's session (encrypted, keyStore) is pre-resolved so the
+          // sync providerForEntry can thread it in; it also joins the memo
+          // fingerprint so a login/logout re-resolves the provider instead of
+          // serving a stale token instance.
+          const managedSession = entry.kind === "managed" ? await getManagedSession(deps, entry.id) : null;
+          const fingerprint = `config:${JSON.stringify(entry)}:${managedSession?.accessToken ? "tok" : "no-tok"}`;
           return {
-            provider: memoize(fingerprint, () => providerForEntry(entry, { keyStore: deps.keyStore, env })),
+            provider: memoize(fingerprint, () =>
+              providerForEntry(entry, { keyStore: deps.keyStore, env, managedSession })
+            ),
             source: "config",
             configError
           };
@@ -430,7 +515,10 @@ export function createAiProviderManager(options: AiProviderManagerOptions): AiPr
       if (deps) {
         const { config } = await readAiProvidersConfig(deps);
         const entry = config.providers.find((candidate) => candidate.id === id);
-        if (entry) return providerForEntry(entry, { keyStore: deps.keyStore, env: envOf() });
+        if (entry) {
+          const managedSession = entry.kind === "managed" ? await getManagedSession(deps, entry.id) : null;
+          return providerForEntry(entry, { keyStore: deps.keyStore, env: envOf(), managedSession });
+        }
       }
       if (isRegistryId(id)) return createRegisteredProvider(id, { env: envOf() });
       throw new NotFoundError(`提供方 "${id}" 不存在`);
@@ -449,6 +537,11 @@ export type AiProviderEntryView = {
   model?: string;
   /** A key blob is stored for this entry (已保存 badge). NEVER the key itself. */
   keySet: boolean;
+  /**
+   * managed only (G-A3b): a session token is stored for this entry (登录 vs 已登录).
+   * NEVER the token — a boolean, exactly like keySet. Absent on non-managed entries.
+   */
+  sessionSet?: boolean;
   capabilities?: ProviderCapabilities;
 };
 
@@ -482,6 +575,10 @@ export async function configView(
       baseUrl: entry.baseUrl,
       model: entry.model,
       keySet: entry.keyRef ? await deps.keyStore.hasKey(entry.keyRef) : false,
+      // managed: whether a session token is stored (登录 affordance) — never the token.
+      ...(entry.kind === "managed"
+        ? { sessionSet: await deps.keyStore.hasKey(managedSessionKeyRef(entry.id)) }
+        : {}),
       capabilities
     });
   }

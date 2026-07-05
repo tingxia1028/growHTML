@@ -10,6 +10,8 @@ import {
   type AiProvidersConfigView,
   type AiProvidersInfo,
   type AiTestConnectionResult,
+  type ManagedBalance,
+  type ManagedTopupOrder,
   type MemorySettings,
   type UiPrefs
 } from "../data/entityClient";
@@ -35,6 +37,17 @@ export type SettingsIo = {
   testProvider(providerId: string): Promise<AiTestConnectionResult>;
   /** GET /api/ai/providers/:id/detect — cli-agent binary probe (刷新检测). */
   detectProvider(providerId: string): Promise<AiDetectResult>;
+  // —— Managed gateway (G-A3b) — login / balance / top-up (token stays server-side). ——
+  /** POST …/managed/request-code — send an SMS login code (mock gateway → readable). */
+  managedRequestCode(providerId: string, phone: string): Promise<{ ok: boolean }>;
+  /** POST …/managed/verify — verify a code (the server persists the session). */
+  managedVerify(providerId: string, phone: string, code: string): Promise<{ ok: boolean; userId: string; isNewUser: boolean }>;
+  /** GET …/managed/balance — the account credits + recent ledger (401 → 登录). */
+  managedBalance(providerId: string): Promise<ManagedBalance>;
+  /** POST …/managed/topup — create a top-up order (mockNotify credits it in dev/test). */
+  managedTopup(providerId: string, sku: string, mockNotify?: boolean): Promise<ManagedTopupOrder>;
+  /** POST …/managed/logout — clear the encrypted session. */
+  managedLogout(providerId: string): Promise<{ ok: boolean }>;
   /** GET /api/vault — manifest + vault root path (数据 section readout). */
   fetchVaultInfo(): Promise<{ manifest: { name?: string }; paths: { rootDir: string } }>;
   /** GET /api/about — app version (关于 section). */
@@ -63,6 +76,11 @@ const defaultIo: SettingsIo = {
   deleteProviderKey: (providerId) => entityClient.deleteAiProviderKey(providerId),
   testProvider: (providerId) => entityClient.testAiProvider(providerId),
   detectProvider: (providerId) => entityClient.detectAiProvider(providerId),
+  managedRequestCode: (providerId, phone) => entityClient.managedRequestCode(providerId, phone),
+  managedVerify: (providerId, phone, code) => entityClient.managedVerify(providerId, phone, code),
+  managedBalance: (providerId) => entityClient.managedBalance(providerId),
+  managedTopup: (providerId, sku, mockNotify) => entityClient.managedTopup(providerId, sku, mockNotify),
+  managedLogout: (providerId) => entityClient.managedLogout(providerId),
   fetchVaultInfo: () => entityClient.vaultInfo(),
   fetchAbout: () => entityClient.about(),
   fetchMemorySettings: () => entityClient.memorySettings(),

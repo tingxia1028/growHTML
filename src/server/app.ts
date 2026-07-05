@@ -20,7 +20,7 @@ import { registerAgentRoutes } from "./agent";
 import { registerChatRoutes } from "./chatSessions";
 import type { StudyVault } from "../core/vault";
 import { deleteSource, listSources } from "../core/store/sources";
-import { handleServiceError } from "./services/errors";
+import { handleServiceError, NotFoundError } from "./services/errors";
 import * as sourcesService from "./services/sources";
 import * as sourceAuthoringService from "./services/sourceAuthoring";
 import * as sourceForkService from "./services/sourceFork";
@@ -40,6 +40,7 @@ import * as aiService from "./services/ai";
 import * as synthesisService from "./services/synthesis";
 import { SynthesisPathResultError } from "./services/synthesis";
 import * as aiProvidersService from "./services/aiProviders";
+import * as managedGatewayService from "./services/managedGateway";
 import * as speechService from "./services/speech";
 import { KeyNotPersistableError, type KeyStore } from "./keyStore";
 import {
@@ -89,6 +90,12 @@ export type CreateAppOptions = {
     keyStore?: KeyStore;
     /** cli-agent probe override (tests); default spawns `<cli> --version` with a 3s timeout. */
     detectCliAgent?: (specId: aiProvidersService.CliAgentSpecId) => Promise<CliAgentDetectResult>;
+    /**
+     * Managed-gateway fetch override (G-A3b, tests/e2e): the ManagedGatewayClient's
+     * transport, so a spec can point the login/balance/top-up seam at an in-process
+     * mock gateway. Default = global fetch (the real stored/env gateway origin).
+     */
+    managedGatewayFetch?: typeof fetch;
   };
   /**
    * Speech lane seams (SPEECH-1/2, docs/design/speech-and-young-learners.md §1–2):
@@ -312,6 +319,124 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
       const result = await probe(specId);
       res.json({ id: req.params.id, spec: specId, ...result });
     } catch (error) {
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  // —— Managed gateway (G-A3b) — login / balance / top-up for a `managed` entry ——————
+  // The session token is a bearer SECRET: it is stored ENCRYPTED via the keyStore
+  // (the BYOK-key path), sent ONLY to the configured gateway origin, and NEVER
+  // returned to the renderer (the client only ever gets booleans + balances). The
+  // ManagedGatewayClient runs server-side; refresh-on-401 persists rotated tokens.
+  const managedClientFor = async (
+    deps: aiProvidersService.AiProvidersDeps,
+    entryId: string
+  ): Promise<managedGatewayService.ManagedGatewayClient> => {
+    const { config } = await aiProvidersService.readAiProvidersConfig(deps);
+    const entry = config.providers.find((candidate) => candidate.id === entryId);
+    if (!entry || entry.kind !== "managed") {
+      throw new NotFoundError(`托管提供方 "${entryId}" 不存在`);
+    }
+    const baseUrl = entry.baseUrl?.trim() || process.env.STUDY_VAULT_MANAGED_GATEWAY_URL || "";
+    return new managedGatewayService.ManagedGatewayClient({
+      baseUrl,
+      getSession: () => aiProvidersService.getManagedSession(deps, entryId),
+      saveSession: (session) => aiProvidersService.setManagedSession(deps, entryId, session),
+      fetch: aiConfig?.managedGatewayFetch
+    });
+  };
+
+  // Map the managed-gateway service errors to typed HTTP status (never leaks a token).
+  const handleManagedError = (res: express.Response, error: unknown): boolean => {
+    if (error instanceof managedGatewayService.ManagedGatewayNotLoggedInError) {
+      res.status(401).json({ error: error.message, code: error.code });
+      return true;
+    }
+    if (error instanceof managedGatewayService.ManagedGatewayNotConfiguredError) {
+      res.status(409).json({ error: error.message, code: error.code });
+      return true;
+    }
+    if (error instanceof managedGatewayService.ManagedGatewayRequestError) {
+      // 429/400/5xx from the gateway surface as a 502 (upstream) with the friendly reason.
+      res.status(502).json({ error: error.message, code: error.gatewayCode ?? "managed_gateway_error", status: error.status });
+      return true;
+    }
+    if (error instanceof KeyNotPersistableError) {
+      res.status(409).json({ error: error.message, code: "session_not_persistable" });
+      return true;
+    }
+    return false;
+  };
+
+  // Request an SMS login code for a managed entry (mock gateway → readable code).
+  app.post("/api/ai/providers/:id/managed/request-code", async (req, res, next) => {
+    try {
+      const deps = await requireAiDeps(res);
+      if (!deps) return;
+      const body = z.object({ phone: z.string().min(1) }).parse(req.body);
+      await (await managedClientFor(deps, req.params.id)).requestCode(body.phone);
+      res.json({ ok: true });
+    } catch (error) {
+      if (handleManagedError(res, error)) return;
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  // Verify a code → mint + PERSIST the session (encrypted keyStore); returns only a summary.
+  app.post("/api/ai/providers/:id/managed/verify", async (req, res, next) => {
+    try {
+      const deps = await requireAiDeps(res);
+      if (!deps) return;
+      const body = z.object({ phone: z.string().min(1), code: z.string().min(1) }).parse(req.body);
+      const result = await (await managedClientFor(deps, req.params.id)).verify(body.phone, body.code);
+      aiManager.invalidate(); // the active provider now has a live token
+      res.json({ ok: true, userId: result.userId, isNewUser: result.isNewUser });
+    } catch (error) {
+      if (handleManagedError(res, error)) return;
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  // The current balance + recent ledger rows (refresh-on-401 under the hood).
+  app.get("/api/ai/providers/:id/managed/balance", async (req, res, next) => {
+    try {
+      const deps = await requireAiDeps(res);
+      if (!deps) return;
+      const balance = await (await managedClientFor(deps, req.params.id)).getBalance();
+      res.json(balance);
+    } catch (error) {
+      if (handleManagedError(res, error)) return;
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  // Create a top-up order (returns the QR payload the client renders). Mock pay:
+  // `mockNotify:true` immediately simulates the vendor webhook so the credit lands.
+  app.post("/api/ai/providers/:id/managed/topup", async (req, res, next) => {
+    try {
+      const deps = await requireAiDeps(res);
+      if (!deps) return;
+      const body = z.object({ sku: z.string().min(1), mockNotify: z.boolean().optional() }).parse(req.body);
+      const client = await managedClientFor(deps, req.params.id);
+      const order = await client.createTopup(body.sku);
+      if (body.mockNotify) await client.mockNotify(order.paymentId);
+      res.json(order);
+    } catch (error) {
+      if (handleManagedError(res, error)) return;
+      if (!handleServiceError(res, error)) next(error);
+    }
+  });
+
+  // Log out of the managed account (clears the encrypted session). Idempotent.
+  app.post("/api/ai/providers/:id/managed/logout", async (req, res, next) => {
+    try {
+      const deps = await requireAiDeps(res);
+      if (!deps) return;
+      await aiProvidersService.clearManagedSession(deps, req.params.id);
+      aiManager.invalidate();
+      res.json({ ok: true });
+    } catch (error) {
+      if (handleManagedError(res, error)) return;
       if (!handleServiceError(res, error)) next(error);
     }
   });

@@ -61,6 +61,16 @@ export {
   type HttpPresetId,
   type HttpProviderSettings
 } from "./http/presets";
+// managed provider surface (G-A3b): the server-side ai-providers service constructs a
+// ManagedProvider for a stored `managed` entry, injecting the stored/env session token.
+export {
+  ManagedProvider,
+  ManagedNotConfiguredError,
+  ManagedAuthError,
+  ManagedGatewayError,
+  InsufficientCreditsError,
+  type ManagedDeps
+} from "./managed";
 
 // Built-in providers, registered at module scope (Phase 0 registry refactor —
 // docs/design/multi-provider-ai-agent.md §5). Construction args are IDENTICAL

@@ -671,6 +671,8 @@ export type AiProviderEntryInput = {
 /** One stored entry as the server READS it back: + keySet flag (never key material). */
 export type AiProviderEntryView = AiProviderEntryInput & {
   keySet: boolean;
+  /** managed only (G-A3b): a session token is stored (登录 vs 已登录) — never the token itself. */
+  sessionSet?: boolean;
   capabilities?: AiProviderCapabilities;
 };
 
@@ -711,6 +713,15 @@ export type AiTestConnectionResult = {
 
 /** GET /api/ai/providers/:id/detect — cli-agent binary probe result. */
 export type AiDetectResult = { id: string; spec: string; ok: boolean; version?: string };
+
+/** GET /api/ai/providers/:id/managed/balance — the managed account's credits + recent ledger. */
+export type ManagedBalance = {
+  balance: number;
+  recent: Array<{ id: string; kind: string; amount: number; ts: number }>;
+};
+
+/** POST /api/ai/providers/:id/managed/topup — a created top-up order (QR payload the client renders). */
+export type ManagedTopupOrder = { paymentId: string; qrPayload: string; amountYuan: number; credits: number };
 
 /** GET /api/svpack/identity — the local Tier-A publisher identity, if one exists. */
 export type SvpackIdentityInfo = { identity: { id: string; displayName: string } | null };
@@ -1518,6 +1529,38 @@ export const entityClient = {
   /** cli-agent binary detection (刷新检测). */
   detectAiProvider(providerId: string) {
     return getJson<AiDetectResult>(`/api/ai/providers/${encodeURIComponent(providerId)}/detect`);
+  },
+  // —— Managed gateway (G-A3b) — login / balance / top-up for a `managed` entry. The
+  // session token stays SERVER-side (encrypted keyStore); these edges only ever carry
+  // phone/code/sku in and balances/booleans out — never the token. ——
+  /** Request an SMS login code for a managed entry (mock gateway → readable code). */
+  managedRequestCode(providerId: string, phone: string) {
+    return fetchCoded<{ ok: boolean }>("POST", `/api/ai/providers/${encodeURIComponent(providerId)}/managed/request-code`, {
+      phone
+    });
+  },
+  /** Verify a code → the server mints + persists the session; returns only a summary. */
+  managedVerify(providerId: string, phone: string, code: string) {
+    return fetchCoded<{ ok: boolean; userId: string; isNewUser: boolean }>(
+      "POST",
+      `/api/ai/providers/${encodeURIComponent(providerId)}/managed/verify`,
+      { phone, code }
+    );
+  },
+  /** The managed account balance + recent ledger (401 → the UI shows 登录). */
+  managedBalance(providerId: string) {
+    return fetchCoded<ManagedBalance>("GET", `/api/ai/providers/${encodeURIComponent(providerId)}/managed/balance`);
+  },
+  /** Create a top-up order; `mockNotify` immediately simulates the pay webhook (dev/test). */
+  managedTopup(providerId: string, sku: string, mockNotify = false) {
+    return fetchCoded<ManagedTopupOrder>("POST", `/api/ai/providers/${encodeURIComponent(providerId)}/managed/topup`, {
+      sku,
+      mockNotify
+    });
+  },
+  /** Log out of the managed account (clears the encrypted session). Idempotent. */
+  managedLogout(providerId: string) {
+    return fetchCoded<{ ok: boolean }>("POST", `/api/ai/providers/${encodeURIComponent(providerId)}/managed/logout`, {});
   },
   /** The local Tier-A publisher identity (null when this device never published). */
   svpackIdentity() {
