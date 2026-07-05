@@ -29,7 +29,7 @@
 //     `fullStream`, same type) yields TextStreamPart events; NOTE the v7
 //     text-delta part carries `.text` (the model layer's `.delta` was renamed).
 
-import type { LanguageModel, ModelMessage, ToolSet } from "ai";
+import type { FilePart, LanguageModel, ModelMessage, TextPart, ToolSet, UserContent } from "ai";
 import { contextPreamble, messageText } from "../buildPrompt";
 import type {
   AgentRequest,
@@ -78,11 +78,33 @@ function toModelMessage(message: ChatMessage): ModelMessage {
  * Exported for the colocated unit tests.
  */
 /**
- * Map a user message's content onto AI SDK v7 user content. V-1 commit 1 collapses to
- * text (messageText); commit 3 upgrades this to map RESOLVED image parts to FileParts.
+ * Map a user message's content onto AI SDK v7 user content (V-1, vision-input.md §2).
+ * A bare string passes through. For a part array, each text part becomes a `TextPart`
+ * and each RESOLVED image part (the server replaced the wire assetId with in-process
+ * bytes before this call — iron rule: the provider never touches the store) becomes an
+ * AI SDK v7 **FilePart** `{type:"file", mediaType, data}` (NOT the deprecated ImagePart).
+ * `data` rides as a base64 string — AI SDK v7 accepts that as a bare `DataContent`
+ * shorthand. A still-UNRESOLVED image part (assetId only, no bytes — a defensive path
+ * for a non-vision route that shouldn't reach here) degrades to a `[image]` text part
+ * so the transcript stays valid rather than shipping a ULID to the model.
  */
-function toUserContent(content: ChatMessage["content"]): string {
-  return messageText(content);
+function toUserContent(content: ChatMessage["content"]): UserContent {
+  if (typeof content === "string") return content;
+  const parts: Array<TextPart | FilePart> = [];
+  for (const part of content) {
+    if (part.type === "text") {
+      parts.push({ type: "text", text: part.text });
+      continue;
+    }
+    // Resolved image part (in-process only): the server injected {data, mimeType}.
+    const resolved = part as { type: "image"; data?: string; mimeType?: string; assetId?: string };
+    if (typeof resolved.data === "string") {
+      parts.push({ type: "file", mediaType: resolved.mimeType ?? "image/png", data: resolved.data });
+    } else {
+      parts.push({ type: "text", text: "[image]" });
+    }
+  }
+  return parts;
 }
 
 export function toModelMessages(messages: ChatMessage[], context?: ChatContext): ModelMessage[] {

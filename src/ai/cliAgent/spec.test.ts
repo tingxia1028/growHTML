@@ -95,6 +95,30 @@ describe("prompt shaping (mirrors the legacy claudeCliProvider context weaving)"
     expect(prompt.endsWith("USER: Q2")).toBe(true);
   });
 
+  // V-1 (vision-input.md §2): cli-agent adapters take TEXT prompts, so an image part on
+  // the user turn degrades to a `[image]` placeholder (via messageText) rather than
+  // serializing a ULID / `[object Object]`. The transcript stays valid.
+  it("V-1: an image part on the user turn degrades to [image] in turnPrompt + flattenPrompt", () => {
+    const request: ChatRequest = {
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "解这道题" },
+            { type: "image", assetId: "asset_01ARZ3NDEKTSV4RRFFQ69G5FAV" }
+          ]
+        }
+      ]
+    };
+    const turn = turnPrompt(request, true);
+    expect(turn).toContain("解这道题");
+    expect(turn).toContain("[image]");
+    expect(turn).not.toContain("[object Object]");
+
+    const flat = flattenPrompt(request);
+    expect(flat).toContain("USER: 解这道题\n[image]");
+  });
+
   it("W2 fold: turnPrompt weaves the attachments block (claude-cli delegates here now)", () => {
     const request: ChatRequest = {
       messages: [{ role: "user", content: "Compare them." }],

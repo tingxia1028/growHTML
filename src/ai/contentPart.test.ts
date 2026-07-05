@@ -91,7 +91,7 @@ describe("vision capability bit (V-1) — the per-provider literal", () => {
   it("mock-agent / cli-agent / managed declare vision:false", () => {
     expect(new MockAgentProvider().capabilities.vision).toBe(false);
     expect(new ClaudeCliProvider().capabilities.vision).toBe(false);
-    expect(new ClaudePtyProvider({ createSession: () => new FakePtySession() }).capabilities.vision).toBe(false);
+    expect(new ClaudePtyProvider({ createSession: () => new FakePtySession(() => []) }).capabilities.vision).toBe(false);
     expect(
       new ManagedProvider({ gatewayBaseUrl: "https://gw.test", getSessionToken: () => null }).capabilities.vision
     ).toBe(false);

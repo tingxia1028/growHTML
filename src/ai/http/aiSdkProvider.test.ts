@@ -1,7 +1,7 @@
 import { MockLanguageModelV4, simulateReadableStream } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import type { AgentStepEvent, ChatRequest } from "../provider";
+import type { AgentStepEvent, ChatMessage, ChatRequest } from "../provider";
 import { generateStructured } from "../structured";
 import type { ToolDefinition } from "../tools";
 import { AiSdkProvider, DEFAULT_AGENT_MAX_STEPS, toModelMessages } from "./aiSdkProvider";
@@ -222,6 +222,39 @@ describe("AiSdkProvider — capabilities + message mapping", () => {
       { role: "system", content: CONTEXT_PREAMBLE },
       { role: "user", content: "hi" }
     ]);
+  });
+
+  // V-1 (vision-input.md §2): a RESOLVED image part (the server replaced the wire
+  // assetId with in-process base64 bytes) maps to an AI SDK v7 FilePart
+  // `{type:"file", mediaType, data}` — the NON-deprecated shape. Text parts ride as
+  // TextParts; the whole user turn becomes an array. Capture-the-wire-shape.
+  it("V-1: maps a resolved image part to an AI SDK v7 FilePart (not the deprecated ImagePart)", () => {
+    const resolvedUser = {
+      role: "user" as const,
+      // Runtime shape the server hands the provider (typed as the wire union; the
+      // resolver injected {data, mimeType}). Cast to satisfy the wire type.
+      content: [
+        { type: "text", text: "what is this?" },
+        { type: "image", data: "QUJD", mimeType: "image/jpeg" }
+      ] as unknown as ChatMessage["content"]
+    };
+    const [mapped] = toModelMessages([resolvedUser]);
+    expect(mapped).toEqual({
+      role: "user",
+      content: [
+        { type: "text", text: "what is this?" },
+        { type: "file", mediaType: "image/jpeg", data: "QUJD" }
+      ]
+    });
+  });
+
+  it("V-1: an UNRESOLVED image part (assetId only, no bytes) degrades to a [image] text part", () => {
+    const wireUser = {
+      role: "user" as const,
+      content: [{ type: "image", assetId: "asset_01ARZ3NDEKTSV4RRFFQ69G5FAV" }] as ChatMessage["content"]
+    };
+    const [mapped] = toModelMessages([wireUser]);
+    expect(mapped).toEqual({ role: "user", content: [{ type: "text", text: "[image]" }] });
   });
 });
 
