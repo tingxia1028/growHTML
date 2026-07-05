@@ -226,4 +226,26 @@ describe("managed routes — activation makes the managed provider FUNCTIONAL (b
     expect(res.text).toContain("event: done");
     expect(res.text).not.toContain("not configured");
   });
+
+  // G-A3b.3(a): the V-1 vision gate fires for an active managed provider (capabilities
+  // .vision:false) BEFORE the SSE headers commit → a clean 400, NOT an in-band error
+  // event. No new gate code — assertVisionSupported already runs for every provider.
+  it("an image chat under active managed → VisionUnsupportedError → clean 400 (no stream)", async () => {
+    const gateway = await bootGateway();
+    const app = await appWithManaged(gateway, memoryKeyStore());
+    await request(app).post("/api/ai/providers/managed-1/managed/request-code").send({ phone: PHONE }).expect(200);
+    const code = gateway.sms.lastCodeFor(PHONE)!;
+    await request(app).post("/api/ai/providers/managed-1/managed/verify").send({ phone: PHONE, code }).expect(200);
+    await request(app).put("/api/ai/providers/active").send({ activeProviderId: "managed-1" }).expect(200);
+
+    // A well-formed image REF (assetId must match asset_<ULID>); the gate fires on the
+    // capability, BEFORE the asset is ever resolved, so a non-existent id is fine here.
+    const res = await request(app)
+      .post("/api/chat/stream")
+      .send({ messages: [{ role: "user", content: [{ type: "image", assetId: "asset_0123456789ABCDEFGHJKMNPQRS" }] }] })
+      .expect(400);
+    // A clean JSON 400 (the capability message), never a text/event-stream body.
+    expect(res.headers["content-type"]).toContain("application/json");
+    expect(res.body.error).toContain("does not support image input");
+  });
 });
