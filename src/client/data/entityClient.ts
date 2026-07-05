@@ -1400,7 +1400,17 @@ export const entityClient = {
   // simple action with no pinned output rides the adaptive-note form router, and
   // the response's `contentType` names the form actually produced (equal to the
   // requested type whenever one was sent).
-  generateStructured(input: { promptId: string; contentType?: string; input?: Record<string, unknown> }) {
+  generateStructured(input: {
+    promptId: string;
+    contentType?: string;
+    input?: Record<string, unknown>;
+    // V-2 (vision-input.md §3): optional IMAGE attachments (the 拍错题 photo→mistake lane).
+    // A SIBLING of the request, NEVER inside `input`. Wire REFs; the server JIT-resolves
+    // them to bytes + gates a non-vision provider. This type widening is REQUIRED — the
+    // server's kitGenerateSchema strips any unnamed field, so an `images` absent from BOTH
+    // sides would silently vanish (delta 4).
+    images?: Array<Extract<ContentPart, { type: "image" }>>;
+  }) {
     // `concepts` (CG-2 AI 顺手挂): optional side-channel names — the preview chips
     // them; Save creates-or-matches + links them. Absent when the model offers none.
     return sendJson<{ content: unknown; contentType: string; provider: string; concepts?: string[] }>(

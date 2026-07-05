@@ -21,6 +21,7 @@ import {
   type FormRouterOutput
 } from "../../core/notes/formRouter";
 import { getNoteContentSpec } from "../../core/notes/contentTypes";
+import { imageContentPartSchema } from "../../core/schema/contentPart";
 import { readAssetBytes } from "../../core/store/assets";
 import { generateOperationContent, StructuredGenerationError } from "../../kits/structured";
 import type { StudyVault } from "../../core/vault";
@@ -41,7 +42,14 @@ export type ChatRequestInput = z.infer<typeof chatRequestSchema>;
 export const kitGenerateSchema = z.object({
   promptId: z.string().min(1),
   contentType: z.string().min(1).optional(),
-  input: z.record(z.string(), z.unknown()).optional()
+  input: z.record(z.string(), z.unknown()).optional(),
+  // V-2 (vision-input.md §3): optional IMAGE attachments (the 拍错题 photo lane). A
+  // SIBLING of the request — NEVER folded into `input` (there it would render into the
+  // prompt template as `[object Object]`). Wire REFs; generateKitContent JIT-resolves
+  // them to bytes + gates a non-vision provider before the prompt is built. zod strips
+  // any field the schema doesn't name, so this widening is REQUIRED for a client
+  // `images` to survive `.parse` (delta 4).
+  images: z.array(imageContentPartSchema).optional()
 });
 export type KitGenerateInput = z.infer<typeof kitGenerateSchema>;
 
@@ -69,6 +77,35 @@ export type GenerateBlockInput = z.infer<typeof generateBlockSchema>;
  * IRON RULE: this resolution happens SERVER-side; src/ai/** never imports the store, so
  * providers only ever see already-resolved parts.
  */
+/**
+ * The per-message-array → resolved-parts inner mapping, extracted (V-2 delta 3) so BOTH
+ * the chat path (resolveVisionRequest) and the kit-generation path (generateKitContent)
+ * resolve image REFs THROUGH ONE HELPER — no second copy of the byte-resolution logic.
+ * It replaces each wire `{type:"image", assetId}` with a RESOLVED `{type:"image", data,
+ * mimeType}` (bytes from the asset store); text parts ride through untouched. It does
+ * NOT gate on `capabilities.vision` — the anyImage-scan + gate is each caller's SHELL
+ * responsibility (so the gate is written once per call site, not duplicated here).
+ * PRESERVES the `Attached image not found` VisionUnsupportedError string (→400).
+ */
+async function resolveImageParts<T>(vault: StudyVault, parts: readonly T[]): Promise<T[]> {
+  return Promise.all(
+    parts.map(async (part) => {
+      const p = part as unknown as { type?: string; assetId?: string; mimeType?: string };
+      if (p.type !== "image" || typeof p.assetId !== "string") return part;
+      const asset = await vault.stores.assets.get(p.assetId);
+      if (!asset) throw new VisionUnsupportedError(`Attached image not found: ${p.assetId}`);
+      const bytes = await readAssetBytes(vault, asset);
+      // The RESOLVED part is an src/ai-local shape (never persisted); cast through the
+      // wire type so the provider receives {data, mimeType} at runtime.
+      return {
+        type: "image",
+        data: bytes.toString("base64"),
+        mimeType: p.mimeType ?? asset.mimeType
+      } as unknown as T;
+    })
+  );
+}
+
 async function resolveVisionRequest(
   provider: ModelProvider,
   vault: StudyVault,
@@ -81,21 +118,7 @@ async function resolveVisionRequest(
   const messages = await Promise.all(
     input.messages.map(async (message): Promise<ChatMessage> => {
       if (!Array.isArray(message.content)) return message;
-      const parts = await Promise.all(
-        message.content.map(async (part) => {
-          if (part.type !== "image") return part;
-          const asset = await vault.stores.assets.get(part.assetId);
-          if (!asset) throw new VisionUnsupportedError(`Attached image not found: ${part.assetId}`);
-          const bytes = await readAssetBytes(vault, asset);
-          // The RESOLVED part is an src/ai-local shape (never persisted); cast through
-          // the wire type so the provider receives {data, mimeType} at runtime.
-          return {
-            type: "image",
-            data: bytes.toString("base64"),
-            mimeType: part.mimeType ?? asset.mimeType
-          } as unknown as (typeof message.content)[number];
-        })
-      );
+      const parts = await resolveImageParts(vault, message.content);
       return { ...message, content: parts };
     })
   );
@@ -189,9 +212,22 @@ export async function generateKitContent({ vault, provider }: KitGenerateDeps, i
     ...(input.input ?? {})
   });
   const autoContext = await composeAutoContext({ vault, provider }, { input: runtimeInput });
+  // V-2 (delta 2): image-present-only gate + resolve. Runs ONLY when the request carries
+  // an image (mirrors resolveVisionRequest's `if (!anyImage) return` early-out) — so
+  // every existing TEXT-ONLY kit request is byte-identical and unaffected (an
+  // unconditional `!vision → throw` would 400 every text kit test). With an image: a
+  // non-vision provider throws VisionUnsupportedError (clean 400) BEFORE the prompt is
+  // built; a vision provider gets the wire REFs resolved to bytes THROUGH resolveImageParts
+  // (the shared helper — no second gate). The resolved images are threaded as a SIBLING to
+  // generateOperationContent (→ generateForPrompt), never folded into `input`.
+  let images = input.images;
+  if (images && images.length > 0) {
+    if (!provider.capabilities.vision) throw new VisionUnsupportedError();
+    images = await resolveImageParts(vault, images);
+  }
   const { contentType, content, concepts } = await generateOperationContent(
     provider,
-    { ...input, input: runtimeInput, autoContext },
+    { ...input, input: runtimeInput, images, autoContext },
     3,
     vault.stores.operations
   );

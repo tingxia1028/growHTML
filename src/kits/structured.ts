@@ -17,7 +17,7 @@ import type { OperationRecord } from "../core/schema";
 import type { SnapshotStore } from "../core/store/snapshotStore";
 import type { AutoContext } from "../ai/autoContext";
 import { FORM_ROUTER_CONTENT_TYPE } from "../ai/mockProvider";
-import type { ChatContext, ModelProvider } from "../ai/provider";
+import type { ChatContext, ChatMessage, ImageContentPart, ModelProvider } from "../ai/provider";
 import {
   generateStructuredWithConcepts,
   StructuredGenerationError,
@@ -38,7 +38,30 @@ export type GenerateStructuredRequest = {
   /** The server-composed auto-context envelope (ACTION-2a) — resolvePrompt maps
       it into the template namespace or prepends it as a context preamble. */
   autoContext?: AutoContext;
+  /**
+   * V-2 (vision-input.md §3): optional IMAGE attachments the structured generation
+   * reasons over (the 拍错题 photo→mistake lane). SIBLING of the request, NEVER inside
+   * `input` (inside `input` it would be spread into template render values +
+   * composeAutoContext → `{{images}}` renders `[object Object]`). Wire REFs
+   * (`{type:"image", assetId}`); the server JIT-resolves them to bytes + gates for a
+   * non-vision provider (generateKitContent) before this reaches the prompt builder.
+   * Text-only requests OMIT it → the built message stays a bare string (byte-identical).
+   */
+  images?: ImageContentPart[];
 };
+
+// V-2: build the ONE user message for a structured request. Conditional branch
+// (delta 1): with images the user turn is an ARRAY (image REFs first, then the text
+// part) — mirroring `askAi` (client/commands/registry.ts:281-282); WITHOUT images it
+// stays the pre-V-2 BARE STRING. The bare-string arm is load-bearing: the kit tests'
+// capturingProvider reads `messages[1].content` as a string (`.startsWith`/`.toContain`),
+// which an always-array wrap would break.
+function buildUserMessage(images: ImageContentPart[] | undefined, text: string): ChatMessage {
+  if (images && images.length > 0) {
+    return { role: "user", content: [...images, { type: "text", text }] };
+  }
+  return { role: "user", content: text };
+}
 
 // Run the classic schema-targeted loop for an already-resolved prompt. Returns the
 // validated output PLUS the CG-2 concepts side-channel (AI 顺手挂 — the model tags
@@ -63,7 +86,7 @@ async function generateForPrompt(
   return generateStructuredWithConcepts(
     provider,
     {
-      messages: [{ role: "user", content: prompt.build(input) }],
+      messages: [buildUserMessage(request.images, prompt.build(input))],
       schema: spec.schema,
       sample,
       contentType,
@@ -127,7 +150,7 @@ export async function generateOperationContent(
     const routerResult = await generateStructuredWithConcepts(
       provider,
       {
-        messages: [{ role: "user", content: prompt.build(request.input ?? {}) }],
+        messages: [buildUserMessage(request.images, prompt.build(request.input ?? {}))],
         schema: formRouterSchema,
         contentType: FORM_ROUTER_CONTENT_TYPE,
         context: request.context,

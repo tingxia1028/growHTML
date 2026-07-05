@@ -18,8 +18,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openVault, type StudyVault } from "../../core/vault";
 import { installServerKits } from "../../kits/server";
 import { operationSchema } from "../../core/schema";
+import { importAssetBytes } from "../../core/store/assets";
+import { MISTAKE_CONTENT_TYPE } from "../../core/notes/contentTypes";
 import { MockModelProvider } from "../../ai/mockProvider";
-import type { ChatRequest, ModelProvider, ProviderCapabilities } from "../../ai/provider";
+import { VisionUnsupportedError } from "../../ai/provider";
+import type { ChatMessage, ChatRequest, ModelProvider, ProviderCapabilities } from "../../ai/provider";
 import { generateKitContent } from "./ai";
 
 // Same bootstrap the server entry performs (idempotent): review prompts + specs.
@@ -219,5 +222,100 @@ describe("generateKitContent — the auto-context envelope (ACTION-2a)", () => {
     expect(capturing.prompts[0]).toContain('[Context]\nSelection: "浮力等于排开液体的重力"');
     expect(capturing.prompts[0]).toContain("用苏格拉底式追问考我选中的内容,一次只问一个问题");
     expect(capturing.prompts[0]).toContain("note-form router JSON");
+  });
+});
+
+// —— V-2 vision seam for kit generation (拍错题 photo→mistake foundation) ——————————
+// A provider that records the RAW structured messages it is sent (not just prompt text),
+// so we can assert the built user message carries a resolved image part. `vision` is a ctor
+// arg so the same fake exercises the gate both ways. It echoes a schema-valid mistake.
+function capturingVisionProvider(vision: boolean, kind: ProviderCapabilities["kind"] = "http") {
+  const messagesLog: ChatMessage["content"][] = [];
+  const provider: ModelProvider = {
+    id: `fake-vision-${vision}`,
+    capabilities: { chat: true, agentic: false, streaming: false, structured: false, tools: false, vision, kind },
+    async complete(request: ChatRequest) {
+      messagesLog.push(request.messages[1].content);
+      return {
+        message: {
+          role: "assistant" as const,
+          content: JSON.stringify({
+            question: "1/2 + 1/3 = ?",
+            wrongAnswer: "2/5",
+            correctAnswer: "5/6"
+          })
+        }
+      };
+    }
+  };
+  return { provider, messagesLog };
+}
+
+// Seed a 1x1 PNG asset into the vault so the resolver has bytes to read.
+const PNG_1x1_B64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+async function seedImageAsset(v: StudyVault): Promise<string> {
+  const asset = await importAssetBytes(v, { dataBase64: PNG_1x1_B64, mimeType: "image/png" });
+  return asset.id;
+}
+
+describe("generateKitContent — V-2 image attachments (拍错题 seam)", () => {
+  const mistakeInput = (assetId: string) => ({
+    promptId: "textbook.mark-as-mistake",
+    contentType: MISTAKE_CONTENT_TYPE,
+    input: { question: "1/2 + 1/3 = ?" },
+    images: [{ type: "image" as const, assetId }]
+  });
+
+  it("a kit request WITH an image builds a user message carrying a RESOLVED image part", async () => {
+    const assetId = await seedImageAsset(vault);
+    const { provider, messagesLog } = capturingVisionProvider(true);
+    await generateKitContent({ vault, provider }, mistakeInput(assetId));
+    const content = messagesLog[0];
+    expect(Array.isArray(content)).toBe(true);
+    const parts = content as Array<Record<string, unknown>>;
+    // The image REF was resolved to in-process bytes (assetId → {data, mimeType}) THROUGH
+    // the shared resolveImageParts helper, and rides FIRST (images then the text part).
+    expect(parts[0]).toMatchObject({ type: "image", mimeType: "image/png" });
+    expect(typeof parts[0].data).toBe("string");
+    expect((parts[0].data as string).length).toBeGreaterThan(0);
+    expect(parts[0]).not.toHaveProperty("assetId");
+    expect(parts[parts.length - 1]).toMatchObject({ type: "text" });
+  });
+
+  it("under the mock (vision:true) + an image → the deterministic sample is echoed (offline)", async () => {
+    const assetId = await seedImageAsset(vault);
+    const { content, contentType } = await generateKitContent(
+      { vault, provider: new MockModelProvider() },
+      mistakeInput(assetId)
+    );
+    expect(contentType).toBe(MISTAKE_CONTENT_TYPE);
+    // The markAsMistake mockContent projection rode as the sample → the mock echoed it.
+    expect(content).toMatchObject({ question: "1/2 + 1/3 = ?" });
+  });
+
+  it("under a vision:false provider + an image → VisionUnsupportedError BEFORE any call (clean 400)", async () => {
+    const assetId = await seedImageAsset(vault);
+    const { provider, messagesLog } = capturingVisionProvider(false, "cli-agent");
+    await expect(generateKitContent({ vault, provider }, mistakeInput(assetId))).rejects.toBeInstanceOf(
+      VisionUnsupportedError
+    );
+    // The gate fired pre-flight — the provider was never called.
+    expect(messagesLog).toHaveLength(0);
+  });
+
+  it("a TEXT-ONLY kit request is byte-identical under a vision:false provider (no image → no gate)", async () => {
+    const { provider, messagesLog } = capturingVisionProvider(false, "cli-agent");
+    const { content } = await generateKitContent(
+      { vault, provider },
+      { promptId: "textbook.mark-as-mistake", contentType: MISTAKE_CONTENT_TYPE, input: { question: "2+2=?" } }
+    );
+    // No image → the early-out no-op means the vision:false provider is never gated, and
+    // the built user message is a BARE STRING (delta 1 conditional branch), not an array.
+    expect(typeof messagesLog[0]).toBe("string");
+    // The user-turn text carries the mark-as-mistake prompt body (byte-identical build).
+    expect(messagesLog[0] as string).toContain("2+2=?");
+    // The provider's JSON reply validated against the mistake schema — a real mistake.
+    expect(content).toMatchObject({ correctAnswer: "5/6" });
   });
 });
