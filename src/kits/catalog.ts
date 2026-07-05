@@ -450,6 +450,15 @@ export function registerCatalogEntry(entry: CatalogEntry): void {
   else entries[index] = entry;
 }
 
+/** Attach preview fixtures to a cataloged entry (M2a — the market detail preview,
+    §8.4.3). Kept as a SEAM (not a literal on the entry) so catalog.ts stays free of the
+    prompt-pack imports the fixtures reuse: catalogPreview.ts owns the shapes + calls this
+    once at load, and it re-runs cleanly after resetCatalog rebuilds the bundled array. */
+export function setPreviewFixtures(id: string, fixtures: NonNullable<CatalogEntry["previewFixtures"]>): void {
+  const entry = entries.find((e) => e.id === id);
+  if (entry) entry.previewFixtures = fixtures;
+}
+
 /** Test hook — restore the pristine bundled catalog. */
 export function resetCatalog(): void {
   entries.length = 0;
