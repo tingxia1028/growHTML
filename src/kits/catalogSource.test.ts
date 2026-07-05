@@ -4,7 +4,18 @@
 // listing shape, search filtering, get(), and the local-source rules (no
 // publisher/pricing, no fetchArtifact; install-state stays manager-side).
 import { describe, expect, it } from "vitest";
-import { catalogSource, localCatalogSource, registerCatalogSource, type CatalogSource } from "./catalogSource";
+import {
+  NotAvailableInV1Error,
+  catalogSource,
+  listCatalogSources,
+  localCatalogSource,
+  registerCatalogSource,
+  registerRemoteMockIfEnabled,
+  remoteMockCatalogSource,
+  shouldRegisterRemoteMock,
+  unregisterCatalogSource,
+  type CatalogSource
+} from "./catalogSource";
 
 describe("CatalogSource('local') — the MH-0 seam", () => {
   it("is the registered 'local' source and the default", () => {
@@ -106,5 +117,70 @@ describe("CatalogSource('local') — the MH-0 seam", () => {
     const [listing] = await catalogSource("remote-test").list();
     expect(listing.publisher?.verified).toBe(true); // remote fields flow through the SAME type
     expect(catalogSource("unknown")).toBe(localCatalogSource); // defensive fallback
+  });
+});
+
+describe("remoteMockCatalogSource — the mocked EXTERNAL boundary (M6, §8.9)", () => {
+  it("lists fabricated source:'registry' goods through the SAME CatalogSource contract", async () => {
+    const listings = await remoteMockCatalogSource.list();
+    expect(listings.length).toBeGreaterThanOrEqual(1);
+    for (const listing of listings) {
+      // Same listing shape as local; the provenance is "registry" (renders identically).
+      expect(listing.source).toBe("registry");
+      expect(listing.id).toBeTruthy();
+      expect(listing.title).toBeTruthy();
+      // Remote-only fields are populated (the local source omits these).
+      expect(listing.publisher?.name).toBeTruthy();
+      expect(listing.pricing).toBeTruthy();
+    }
+    // Same query contract (search filters title + description).
+    expect((await remoteMockCatalogSource.list({ search: "diagrams" })).map((l) => l.id)).toEqual([
+      "registry:pro-diagrams"
+    ]);
+    // get() resolves a listing by id and returns null for misses.
+    expect((await remoteMockCatalogSource.get("registry:exam-cram"))?.title).toContain("Exam Cram");
+    expect(await remoteMockCatalogSource.get("nope")).toBeNull();
+  });
+
+  it("fetchArtifact THROWS the typed not-available-in-V1 stub (the future 402/remote boundary)", async () => {
+    expect(typeof remoteMockCatalogSource.fetchArtifact).toBe("function");
+    await expect(remoteMockCatalogSource.fetchArtifact!("registry:pro-diagrams")).rejects.toBeInstanceOf(
+      NotAvailableInV1Error
+    );
+    // The typed error carries a stable code + the listing id (catchable, not a string match).
+    const err = await remoteMockCatalogSource.fetchArtifact!("registry:exam-cram").catch((e) => e);
+    expect(err).toBeInstanceOf(NotAvailableInV1Error);
+    expect(err.code).toBe("not-available-in-v1");
+    expect(err.listingId).toBe("registry:exam-cram");
+  });
+
+  it("registers behind registerCatalogSource + surfaces in listCatalogSources (merge input)", () => {
+    registerCatalogSource(remoteMockCatalogSource);
+    expect(catalogSource("remote-mock")).toBe(remoteMockCatalogSource);
+    expect(listCatalogSources().map((s) => s.id)).toEqual(expect.arrayContaining(["local", "remote-mock"]));
+  });
+
+  it("a registry listing carries no fetchArtifact result until entitlement — proof a real registry slots in", async () => {
+    // The same read contract (list/get) works; only ACQUISITION (fetchArtifact) is the new
+    // boundary — CI-verifiable that a real remote registry needs no UI-contract change.
+    const remote: CatalogSource = remoteMockCatalogSource;
+    const [first] = await remote.list();
+    expect(first.source).toBe("registry");
+    await expect(remote.fetchArtifact!(first.id)).rejects.toBeInstanceOf(NotAvailableInV1Error);
+  });
+
+  it("the dev/test flag gates registration (production shows local only)", () => {
+    unregisterCatalogSource("remote-mock");
+    // shouldRegisterRemoteMock is a PURE boolean over the env; under the test runtime (DEV)
+    // it is on, and registerRemoteMockIfEnabled then registers the source.
+    expect(typeof shouldRegisterRemoteMock()).toBe("boolean");
+    registerRemoteMockIfEnabled();
+    if (shouldRegisterRemoteMock()) {
+      expect(catalogSource("remote-mock")).toBe(remoteMockCatalogSource);
+    } else {
+      expect(listCatalogSources().some((s) => s.id === "remote-mock")).toBe(false);
+    }
+    unregisterCatalogSource("remote-mock");
+    expect(catalogSource("remote-mock")).toBe(localCatalogSource); // fallback after removal
   });
 });

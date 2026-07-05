@@ -15,6 +15,7 @@ import type { PluginRecord } from "../../kits/plugin";
 import type { PluginPrefs } from "../data/entityClient";
 import { registerCatalogEntry, resetCatalog } from "../../kits/catalog";
 import { resetInstallState, syncInstallState, type CatalogState, type UserKitDef } from "../../kits/installState";
+import { registerCatalogSource, remoteMockCatalogSource, unregisterCatalogSource } from "../../kits/catalogSource";
 import { getNoteType, registerNoteType, resetNoteTypes } from "../notes/noteTypeRegistry";
 import { setLocale } from "../i18n";
 import "./pluginManagerViews";
@@ -127,6 +128,9 @@ afterEach(() => {
   resetInstallState();
   resetCatalog();
   resetNoteTypes();
+  // M6: the market effect self-registers the mock remote source under a dev flag (vitest
+  // runs in DEV) — drop it so no registry listing leaks into a test that assumes local-only.
+  unregisterCatalogSource("remote-mock");
   document.body.innerHTML = "";
 });
 
@@ -512,6 +516,44 @@ describe("市场 (browse) tab — detail preview (M2b, §8.4.3)", () => {
     expect(explanation).toBeTruthy();
     // InertNote emits the escaped-<pre> note-rendered body.
     expect(explanation!.querySelector(".note-rendered")).toBeTruthy();
+    cleanup();
+  });
+});
+
+describe("市场 (browse) tab — merged remote source (M6, §8.9)", () => {
+  it("merges a registered source's source:'registry' listings, rendered IDENTICALLY to bundled", async () => {
+    catalogFixture();
+    wireInstallState({ installedPlugins: [], installedKits: ["kit-a"] });
+    registerCatalogSource(remoteMockCatalogSource); // the merge picks up any extra source
+    const { container, cleanup } = await renderPanel(ctxWith({}));
+
+    await click(container.querySelector(".market-tab-market"));
+    // A bundled card and a registry card coexist in the SAME list, same markup.
+    const bundled = container.querySelector('.market-card[data-source="bundled"]');
+    const registry = container.querySelector('.market-card[data-entry-id="registry:exam-cram"]');
+    expect(bundled).toBeTruthy();
+    expect(registry).toBeTruthy();
+    expect(registry!.getAttribute("data-source")).toBe("registry");
+    expect(registry!.getAttribute("data-kind")).toBe("kit");
+    // Identical rendering: same title/desc/install-button structure as a bundled card.
+    expect(registry!.querySelector(".market-card-title")!.textContent).toContain("Exam Cram");
+    expect(registry!.querySelector(".market-card-desc")).toBeTruthy();
+    expect(registry!.querySelector(".market-install-btn")).toBeTruthy();
+    cleanup();
+  });
+
+  it("every bundled listing carries data-source='bundled' (identical card, provenance-tagged)", async () => {
+    catalogFixture();
+    wireInstallState({ installedPlugins: [], installedKits: ["kit-a"] });
+    unregisterCatalogSource("remote-mock"); // isolate: assert the local slice's provenance
+    const { container, cleanup } = await renderPanel(ctxWith({}));
+    await click(container.querySelector(".market-tab-market"));
+    // The local (bundled) cards — kit-a / textbook-learning — are all tagged "bundled".
+    for (const id of ["kit-a", "textbook-learning"]) {
+      const card = container.querySelector(`.market-card[data-entry-id="${id}"]`);
+      expect(card).toBeTruthy();
+      expect(card!.getAttribute("data-source")).toBe("bundled");
+    }
     cleanup();
   });
 });

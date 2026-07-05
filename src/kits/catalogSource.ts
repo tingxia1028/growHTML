@@ -43,6 +43,10 @@ export type CatalogListing = {
   /** Detail-page live-preview fixtures (M2b, §8.4.3). Present on local listings that
       provide previewable types; absent when there is nothing to preview. */
   previews?: CatalogPreview[];
+  /** Provenance for the card (§8.9): "bundled" = the in-process local catalog;
+      "registry" = a remote source. The UI renders both identically (one renderer) — the
+      value only drives an installability/"from a registry" hint. Absent = treat as local. */
+  source?: "bundled" | "registry";
 };
 
 /** The installable bytes (svpack / kit-data JSON) a REMOTE source downloads on install.
@@ -87,7 +91,8 @@ function toListing(entry: CatalogEntry): CatalogListing {
     icon: entry.icon,
     memberCount: entry.kind === "kit" ? (entry.members ?? []).length : undefined,
     groupCount: entry.kind === "kit" ? (entry.groups ?? entry.members ?? []).length : undefined,
-    previews: previews.length > 0 ? previews : undefined
+    previews: previews.length > 0 ? previews : undefined,
+    source: "bundled"
   };
 }
 
@@ -131,7 +136,88 @@ export function registerCatalogSource(source: CatalogSource): void {
   sources.set(source.id, source);
 }
 
+/** Remove a registered source (never the built-in local one) — the test-cleanup seam so a
+    registered extra doesn't leak across tests. */
+export function unregisterCatalogSource(id: string): void {
+  if (id !== localCatalogSource.id) sources.delete(id);
+}
+
+/** Every registered source (local first) — the market merges their listings (M6). */
+export function listCatalogSources(): CatalogSource[] {
+  return Array.from(sources.values());
+}
+
 /** The source the market renders from. Unknown ids fall back to local (defensive). */
 export function catalogSource(id: string = "local"): CatalogSource {
   return sources.get(id) ?? localCatalogSource;
+}
+
+// —— the mock REMOTE source (dev/test only — the external boundary, mocked) ————————
+// docs/design/plugin-viewer-model.md §8.9 — CI-verifiable proof a real remote registry
+// slots into the SAME CatalogSource contract unchanged. It LISTS fabricated
+// `source:"registry"` goods (with the remote-only publisher/pricing fields the local
+// source omits), which the market renders identically to bundled cards; and its
+// `fetchArtifact` — the future download-on-install / entitlement boundary (MH-2) —
+// THROWS a typed "not available in V1" error (no remote code download is allowed in V1,
+// locked). Registered ONLY behind an explicit dev/test flag (production shows only local).
+
+/** The typed error the mock remote's fetchArtifact throws — the future 402/remote-fetch
+    boundary, surfaced as a stable, catchable type (never a bare Error string match). */
+export class NotAvailableInV1Error extends Error {
+  readonly code = "not-available-in-v1" as const;
+  constructor(readonly listingId: string) {
+    super(`Remote artifact "${listingId}" is not available in V1 (no remote code download — locked, §8.9).`);
+    this.name = "NotAvailableInV1Error";
+  }
+}
+
+const REMOTE_MOCK_LISTINGS: CatalogListing[] = [
+  {
+    id: "registry:exam-cram",
+    kind: "kit",
+    title: "Exam Cram (registry demo)",
+    description: "A fabricated remote kit — proves a registry listing renders like a bundled one.",
+    version: "1.0.0",
+    contentTypes: ["flashcard", "quiz"],
+    publisher: { id: "acme-edu", name: "Acme Edu", verified: true },
+    pricing: { kind: "free" },
+    memberCount: 2,
+    groupCount: 2,
+    source: "registry"
+  },
+  {
+    id: "registry:pro-diagrams",
+    kind: "kit",
+    title: "Pro Diagrams (registry demo)",
+    description: "A fabricated paid remote kit — the 402/entitlement path lives in fetchArtifact.",
+    version: "2.1.0",
+    contentTypes: ["mermaid", "markmap"],
+    publisher: { id: "acme-edu", name: "Acme Edu", verified: true },
+    pricing: { kind: "credits", amount: 5 },
+    memberCount: 1,
+    groupCount: 1,
+    source: "registry"
+  }
+];
+
+export const remoteMockCatalogSource: CatalogSource = {
+  id: "remote-mock",
+  list: (q) => Promise.resolve(REMOTE_MOCK_LISTINGS.filter((l) => matches(l, q))),
+  get: (id) => Promise.resolve(REMOTE_MOCK_LISTINGS.find((l) => l.id === id) ?? null),
+  // The remote-fetch boundary: always rejects with the typed stub in V1.
+  fetchArtifact: (id) => Promise.reject(new NotAvailableInV1Error(id))
+};
+
+/** Whether the mock remote source should be registered — a dev/test flag ONLY.
+    Production leaves it off, so the market shows the local (bundled) source alone. */
+export function shouldRegisterRemoteMock(): boolean {
+  // Vite exposes import.meta.env; guard for non-Vite (node/test) runtimes.
+  const env = (import.meta as unknown as { env?: Record<string, unknown> }).env;
+  return env?.DEV === true || env?.VITE_REMOTE_MOCK_CATALOG === "1";
+}
+
+/** Register the mock remote source iff the dev/test flag is on (idempotent — the source
+    map de-dupes by id). Callers: the market view on mount + tests (which call it directly).*/
+export function registerRemoteMockIfEnabled(): void {
+  if (shouldRegisterRemoteMock()) registerCatalogSource(remoteMockCatalogSource);
 }

@@ -28,7 +28,13 @@ import type { PluginRecord } from "../../kits/plugin";
 import { listViewers, resolveViewer, NOTETYPE_SENTINEL } from "../notes/viewerRegistry";
 import { getNoteType } from "../notes/noteTypeRegistry";
 import { InertNote } from "../notes/builtinNoteTypes";
-import { catalogSource, type CatalogListing, type CatalogPreview } from "../../kits/catalogSource";
+import {
+  catalogSource,
+  listCatalogSources,
+  registerRemoteMockIfEnabled,
+  type CatalogListing,
+  type CatalogPreview
+} from "../../kits/catalogSource";
 import {
   installStateSnapshot,
   isKitEnabled,
@@ -118,15 +124,25 @@ function KitManagerView({ ctx }: { ctx: WorkspaceContext }) {
   const [snapshot, setSnapshot] = useState<Snapshot>(() => installStateSnapshot());
   const [marketError, setMarketError] = useState("");
 
-  // MH-0: the market listing comes ONLY through CatalogSource("local") — which lists
-  // KITS exclusively since FLAT. Re-queried on search so the SAME call shape works
-  // against a remote source later.
+  // MH-0: market listings come ONLY through the CatalogSource contract (never a direct
+  // catalog import). The LOCAL source (bundled kits, FLAT §2) is always listed via
+  // catalogSource("local").list(...); any registered EXTRA sources (M6 — the mock remote,
+  // gated behind a dev flag; a real registry later) merge their listings through the SAME
+  // call shape + type, deduped by id (local wins on collision). Re-queried on search.
   useEffect(() => {
     let live = true;
-    void catalogSource("local")
-      .list({ search: search || undefined })
-      .then((all) => {
-        if (live) setListings(all);
+    registerRemoteMockIfEnabled();
+    const query = { search: search || undefined };
+    const local = catalogSource("local").list(query);
+    const extras = listCatalogSources()
+      .filter((s) => s.id !== "local")
+      .map((s) => s.list(query).catch(() => [] as CatalogListing[]));
+    void Promise.all([local, ...extras])
+      .then((groups) => {
+        if (!live) return;
+        const byId = new Map<string, CatalogListing>();
+        for (const listing of groups.flat()) if (!byId.has(listing.id)) byId.set(listing.id, listing);
+        setListings(Array.from(byId.values()));
       })
       .catch(() => {
         if (live) setListings([]);
@@ -598,7 +614,13 @@ function MarketTab({
           {listings.map((listing) => {
             const installed = installedKitSet.has(listing.id);
             return (
-              <li key={listing.id} className="market-card" data-entry-id={listing.id} data-kind={listing.kind}>
+              <li
+                key={listing.id}
+                className="market-card"
+                data-entry-id={listing.id}
+                data-kind={listing.kind}
+                data-source={listing.source ?? "bundled"}
+              >
                 <div className="market-card-row">
                   <span className="market-card-icon" aria-hidden="true">
                     <Package size={16} />
