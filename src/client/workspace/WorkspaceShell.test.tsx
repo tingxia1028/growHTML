@@ -73,7 +73,7 @@ describe("WorkspaceShell", () => {
     expect(container.querySelector(".workspace-node-missing")).toBeNull();
   });
 
-  it("keeps the left rail to Library/Review/Mistakes/Concepts/Profile and hosts secondary views in a modal", async () => {
+  it("keeps the left rail to Library/Review/Concepts/Profile and hosts secondary views in a modal", async () => {
     await act(async () => {
       root.render(
         <FocusProvider>
@@ -85,11 +85,10 @@ describe("WorkspaceShell", () => {
     });
 
     const railButtons = Array.from(container.querySelectorAll<HTMLButtonElement>(".icon-rail-entries .icon-rail-btn"));
-    expect(railButtons).toHaveLength(5);
+    expect(railButtons).toHaveLength(4);
     expect(RAIL_ENTRIES.map((entry) => entry.kind)).toEqual([
       "library",
       "review.panel",
-      "mistake.book",
       "concept.list",
       "profile.panel"
     ]);
@@ -112,7 +111,7 @@ describe("WorkspaceShell", () => {
       );
     });
 
-    const [libraryButton, , , conceptsButton] = Array.from(
+    const [libraryButton, , conceptsButton] = Array.from(
       container.querySelectorAll<HTMLButtonElement>(".icon-rail-entries .icon-rail-btn")
     );
     expect(container.querySelector(".library-panel")).not.toBeNull();

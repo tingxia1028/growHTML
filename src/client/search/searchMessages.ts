@@ -36,6 +36,7 @@ export const searchMessages = defineMessages({
   cmdReview: { zh: "打开复习", en: "Open Review" },
   cmdTeachback: { zh: "开始教回", en: "Start Teach-back" },
   cmdStudyReport: { zh: "学习报告", en: "Study Reports" },
+  cmdMistakeBook: { zh: "错题本", en: "Mistake Book" },
   cmdProfile: { zh: "打开画像", en: "Open Profile" },
   cmdSettings: { zh: "打开设置", en: "Open Settings" },
   cmdLayers: { zh: "打开分层", en: "Open Layers" },

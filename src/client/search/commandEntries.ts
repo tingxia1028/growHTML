@@ -35,6 +35,10 @@ const NAV_COMMANDS: { kind: string; title: Message; aliases: string[]; modal?: b
   { kind: "operation.manager", title: searchMessages.cmdOperations, aliases: ["operations", "操作", "动作"], modal: true },
   { kind: "plugin.manager", title: searchMessages.cmdPlugins, aliases: ["kits", "plugins", "套件", "插件"], modal: true },
   { kind: "review.panel", title: searchMessages.cmdReview, aliases: ["review", "复习"] },
+  // 错题本 (mistake.book): the CORE cross-source mistake browse/manage surface. It left the
+  // rail (SHELL-4 "rail 只留4项") but stays registered — the palette list is STATIC in V1, so
+  // the mistake.book.open launch needs THIS entry to surface in global search (report precedent).
+  { kind: "mistake.book", title: searchMessages.cmdMistakeBook, aliases: ["mistakes", "mistake book", "错题本", "错题"] },
   // PRO-2: 教回 runner. The palette list is STATIC in V1 (registry-derivation is deferred
   // SEARCH-2), so the teachback.start launch needs THIS entry to surface in global search.
   { kind: "teachback.panel", title: searchMessages.cmdTeachback, aliases: ["teachback", "teach-back", "教回", "费曼", "feynman"] },
