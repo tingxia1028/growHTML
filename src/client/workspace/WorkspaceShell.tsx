@@ -43,8 +43,10 @@ import "./views";
 import "./SourceTabs";
 import "./conceptViews";
 import "./layerViews";
-//   ./bookmarkViews  → bookmark.list (the Bookmark V1 jump strip)
-import "./bookmarkViews";
+//   ../../kits/bookmarks/BookmarkListView → bookmark.list (the Bookmark V1 jump strip — now a
+//   register-only KIT lens; launched via the CORE commandEntries.ts NAV entry (Cmd+K 书签).
+//   Self-registerViews like report.list; kind + dock presets unchanged.)
+import "../../kits/bookmarks/BookmarkListView";
 import "./practiceViews";
 //   ./operationViews → operation.manager (the operation-as-data builder + manager)
 import "./operationViews";

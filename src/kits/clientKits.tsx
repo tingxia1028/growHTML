@@ -8,6 +8,7 @@ import { subjectKits } from "./subject";
 import { teachbackKit } from "./teachback";
 import { mistakePhotoKit } from "./mistake-photo";
 import { studyReportKit } from "./study-report";
+import { bookmarksKit } from "./bookmarks";
 
 // The subject kits (M-B) register like every kit — types render everywhere — but are
 // NOT default-installed (catalog.ts): their create affordances light up on market install.
@@ -25,6 +26,17 @@ import { studyReportKit } from "./study-report";
 // → always-available, so its study-report.generate / study-report.open commands + the
 // study-report.report note type work day-one. The report.list VIEW self-registers
 // (ReportListView.tsx, shell-imported), not via the dead `views` kit sink.
-export const productKits = [textbookLearningKit, ...subjectKits, teachbackKit, mistakePhotoKit, studyReportKit];
+// bookmarks kit (bookmark-modeling.md): a register-only kit, UNCATALOGED → always-available.
+// It registers NO content spec (the `bookmark` type is a CORE built-in) — only the
+// bookmark.list browse LENS, which self-registers (BookmarkListView.tsx, shell-imported).
+// Its Cmd+K launch is the CORE commandEntries.ts NAV entry, not a kit command.
+export const productKits = [
+  textbookLearningKit,
+  ...subjectKits,
+  teachbackKit,
+  mistakePhotoKit,
+  studyReportKit,
+  bookmarksKit
+];
 
 installClientKits(productKits);

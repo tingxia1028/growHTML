@@ -12,9 +12,11 @@
 
 import { Bookmark, Trash2 } from "lucide-react";
 import { BOOKMARK_CONTENT_TYPE } from "../../core/notes/contentTypes";
-import { getNoteType } from "../notes/noteTypeRegistry";
-import { registerView, type WorkspaceContext } from "./viewRegistry";
-import { useBookmarks } from "./useBookmarks";
+import { getNoteType } from "../../client/notes/noteTypeRegistry";
+import { registerView, type WorkspaceContext } from "../../client/workspace/viewRegistry";
+// useBookmarks stays a SHARED CORE hook (it also feeds the reader's hover-reveal
+// BookmarkIndex) — the kit lens imports it across the boundary rather than owning it.
+import { useBookmarks } from "../../client/workspace/useBookmarks";
 
 function BookmarksView({ ctx }: { ctx: WorkspaceContext }) {
   const { activeSourceId, dispatch } = ctx;

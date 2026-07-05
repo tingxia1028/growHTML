@@ -2,12 +2,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import type { AnyAnchor, NoteRecord } from "../data/entityClient";
-import { getView } from "./viewRegistry";
-import type { WorkspaceContext } from "./viewRegistry";
+import type { AnyAnchor, NoteRecord } from "../../client/data/entityClient";
+import { getView } from "../../client/workspace/viewRegistry";
+import type { WorkspaceContext } from "../../client/workspace/viewRegistry";
 // Side-effect imports: register the bookmark NoteType plugin (chip render) + the panel.
-import "../notes/builtinNoteTypes";
-import "./bookmarkViews";
+import "../../client/notes/builtinNoteTypes";
+import "./BookmarkListView";
 
 const anchor: AnyAnchor = {
   id: "anchor_1",
