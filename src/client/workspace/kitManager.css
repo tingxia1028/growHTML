@@ -101,3 +101,62 @@
   font-size: 12px;
   opacity: 0.75;
 }
+
+/* —— market detail preview drill-in (M2b — plugin-viewer-model §8.4.3) ————
+   The market card becomes a COLUMN so the <details> preview sits UNDER the row
+   (styles.css sets .market-card to display:flex — we re-flow it here, kit-owned,
+   without touching that shared file). The row keeps the original horizontal layout. */
+.market-card {
+  flex-direction: column;
+}
+.market-card-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+}
+
+.market-preview {
+  margin-top: 8px;
+  border-top: 1px dashed var(--sv-border-muted, rgba(255, 255, 255, 0.08));
+  padding-top: 6px;
+}
+.market-preview-summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sv-text-muted, rgba(255, 255, 255, 0.6));
+  user-select: none;
+}
+.market-preview-summary:hover {
+  color: var(--sv-text-strong, #fff);
+}
+.market-preview-hint {
+  margin: 6px 0;
+  font-size: 11px;
+  opacity: 0.6;
+}
+.market-preview-grid {
+  display: grid;
+  gap: 8px;
+}
+.market-preview-note {
+  border: 1px solid var(--sv-border-muted, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  padding: 8px;
+  background: var(--panel-2, rgba(255, 255, 255, 0.02));
+  overflow: hidden;
+}
+.market-preview-type {
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.55;
+  margin-bottom: 4px;
+}
+.market-preview-body {
+  font-size: 12px;
+  max-height: 220px;
+  overflow: auto;
+}

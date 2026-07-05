@@ -13,6 +13,14 @@
 //     instead of importing registries directly.
 
 import { listCatalogEntries, type CatalogEntry } from "./catalog";
+import { previewsFor } from "./catalogPreview";
+
+/** A market detail-page preview (M2b — §8.4.3): a sample note rendered THROUGH the
+    providing plugin's own registered renderer. `sampleContent` validates against the
+    core NoteContentSpec for `contentType` (locked by catalogPreview.test.ts). Rides the
+    LISTING so the market view reads it via the CatalogSource seam only — never a direct
+    catalog import (the MH-0 guard). A remote source ships its own previews the same way. */
+export type CatalogPreview = { contentType: string; sampleContent: unknown; label?: string };
 
 export type CatalogListing = {
   id: string; //                            local: kit/plugin id · remote: listing id
@@ -32,6 +40,9 @@ export type CatalogListing = {
   memberCount?: number;
   /** kits: capability-group count for the FLAT "N 能力组" card line. */
   groupCount?: number;
+  /** Detail-page live-preview fixtures (M2b, §8.4.3). Present on local listings that
+      provide previewable types; absent when there is nothing to preview. */
+  previews?: CatalogPreview[];
 };
 
 /** The installable bytes (svpack / kit-data JSON) a REMOTE source downloads on install.
@@ -63,6 +74,9 @@ function toListing(entry: CatalogEntry): CatalogListing {
           )
         )
       : entry.provides ?? [];
+  // Preview fixtures ride the listing (MH-0 — the market view reads them here, never
+  // from the catalog directly). `previewsFor` unions the kit's members' provided types.
+  const previews = previewsFor(entry.id);
   return {
     id: entry.id,
     kind: entry.kind,
@@ -72,7 +86,8 @@ function toListing(entry: CatalogEntry): CatalogListing {
     contentTypes,
     icon: entry.icon,
     memberCount: entry.kind === "kit" ? (entry.members ?? []).length : undefined,
-    groupCount: entry.kind === "kit" ? (entry.groups ?? entry.members ?? []).length : undefined
+    groupCount: entry.kind === "kit" ? (entry.groups ?? entry.members ?? []).length : undefined,
+    previews: previews.length > 0 ? previews : undefined
   };
 }
 

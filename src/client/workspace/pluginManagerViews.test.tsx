@@ -15,6 +15,7 @@ import type { PluginRecord } from "../../kits/plugin";
 import type { PluginPrefs } from "../data/entityClient";
 import { registerCatalogEntry, resetCatalog } from "../../kits/catalog";
 import { resetInstallState, syncInstallState, type CatalogState, type UserKitDef } from "../../kits/installState";
+import { getNoteType, registerNoteType, resetNoteTypes } from "../notes/noteTypeRegistry";
 import { setLocale } from "../i18n";
 import "./pluginManagerViews";
 
@@ -125,6 +126,7 @@ afterEach(() => {
   vi.clearAllMocks();
   resetInstallState();
   resetCatalog();
+  resetNoteTypes();
   document.body.innerHTML = "";
 });
 
@@ -355,6 +357,65 @@ describe("市场 (browse) tab — kits only", () => {
     const cards = Array.from(container.querySelectorAll(".market-card"));
     expect(cards).toHaveLength(1);
     expect(cards[0].getAttribute("data-entry-id")).toBe("kit-a");
+    cleanup();
+  });
+});
+
+describe("市场 (browse) tab — detail preview (M2b, §8.4.3)", () => {
+  it("expands a market card into a <details> preview rendered through the plugin's OWN renderer", async () => {
+    catalogFixture();
+    wireInstallState({ installedPlugins: [], installedKits: ["kit-a"] });
+    // The bundled Textbook Kit provides subject.vocab (via subject-vocab), so its listing
+    // carries a subject.vocab preview fixture. Register a MARKER renderer for that type —
+    // the preview must render THROUGH it (getNoteType(contentType).render), not InertNote.
+    const seen: unknown[] = [];
+    registerNoteType({
+      contentType: "subject.vocab",
+      render: (input) => {
+        seen.push(input.content);
+        return <div className="test-vocab-render">VOCAB FIXTURE</div>;
+      },
+      edit: () => null
+    });
+    const { container, cleanup } = await renderPanel(ctxWith({}));
+
+    await click(container.querySelector(".market-tab-market"));
+    const textbook = container.querySelector('.market-card[data-entry-id="textbook-learning"]');
+    expect(textbook).toBeTruthy();
+    const details = textbook!.querySelector("details.market-preview") as HTMLDetailsElement;
+    expect(details, "textbook kit card has a preview drill").toBeTruthy();
+
+    // Drill in: the vocab fixture renders through the registered renderer, not the inert
+    // fallback, and the marker renderer received the fixture's sampleContent.
+    await act(async () => {
+      details.open = true;
+    });
+    const vocab = details.querySelector('.market-preview-note[data-content-type="subject.vocab"]');
+    expect(vocab).toBeTruthy();
+    expect(vocab!.querySelector(".test-vocab-render")?.textContent).toBe("VOCAB FIXTURE");
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen[0]).toMatchObject({ word: expect.any(String) }); // the vocab mockContent shape
+    cleanup();
+  });
+
+  it("falls back to InertNote when a preview type has no registered renderer", async () => {
+    catalogFixture();
+    wireInstallState({ installedPlugins: [], installedKits: ["kit-a"] });
+    // No renderer registered for the textbook types → the drill still opens and renders
+    // the inert escaped-JSON fallback (never a crash), proving the fallback path.
+    expect(getNoteType("textbook.explanation")).toBeUndefined();
+    const { container, cleanup } = await renderPanel(ctxWith({}));
+    await click(container.querySelector(".market-tab-market"));
+    const details = container.querySelector(
+      '.market-card[data-entry-id="textbook-learning"] details.market-preview'
+    ) as HTMLDetailsElement;
+    await act(async () => {
+      details.open = true;
+    });
+    const explanation = details.querySelector('.market-preview-note[data-content-type="textbook.explanation"]');
+    expect(explanation).toBeTruthy();
+    // InertNote emits the escaped-<pre> note-rendered body.
+    expect(explanation!.querySelector(".note-rendered")).toBeTruthy();
     cleanup();
   });
 });

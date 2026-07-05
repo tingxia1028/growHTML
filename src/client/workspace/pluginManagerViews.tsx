@@ -26,7 +26,9 @@ import { defineMessages, t, useLocale, type Locale } from "../i18n";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 import type { PluginRecord } from "../../kits/plugin";
 import { listViewers, resolveViewer, NOTETYPE_SENTINEL } from "../notes/viewerRegistry";
-import { catalogSource, type CatalogListing } from "../../kits/catalogSource";
+import { getNoteType } from "../notes/noteTypeRegistry";
+import { InertNote } from "../notes/builtinNoteTypes";
+import { catalogSource, type CatalogListing, type CatalogPreview } from "../../kits/catalogSource";
 import {
   installStateSnapshot,
   isKitEnabled,
@@ -77,6 +79,11 @@ const kitManagerMessages = defineMessages({
   noCatalogEntries: { zh: "暂无市场条目。", en: "No catalog entries." },
   installedBadge: { zh: "已安装 ✓", en: "Installed ✓" },
   install: { zh: "安装", en: "Install" },
+  preview: { zh: "预览", en: "Preview" },
+  previewHint: {
+    zh: "示例笔记 — 由套件自己的渲染器绘制。",
+    en: "Sample notes — drawn by the kit's own renderer."
+  },
   viewerConflicts: { zh: "Viewer 冲突", en: "Viewer conflicts" },
   noViewerConflicts: { zh: "没有 Viewer 冲突。", en: "No viewer conflicts." },
   defaultNoteType: { zh: "默认（笔记类型）", en: "Default (note type)" },
@@ -389,6 +396,40 @@ function localized(text: { zh: string; en: string }, locale: Locale): string {
   return text[locale];
 }
 
+// —— market detail preview (M2b — §8.4.3) ————————————————————————————————————————
+// An expandable <details> drill-in under a market card. Each fixture renders THROUGH the
+// providing plugin's OWN registered renderer (getNoteType(contentType).render) — the
+// market owns NO bespoke preview renderer (the adaptive-note contract). A type with no
+// registered renderer falls back to InertNote (escaped JSON), never a crash. The preview
+// data arrives on the listing (CatalogSource seam) — the view never imports the catalog.
+function PreviewNote({ preview }: { preview: CatalogPreview }) {
+  const plugin = getNoteType(preview.contentType);
+  const body = plugin?.render({ content: preview.sampleContent, mode: "card" }) ?? (
+    <InertNote content={preview.sampleContent} />
+  );
+  return (
+    <div className="market-preview-note" data-content-type={preview.contentType}>
+      <span className="market-preview-type">{preview.label ?? preview.contentType}</span>
+      <div className="market-preview-body">{body}</div>
+    </div>
+  );
+}
+
+function PreviewDrill({ previews }: { previews: CatalogPreview[] }) {
+  if (previews.length === 0) return null;
+  return (
+    <details className="market-preview">
+      <summary className="market-preview-summary">{t(kitManagerMessages.preview)}</summary>
+      <div className="market-preview-hint">{t(kitManagerMessages.previewHint)}</div>
+      <div className="market-preview-grid">
+        {previews.map((preview) => (
+          <PreviewNote key={preview.contentType} preview={preview} />
+        ))}
+      </div>
+    </details>
+  );
+}
+
 // —— 市场 (browse): kit listings only (FLAT §2) ————————————————————————————————
 
 function MarketTab({
@@ -414,31 +455,34 @@ function MarketTab({
             const installed = installedKitSet.has(listing.id);
             return (
               <li key={listing.id} className="market-card" data-entry-id={listing.id} data-kind={listing.kind}>
-                <span className="market-card-icon" aria-hidden="true">
-                  <Package size={16} />
-                </span>
-                <span className="market-card-main">
-                  <span className="market-card-title">
-                    {listing.title}
-                    {typeof listing.groupCount === "number" ? (
-                      <span className="market-kit-count">
-                        {listing.groupCount} {t(kitManagerMessages.groupCount)}
-                      </span>
-                    ) : null}
+                <div className="market-card-row">
+                  <span className="market-card-icon" aria-hidden="true">
+                    <Package size={16} />
                   </span>
-                  <span className="market-card-desc">{listing.description}</span>
-                </span>
-                {installed ? (
-                  <span className="market-installed-badge">{t(kitManagerMessages.installedBadge)}</span>
-                ) : (
-                  <button
-                    type="button"
-                    className="market-install-btn"
-                    onClick={() => persist(withKitInstalled(snapshot.catalogState, listing.id))}
-                  >
-                    {t(kitManagerMessages.install)}
-                  </button>
-                )}
+                  <span className="market-card-main">
+                    <span className="market-card-title">
+                      {listing.title}
+                      {typeof listing.groupCount === "number" ? (
+                        <span className="market-kit-count">
+                          {listing.groupCount} {t(kitManagerMessages.groupCount)}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="market-card-desc">{listing.description}</span>
+                  </span>
+                  {installed ? (
+                    <span className="market-installed-badge">{t(kitManagerMessages.installedBadge)}</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="market-install-btn"
+                      onClick={() => persist(withKitInstalled(snapshot.catalogState, listing.id))}
+                    >
+                      {t(kitManagerMessages.install)}
+                    </button>
+                  )}
+                </div>
+                <PreviewDrill previews={listing.previews ?? []} />
               </li>
             );
           })}
