@@ -5,8 +5,14 @@
 // contract holds: the hidden type is EXCLUDED from the slash palette and the
 // composer's type-picker universe while still rendering through getNoteType().
 // Also the REV-CORE severing proofs: the core `mistake` type replaces the kit's
-// `textbook.mistake` (alias-aware lookup + render), and the review PLUGIN record /
-// catalog entry are GONE (the mission loop is not uninstallable).
+// `textbook.mistake` (alias-aware lookup + render).
+//
+// Lens→kit migration: the review.panel DRILL VIEW is now a register-only KIT lens
+// (reviewKit — a relocation of the view's code, owner-decided). That gives review a
+// register-only kit vehicle + a plugin record, but the REV-CORE guarantee is UNBROKEN:
+// reviewKit is UNCATALOGED → isPluginEffectiveInstalled==true → the mission loop is NOT
+// uninstallable (no market entry), and the kit registers NO content spec, so the review
+// ENGINE (review.grade type + SRS schedule + queue/scope/io) stays a CORE built-in.
 
 import { describe, expect, it, vi } from "vitest";
 import { act } from "react";
@@ -26,9 +32,9 @@ import { getNoteType, listNoteTypes } from "../notes/noteTypeRegistry";
 import { getNoteContentSpec, MISTAKE_CONTENT_TYPE } from "../../core/notes/contentTypes";
 import { REVIEW_GRADE_CONTENT_TYPE } from "../../core/review/contentTypes";
 import { slashEntriesFromNoteTypes } from "../slash/adapters";
-import { listInstalledPlugins } from "../../kits/plugin";
 import { installedKits } from "../../kits/clientContext";
 import { getCatalogEntry } from "../../kits/catalog";
+import { isPluginEffectiveInstalled } from "../../kits/installState";
 
 function renderToHtml(node: React.ReactNode): string {
   const container = document.createElement("div");
@@ -50,11 +56,17 @@ describe("REV-CORE — review registers from core (no plugin)", () => {
     expect(getNoteContentSpec(REVIEW_GRADE_CONTENT_TYPE)).toBeTruthy();
   });
 
-  it("the review PLUGIN is dissolved: no plugin record, no kit, no catalog entry", () => {
-    expect(listInstalledPlugins().find((p) => p.id === "review")).toBeUndefined();
-    expect(installedKits.some((kit) => kit.id === "review")).toBe(false);
+  it("review is UNCATALOGED + engine-free: the mission loop stays core (not uninstallable)", () => {
+    // The review.panel drill VIEW moved into a register-only KIT lens (reviewKit), so review
+    // now HAS a kit vehicle — but the REV-CORE guarantee holds: it is UNCATALOGED (no market
+    // good), so it is always-available (not uninstallable) and the ENGINE is not kit-gated.
     expect(getCatalogEntry("review")).toBeUndefined();
-    // The textbook kit is untouched by the dissolution.
+    expect(isPluginEffectiveInstalled("review")).toBe(true); // uncataloged ⇒ always available
+    // The kit registers NO content spec: the review.grade + mistake ENGINE types stay CORE
+    // built-ins (test 1 above pins review.grade is a core spec with no owning plugin).
+    const reviewKit = installedKits.find((kit) => kit.id === "review");
+    expect(reviewKit, "the review.panel lens is a register-only kit vehicle").toBeTruthy();
+    // The textbook kit is untouched.
     expect(installedKits.some((kit) => kit.id === "textbook-learning")).toBe(true);
   });
 

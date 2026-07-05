@@ -17,28 +17,30 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 
 // Stub DiagramNote so the built-in registrations don't pull mermaid/markmap into jsdom.
-vi.mock("../DiagramNote", () => ({
+vi.mock("../../client/DiagramNote", () => ({
   DiagramNote: () => <div className="mock-diagram" />
 }));
 
 // Side effects: built-in note types (incl. the core mistake + review.grade types,
 // REV-CORE) + Product Kits (textbook) + the view.
-import "../notes/builtinNoteTypes";
-import "../../kits/clientKits";
+import "../../client/notes/builtinNoteTypes";
+import "../clientKits";
 import "./ReviewPanel";
 
-import { getView, type WorkspaceContext } from "../workspace/viewRegistry";
-import { setLocale } from "../i18n";
+import { getView, type WorkspaceContext } from "../../client/workspace/viewRegistry";
+import { setLocale } from "../../client/i18n";
 import type { MemoryDimensionSummary } from "../../core/memory/digest";
-import type { MemoryEventInput, NoteRecord, ProfileFactView } from "../data/entityClient";
+import type { MemoryEventInput, NoteRecord, ProfileFactView } from "../../client/data/entityClient";
 import {
   flushNow,
   resetMemoryCaptureForTests,
   setMemoryTransportForTests
-} from "../memory/capture";
-import { setReviewIoForTests, type GenerateRequest } from "./reviewIo";
-import { consumePendingReviewScope, setPendingReviewScope } from "./reviewScope";
-import type { ReviewEventLike } from "./queue";
+} from "../../client/memory/capture";
+// The review SUPPORT modules stay in core (src/client/review/) — the test drives the
+// same seams the panel imports across the boundary.
+import { setReviewIoForTests, type GenerateRequest } from "../../client/review/reviewIo";
+import { consumePendingReviewScope, setPendingReviewScope } from "../../client/review/reviewScope";
+import type { ReviewEventLike } from "../../client/review/queue";
 import type { ReviewScheduleRecord } from "../../core/review/schedule";
 
 const SRC = "src_1";

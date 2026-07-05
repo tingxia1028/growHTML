@@ -60,8 +60,11 @@ import "./RightSidebarTabs";
 import "./pluginManagerViews";
 //   ./trashViews → trash.panel (the TRUST-3 回收站 — reached via the UserMenu 数据 group)
 import "./trashViews";
-//   ../review/ReviewPanel → review.panel (the REV-1 复习 runner — reached via the IconRail)
-import "../review/ReviewPanel";
+//   ../../kits/review/ReviewPanel → review.panel (the REV-1 复习 runner drill VIEW — now a
+//   register-only KIT lens; the SRS engine + queue/scope/io/push support stay CORE in
+//   src/client/review/. Still reached via the IconRail (复习 = a primary daily surface);
+//   self-registerViews like report.list; kind + nav unchanged.)
+import "../../kits/review/ReviewPanel";
 //   ../../kits/mistake-photo/MistakeBookView → mistake.book (the 错题本 cross-source browse/manage
 //   lens — folded into the mistake-photo KIT; launched via the CORE commandEntries.ts NAV entry
 //   (Cmd+K "错题本"), no longer a rail entry. Self-registerViews like report.list; kind unchanged.)

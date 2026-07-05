@@ -25,17 +25,20 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BookOpenCheck } from "lucide-react";
-import { registerView, type WorkspaceContext } from "../workspace/viewRegistry";
-import { ArtifactCard } from "../workspace/ArtifactCard";
-import { getNoteType, type NoteRenderCtx, type NoteRenderMode } from "../notes/noteTypeRegistry";
-import { defineMessages, resolveText, t, useLocale, type Locale } from "../i18n";
+import { registerView, type WorkspaceContext } from "../../client/workspace/viewRegistry";
+import { ArtifactCard } from "../../client/workspace/ArtifactCard";
+import { getNoteType, type NoteRenderCtx, type NoteRenderMode } from "../../client/notes/noteTypeRegistry";
+import { defineMessages, resolveText, t, useLocale, type Locale } from "../../client/i18n";
 import { getNoteContentSpec, MISTAKE_CONTENT_TYPE, mistakeSpec } from "../../core/notes/contentTypes";
 import type { MemoryDimensionSummary } from "../../core/memory/digest";
-import type { NoteRecord, ProfileFactView } from "../data/entityClient";
-import { recordMemoryEvent } from "../memory/capture";
+import type { NoteRecord, ProfileFactView } from "../../client/data/entityClient";
+import { recordMemoryEvent } from "../../client/memory/capture";
 import { REVIEW_GRADE_CONTENT_TYPE, type ReviewGradeContent } from "../../core/review/contentTypes";
 import { applyReviewOutcome, type ReviewScheduleState } from "../../core/review/schedule";
 import { explainPrompt, generateCheckPrompt, gradeAnswerPrompt } from "../../core/review/prompts";
+// The review SUPPORT modules (queue/scope/io/profileContext) STAY in core (src/client/review/):
+// the REPORT-1 assembler (weakReviewBuckets), proactiveTick (reviewDueStats/getReviewIo), and
+// the mistake-book 复习错题 launch (reviewScope) all import them — only the drill VIEW moved here.
 import {
   buildReviewQueue,
   noteMatchesWeakBucket,
@@ -44,10 +47,10 @@ import {
   weakReviewBuckets,
   type ReviewQueueItem,
   type ReviewWeakBucket
-} from "./queue";
-import { buildProfileContext } from "./profileContext";
-import { getReviewIo } from "./reviewIo";
-import { consumePendingReviewScope } from "./reviewScope";
+} from "../../client/review/queue";
+import { buildProfileContext } from "../../client/review/profileContext";
+import { getReviewIo } from "../../client/review/reviewIo";
+import { consumePendingReviewScope } from "../../client/review/reviewScope";
 
 type ReviewScope = "source" | "vault";
 type ReviewResult = "pass" | "fail" | "skip";
