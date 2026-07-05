@@ -16,6 +16,8 @@ import {
   type NoteRecord
 } from "../data/entityClient";
 import { ConceptInspector } from "./ConceptInspector";
+import { memoryPlatform } from "../platform/memoryPlatform";
+import { setPlatform } from "../platform/platformSingleton";
 import type { InspectorContext } from "./registry";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -92,6 +94,10 @@ async function renderInspector(ctx: InspectorContext) {
 
 beforeEach(() => {
   document.body.innerHTML = "";
+  // Default: a platform whose dialogs.confirm resolves true, so the delete/merge gates
+  // proceed (the pre-migration behavior these tests assert). Individual gate tests below
+  // override with confirm→false to prove the destructive call is NOT made.
+  setPlatform(memoryPlatform({ dialogs: { confirm: () => Promise.resolve(true) } }));
   vi.spyOn(entityClient, "conceptDetail").mockResolvedValue({
     concept: CONCEPT_A,
     notes: [LINKED_NOTE],
@@ -144,7 +150,7 @@ describe("ConceptInspector — 关联到… (one-pick relation)", () => {
 });
 
 describe("ConceptInspector concept management actions", () => {
-  it("deletes the focused concept, refreshes concepts, and clears focus", async () => {
+  it("deletes the focused concept, refreshes concepts, and clears focus (confirm→true)", async () => {
     const { ctx, setFocus } = fakeCtx();
     const deleteConcept = vi.spyOn(entityClient, "deleteConcept").mockResolvedValue({
       ok: true,
@@ -152,7 +158,6 @@ describe("ConceptInspector concept management actions", () => {
       notesUpdated: 1,
       relationsRemoved: 0
     });
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     const { container, cleanup } = await renderInspector(ctx);
 
     await act(async () => {
@@ -165,6 +170,31 @@ describe("ConceptInspector concept management actions", () => {
     cleanup();
   });
 
+  // PLAT-LAYER STEP-2 gate-preservation proof: the dialogs funnel is ASYNC, so a forgotten
+  // `await` would let the delete fire WITHOUT confirmation. With confirm→false the
+  // destructive entityClient call must NOT run and focus must be untouched.
+  it("does NOT delete the concept when the platform's confirm resolves false", async () => {
+    setPlatform(memoryPlatform({ dialogs: { confirm: () => Promise.resolve(false) } }));
+    const { ctx, setFocus } = fakeCtx();
+    const deleteConcept = vi.spyOn(entityClient, "deleteConcept").mockResolvedValue({
+      ok: true,
+      deletedConceptId: "concept_a",
+      notesUpdated: 0,
+      relationsRemoved: 0
+    });
+    const { container, cleanup } = await renderInspector(ctx);
+
+    await act(async () => {
+      (container.querySelector(".concept-delete-btn") as HTMLButtonElement).click();
+    });
+    // Extra flush: the gate's Promise must resolve to false and short-circuit.
+    await act(async () => {});
+
+    expect(deleteConcept).not.toHaveBeenCalled();
+    expect(setFocus).not.toHaveBeenCalled();
+    cleanup();
+  });
+
   it("merges the focused concept into the selected target and focuses the target", async () => {
     const { ctx, setFocus } = fakeCtx();
     const mergeConcept = vi.spyOn(entityClient, "mergeConcept").mockResolvedValue({
@@ -174,7 +204,6 @@ describe("ConceptInspector concept management actions", () => {
       relationsUpdated: 0,
       relationsRemoved: 0
     });
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     const { container, cleanup } = await renderInspector(ctx);
     const select = container.querySelector(".concept-merge-select") as HTMLSelectElement;
 

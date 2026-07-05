@@ -15,6 +15,7 @@ import { registerView } from "../workspace/viewRegistry";
 import { navigateShell } from "../workspace/shellNav";
 import { IMPORT_CONFIRM_PHRASE, type BackupStatusInfo } from "../workspace/dataTrust";
 import { setMemoryCaptureEnabled } from "../memory/capture";
+import { platformDialogs } from "../platform";
 import { setSpeechPreferences, useSpeechPreferences } from "../speech/speechPreferences";
 import type { MemorySettings } from "../data/entityClient";
 import { listSettingsSections, registerSettingsSection } from "./registry";
@@ -306,7 +307,7 @@ function DataSection() {
 
   const restoreSelected = async () => {
     if (!selectedBackup || restoreBusy) return;
-    const answer = window.prompt(`${t(settingsMessages.backupConfirmPrompt)}\n${IMPORT_CONFIRM_PHRASE}`);
+    const answer = await platformDialogs().prompt(`${t(settingsMessages.backupConfirmPrompt)}\n${IMPORT_CONFIRM_PHRASE}`);
     if (answer === null) return;
     if (answer.trim() !== IMPORT_CONFIRM_PHRASE) {
       setRestoreMessage(t(settingsMessages.backupConfirmMismatch));

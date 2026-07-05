@@ -22,6 +22,7 @@ import { entityClient, type ImportPreview, type StudyLayerRecord, type StudyPack
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 import { SvpackExportDialog, SvpackImportDialog } from "./svpackViews";
 import { buildLayerTree, coveredLayerIds, parentToggleState, type LayerNode } from "./layerTree";
+import { platformDialogs } from "../platform";
 
 // Trigger a browser/Electron-renderer download of a `.studypack`.
 export function downloadPack(pack: StudyPack, fileName: string) {
@@ -140,7 +141,7 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
   // confirm pattern). No-op on cancel / unchanged.
   const renameLayer = useCallback(
     async (layer: StudyLayerRecord) => {
-      const next = typeof window !== "undefined" ? window.prompt("Rename layer", layer.title) : null;
+      const next = await platformDialogs().prompt("Rename layer", layer.title);
       if (!next || !next.trim() || next.trim() === layer.title) return;
       setError("");
       try {
@@ -206,7 +207,7 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
   // non-custom). Notes keep their other memberships.
   const deleteLayer = useCallback(
     async (layer: StudyLayerRecord) => {
-      if (typeof window !== "undefined" && !window.confirm(`Delete the "${layer.title}" layer?`)) return;
+      if (!(await platformDialogs().confirm(`Delete the "${layer.title}" layer?`))) return;
       setError("");
       try {
         await entityClient.deleteLayer(layer.id);

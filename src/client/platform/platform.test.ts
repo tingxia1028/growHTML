@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { memoryPlatform } from "./memoryPlatform";
 import { getPlatform, setPlatform } from "./platformSingleton";
+import { platformDialogs } from "./dialogs";
 import type { PlatformAdapter } from "./types";
 import {
   PlatformProvider,
@@ -63,6 +64,40 @@ describe("platformSingleton", () => {
     vi.resetModules();
     const mod = await import("./platformSingleton");
     expect(() => mod.getPlatform()).toThrow(/Platform not set/);
+  });
+});
+
+describe("platformDialogs (the dialogs funnel)", () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+  });
+
+  it("returns the active adapter's dialogs when a platform is set", async () => {
+    const confirm = () => Promise.resolve(false);
+    const p = memoryPlatform({ dialogs: { confirm } });
+    setPlatform(p);
+    // Same-module import: platformDialogs reads the singleton `current` set above.
+    expect(platformDialogs()).toBe(p.dialogs);
+    expect(await platformDialogs().confirm("?")).toBe(false);
+  });
+
+  it("falls back to window.confirm/prompt/alert when NO platform is set", async () => {
+    // Fresh module instances so the singleton `current` starts null regardless of order,
+    // AND platformDialogs reads THAT same fresh singleton (same import graph).
+    vi.resetModules();
+    const { platformDialogs: freshDialogs } = await import("./dialogs");
+
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("typed");
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+
+    expect(await freshDialogs().confirm("go?")).toBe(false);
+    expect(confirmSpy).toHaveBeenCalledWith("go?");
+    expect(await freshDialogs().prompt("name?", "seed")).toBe("typed");
+    expect(promptSpy).toHaveBeenCalledWith("name?", "seed");
+    await expect(freshDialogs().alert("hi")).resolves.toBeUndefined();
+    expect(alertSpy).toHaveBeenCalledWith("hi");
   });
 });
 

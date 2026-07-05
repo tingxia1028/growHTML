@@ -31,6 +31,7 @@ import {
   type SvpackPinStatus,
   type SvpackValidity
 } from "../data/entityClient";
+import { platformDialogs } from "../platform";
 
 // —— Pure helpers (exported for tests) ————————————————————————————————————————
 
@@ -417,7 +418,7 @@ export function SvpackImportDialog({ onClose, onCommitted }: { onClose(): void; 
 
   const removeSealed = useCallback(
     async (packId: string) => {
-      if (typeof window !== "undefined" && !window.confirm("删除该导入的分享包？其密封内容将从本机移除。")) {
+      if (!(await platformDialogs().confirm("删除该导入的分享包？其密封内容将从本机移除。"))) {
         return;
       }
       setError("");

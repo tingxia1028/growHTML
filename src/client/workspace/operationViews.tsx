@@ -44,6 +44,7 @@ import { productKits } from "../../kits/clientKits";
 import type { KitPrompt } from "../../kits/types";
 import { resolveText, t, useLocale, type Message } from "../i18n";
 import { operationMessages as m } from "./operationMessages";
+import { platformDialogs } from "../platform";
 import "./operationViews.css";
 
 // —— built-in prompt lookup (React-free data, read for params + fork seeding) ——————————
@@ -329,8 +330,8 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
   // 高级 → "编辑为完整模板": one-way convert (with confirm) of a simple draft into the
   // V1 template shape. The instruction seeds the template (with the selection block
   // appended, since simple actions read the selection through the auto envelope).
-  const convertToTemplate = useCallback(() => {
-    if (typeof window !== "undefined" && !window.confirm(t(m.convertConfirm))) return;
+  const convertToTemplate = useCallback(async () => {
+    if (!(await platformDialogs().confirm(t(m.convertConfirm)))) return;
     const seed = promptTemplate.trim() || [instruction.trim(), "{{anchorText}}"].filter(Boolean).join("\n\n");
     setMode("template");
     if (!outputContentType) setOutputContentType("markdown");
@@ -412,7 +413,7 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
 
   const deleteOperation = useCallback(
     async (operation: OperationRecord) => {
-      if (typeof window !== "undefined" && !window.confirm(t(m.deleteConfirm).replace("{name}", operation.name))) return;
+      if (!(await platformDialogs().confirm(t(m.deleteConfirm).replace("{name}", operation.name)))) return;
       setError("");
       try {
         await entityClient.deleteOperation(operation.id);

@@ -12,6 +12,7 @@ import { entityClient, type ImportPreview, type StudyLayerRecord, type StudyPack
 import type { WorkspaceContext } from "./viewRegistry";
 import { buildLayerTree, type LayerNode } from "./layerTree";
 import { downloadPack, isLayerEditable, isMineLayer, layerDisplayTitle, sortLayersForTree } from "./layerViews";
+import { platformDialogs } from "../platform";
 
 export function LayerLensManage({ ctx }: { ctx: WorkspaceContext }) {
   const { activeSourceId, sourceLayers, refreshLayers } = ctx;
@@ -35,7 +36,7 @@ export function LayerLensManage({ ctx }: { ctx: WorkspaceContext }) {
 
   const renameLayer = useCallback(
     async (layer: StudyLayerRecord) => {
-      const next = typeof window !== "undefined" ? window.prompt("Rename layer", layer.title) : null;
+      const next = await platformDialogs().prompt("Rename layer", layer.title);
       if (!next || !next.trim() || next.trim() === layer.title) return;
       setError("");
       try {
@@ -93,7 +94,7 @@ export function LayerLensManage({ ctx }: { ctx: WorkspaceContext }) {
 
   const deleteLayer = useCallback(
     async (layer: StudyLayerRecord) => {
-      if (typeof window !== "undefined" && !window.confirm(`Delete the "${layer.title}" layer?`)) return;
+      if (!(await platformDialogs().confirm(`Delete the "${layer.title}" layer?`))) return;
       setError("");
       try {
         await entityClient.deleteLayer(layer.id);

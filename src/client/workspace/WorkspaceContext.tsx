@@ -35,6 +35,7 @@ import {
   type StudyLayerRecord
 } from "../data/entityClient";
 import { useFocus, draftQuoteText, type FocusContextValue, type AnchorDraft } from "../focus/FocusContext";
+import { platformDialogs } from "../platform";
 import { selectionRectToPageRect } from "../surfaces/pdfSelectionRect";
 // A4b: the agent-loop transcript — a render-only turn state accumulated from the agent
 // SSE (entityClient.agentStream). Distinct from the persisted chat log; only done.message
@@ -1272,10 +1273,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const deleteSourceItem = useCallback(
     async (sourceId: string, title: string) => {
-      if (
-        typeof window !== "undefined" &&
-        !window.confirm(`Remove "${title}"? This also deletes its notes and highlights.`)
-      ) {
+      if (!(await platformDialogs().confirm(`Remove "${title}"? This also deletes its notes and highlights.`))) {
         return;
       }
       setStatus("saving");
@@ -1482,9 +1480,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         // A note was deleted: re-fetch notes + repaint (painting is derived from
         // notes, so a removed note stops painting automatically).
         onNoteDeleted: () => void refreshAnnotations(),
-        // Destructive-action gate (note.delete). Desktop/web both have window.confirm;
-        // SSR/tests fall through to proceed (tests inject their own confirm).
-        confirm: (message) => (typeof window !== "undefined" ? window.confirm(message) : true),
+        // Destructive-action gate (note.delete). Routes through the platform dialogs
+        // funnel (PLAT-LAYER STEP-2) so a future mobile host supplies native confirm;
+        // web/desktop wrap window.confirm. The command awaits this (registry.ts:719),
+        // so returning a Promise<boolean> is clean. SSR/tests fall through to proceed.
+        confirm: (message) => platformDialogs().confirm(message),
         // A kit AI action generated content. D6 (note-presentation-unified.md §6): a
         // DIRECT note-type button that ran WITH a focused-anchor context (a real
         // `anchorId`, and NOT a classified/manual draft — those are the 试一下 /

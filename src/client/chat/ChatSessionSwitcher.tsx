@@ -7,6 +7,7 @@
 import { History, MessageSquarePlus, Trash2 } from "lucide-react";
 import { PanelMenu } from "../workspace/PanelMenu";
 import { t } from "../i18n";
+import { platformDialogs } from "../platform";
 import { chatSessionMessages } from "./chatSessionMessages";
 import type { ChatSessionsApi } from "./useChatSessions";
 import "./chatSessions.css";
@@ -28,8 +29,9 @@ export function formatSessionTime(iso: string, now: Date = new Date()): string {
 
 export function ChatSessionSwitcher({ api }: { api: ChatSessionsApi }) {
   const confirmDelete = (title: string) =>
-    typeof window === "undefined" ||
-    window.confirm(`${t(chatSessionMessages.deleteConfirm)}\n${title || t(chatSessionMessages.untitled)}`);
+    platformDialogs().confirm(
+      `${t(chatSessionMessages.deleteConfirm)}\n${title || t(chatSessionMessages.untitled)}`
+    );
 
   return (
     <div className="chat-session-switcher">
@@ -73,7 +75,9 @@ export function ChatSessionSwitcher({ api }: { api: ChatSessionsApi }) {
                     aria-label={t(chatSessionMessages.deleteAction)}
                     title={t(chatSessionMessages.deleteAction)}
                     onClick={() => {
-                      if (confirmDelete(session.title)) void api.remove(session.id);
+                      void confirmDelete(session.title).then((ok) => {
+                        if (ok) void api.remove(session.id);
+                      });
                     }}
                   >
                     <Trash2 size={13} />

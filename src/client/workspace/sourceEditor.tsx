@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { renderMarkdownSourcePreview } from "../sourcePreview";
 import { t, getLocale } from "../i18n";
+import { platformDialogs } from "../platform";
 import type { SourceRecord } from "../data/entityClient";
 import { useWorkspace } from "./WorkspaceContext";
 import { sourceAuthoringMessages as m } from "./sourceAuthoringMessages";
@@ -206,7 +207,7 @@ export function AuthoredSourceView({ source, reader }: { source: SourceRecord; r
     if (!confirmedSharedEdits.has(source.id)) {
       try {
         const status = await io.fetchShareStatus(source.id);
-        if (status.shared && !window.confirm(t(m.sharedEditWarning))) return;
+        if (status.shared && !(await platformDialogs().confirm(t(m.sharedEditWarning)))) return;
       } catch {
         // Status unavailable → don't block editing on the warning lookup.
       }

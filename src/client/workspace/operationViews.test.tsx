@@ -25,6 +25,8 @@ vi.mock("../data/entityClient", async (importOriginal) => {
 });
 
 import { getView } from "./viewRegistry";
+import { memoryPlatform } from "../platform/memoryPlatform";
+import { setPlatform } from "../platform/platformSingleton";
 import { setLocale, t, type Message } from "../i18n";
 import { operationMessages as m } from "./operationMessages";
 import { buildForkTemplate } from "./operationViews";
@@ -107,6 +109,9 @@ beforeEach(() => {
   root = null;
   document.body.innerHTML = "";
   vi.clearAllMocks();
+  // Default: a platform whose dialogs.confirm resolves true, so the convert/delete gates
+  // proceed. Gate tests below override with confirm→false (PLAT-LAYER STEP-2 funnel).
+  setPlatform(memoryPlatform({ dialogs: { confirm: () => Promise.resolve(true) } }));
   mocks.createOperation.mockResolvedValue({ operation: { ...SIMPLE_OP, id: "op_new" } });
   mocks.updateOperation.mockResolvedValue({ operation: SIMPLE_OP });
   mocks.deleteOperation.mockResolvedValue({ ok: true });
@@ -206,14 +211,15 @@ describe("operation creator — 一句话新增 (ACTION-2b)", () => {
     expect(mocks.createOperation).not.toHaveBeenCalled();
   });
 
-  it("编辑为完整模板 (高级) converts one-way after confirm and seeds the template from the instruction", () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+  it("编辑为完整模板 (高级) converts one-way after confirm and seeds the template from the instruction", async () => {
+    // convertToTemplate now awaits platformDialogs().confirm (→true via the beforeEach
+    // platform); flush the microtask so the state update lands before asserting.
     const container = mountView(makeCtx({ operations: [SIMPLE_OP] }));
 
     click(container.querySelector('.operation-action-row[data-action-id="op_simple"] .operation-edit-btn'));
     click(container.querySelector(".operation-convert-btn"));
+    await flush();
 
-    expect(confirmSpy).toHaveBeenCalled();
     const template = container.querySelector<HTMLTextAreaElement>(".operation-template-input");
     expect(template).toBeTruthy();
     expect(template!.value).toContain("quiz me on OP-A");
@@ -221,7 +227,45 @@ describe("operation creator — 一句话新增 (ACTION-2b)", () => {
     // The simple field is gone; the V1 chrome (inside 高级) is now the editor.
     expect(container.querySelector(".operation-instruction-input")).toBeNull();
     expect(container.querySelector<HTMLDetailsElement>(".operation-advanced")!.open).toBe(true);
-    confirmSpy.mockRestore();
+  });
+
+  // PLAT-LAYER STEP-2 gate-preservation: the convert gate is now async. With confirm→false
+  // the one-way conversion must NOT happen (mode stays simple; no template input appears).
+  it("does NOT convert to a template when the platform's confirm resolves false", async () => {
+    setPlatform(memoryPlatform({ dialogs: { confirm: () => Promise.resolve(false) } }));
+    const container = mountView(makeCtx({ operations: [SIMPLE_OP] }));
+
+    click(container.querySelector('.operation-action-row[data-action-id="op_simple"] .operation-edit-btn'));
+    click(container.querySelector(".operation-convert-btn"));
+    await flush();
+
+    // Still in simple mode: the instruction field is present, no template editor was seeded.
+    expect(container.querySelector(".operation-template-input")).toBeNull();
+    expect(container.querySelector(".operation-instruction-input")).toBeTruthy();
+  });
+});
+
+// —— destructive-gate preservation (PLAT-LAYER STEP-2 dialogs funnel) ————————————————
+
+describe("operation delete — async confirm gate", () => {
+  it("deletes the operation when the platform's confirm resolves true", async () => {
+    const container = mountView(makeCtx({ operations: [SIMPLE_OP] }));
+
+    click(container.querySelector('.operation-action-row[data-action-id="op_simple"] .operation-delete-btn'));
+    await flush();
+
+    expect(mocks.deleteOperation).toHaveBeenCalledWith("op_simple");
+  });
+
+  it("does NOT delete the operation when the platform's confirm resolves false", async () => {
+    setPlatform(memoryPlatform({ dialogs: { confirm: () => Promise.resolve(false) } }));
+    const container = mountView(makeCtx({ operations: [SIMPLE_OP] }));
+
+    click(container.querySelector('.operation-action-row[data-action-id="op_simple"] .operation-delete-btn'));
+    await flush();
+
+    // A forgotten `await` would fire the delete against a truthy Promise — assert it did not.
+    expect(mocks.deleteOperation).not.toHaveBeenCalled();
   });
 });
 

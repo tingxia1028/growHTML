@@ -30,6 +30,7 @@ import { noteText } from "../workspace/WorkspaceContext";
 import { ConceptAutocomplete } from "../workspace/ConceptChips";
 import { conceptMessages } from "../workspace/conceptMessages";
 import { t } from "../i18n";
+import { platformDialogs } from "../platform";
 import type { InspectorContext } from "./registry";
 
 type Detail = { concept: ConceptRecord; notes: NoteRecord[]; relations: RelationRecord[] };
@@ -140,7 +141,7 @@ export function ConceptInspector({ conceptId, ctx }: { conceptId: string; ctx: I
 
   const deleteCurrentConcept = useCallback(async () => {
     if (!detail) return;
-    if (!window.confirm(`Delete concept "${detail.concept.name}"? Linked notes will keep their content.`)) return;
+    if (!(await platformDialogs().confirm(`Delete concept "${detail.concept.name}"? Linked notes will keep their content.`))) return;
     try {
       await entityClient.deleteConcept(detail.concept.id);
       refreshConcepts();
@@ -154,7 +155,7 @@ export function ConceptInspector({ conceptId, ctx }: { conceptId: string; ctx: I
     if (!detail || !mergeTargetId) return;
     const target = allConcepts.find((concept) => concept.id === mergeTargetId);
     if (!target) return;
-    if (!window.confirm(`Merge "${detail.concept.name}" into "${target.name}"?`)) return;
+    if (!(await platformDialogs().confirm(`Merge "${detail.concept.name}" into "${target.name}"?`))) return;
     try {
       const result = await entityClient.mergeConcept(detail.concept.id, target.id);
       refreshConcepts();
