@@ -1,5 +1,7 @@
 import path from "node:path";
 import { createEntityStores, entityFileNames, type EntityStores } from "./store/entities";
+import { closeSqliteStore } from "./store/engine";
+import type { SnapshotRecord, SnapshotStore } from "./store/snapshotStore";
 import { schemaVersion, vaultManifestSchema, type VaultManifest } from "./schema";
 import type { StorageAdapter } from "./storage/adapter";
 import { nodeStorage } from "./storage/nodeStorage";
@@ -27,6 +29,15 @@ export type StudyVault = {
   manifest: VaultManifest;
   stores: EntityStores;
   storage: StorageAdapter;
+  /**
+   * Release every entity store's underlying resources (STORE-SQL Stage-3 dispose path,
+   * §Stage-2). For a SQLITE-backed vault this closes each store's `.db`/`-wal` handle so
+   * the OS can unlink/rename the file (Windows can't touch an open `.db` — the Stage-2
+   * import EPERM). For a JSONL-backed vault (today's default) every `closeSqliteStore` is a
+   * safe no-op, so calling `close()` is harmless regardless of engine. Synchronous —
+   * better-sqlite3's `db.close()` is sync; call it once on server/process shutdown.
+   */
+  close: () => void;
 };
 
 export function getDefaultVaultRoot() {
@@ -104,11 +115,21 @@ export async function openVault(input?: {
 
   await ensureTextFile(storage, paths.pluginSettingsPath, "{}\n");
 
+  const stores = createEntityStores(paths.studyDir, storage);
+
   return {
     paths,
     manifest,
-    stores: createEntityStores(paths.studyDir, storage),
-    storage
+    stores,
+    storage,
+    // STORE-SQL Stage-3 dispose path: iterate the 12 stores and release each engine's
+    // resources. no-op per store on jsonl (no CLOSE hook) → safe to call today; frees the
+    // sqlite `.db`/`-wal` handles once sqlite becomes the default.
+    close() {
+      for (const store of Object.values(stores)) {
+        closeSqliteStore(store as SnapshotStore<SnapshotRecord>);
+      }
+    }
   };
 }
 

@@ -170,13 +170,17 @@ Invariant mapping (must match `snapshotStore.ts` EXACTLY):
   Keep the `.jsonl` as a backup for one release. Flip `createEntityStores` default to `sqliteEngine`.
 - **MUST FOLD HERE (Stage-1 adversarial-review carry-overs — latent while jsonl is default, they BITE the
   moment this flip lands):**
-  - **S2 — dispose path.** `StudyVault` has no `close()`; `createEntityStores` builds 12 stores and
-    `closeSqliteStore` is called only from tests. Once sqlite is default, every `openVault`/test-vault leaks
-    12 DB + WAL handles and Windows `EBUSY`-on-unlink bites e2e/dir-cleanup. Add `StudyVault.close()` that
-    iterates `stores` → `closeSqliteStore`, wire it to server shutdown / vault teardown. **Decouple
-    `closeSqliteStore` + the `CLOSE` symbol out of `sqliteEngine.ts` into `engine.ts` FIRST** (it needs no
-    `better-sqlite3` import — `Symbol.for` is registry-global), so `vault.ts` importing it does NOT eager-load
-    the native module on the jsonl path (an ABI-mismatch footgun for jsonl-only users).
+  - **✅ S2 — dispose path — LANDED (2026-07-06) as a standalone prerequisite slice (ahead of the flip).**
+    `closeSqliteStore` + `dumpStoreToJsonl` + the `CLOSE`/`DUMP` `Symbol.for` constants MOVED to `engine.ts`
+    (native-free — its runtime import graph is type-only, verified; `sqliteEngine.ts` still installs the hooks
+    under the shared symbols). All importers repointed (`vault.ts`/`dataTrust.ts`/tests) so importing the
+    release/dump hook never eager-loads better-sqlite3 (the jsonl-only ABI footgun is gone). `StudyVault.close()`
+    added — iterates the 12 stores → `closeSqliteStore` (no-op on jsonl), wired into `StartedServer.close()`
+    (`start.ts`), which Electron `before-quit` (`electron/main.ts:202`) + every test/CLI teardown already call
+    (NO fragile global SIGINT handler). New `vault.close.test.ts` proves a sqlite `.db` is deletable after
+    `close()` (the EPERM release) + jsonl `close()` is a no-op. This retires the Stage-2 sqlite-target-import
+    EPERM blocker's ROOT cause; Stage-3's import-before-swap can now call `vault.close()`. tsc 0 · full vitest
+    274f/2787t.
   - **N-d — spec/code name alignment.** Junction owner column shipped as generic `ownerId` (spec said
     `noteId`); anchors extract only `sourceId` (spec listed an `anchorKind` column too). Both are internal
     (full record in the blob) — reconcile the §Schema text with the code, no behavior change.

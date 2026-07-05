@@ -8,8 +8,8 @@ import { noteSchema, patchSchema, type NoteRecord, type PatchRecord } from "../s
 import { jsonlEngine } from "./jsonlEngine";
 import { appendJsonlRecord, readJsonl } from "./jsonl";
 import { createSnapshotStore, type SnapshotRecord, type SnapshotStore } from "./snapshotStore";
-import { closeSqliteStore, sqliteEngine } from "./sqliteEngine";
-import type { StoreEngine } from "./engine";
+import { sqliteEngine } from "./sqliteEngine";
+import { closeSqliteStore, type StoreEngine } from "./engine";
 
 // —— The crown guard set (§Guards): the SAME invariant suite parameterized over BOTH engines.
 // jsonl (today's file body, extracted unchanged) and sqlite (better-sqlite3) must pass IDENTICALLY.

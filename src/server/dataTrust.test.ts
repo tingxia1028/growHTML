@@ -18,7 +18,8 @@ import { fixtureAnchor, fixtureConcept, fixtureHtmlBody, fixtureNote, fixtureSou
 import { openVault, type StudyVault, type VaultPaths } from "../core/vault";
 import { schemaVersion, studyLayerSchema, vaultManifestSchema, type StudyLayerRecord } from "../core/schema";
 import { createEntityStores, entityFileNames } from "../core/store/entities";
-import { closeSqliteStore, sqliteEngine } from "../core/store/sqliteEngine";
+import { closeSqliteStore } from "../core/store/engine";
+import { sqliteEngine } from "../core/store/sqliteEngine";
 import type { SnapshotRecord, SnapshotStore } from "../core/store/snapshotStore";
 import { noteSchema, type NoteRecord } from "../core/schema";
 import { nodeStorage } from "../core/storage/nodeStorage";
@@ -505,7 +506,18 @@ async function buildSqliteVault(rootDir: string): Promise<StudyVault> {
   const nowIso = new Date().toISOString();
   const manifest = vaultManifestSchema.parse({ schemaVersion, name: "SQLite Vault", createdAt: nowIso, updatedAt: nowIso });
   await writeFile(paths.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-  return { paths, manifest, stores: createEntityStores(studyDir, nodeStorage, sqliteEngine), storage: nodeStorage };
+  const stores = createEntityStores(studyDir, nodeStorage, sqliteEngine);
+  return {
+    paths,
+    manifest,
+    stores,
+    storage: nodeStorage,
+    close() {
+      for (const store of Object.values(stores)) {
+        closeSqliteStore(store as SnapshotStore<SnapshotRecord>);
+      }
+    }
+  };
 }
 
 /** Close every sqlite store's DB handle (Windows can't unlink an open `.db`/`-wal`). */

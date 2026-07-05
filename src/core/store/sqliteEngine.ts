@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import type { z } from "zod";
-import type { StoreConfig, StoreEngine } from "./engine";
+import { CLOSE, DUMP, type StoreConfig, type StoreEngine } from "./engine";
 import { writeJsonlAtomic, type JsonlIssue, type JsonlReadResult } from "./jsonl";
 import type { StorageAdapter } from "../storage/adapter";
 import type { SnapshotRecord, SnapshotStore } from "./snapshotStore";
@@ -37,45 +37,10 @@ import type { SnapshotRecord, SnapshotStore } from "./snapshotStore";
 /** Reserved column names the envelope owns (a config column must not collide). */
 const ENVELOPE_COLUMNS = new Set(["id", "updatedAt", "deletedAt", "json"]);
 
-/**
- * A hidden close hook on each sqlite-backed store. A DB connection is a process-lifetime
- * resource (like node-pty) — production never closes it — but tests and teardown need to
- * release the file handle (Windows can't unlink an open `.db`/`-wal`). Kept off the public
- * 8-method {@link SnapshotStore} contract via a symbol so the interface stays exactly 8 methods.
- */
-const CLOSE = Symbol.for("growhtml.sqliteEngine.close");
-
-/**
- * A hidden dump hook on each sqlite-backed store (STORE-SQL Stage-2, §Stage-2). The `.db` is the
- * RUNTIME truth, but the PACK's source of truth is the `*.jsonl` dumps (spec R2). This lets the
- * data-trust export MATERIALIZE the sqlite rows to their jsonl file BEFORE the whole-dir zip walk.
- * Kept off the public 8-method {@link SnapshotStore} contract via a symbol — same idiom as CLOSE.
- */
-const DUMP = Symbol.for("growhtml.sqliteEngine.dump");
-
-/** Close a sqlite-backed store's DB connection if it has one (no-op for other engines). */
-export function closeSqliteStore(store: SnapshotStore<SnapshotRecord>): void {
-  const hook = (store as Record<symbol, unknown>)[CLOSE];
-  if (typeof hook === "function") hook();
-}
-
-/**
- * Materialize a store's rows to its jsonl file (STORE-SQL Stage-2, §Stage-2). For a SQLITE-backed
- * store the `.db` is the runtime truth, so this writes `(await store.readWithIssues()).records`
- * (schema-validated, incl. tombstones — the S1 fold) via {@link writeJsonlAtomic} so the export's
- * whole-dir walk zips a CURRENT, complete jsonl. For any OTHER engine (jsonl — today's default) it
- * is a NO-OP: the jsonl file IS the store, already current — so jsonl-vault backups stay
- * BYTE-IDENTICAL (no surprise compaction / reordering from a redundant rewrite).
- */
-export async function dumpStoreToJsonl(
-  store: SnapshotStore<SnapshotRecord>,
-  jsonlPath: string,
-  storage?: StorageAdapter
-): Promise<void> {
-  const hook = (store as Record<symbol, unknown>)[DUMP];
-  if (typeof hook !== "function") return; // not sqlite-backed → the jsonl file is already truth
-  await (hook as (jsonlPath: string, storage?: StorageAdapter) => Promise<void>)(jsonlPath, storage);
-}
+// The hidden CLOSE / DUMP hook symbols + their pure symbol-dispatchers (closeSqliteStore /
+// dumpStoreToJsonl) live in `./engine` (native-free) so importing the release/dump hook never
+// eagerly loads better-sqlite3. This engine only INSTALLS the hooks under the shared symbols
+// (Object.defineProperty below), reusing the SAME Symbol.for keys via the imported constants.
 
 // A DB handle + its config, handed to bootstrap(). NOT memoized — sqliteEngine() opens a
 // fresh connection per call (each store is built exactly once per openVault, so memoization

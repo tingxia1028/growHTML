@@ -97,7 +97,20 @@ export async function startServer(options: StartServerOptions = {}): Promise<Sta
     server,
     port,
     url: `http://${host}:${port}`,
+    // Stop accepting connections, THEN release the vault's store handles (STORE-SQL Stage-3
+    // dispose path): for a sqlite vault this closes each `.db`/`-wal` handle so the OS can
+    // unlink/rename it; a no-op on the jsonl default. Reached on Electron `before-quit`
+    // (electron/main.ts) and every test/CLI `StartedServer.close()`, so no separate global
+    // SIGINT/SIGTERM handler is needed (adding one could double-close or fight the Electron
+    // lifecycle). vault.close() is sync and cannot throw, so it runs whether or not the HTTP
+    // server closes cleanly.
     close: () =>
-      new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
+      new Promise<void>((resolve, reject) =>
+        server.close((error) => {
+          vault.close();
+          if (error) reject(error);
+          else resolve();
+        })
+      )
   };
 }

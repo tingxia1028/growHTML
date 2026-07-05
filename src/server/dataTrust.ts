@@ -31,7 +31,7 @@ import express, { type Express } from "express";
 import { z } from "zod";
 import { strFromU8, strToU8, unzipSync, Zip, ZipDeflate } from "fflate";
 import { entityFileNames } from "../core/store/entities";
-import { dumpStoreToJsonl } from "../core/store/sqliteEngine";
+import { dumpStoreToJsonl } from "../core/store/engine";
 import type { SnapshotRecord, SnapshotStore } from "../core/store/snapshotStore";
 import { vaultManifestSchema, type VaultManifest } from "../core/schema";
 import type { StudyVault } from "../core/vault";
