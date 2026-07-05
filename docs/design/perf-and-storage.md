@@ -1,17 +1,57 @@
 # Performance & Storage — the snapshot-store scaling plan
 
-Status: **assessment + staged plan (2026-07-05).** Not a current fire — personal vaults are small
-(ms-level ops). This is a KNOWN scaling ceiling with a clear, staged, non-rearchitecture path that
-PRESERVES the portable JSONL vault. Build when telemetry/scale demands; S1 (in-memory cache) is a
-clean proactive win.
+Status: **DECIDED (2026-07-05) — migrate to SQLite-runtime + JSONL/text export.** Two spawned
+investigations (a code-grounded spike + a prior-art survey) converged the decision; the owner chose the
+industry endgame directly ("直接一次到位") over the staged in-memory-index interim. §§1-9 below are the
+grounding ANALYSIS; the **DECISION** section (right after this) is the authoritative plan. NOTE: this
+REVERSES the earlier "S5 SQLite = last resort" framing in §4/§5 — those sections are kept as the
+reasoning-of-record but are SUPERSEDED by the DECISION.
 
-## TL;DR
+## DECISION (2026-07-05): SQLite runtime store + JSONL/text export (the Joplin/Anki model)
+**Chosen: Option 1 (SQLite as the runtime record engine; JSONL becomes the export/backup/interchange
+format).** The mainstream cross-platform study-app architecture — Anki, Joplin, Zotero, Bear, Apple
+Notes, Notion(client-cache) all do this; Logseq MIGRATED files→SQLite for EXACTLY our write pathology
+("creating a block rewrites the entire file"). We adopt it directly rather than building the throwaway
+in-memory-JSONL index first.
+
+**Why it holds up (the two-agent reconciliation):**
+- The `SnapshotStore<T>` 8-method interface is a clean seam (294 uniform call-sites, all async, no shared
+  object identity) → a `sqliteEngine` implementing it makes the **business-logic blast radius ≈ 0**.
+- The prior art CORRECTS the spike's "mobile SQLite is unsolved": it's unsolved only for WASM-SQLite-in-
+  the-WebView (OPFS background-close). The PROVEN path is **native SQLite via `@capacitor-community/
+  sqlite`** (Anki/Joplin ship it) — the **Joplin model: one SQL layer, per-platform driver** (desktop
+  `better-sqlite3`; mobile the native plugin).
+- Anki proves the SRS case: the review queue = one composite index `(deck, queue, due)`; scheduling MATH
+  stays in code, the DB does the indexed filter. Our queue maps the same way.
+
+**The disciplines this decision commits us to (non-negotiable):**
+1. **Keep JSONL schema-COMPLETE** so export stays LOSSLESS (Logseq's hard lesson: Markdown export from a
+   richer DB is lossy → they had to add EDN). Our JSONL export must round-trip every field.
+2. **Driver-abstracted from day 1** (the Joplin model) — the `sqliteEngine` sits behind a `StoreEngine`
+   seam ABOVE `StorageAdapter` (a DB is not a bag of bytes); the SQL/schema layer is shared, only the
+   driver swaps per platform.
+3. **The `dataTrust.ts` export/import rewrite is the load-bearing, highest-risk chunk** (today it zips the
+   vault dir as JSONL verbatim; it must become dump-DB→JSONL / load-JSONL→DB with the swap-safety
+   preserved). This is where the migration's real cost + regression risk concentrate.
+
+**Sequencing (desktop-first; mobile binding defers with the PAUSED mobile track):**
+- The desktop migration (engine + JSONL bridge + one-time `.jsonl→.db` data migration) proceeds now.
+- The mobile native-SQLite binding interacts with X2 Route-A (core-logic-in-WebView) — it wants a native
+  store, reopening that architecture — so it defers WITH the paused mobile track. The driver abstraction
+  keeps that door open at ≈0 extra cost now.
+- Build spec: `docs/implementation/sqlite-migration-build-spec.md` (staged, guarded by the
+  `directTransport` dual-backend parity test + full suite). Estimate: a real multi-week foundational
+  project (~6-9 wk full incl. mobile); desktop Stages 1-3 first.
+
+---
+
+## TL;DR (original analysis — still accurate as the problem statement)
 Every entity read/write is **O(total records)** with **no cache and no index**, and writes **rewrite
 the whole file**. Fine to a few thousand records; the sharp edges are (a) write-amplification (every
-note create rewrites the entire file) and (b) `memoryEvents`, the fastest-growing store. The fix is a
-staged path — measure → in-memory cache → incremental append writes → in-memory indexes → prune raw
-events — all keeping the on-disk format human-readable JSONL. Embedded SQL is the last resort because
-it breaks the portable-JSONL design value (TRUST export/import, svpack, backups all depend on it).
+note create rewrites the entire file) and (b) `memoryEvents`, the fastest-growing store (though already
+bounded — `consolidateMemory` prunes raw events past 14 days). SQLite (the DECISION above) cures the
+write pathology with row-level WAL writes + gives indexed queries (kills "open a doc reads ALL notes",
+§8). JSONL survives as the lossless export/interchange format.
 
 ## 1. The current model (code-grounded)
 All entities use `createSnapshotStore` (`src/core/store/entities.ts:70-83` — sources, anchors, notes,
