@@ -21,9 +21,14 @@ import "./theme/builtins";
 // exemplar) once at startup — the proactive tick (started in WorkspaceShell) evaluates them.
 import "./triggers/builtins";
 import { injectThemeStyles, setActiveTheme, readPersistedThemeId } from "./theme/applyTheme";
+// Platform seam: detect the host (Electron desktop vs plain browser) and publish it
+// to the module-scope singleton BEFORE the first render, so the pref helpers that run
+// during render already have a platform. See docs/implementation/platform-layering-build-spec.md §1.6.
+import { detectPlatform, setPlatform } from "./platform";
 
 injectThemeStyles();
 setActiveTheme(readPersistedThemeId());
+setPlatform(detectPlatform());
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

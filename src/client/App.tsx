@@ -10,6 +10,7 @@ import { useEffect, type ReactNode } from "react";
 import { entityClient } from "./data/entityClient";
 import { FocusProvider } from "./focus/FocusContext";
 import { LocaleProvider, setLocale } from "./i18n";
+import { PlatformProvider, getPlatform } from "./platform";
 import { WorkspaceProvider, useWorkspace } from "./workspace/WorkspaceContext";
 import { WorkspaceShell } from "./workspace/WorkspaceShell";
 import { getLayoutPreset } from "./workspace/presets";
@@ -43,14 +44,19 @@ function ActiveWorkspaceShell() {
 
 export default function App() {
   return (
-    <LocaleProvider>
-      <LocaleBootstrap>
-        <FocusProvider>
-          <WorkspaceProvider>
-            <ActiveWorkspaceShell />
-          </WorkspaceProvider>
-        </FocusProvider>
-      </LocaleBootstrap>
-    </LocaleProvider>
+    // ONE source of truth: reuse the singleton main.tsx set before createRoot (getPlatform),
+    // NOT a 2nd detectPlatform() — that would mint a separate adapter instance so the non-hook
+    // pref helpers (singleton) and components (context) could diverge, and re-detect every render.
+    <PlatformProvider platform={getPlatform()}>
+      <LocaleProvider>
+        <LocaleBootstrap>
+          <FocusProvider>
+            <WorkspaceProvider>
+              <ActiveWorkspaceShell />
+            </WorkspaceProvider>
+          </FocusProvider>
+        </LocaleBootstrap>
+      </LocaleProvider>
+    </PlatformProvider>
   );
 }
