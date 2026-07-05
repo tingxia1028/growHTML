@@ -26,7 +26,7 @@ One dependency-ordered plan over the six design docs written this cycle. Purpose
 | `study-report-delivery.md` | 学习报告(digests→可编辑报告→长图/PDF)· 导出族(Anki/Markdown/错题集)· **配对推送→老师收件箱(基于现有客户端,不做第二套系统)**· 家长=导出物→P3 web 页 | REPORT-1 · REPORT-2 · DELIVER-1 · DELIVER-2 · DELIVER-3(P3) |
 | `vision-input.md` | 多模态输入(A5 内容分片+vision 能力位,**预留 audio 分片**)+ **拍错题 kit**(吸收 AIHomework:规则优先/阈值路由/本地 PaddleOCR 三车道成本) | V-1(A5) · V-2 · V-3(X2) |
 | `speech-and-young-learners.md` | 低龄适配:朗读 TTS(V1=speechSynthesis 免费内建)· 语音输入 STT(**三车道**:BYOK 音频模型/managed/本地 whisper;Web Speech 在国内/Electron 不可用——诚实记录)· 注音 ruby · 小学 kit young 默认;**低龄复习环**=听题→语音作答→朗读讲解 | SPEECH-1 · SPEECH-2 · SPEECH-3 |
-| `proactive-learning.md` | **主动学习引擎**(kernel AI-native 第四级):触发器(定时/事件 hook)推动 AI 主动学习;克制约束一等公民;**教回/口语 kit**(AI 装不懂=费曼)· 主动复习推动 | **PRO-1 ✅**(PRO1-001 — trigger 器官[core 实体+纯评估器]+客户端 tick+NudgeToast+Notification+复习推送范例,客户端主导,schedule+navigate)· PRO-2(教回/口语 kit)· PRO-3(背景/移动推送) |
+| `proactive-learning.md` | **主动学习引擎**(kernel AI-native 第四级):触发器(定时/事件 hook)推动 AI 主动学习;克制约束一等公民;**教回/口语 kit**(AI 装不懂=费曼)· 主动复习推动 | **PRO-1 ✅**(PRO1-001 — trigger 器官[core 实体+纯评估器]+客户端 tick+NudgeToast+Notification+复习推送范例,客户端主导,schedule+navigate)· **PRO-2 ✅**(PRO2-001 — 教回/费曼 kit text-first:register-only kit + runner 面板 + 装不懂人格 + wrap-up note[adaptive-note]+ note.review mode:teach;trigger enabled:false)· PRO-3(背景/移动推送 · teachDue 信号 · 语音) |
 | `library-redesign.md` | Library 统一加号 + 容器分区(最近/文档/文件夹 + kit sections=views over sources)· `LibrarySection`/`LibraryAddAction` registries(core 自种)· 类型筛选 chips · I18N seed | **LIB-2 ✅** |
 | `architecture-review.md` | Foundation assessment | F1–F7 (refactors, below) |
 | (this) `roadmap.md` | Sequencing | — |

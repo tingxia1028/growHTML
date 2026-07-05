@@ -24,6 +24,9 @@ snooze. Delivery: a 今日学习 nudge card (center/rail surface, clean files) +
 the review runner pre-filtered (REV queue + weak buckets already exist; this is wiring).
 
 ## 2. 教回/口语 kit (PRO-2, the flagship experience — its own runner-style panel, NOT views.tsx)
+
+> **STATUS: 费曼模式 ✅ SHIPPED text-first (PRO2-001, 2026-07-05, commits be03b4c→2a9944e).** Register-only KIT `src/kits/teachback/`: contentTypes `teachback.summary` + hidden `teachback.turn`; a prompt pack (pose/probe/wrapup) with the Feynman "AI 装不懂" persona in `KitPrompt.build()` + appended profileContext (auto-gated via `applyProfileContextGate` — managed providers get it stripped); AI via the STRUCTURED seam (deterministic under the mock); a pure session reducer (picking→posing→explaining→probing→assessing→done, 3-round cap, empty-topic state); a runner panel that self-`registerView({kind:"teachback.panel"})` + shell-imported (the `views` kit sink is a dead collector — the ReviewPanel precedent); wrap-up note via `anchor.add-note` (adaptive-note contract) + `recordMemoryEvent("note.review",_,{mode:"teach"})`; launched by a `teachback.start` command (global search) + a builtin navigate-trigger (**shipped `enabled:false`** — KNOWN GAP: enabling both review-push + teach-back double-nudges the same hardcoded `reviewDue` signal until PRO-3 adds a distinct `teachDue` signal). 4 core one-liners (WorkspaceShell import + presets node + commandEntries + searchMessages); everything else register-only. **DEFERRED (PRO-3):** 英语口语 roleplay + vocab-seeded topics; voice (TTS/STT drop-in); the `teachDue` signal + enable-by-default; reviewable summary; event-triggered launch.
+
 - **费曼模式(AI 装不懂):** AI plays a curious/confused student on a topic from YOUR notes:
   "为什么浮力只跟排开的水有关?第二步我没听懂…" — you explain; the AI probes EXACTLY where
   your profile says you're shaky (MEM-3 profileContext steering the confusion, not random);
@@ -47,7 +50,7 @@ feeds back into the REV queue policy (the swappable-policy seam).
 - **PRO-1 ✅ SHIPPED (PRO1-001, 2026-07-05, client-centric).** Trigger organ (core `trigger` entity in `triggers.jsonl` + pure `evaluateTrigger`, constraints first-class) + client tick + NudgeToast + desktop Notification + the review-push exemplar with a new-user arming guard. **Trimmed to `when:schedule` + `actionRef:navigate`** (event/operation schema-defined but evaluator-rejected). **No server scheduler** — the client ticks while the app runs; the pure evaluator is called client-side with the REAL LOCAL clock (fixes the timezone bug: the codebase is 100% UTC); fire is recorded on SURFACE not on candidate; due-signal is client-computed (`reviewDueStats`). Background/closed-app + OS/mobile push = PRO-3.
 - ~~**PRO-1** trigger engine (schedule+event, constraints first-class) + nudge surface +
   desktop notification + the review-push exemplar. Clean files; scheduler pattern exists.~~
-- **PRO-2** 教回/口语 kit text-first (panel + operations + wrap-up note + memory) →
+- **PRO-2 ✅ SHIPPED text-first (PRO2-001)** 教回/口语 kit (panel + prompts + wrap-up note + memory; 费曼 装不懂; trigger enabled:false) →
   voice via SPEECH lanes when they land.
 - **PRO-3** more modes + spaced scheduling + X2 mobile notifications.
 
