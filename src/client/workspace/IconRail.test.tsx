@@ -35,7 +35,7 @@ describe("IconRail i18n", () => {
     const labels = Array.from(container.querySelectorAll(".icon-rail-btn")).map((button) =>
       button.getAttribute("aria-label")
     );
-    expect(labels).toEqual(["资料库", "复习", "知元", "画像"]);
+    expect(labels).toEqual(["资料库", "复习", "错题本", "知元", "画像"]);
     cleanup();
   });
 
@@ -45,7 +45,7 @@ describe("IconRail i18n", () => {
     const labels = Array.from(container.querySelectorAll(".icon-rail-btn")).map((button) =>
       button.getAttribute("aria-label")
     );
-    expect(labels).toEqual(["Library", "Review", "Concepts", "Profile"]);
+    expect(labels).toEqual(["Library", "Review", "Mistakes", "Concepts", "Profile"]);
     cleanup();
   });
 });

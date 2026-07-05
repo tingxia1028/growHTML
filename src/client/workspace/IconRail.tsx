@@ -10,7 +10,7 @@
 // local Tier-A svpack identity when one exists, else 本地用户 — replacing the old
 // R1.5 static "Growte" placeholder now that a real (optional) identity exists.
 
-import { BookOpenCheck, Folder, Network, UserRound } from "lucide-react";
+import { BookOpenCheck, BookX, Folder, Network, UserRound } from "lucide-react";
 import type { ComponentType } from "react";
 import { defineMessages, resolveText, t, useLocale, type LocalizedText } from "../i18n";
 import { UserMenu } from "./UserMenu";
@@ -26,6 +26,7 @@ const railMessages = defineMessages({
   library: { zh: "资料库", en: "Library" },
   concepts: { zh: "知元", en: "Concepts" },
   review: { zh: "复习", en: "Review" },
+  mistakes: { zh: "错题本", en: "Mistakes" },
   profile: { zh: "画像", en: "Profile" }
 });
 
@@ -37,6 +38,7 @@ const railMessages = defineMessages({
 export const RAIL_ENTRIES: RailEntry[] = [
   { kind: "library", label: railMessages.library, Icon: Folder },
   { kind: "review.panel", label: railMessages.review, Icon: BookOpenCheck },
+  { kind: "mistake.book", label: railMessages.mistakes, Icon: BookX },
   { kind: "concept.list", label: railMessages.concepts, Icon: Network },
   { kind: "profile.panel", label: railMessages.profile, Icon: UserRound }
 ];

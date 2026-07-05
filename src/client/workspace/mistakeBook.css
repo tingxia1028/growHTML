@@ -1,0 +1,133 @@
+/* 错题本 (Mistake Book) view — a CORE browse/manage surface over every mistake note
+   across all sources (list + mastery/source filter + recency sort + inline edit/delete
+   + a 复习错题 launch into the review runner). Co-located with mistakeBookView.tsx and
+   imported for its side effect there; NOT part of the mistake-photo kit's styles.css.
+   Leans on the shared note-list / panel primitives already in styles.css (.panel-title,
+   .empty-state, the tb-mistake card markup the note-type render emits) — this file only
+   adds the book's own chrome (toolbar, filter chips, grid). */
+
+.mistake-book {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  gap: 12px;
+  padding: 12px 14px;
+  overflow: hidden;
+}
+
+.mistake-book-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.mistake-book-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.mistake-book-chip {
+  border: 1px solid var(--border, #d6d6dd);
+  background: transparent;
+  color: inherit;
+  border-radius: 999px;
+  padding: 3px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.mistake-book-chip:hover {
+  border-color: var(--accent, #5b7cff);
+}
+
+.mistake-book-chip.active {
+  background: var(--accent, #5b7cff);
+  border-color: var(--accent, #5b7cff);
+  color: #fff;
+}
+
+.mistake-book-select {
+  border: 1px solid var(--border, #d6d6dd);
+  background: transparent;
+  color: inherit;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.mistake-book-launch {
+  margin-left: auto;
+  border: 1px solid var(--accent, #5b7cff);
+  background: var(--accent, #5b7cff);
+  color: #fff;
+  border-radius: 6px;
+  padding: 4px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mistake-book-launch:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mistake-book-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 2px;
+}
+
+.mistake-book-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--border, #e2e2ea);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--surface, #fff);
+}
+
+.mistake-book-item-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.mistake-book-item-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border, #d6d6dd);
+  background: transparent;
+  color: inherit;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mistake-book-item-actions button:hover {
+  border-color: var(--accent, #5b7cff);
+}
+
+.mistake-book-edit-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.mistake-book-empty {
+  color: var(--muted, #8a8a94);
+  font-size: 13px;
+  padding: 24px 4px;
+  text-align: center;
+}
