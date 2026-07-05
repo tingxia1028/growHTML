@@ -33,13 +33,15 @@ Every server feature edits one giant file (contention again). `registerSvpackRou
 Pdf/Image/LocalHtml/Webview/Dom readers each re-implement paint / markers / note-card; the webview guest diverges (inline chips in `webview-preload.ts`). Adding a reader or changing paint = touch N files.
 - **Fix:** the `ReaderAnnotationAdapter` contract in `note-presentation-unified.md` (D1). Do it before more reader features; it also unblocks multi-realm consistency and mobile.
 
-### F4 — single-active-kit gate fights the marketplace
-`src/kits/activation.ts` gates *creation* by `metadata.activeKitIds`, defaulting to ONE kit (`FALLBACK_DEFAULT_KIT = "textbook-learning"`). The marketplace's "many plugins installed, foreground-not-filter" model can't work until the composer/toolbar source their type list from marketplace **effective-installed** instead of `activeKitIds`.
-- **Fix:** land in marketplace M1 (the effective-installed selector).
+### F4 — single-active-kit gate fights the marketplace — ✅ SHIPPED (with M1)
+_Resolved: `activation.ts:7-9` now states "active = FOREGROUND ORDERING, never a filter"; availability comes from `isPluginEffectiveInstalled` (`installState.ts:427-430`) over the installed-set ∪ enabled-capability-groups, consumed by all 3 authoring seams (slash/toolbars/surfaces); `activeKitIds` is an array passed only as `foregroundKitIds`. Verified 2026-07-05._
+~~`src/kits/activation.ts` gates *creation* by `metadata.activeKitIds`, defaulting to ONE kit (`FALLBACK_DEFAULT_KIT = "textbook-learning"`). The marketplace's "many plugins installed, foreground-not-filter" model can't work until the composer/toolbar source their type list from marketplace **effective-installed** instead of `activeKitIds`.~~
+- **Fix:** ~~land in marketplace M1 (the effective-installed selector).~~ DONE.
 
-### F5 — plugin granularity not realized in registration
-The model is right (plugin = smallest unit) but `clientContext.tsx` registers one `PluginRecord` per kit, and `seedCorePlugin()` files flashcard/quiz/bookmark/diagrams under a synthetic `"core"` record. Marketplace `members[]` can't resolve until split. **Mechanical debt, not a design flaw.**
-- **Fix:** split textbook into real plugins + give each `registerNoteType` a `pluginId`; fold into M1.
+### F5 — plugin granularity not realized in registration — ✅ SHIPPED (with M1)
+_Resolved: `KitMemberPlugin` + `ProductKit.members[]` (`types.ts:116-149`); `installClientKits` registers one `PluginRecord` per member (`clientContext.tsx:216-242`); `seedBuiltinKits` gives each builtin its own record. LOCKED by `catalogAgreement.test.tsx:30-60` ("plugin==kit 1:1 is dead"). Verified 2026-07-05._
+~~The model is right (plugin = smallest unit) but `clientContext.tsx` registers one `PluginRecord` per kit, and `seedCorePlugin()` files flashcard/quiz/bookmark/diagrams under a synthetic `"core"` record. Marketplace `members[]` can't resolve until split. **Mechanical debt, not a design flaw.**~~
+- **Fix:** ~~split textbook into real plugins + give each `registerNoteType` a `pluginId`; fold into M1.~~ DONE.
 
 ### F6 — anchor schema asymmetry
 `html_selection` / `web_text_quote` anchors carry no rect; only `pdf_selection` / `image_region` are region-capable. Unified region selection (D4) can't cover HTML until the schema gains an optional rect.
