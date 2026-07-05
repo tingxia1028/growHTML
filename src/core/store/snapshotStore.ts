@@ -1,7 +1,6 @@
-import type { z } from "zod";
-import type { StorageAdapter } from "../storage/adapter";
-import { nodeStorage } from "../storage/nodeStorage";
-import { readJsonl, writeJsonlAtomic, type JsonlReadResult } from "./jsonl";
+import type { StoreConfig, StoreEngine } from "./engine";
+import type { JsonlReadResult } from "./jsonl";
+import { jsonlEngine } from "./jsonlEngine";
 
 export type SnapshotRecord = {
   id: string;
@@ -31,92 +30,19 @@ export type SnapshotStore<T extends SnapshotRecord> = {
   delete(id: string): Promise<boolean>;
 };
 
-export function createSnapshotStore<T extends SnapshotRecord>(input: {
-  filePath: string;
-  schema: z.ZodType<T>;
-  sort?: (a: T, b: T) => number;
-  storage?: StorageAdapter;
-}): SnapshotStore<T> {
-  const storage = input.storage ?? nodeStorage;
-  const sortRecords =
-    input.sort ??
-    ((a: T, b: T) => {
-      const byDate = a.updatedAt.localeCompare(b.updatedAt);
-      return byDate === 0 ? a.id.localeCompare(b.id) : byDate;
-    });
-
-  // Serialize read-modify-write so concurrent upsert/delete calls cannot clobber each other
-  // (atomic rename prevents torn files but NOT lost updates).
-  let writeChain: Promise<unknown> = Promise.resolve();
-  function withLock<R>(fn: () => Promise<R>): Promise<R> {
-    const run = writeChain.then(fn, fn);
-    writeChain = run.then(
-      () => undefined,
-      () => undefined
-    );
-    return run;
-  }
-
-  // Compaction-aware by construction: dedupe (and therefore every rewrite that
-  // upsert/delete performs) keeps tombstoned records — a soft-deleted line
-  // survives compaction until an explicit purge `delete()`s it.
-  async function dedupe() {
-    const result = await readJsonl(input.filePath, input.schema, storage);
-    const byId = new Map<string, T>();
-
-    for (const record of result.records) {
-      const existing = byId.get(record.id);
-      if (!existing || existing.updatedAt <= record.updatedAt) {
-        byId.set(record.id, record);
-      }
-    }
-
-    return {
-      records: Array.from(byId.values()).sort(sortRecords),
-      issues: result.issues
-    };
-  }
-
-  return {
-    async list() {
-      return (await dedupe()).records.filter((record) => !record.deletedAt);
-    },
-
-    async listTrashed() {
-      return (await dedupe()).records.filter((record) => !!record.deletedAt);
-    },
-
-    async readWithIssues() {
-      return dedupe();
-    },
-
-    async get(id: string) {
-      const record = (await dedupe()).records.find((candidate) => candidate.id === id);
-      return record && !record.deletedAt ? record : null;
-    },
-
-    async getAny(id: string) {
-      return (await dedupe()).records.find((record) => record.id === id) ?? null;
-    },
-
-    async upsert(record: T) {
-      return withLock(async () => {
-        const { records } = await dedupe();
-        const next = new Map(records.map((item) => [item.id, item]));
-        next.set(record.id, record);
-        await writeJsonlAtomic(input.filePath, Array.from(next.values()).sort(sortRecords), storage);
-        return record;
-      });
-    },
-
-    async delete(id: string) {
-      return withLock(async () => {
-        const { records } = await dedupe();
-        const next = records.filter((record) => record.id !== id);
-        if (next.length === records.length) return false;
-        await writeJsonlAtomic(input.filePath, next.sort(sortRecords), storage);
-        return true;
-      });
-    }
-  };
+/**
+ * Build one entity store behind the 8-method {@link SnapshotStore} contract.
+ *
+ * STORE-SQL Stage-1 (docs/implementation/sqlite-migration-build-spec.md §The-seam): the
+ * store body is now delegated to a pluggable {@link StoreEngine}. The DEFAULT engine is
+ * `jsonlEngine` (today's file-backed behavior, extracted UNCHANGED), so the running app is
+ * byte-for-byte identical until a caller explicitly passes `sqliteEngine`. The extra
+ * `StoreConfig` fields (`table`/`columns`/`junctions`) are ignored by the jsonl engine and
+ * only consumed by the sqlite engine.
+ */
+export function createSnapshotStore<T extends SnapshotRecord>(
+  input: StoreConfig<T> & { engine?: StoreEngine }
+): SnapshotStore<T> {
+  const engine = input.engine ?? jsonlEngine;
+  return engine(input);
 }

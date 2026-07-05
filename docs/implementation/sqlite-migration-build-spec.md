@@ -104,6 +104,20 @@ Invariant mapping (must match `snapshotStore.ts` EXACTLY):
   test**: upsert a note with anchor/concept/layer ids → soft-delete → restore → assert junction rows
   survive the tombstone and `listNotes`-by-anchor/concept/layer are correct at each step. Re-parameterize
   `directTransport.test.ts` to run one side over `sqliteEngine`. Full suite green (baseline 271f/2743t).
+- **✅ LANDED (2026-07-05).** New `engine.ts` (`StoreEngine`/`StoreConfig`/`ExtractedColumn`/`JunctionSpec`),
+  `jsonlEngine.ts` (today's body extracted verbatim), `sqliteEngine.ts` (generic backend + notes junctions).
+  Seam shape = per-entity backend factory `<T>(config) => SnapshotStore<T>`; `createSnapshotStore` is now a
+  one-line delegator (`input.engine ?? jsonlEngine`); `createEntityStores(studyDir, storage, engine=jsonlEngine)`
+  carries per-entity sqlite config. Default = jsonl → app behavior unchanged. Build-config was already in place
+  from Stage-0. **Adversarial CODE review (APPROVE-WITH-FIXES, 0 blocking; FK-cascade/junction-atomicity/
+  soft-delete-survival/NULL/blob-fidelity/DDL empirically probed CLEAN). FOLDED this slice:** S1 — sqlite read
+  paths now `schema.safeParse` every blob (parity with jsonl's readJsonl: invalid rows dropped from `records` +
+  reported in `issues`; single-row reads → null) so the corruption/schema-drift detection isn't lost; a
+  `config.sort` guard (throws — a JS comparator can't be pushed into `ORDER BY`, no entity uses one); explicit
+  `COLLATE BINARY` on the order-by + comment (jsonl's `localeCompare` vs sqlite BINARY agree only for the
+  ULID/ASCII id charset — made intentional); `deletedAt=""` + stale-comment nits. Guards: parameterized
+  snapshotStore.test over both engines + junction-integrity + a new sqlite blob-validation test. tsc 0 · full
+  vitest **272f/2769t** · build ✓.
 
 **Stage 2 — JSONL is the source of truth IN THE PACK; import REBUILDS the `.db` (review R2 — FLIPPED).**
 - **KEEP the verbatim whole-dir zip/swap architecture** (`dataTrust.ts` `walkVaultFiles`/`streamVaultZip`
@@ -138,6 +152,18 @@ Invariant mapping (must match `snapshotStore.ts` EXACTLY):
   Follow the `migrateStudyLayers(vault)` boot idiom (`start.ts:57`): idempotent, boot-time, marker-guarded;
   ensure the migration runs before/around `openVault`'s empty-file creation so it doesn't clobber real data.
   Keep the `.jsonl` as a backup for one release. Flip `createEntityStores` default to `sqliteEngine`.
+- **MUST FOLD HERE (Stage-1 adversarial-review carry-overs — latent while jsonl is default, they BITE the
+  moment this flip lands):**
+  - **S2 — dispose path.** `StudyVault` has no `close()`; `createEntityStores` builds 12 stores and
+    `closeSqliteStore` is called only from tests. Once sqlite is default, every `openVault`/test-vault leaks
+    12 DB + WAL handles and Windows `EBUSY`-on-unlink bites e2e/dir-cleanup. Add `StudyVault.close()` that
+    iterates `stores` → `closeSqliteStore`, wire it to server shutdown / vault teardown. **Decouple
+    `closeSqliteStore` + the `CLOSE` symbol out of `sqliteEngine.ts` into `engine.ts` FIRST** (it needs no
+    `better-sqlite3` import — `Symbol.for` is registry-global), so `vault.ts` importing it does NOT eager-load
+    the native module on the jsonl path (an ABI-mismatch footgun for jsonl-only users).
+  - **N-d — spec/code name alignment.** Junction owner column shipped as generic `ownerId` (spec said
+    `noteId`); anchors extract only `sourceId` (spec listed an `anchorKind` column too). Both are internal
+    (full record in the blob) — reconcile the §Schema text with the code, no behavior change.
 - **GUARD:** a migration test (seed a NON-EMPTY jsonl vault → boot → assert every entity present +
   queryable + junctions built) + idempotency (run twice = no-op) + full suite + all e2e.
 

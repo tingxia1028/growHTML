@@ -27,6 +27,8 @@ import {
 } from "../schema";
 import type { StorageAdapter } from "../storage/adapter";
 import { nodeStorage } from "../storage/nodeStorage";
+import type { StoreConfig, StoreEngine } from "./engine";
+import { jsonlEngine } from "./jsonlEngine";
 import { createSnapshotStore, type SnapshotStore } from "./snapshotStore";
 
 export const entityFileNames = {
@@ -65,21 +67,65 @@ export type EntityStores = {
   memoryEvents: SnapshotStore<MemoryEventRecord>;
 };
 
-export function createEntityStores(studyDir: string, storage: StorageAdapter = nodeStorage): EntityStores {
+/**
+ * Per-entity SQLite index/junction config (docs/implementation/sqlite-migration-build-spec.md
+ * §Schema). The `jsonlEngine` IGNORES these fields entirely (they're purely additive), so
+ * threading them changes nothing on the default path — they only shape the sqlite tables when
+ * an `sqliteEngine` is passed. Kept here (next to the store wiring) because this is the one
+ * place the 12 entities' shapes are known.
+ */
+
+// notes: sourceId/contentType extracted columns + the three many-to-many junctions
+// (note_anchors/note_concepts/note_layers). status is NOT a column (N2); the legacy singular
+// note.layerId rides the json blob losslessly (N2).
+const notesSqlConfig: Pick<StoreConfig<NoteRecord>, "table" | "columns" | "junctions"> = {
+  table: "notes",
+  columns: [
+    { name: "sourceId", value: (note) => note.sourceId ?? null },
+    { name: "contentType", value: (note) => note.contentType }
+  ],
+  junctions: [
+    { table: "note_anchors", refColumn: "anchorId", refIds: (note) => note.anchorIds },
+    { table: "note_concepts", refColumn: "conceptId", refIds: (note) => note.conceptIds },
+    { table: "note_layers", refColumn: "layerId", refIds: (note) => note.layerIds }
+  ]
+};
+
+// anchors: discriminatedUnion → sourceId is the only shared, always-present index column (N1).
+const anchorsSqlConfig: Pick<StoreConfig<AnchorRecord>, "table" | "columns"> = {
+  table: "anchors",
+  columns: [{ name: "sourceId", value: (anchor) => anchor.sourceId }]
+};
+
+// memoryEvents: verb/sessionId extracted; createdAt indexed for range/prune reads later.
+const memoryEventsSqlConfig: Pick<StoreConfig<MemoryEventRecord>, "table" | "columns"> = {
+  table: "memoryEvents",
+  columns: [
+    { name: "verb", value: (event) => event.verb },
+    { name: "sessionId", value: (event) => event.sessionId ?? null },
+    { name: "createdAt", value: (event) => event.createdAt, partialLiveIndex: false }
+  ]
+};
+
+export function createEntityStores(
+  studyDir: string,
+  storage: StorageAdapter = nodeStorage,
+  engine: StoreEngine = jsonlEngine
+): EntityStores {
   const filePath = (file: string) => path.join(studyDir, file);
   return {
-    sources: createSnapshotStore({ filePath: filePath(entityFileNames.sources), schema: sourceSchema, storage }),
-    anchors: createSnapshotStore({ filePath: filePath(entityFileNames.anchors), schema: anchorSchema, storage }),
-    notes: createSnapshotStore({ filePath: filePath(entityFileNames.notes), schema: noteSchema, storage }),
-    patches: createSnapshotStore({ filePath: filePath(entityFileNames.patches), schema: patchSchema, storage }),
-    concepts: createSnapshotStore({ filePath: filePath(entityFileNames.concepts), schema: conceptSchema, storage }),
-    relations: createSnapshotStore({ filePath: filePath(entityFileNames.relations), schema: relationSchema, storage }),
-    assets: createSnapshotStore({ filePath: filePath(entityFileNames.assets), schema: assetSchema, storage }),
-    layers: createSnapshotStore({ filePath: filePath(entityFileNames.layers), schema: studyLayerSchema, storage }),
-    operations: createSnapshotStore({ filePath: filePath(entityFileNames.operations), schema: operationSchema, storage }),
-    triggers: createSnapshotStore({ filePath: filePath(entityFileNames.triggers), schema: triggerSchema, storage }),
-    chatSessions: createSnapshotStore({ filePath: filePath(entityFileNames.chatSessions), schema: chatSessionSchema, storage }),
-    memoryEvents: createSnapshotStore({ filePath: filePath(entityFileNames.memoryEvents), schema: memoryEventSchema, storage })
+    sources: createSnapshotStore({ filePath: filePath(entityFileNames.sources), schema: sourceSchema, storage, table: "sources", engine }),
+    anchors: createSnapshotStore({ filePath: filePath(entityFileNames.anchors), schema: anchorSchema, storage, engine, ...anchorsSqlConfig }),
+    notes: createSnapshotStore({ filePath: filePath(entityFileNames.notes), schema: noteSchema, storage, engine, ...notesSqlConfig }),
+    patches: createSnapshotStore({ filePath: filePath(entityFileNames.patches), schema: patchSchema, storage, table: "patches", engine }),
+    concepts: createSnapshotStore({ filePath: filePath(entityFileNames.concepts), schema: conceptSchema, storage, table: "concepts", engine }),
+    relations: createSnapshotStore({ filePath: filePath(entityFileNames.relations), schema: relationSchema, storage, table: "relations", engine }),
+    assets: createSnapshotStore({ filePath: filePath(entityFileNames.assets), schema: assetSchema, storage, table: "assets", engine }),
+    layers: createSnapshotStore({ filePath: filePath(entityFileNames.layers), schema: studyLayerSchema, storage, table: "layers", engine }),
+    operations: createSnapshotStore({ filePath: filePath(entityFileNames.operations), schema: operationSchema, storage, table: "operations", engine }),
+    triggers: createSnapshotStore({ filePath: filePath(entityFileNames.triggers), schema: triggerSchema, storage, table: "triggers", engine }),
+    chatSessions: createSnapshotStore({ filePath: filePath(entityFileNames.chatSessions), schema: chatSessionSchema, storage, table: "chatSessions", engine }),
+    memoryEvents: createSnapshotStore({ filePath: filePath(entityFileNames.memoryEvents), schema: memoryEventSchema, storage, engine, ...memoryEventsSqlConfig })
   };
 }
 
