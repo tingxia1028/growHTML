@@ -37,6 +37,7 @@ import {
   setMemoryTransportForTests
 } from "../memory/capture";
 import { setReviewIoForTests, type GenerateRequest } from "./reviewIo";
+import { consumePendingReviewScope, setPendingReviewScope } from "./reviewScope";
 import type { ReviewEventLike } from "./queue";
 import type { ReviewScheduleRecord } from "../../core/review/schedule";
 
@@ -129,6 +130,7 @@ let posted: MemoryEventInput[][];
 beforeEach(() => {
   setLocale("zh");
   posted = [];
+  consumePendingReviewScope(); // clear any pending review scope leaked from a prior test
   resetMemoryCaptureForTests();
   setMemoryTransportForTests(async (events) => {
     posted.push(events);
@@ -250,6 +252,42 @@ describe("ReviewPanel — queue rendering", () => {
     expect(container.querySelector(".review-count")!.textContent).toBe("1 项待复习");
     expect(container.querySelector(".review-item")!.getAttribute("data-note-id")).toBe("n_other");
     cleanup();
+  });
+});
+
+describe("ReviewPanel — 复习错题 scoped launch", () => {
+  it("a pending mistakes scope surfaces ONLY mistake items (consume-once)", async () => {
+    const notes = [
+      quizNote("n_q1"),
+      mistakeNote("n_m1"),
+      flashcardNote("n_f1")
+    ];
+    setReviewIoForTests({ fetchEvents: async () => [], generate: generateStub() });
+    setPendingReviewScope("mistakes"); // the 错题本 button armed the launch
+
+    const { container, cleanup } = await renderPanel(ctxWith({ notes }));
+
+    // Only the mistake survives the scoped view; the count + current item reflect it.
+    expect(container.querySelector(".review-count")!.textContent).toBe("1 项待复习");
+    expect(container.querySelector(".review-item")!.getAttribute("data-note-id")).toBe("n_m1");
+    expect(container.querySelector(".review-reason")!.textContent).toBe("新错题");
+    cleanup();
+  });
+
+  it("the scope is CONSUMED on mount — a second (unscoped) mount is byte-identical", async () => {
+    const notes = [quizNote("n_q1"), mistakeNote("n_m1"), flashcardNote("n_f1")];
+    setReviewIoForTests({ fetchEvents: async () => [], generate: generateStub() });
+    setPendingReviewScope("mistakes");
+
+    const first = await renderPanel(ctxWith({ notes }));
+    expect(first.container.querySelector(".review-count")!.textContent).toBe("1 项待复习");
+    first.cleanup();
+
+    // No new scope armed → the mount reads null → the FULL queue surfaces exactly as before.
+    const second = await renderPanel(ctxWith({ notes }));
+    expect(second.container.querySelector(".review-count")!.textContent).toBe("3 项待复习");
+    expect(second.container.querySelector(".review-item")!.getAttribute("data-note-id")).toBe("n_m1");
+    second.cleanup();
   });
 });
 

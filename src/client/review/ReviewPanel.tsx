@@ -47,6 +47,7 @@ import {
 } from "./queue";
 import { buildProfileContext } from "./profileContext";
 import { getReviewIo } from "./reviewIo";
+import { consumePendingReviewScope } from "./reviewScope";
 
 type ReviewScope = "source" | "vault";
 type ReviewResult = "pass" | "fail" | "skip";
@@ -249,6 +250,11 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
   const [digestSummaries, setDigestSummaries] = useState<MemoryDimensionSummary[]>([]);
   const [profileFacts, setProfileFacts] = useState<ProfileFactView[]>([]);
   const [weakFilter, setWeakFilter] = useState<ReviewWeakBucket | null>(null);
+  // 复习错题 scoped launch: the 错题本's button arms a pending scope; a lazy initializer
+  // reads-AND-clears it once on mount (consume-once — a later unscoped launch reads null,
+  // so an unscoped session is byte-identical to before). Mistakes-only is a VIEW filter
+  // over `items`, NOT a queue-policy change — the queue already assembles mistakes first.
+  const [mistakesOnly] = useState<boolean>(() => consumePendingReviewScope() === "mistakes");
   // REV-3 session data: the per-note SRS document (grading advances the local copy
   // so due/upcoming counts stay live), the frozen session clock and note set the
   // stats derive from, and the 提前复习 flag (ahead = the schedule-free legacy queue).
@@ -344,7 +350,10 @@ export function ReviewPanel({ ctx }: { ctx: WorkspaceContext }) {
   };
 
   const allItems = queue ?? [];
-  const items = weakFilter ? allItems.filter((item) => noteMatchesWeakBucket(item.note, weakFilter)) : allItems;
+  const scopedItems = mistakesOnly
+    ? allItems.filter((item) => getNoteContentSpec(item.note.contentType)?.mistake === true)
+    : allItems;
+  const items = weakFilter ? scopedItems.filter((item) => noteMatchesWeakBucket(item.note, weakFilter)) : scopedItems;
   const current = index < items.length ? items[index] : null;
   const remaining = items.length - index;
   // REV-3 stats: dueness over the session's note set + the LIVE schedule copy
