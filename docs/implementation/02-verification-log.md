@@ -780,3 +780,10 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 | 2026-07-05 | PRO1-001 | NudgeToast.test.tsx | 渲染 reason / 点击→navigateShell / snooze+dismiss→POST / Notification 仅 hidden+granted | Passed |
 | 2026-07-05 | PRO1-001 | reviewPush.test.ts(集成) | 新用户武装守卫 + e2e nudge→navigate(review.panel),直驱真 registry+tick,无 test-only 路由 | Passed |
 | 2026-07-05 | PRO1-001 | npx vitest run(全量) | 244 文件 / 2550 用例(基线 237/2496 + 54) | Passed |
+| 2026-07-05 | PRO2-001 | teachback contentTypes.test | teachback.summary/turn parse/createDefault/toSearchText | Passed |
+| 2026-07-05 | PRO2-001 | teachback prompts.test | 人格文本在场;profileContext 块 iff 有;mockContent 过 spec schema;稳定投影(同输入同输出) | Passed |
+| 2026-07-05 | PRO2-001 | teachback register | getNoteType("teachback.summary").render 出元素;getKitPrompt("teach.pose") 装后解析 | Passed |
+| 2026-07-05 | PRO2-001 | teachbackSession.test | phase 转换 + 3 轮上限 + 空主题→empty 态 + 非法动作 no-op + wrap-up 装配合法 summary | Passed |
+| 2026-07-05 | PRO2-001 | TeachbackPanel RTL | pose→explain→probe→wrapup 驱动 → anchor.add-note(teachback.summary)一次 + recordMemoryEvent(note.review,_,{mode:teach})一次 + 空态 | Passed |
+| 2026-07-05 | PRO2-001 | teachback launch | command→navigateShell(teachback.panel);手动启用的 trigger fire→navigate | Passed |
+| 2026-07-05 | PRO2-001 | e2e/teachback.spec.ts(mock) | 开面板→选主题→输入解释→过一轮 probe→落 teachback.summary wrap-up note 渲染 | Passed |
