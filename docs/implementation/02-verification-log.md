@@ -787,3 +787,12 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 | 2026-07-05 | PRO2-001 | TeachbackPanel RTL | pose→explain→probe→wrapup 驱动 → anchor.add-note(teachback.summary)一次 + recordMemoryEvent(note.review,_,{mode:teach})一次 + 空态 | Passed |
 | 2026-07-05 | PRO2-001 | teachback launch | command→navigateShell(teachback.panel);手动启用的 trigger fire→navigate | Passed |
 | 2026-07-05 | PRO2-001 | e2e/teachback.spec.ts(mock) | 开面板→选主题→输入解释→过一轮 probe→落 teachback.summary wrap-up note 渲染 | Passed |
+| 2026-07-05 | V1-001 | contentPart.test | wire schema parse (text/image parts); union accepts string AND parts; image part carries assetId ref (no data/base64) | Passed |
+| 2026-07-05 | V1-001 | provider content-union | chatMessageSchema accepts string|parts; text-only serializes byte-identically; messageText() collapses parts→text incl. [image] placeholder | Passed |
+| 2026-07-05 | V1-001 | capability vision bit | each provider's capabilities.vision (mock/mock-agent/aiSdk=true, managed/cli=false); 4× toEqual updated; VisionUnsupportedError constructs | Passed |
+| 2026-07-05 | V1-001 | chatSessions round-trip | image message persists with assetId ref INSIDE the array (JSONL never base64); deriveSessionTitle on an image-first turn no crash; text-only byte-identical | Passed |
+| 2026-07-05 | V1-001 | aiSdk FilePart map | resolved image part → SDK v7 FilePart {type:file,mediaType,data}; unresolved/cli → [image] degrade; capture-the-wire-shape | Passed |
+| 2026-07-05 | V1-001 | asset base64 + gate | POST /api/assets imports base64 → asset persists (assetType:image); oversize → 400; JSONL-is-ref guard; chat+image under mock → "Saw 1 image."; chat+image under vision:false → 400 | Passed |
+| 2026-07-05 | V1-001 | ChatMessageBody render | array-content message renders text + an <img /api/assets/:id> thumbnail (no crash on array) | Passed |
+| 2026-07-05 | V1-001 | e2e/vision-chat.spec.ts (mock) | 附加 fixture PNG → send → reply "Saw 1 image." + thumbnail visible | Passed |
+| 2026-07-05 | V1-001 | e2e/agent-tools.spec.ts (A4b regression) | mock-agent=vision:true does NOT break the A4b agent tool-card e2e | Passed |
