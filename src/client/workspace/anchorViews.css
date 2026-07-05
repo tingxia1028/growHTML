@@ -60,3 +60,59 @@
   margin-left: 0;
   padding: 0;
 }
+
+.anchor-action-bar {
+  position: relative;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  align-content: flex-start;
+}
+
+.anchor-action-bar .action-grid-row {
+  display: contents;
+}
+
+.anchor-action-bar .toolbar-slash[data-surface="anchor"] {
+  position: static;
+}
+
+.anchor-action-bar .toolbar-slash-popover {
+  left: 0;
+  right: 0;
+  width: 100%;
+}
+
+.anchor-action-bar .toolbar-slash-popover .slash-palette {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+
+.anchor-action-bar .slash-palette-row,
+.anchor-action-bar .slash-palette-main,
+.anchor-action-bar .slash-palette-title,
+.anchor-action-bar .slash-palette-id,
+.anchor-action-bar .slash-palette-kit {
+  min-width: 0;
+}
+
+.anchor-action-bar .slash-palette-row {
+  flex-wrap: nowrap;
+}
+
+.anchor-action-bar .slash-palette-main {
+  flex: 1 1 auto;
+  max-width: calc(100% - 28px);
+}
+
+.anchor-action-bar .slash-palette-title,
+.anchor-action-bar .slash-palette-id,
+.anchor-action-bar .slash-palette-kit {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.anchor-action-bar .slash-palette-kit {
+  max-width: 86px;
+}

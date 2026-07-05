@@ -76,7 +76,7 @@ function DirNode({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, path]);
 
-  const indent = (level: number) => ({ paddingLeft: level * 16 + 8 });
+  const indent = (level: number) => ({ paddingLeft: level * 16 + 2 });
 
   return (
     <div>

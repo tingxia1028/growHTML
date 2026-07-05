@@ -9,6 +9,7 @@
 import { useEffect, useRef } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { noteTypeIcon } from "../notes/noteTypeIcon";
+import { namedActionIcon } from "../workspace/actionIcons";
 import type { SlashEntry } from "./engine";
 
 export type SlashPaletteProps = {
@@ -57,6 +58,8 @@ export function slashPaletteKeyDown(key: string, palette: SlashKeyTarget): boole
 // per type everywhere); an operation row (SC-3) gets a generic spark.
 function RowIcon({ entry }: { entry: SlashEntry }) {
   if (entry.icon) {
+    const Icon = namedActionIcon(entry.icon);
+    if (Icon) return <Icon className="slash-palette-icon" size={14} aria-hidden="true" />;
     return (
       <span className="slash-palette-icon" aria-hidden="true">
         {entry.icon}
@@ -123,8 +126,10 @@ export function SlashPalette({ query, entries, activeIndex, onPick, onNavigate }
               onMouseEnter={() => onNavigate(index)}
             >
               <RowIcon entry={entry} />
-              <span className="slash-palette-title">{entry.title}</span>
-              <span className="slash-palette-id">{entry.id}</span>
+              <span className="slash-palette-main">
+                <span className="slash-palette-title">{entry.title}</span>
+                <span className="slash-palette-id">{entry.id}</span>
+              </span>
               {entry.kitId ? <span className="slash-palette-kit">{entry.kitId}</span> : null}
             </li>
           );

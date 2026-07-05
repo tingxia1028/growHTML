@@ -440,6 +440,7 @@ describe("文件夹 + header behaviors (ported)", () => {
     const host = sectionEl("core.folders")!.querySelector(".folder-tree-host");
     expect(host).toBeTruthy();
     expect(host!.querySelector(".file-tree")).toBeTruthy();
+    expect((host!.querySelector(".tree-row") as HTMLElement).style.paddingLeft).toBe("2px");
     await click(host!.querySelector(".folder-tree-close"));
     expect(ctx.closeFolderRoot).toHaveBeenCalledWith("C:\\study\\notes");
   });

@@ -136,6 +136,8 @@ describe("anchor panel 显示锚点标记 switch", () => {
     expect(actions.querySelector(".anchor-context-jump")).toBeTruthy();
     expect(container.querySelector(".anchor-panel-toolbar .anchor-glyph-switch")).toBeNull();
     expect(container.querySelector(".anchor-action-bar > .anchor-glyph-switch")).toBeNull();
+    expect(container.querySelector(".anchor-action-bar .action-grid-row")).toBeTruthy();
+    expect(container.querySelector(".anchor-action-bar .action-grid-grid")).toBeNull();
     expect(button.getAttribute("aria-pressed")).toBe("true"); // default: anchor glyphs visible
 
     act(() => button.click());

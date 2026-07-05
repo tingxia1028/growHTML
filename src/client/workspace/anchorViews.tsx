@@ -144,7 +144,7 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
               onRun={runAction}
               disabled={!anchor && !focus.draft}
               busy={generating}
-              density="grid"
+              density="row"
             />
             {/* SC-2: the `/类型` palette bound to THIS anchor. Gated on
                 focus.anchor || focus.draft (mirrors the ActionGrid disabled above): a
@@ -201,7 +201,7 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
           <div className="anchor-action-bar">
             {/* Same 朗读 slot, disabled (no text) — the capability stays discoverable. */}
             <SpeakButton text="" />
-            <ActionGrid items={anchorBarActions} onRun={runAction} disabled busy={generating} density="grid" />
+            <ActionGrid items={anchorBarActions} onRun={runAction} disabled busy={generating} density="row" />
             {/* SC-2: the `/` affordance stays discoverable but disabled (no focused
                 anchor/draft to bind a pick to) — same empty-state contract as the grid. */}
             <ToolbarSlashButton surface="anchor" disabled />

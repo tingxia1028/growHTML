@@ -2,6 +2,9 @@
 import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 
 // Phase 1b — the shared "card → centered interactive overlay" capability. Covers:
 //   • mode routing — getNoteType().render receives mode:"card" (light) vs "full".
@@ -185,6 +188,17 @@ describe("FocusOverlay — accessibility + close affordances", () => {
     );
     expect(document.querySelector(".sv-focus-body .sv-plain")).toBeTruthy();
     cleanup();
+  });
+
+  it("keeps the expanded note view narrower than the reader page instead of a long strip", () => {
+    const cssPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../styles.css");
+    const css = readFileSync(cssPath, "utf8").replace(/\r\n/g, "\n");
+    const dialogRule = css.slice(css.indexOf(".sv-focus-dialog.sv-center-dialog"), css.indexOf(".sv-focus-head.sv-center-head"));
+    const bodyRule = css.slice(css.indexOf(".sv-center-body .note-rendered"), css.indexOf(".sv-center-body .note-rendered h1"));
+
+    expect(dialogRule).toContain("width: min(760px");
+    expect(bodyRule).toContain("width: min(720px, 100%)");
+    expect(bodyRule).toContain("margin: 0 auto");
   });
 });
 

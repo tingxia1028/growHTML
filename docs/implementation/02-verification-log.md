@@ -6,6 +6,10 @@ Record verification evidence here as work proceeds. Include both automated and m
 
 | Task ID | Verification Type | Command Or Method | Expected Result | Actual Result | Status |
 | --- | --- | --- | --- | --- | --- |
+| NOTE-FOCUS-POLISH-001 (2026-07-05) | Focused note renderer/overlay tests | `npm test -- src/client/notes/noteTypeRegistry.test.tsx src/client/workspace/artifactCard.test.tsx` | Expanded-note width contract plus flashcard/quiz full-mode behavior remain green | **2 files / 48 tests passed** | Passed |
+| NOTE-FOCUS-POLISH-001 (2026-07-05) | Adjacent action UI regression tests | `npm test -- src/client/slash/SlashPalette.icon.test.tsx src/client/workspace/anchorBarSlash.test.tsx src/client/workspace/anchorViews.test.tsx` | Slash palette and anchor action row changes in the same working tree remain green | **3 files / 7 tests passed** | Passed |
+| NOTE-FOCUS-POLISH-001 (2026-07-05) | Type check | `npm exec tsc -- --noEmit` | 0 TypeScript errors | Passed (exit 0) | Passed |
+| NOTE-FOCUS-POLISH-001 (2026-07-05) | Production build | `npm run build` | Production bundle builds | Passed; existing large chunk warning only | Passed |
 | LEFT-COLLAPSE-001 (2026-07-04) | Focused unit tests | `npm test -- src/client/workspace/dock.test.ts src/client/workspace/WorkspaceShell.test.tsx` | Only the fixed left library pane is explicitly collapsible; active IconRail click toggles collapse/expand; clicking another rail icon expands and switches panes | **2 files / 26 tests passed**; jsdom emitted the known canvas `getContext` warning only | Passed |
 | LEFT-COLLAPSE-001 (2026-07-04) | Type check | `npm exec tsc -- --noEmit` | 0 TypeScript errors | Passed (exit 0) | Passed |
 | LEFT-COLLAPSE-001 (2026-07-04) | Focused browser e2e | `npx playwright test e2e/layout-engine.spec.ts` | Left rail icon toggles the sidebar; narrow viewport does not auto-collapse; old dock-local rail/buttons remain invisible | **2 passed** on the ephemeral-vault harness | Passed |

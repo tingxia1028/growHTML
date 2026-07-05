@@ -236,6 +236,7 @@ describe("NoteType render — sample content per type", () => {
     expect(container.innerHTML).not.toContain("two plus two");
     const buttons = Array.from(container.querySelectorAll(".sv-quiz-option")) as HTMLButtonElement[];
     expect(buttons).toHaveLength(3);
+    expect(buttons.map((button) => button.textContent?.trim())).toEqual(["3", "4", "5"]);
 
     // Click a WRONG option (index 0 = "3"). Now the correct option (index 1) gains
     // sv-quiz-answer, the picked one is marked wrong, and the score/explanation appear.

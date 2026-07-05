@@ -100,3 +100,7 @@ export function actionIcon(action: ToolbarAction): LucideIcon {
   }
   return Wand2;
 }
+
+export function namedActionIcon(name: string): LucideIcon | undefined {
+  return ICON_CHOICE_MAP[name] ?? ICON_NAMES[name];
+}
