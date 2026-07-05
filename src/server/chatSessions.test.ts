@@ -4,7 +4,7 @@
 // rename, append (title backfill + updatedAt bump), delete, and the store roundtrip.
 // Vault-fixture idiom mirrors memory.test.ts (tmp vault + pinned, advanceable clock).
 
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import request from "supertest";
@@ -255,5 +255,101 @@ describe("deriveSessionTitle", () => {
     ).toBe("a b");
     expect(deriveSessionTitle([{ role: "assistant", content: "only" }])).toBe("");
     expect(deriveSessionTitle([{ role: "user", content: `${"y".repeat(50)}` }])).toBe(`${"y".repeat(40)}…`);
+  });
+
+  // V-1 (vision-input.md §2): an image-first turn must not crash titling — messageText
+  // collapses the array (image → `[image]`) so the derived title is stable, never
+  // `[object Object]` or a throw.
+  it("V-1: an image-first turn titles from the collapsed text (no crash)", () => {
+    const ASSET = `asset_${ULID}`;
+    expect(
+      deriveSessionTitle([
+        {
+          role: "user",
+          content: [
+            { type: "image", assetId: ASSET },
+            { type: "text", text: "  这道题\n怎么做  " }
+          ]
+        }
+      ])
+    ).toBe("[image] 这道题 怎么做");
+    // An image-ONLY turn collapses to the placeholder rather than crashing.
+    expect(deriveSessionTitle([{ role: "user", content: [{ type: "image", assetId: ASSET }] }])).toBe("[image]");
+  });
+});
+
+describe("chat sessions — V-1 image message persistence", () => {
+  const ASSET = `asset_${ULID}`;
+
+  it("round-trips an image message: content is an ARRAY with the assetId REF inside", async () => {
+    const { app, vault } = await makeApp("v1-image");
+    const res = await request(app)
+      .post("/api/chat/sessions")
+      .send({
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "what is this?" },
+              { type: "image", assetId: ASSET, mimeType: "image/png" }
+            ]
+          }
+        ]
+      })
+      .expect(201);
+    const session = res.body.session;
+    // The image ref sits INSIDE the content array (not a scalar string).
+    expect(Array.isArray(session.messages[0].content)).toBe(true);
+    expect(session.messages[0].content).toEqual([
+      { type: "text", text: "what is this?" },
+      { type: "image", assetId: ASSET, mimeType: "image/png" }
+    ]);
+    // Title derives from the collapsed text of the image-first turn.
+    expect(session.title).toBe("what is this? [image]");
+
+    // Store roundtrip: the persisted record carries the same array.
+    const stored = await vault.stores.chatSessions.get(session.id);
+    expect(stored?.messages[0].content).toEqual([
+      { type: "text", text: "what is this?" },
+      { type: "image", assetId: ASSET, mimeType: "image/png" }
+    ]);
+  });
+
+  it("GUARD: the vault JSONL holds the assetId REF, never base64 bytes", async () => {
+    const { app, vault } = await makeApp("v1-jsonl-guard");
+    // A base64-looking blob that must NEVER be what lands in the JSONL — only the ref.
+    const base64ish = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCA',,,";
+    const created = (
+      await request(app)
+        .post("/api/chat/sessions")
+        .send({
+          messages: [
+            { role: "user", content: [{ type: "text", text: base64ish }, { type: "image", assetId: ASSET }] }
+          ]
+        })
+        .expect(201)
+    ).body.session;
+
+    const jsonlPath = path.join(vault.paths.studyDir, "chat-sessions.jsonl");
+    const raw = await readFile(jsonlPath, "utf8");
+    // The assetId ref is present; the persisted image part carries NO inline `data`/bytes.
+    expect(raw).toContain(ASSET);
+    expect(raw).toContain('"type":"image"');
+    expect(raw).not.toContain('"data"');
+    expect(raw).not.toMatch(/base64,[A-Za-z0-9+/]{40}/); // no embedded base64 payload
+    expect(created.id).toMatch(/^chat_/);
+  });
+
+  it("REGRESSION: a text-only message persists as a bare string (byte-identical)", async () => {
+    const { app, vault } = await makeApp("v1-text-only");
+    await request(app)
+      .post("/api/chat/sessions")
+      .send({ messages: [{ role: "user", content: "plain text only" }] })
+      .expect(201);
+    const jsonlPath = path.join(vault.paths.studyDir, "chat-sessions.jsonl");
+    const raw = await readFile(jsonlPath, "utf8");
+    // The content is the scalar string, not wrapped in an array of parts.
+    expect(raw).toContain('"content":"plain text only"');
+    expect(raw).not.toContain('"type":"text"');
   });
 });
