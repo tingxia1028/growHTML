@@ -810,3 +810,7 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 | 2026-07-05 | POLISH-1-001 | FlipCard initialFlipped | initialFlipped seeds the back face and stays freely toggleable; default (unset) opens front | Passed |
 | 2026-07-05 | POLISH-1-001 | /api/about isPackaged | returns isPackaged:false by default, true when threaded from Electron main | Passed |
 | 2026-07-05 | POLISH-1-001 | AiProvidersSection codex gate | packaged build (isPackaged=true) disables + labels the codex row (claude-agent stays enabled); dev build keeps codex a normal selectable row | Passed |
+| 2026-07-05 | MISTAKE-BOOK-001 | mistakeBookView.test | seeded weak/improving/mastered across 2 sources + a non-mistake → only mistakes list; legacy textbook.mistake included (alias); 弱项 filter narrows; delete dispatch; empty state; 复习错题 launch | Passed (6) |
+| 2026-07-05 | MISTAKE-BOOK-001 | ReviewPanel scoped | pending mistake-scope mount → only mistake items surface; scope consumed → next unscoped mount byte-identical (full queue) | Passed (+2) |
+| 2026-07-05 | MISTAKE-BOOK-001 | queue.test (pin) | mistake + no schedule record + no event → queued reason "mistake-new" (pins the loop-already-closed claim; pre-existing) | Passed |
+| 2026-07-05 | MISTAKE-BOOK-001 | e2e mistake-photo (loop) | photo→Save→open 错题本 rail→lists .tb-mistake + mastery badge→复习错题→review runner opens with data-reason="mistake-new" | Passed |
