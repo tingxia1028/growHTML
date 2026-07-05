@@ -2,11 +2,10 @@
 // §1.6 degrade table: every native capability is false, file pickers resolve to
 // null (a bare browser can't hand back an absolute path; the <input type=file>
 // path is a separate UI concern), and there is no `native` slot. Prefs still ride
-// localStorage, dialogs still ride window.*, and asset URLs still resolve through
-// entityClient (byte-identical to desktop) — those work in any browser.
+// localStorage, dialogs still ride window.*, and asset URLs resolve to the HTTP byte
+// route (byte-identical to desktop) — those work in any browser.
 // See docs/implementation/platform-layering-build-spec.md §1.6.
 
-import { entityClient } from "../data/entityClient";
 import type { PlatformAdapter, PlatformCapabilities } from "./types";
 
 export function webPlatform(): PlatformAdapter {
@@ -47,7 +46,9 @@ export function webPlatform(): PlatformAdapter {
       readText: () => navigator.clipboard?.readText() ?? Promise.resolve("")
     },
     assets: {
-      url: (assetId) => entityClient.assetUrl(assetId)
+      // The HTTP byte route — the SOURCE of the scheme (entityClient.assetUrl reads FROM here,
+      // so it must not call back, or it would recurse). Byte-identical to desktop.
+      url: (assetId) => `/api/assets/${assetId}`
     }
     // native: undefined — no desktop escape hatches in a plain browser.
   };

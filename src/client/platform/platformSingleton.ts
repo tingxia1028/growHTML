@@ -23,3 +23,11 @@ export function getPlatform(): PlatformAdapter {
   }
   return current;
 }
+
+// Non-throwing accessor for module-scope helpers that must stay usable BEFORE the
+// platform is set (e.g. entityClient.assetUrl called from a unit test that never runs
+// main.tsx). Returns null when unset so the caller can fall back to a platform-neutral
+// default, instead of the hard throw getPlatform() raises.
+export function getPlatformOptional(): PlatformAdapter | null {
+  return current;
+}

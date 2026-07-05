@@ -3,7 +3,7 @@ export * from "./types";
 export { desktopPlatform } from "./desktopPlatform";
 export { webPlatform } from "./webPlatform";
 export { memoryPlatform, type MemoryPlatformOverrides } from "./memoryPlatform";
-export { getPlatform, setPlatform } from "./platformSingleton";
+export { getPlatform, getPlatformOptional, setPlatform } from "./platformSingleton";
 export {
   PlatformProvider,
   usePlatform,

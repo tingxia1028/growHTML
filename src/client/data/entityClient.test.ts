@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError, entityClient } from "./entityClient";
+import { memoryPlatform } from "../platform/memoryPlatform";
+import { webPlatform } from "../platform/webPlatform";
+import { setPlatform } from "../platform/platformSingleton";
 
 type Call = { url: string; method: string; body: unknown };
 
@@ -176,7 +179,27 @@ describe("entityClient", () => {
     await expect(entityClient.concepts()).rejects.toThrow("boom");
   });
 
-  it("exposes a direct asset url", () => {
+  it("exposes a direct asset url — FALLBACK to the HTTP byte route before any platform is set", () => {
+    // No setPlatform() ran in this file → getPlatformOptional() is null → the platform-neutral
+    // default. (PLAT-LAYER STEP-2: the funnel must not break module-scope callers that run
+    // before main.tsx boots the platform.)
+    expect(entityClient.assetUrl("asset_1")).toBe("/api/assets/asset_1");
+  });
+
+  it("routes assetUrl through the platform adapter once one is set (mobile scheme swap)", () => {
+    // The funnel: a platform whose assets.url returns a non-HTTP scheme flows straight through
+    // entityClient.assetUrl — call sites never hardcode /api/assets anymore. (Set last; no later
+    // test in this file reads assetUrl.)
+    setPlatform({ ...memoryPlatform(), assets: { url: (id: string) => `capacitor://assets/${id}` } });
+    expect(entityClient.assetUrl("asset_1")).toBe("capacitor://assets/asset_1");
+  });
+
+  it("does not recurse when the REAL web/desktop platform is set (assets.url is the source, not a callback)", () => {
+    // Regression for the funnel direction: entityClient.assetUrl → platform.assets.url must be
+    // ONE-WAY. The scaffold's desktop/web adapters originally delegated assets.url BACK to
+    // entityClient.assetUrl; combined with this funnel that is infinite recursion (every asset
+    // <img> stack-overflows in production). webPlatform() must now return the route directly.
+    setPlatform(webPlatform());
     expect(entityClient.assetUrl("asset_1")).toBe("/api/assets/asset_1");
   });
 });

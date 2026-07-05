@@ -9,6 +9,7 @@
 
 import { createHttpTransport, type VaultTransport } from "./transport";
 import { syncInstallState } from "../../kits/installState";
+import { getPlatformOptional } from "../platform/platformSingleton";
 
 export { ApiError } from "./transport";
 export type { VaultTransport } from "./transport";
@@ -1230,7 +1231,11 @@ export const entityClient = {
    * JSON VaultTransport (see ./transport).
    */
   assetUrl(assetId: string) {
-    return `/api/assets/${assetId}`;
+    // PLAT-LAYER STEP-2 funnel: asset URLs flow through the platform adapter so a future mobile
+    // platform can swap the scheme (capacitor://, file://) without touching call sites. Web/desktop
+    // return the same `/api/assets/${id}` HTTP byte route. Optional accessor + fallback so this
+    // stays usable before setPlatform() runs (unit tests that never boot main.tsx).
+    return getPlatformOptional()?.assets.url(assetId) ?? `/api/assets/${assetId}`;
   },
 
   // —— Chat ——

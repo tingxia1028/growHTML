@@ -4,7 +4,6 @@
 // the preload actually exposes, so a partial bridge degrades cleanly rather than
 // throwing. See docs/implementation/platform-layering-build-spec.md §1.2, §1.6.
 
-import { entityClient } from "../data/entityClient";
 import type {
   PlatformAdapter,
   PlatformCapabilities,
@@ -66,7 +65,10 @@ export function desktopPlatform(): PlatformAdapter {
       readText: () => navigator.clipboard?.readText() ?? Promise.resolve("")
     },
     assets: {
-      url: (assetId) => entityClient.assetUrl(assetId)
+      // Desktop serves asset bytes over the local HTTP byte route. This is the SOURCE of the
+      // scheme — entityClient.assetUrl reads FROM here, so it must NOT call back into it (that
+      // would recurse). A future mobile platform returns capacitor://… instead.
+      url: (assetId) => `/api/assets/${assetId}`
     },
     native
   };
