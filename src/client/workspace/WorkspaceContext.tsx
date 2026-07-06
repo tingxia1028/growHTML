@@ -41,7 +41,9 @@ import { getPlatformOptional, platformDialogs } from "../platform";
 // becomes a real assistant turn (via the existing persistAssistant seam).
 import { initialAgentTurn, reduceAgentEvent, type AgentTurnState } from "./agentTurnReducer";
 import { BOOKMARK_CONTENT_TYPE } from "../../core/notes/contentTypes";
-import { createDefaultContent, isTextContentType } from "../notes/noteTypeRegistry";
+// PLAT-LAYER Part-2 Slice 7b — createDefaultContent / isTextContentType moved into
+// useComposerDomain with the note-type composer callbacks (changeNoteContentType /
+// submitNoteContent) that were their only provider callers.
 import { type SourceViewer } from "../viewers";
 import { getCommand, runCommand, type CommandContext, type GeneratedDraft } from "../commands/registry";
 import type { PaintAnchor } from "../surfaces/types";
@@ -83,6 +85,13 @@ import { useOperationDomain } from "./useOperationDomain";
 // machinery (dispatchRef/parkRef + render-time assigns + beginGeneration/endGeneration) that
 // 7b/7c reuse. Its 3 entityClient sites (generateStructured/classifyForm/createNote) move in.
 import { useGenerationDomain, type Dispatch } from "./useGenerationDomain";
+// PLAT-LAYER Part-2 Slice 7b — the COMPOSER domain (the right-panel composer state + the lone
+// shell showTerminal toggle + the composer submit/attach actions). REUSES 7a's trampoline
+// machinery: it captures the STABLE `dispatch` trampoline, re-homes `resetReaderDraftInputs`
+// (the documents hook now consumes it via the provider's resetRef trampoline), and reads
+// `composerDisabled` through the injected disabledRef seam. Its 2 entityClient sites
+// (importImageBase64 ×2) move in.
+import { useComposerDomain } from "./useComposerDomain";
 // F1 (P-A1): the open-panes model type — the pure panes engine + its callers moved into
 // useDocumentsDomain (Slice 4b); the provider keeps only the OpenPane type for its interface.
 import { type OpenPane } from "./panes";
@@ -210,20 +219,9 @@ export function shouldAutoMaterialize(draft: GeneratedDraft): draft is Generated
 // persistFolderRoots / normalizeFolderRoot + their storage keys) moved into
 // useDocumentsDomain alongside the state they back.
 
-// V-1 (vision-input.md §2): a picked File → base64 (strip the data-URL prefix) for the
-// /api/assets import. Small + local so the composer's image-attach carries no extra dep.
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error ?? new Error("读取文件失败"));
-    reader.onload = () => {
-      const url = String(reader.result ?? "");
-      const comma = url.indexOf(",");
-      resolve(comma >= 0 ? url.slice(comma + 1) : url);
-    };
-    reader.readAsDataURL(file);
-  });
-}
+// PLAT-LAYER Part-2 Slice 7b — the V-1 `fileToBase64` helper (picked File → base64 for the
+// /api/assets import) moved into useComposerDomain alongside its only two callers
+// (attachImage + captureMistakePhoto).
 
 // Note `content` is `unknown` (structured per contentType). For display we want a
 // string: string content passes through; structured content is shown as JSON.
@@ -601,24 +599,25 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // but the uniform fail-loud keeps the pattern honest as 7b/7c add resetRef on the same idiom.
   const parkRef = useRef<((draft: GeneratedDraft) => void) | null>(null);
   const parkDraft = useCallback((draft: GeneratedDraft) => parkRef.current!(draft), []);
-  // —— coordinator-owned composer / agent state (stays in the provider; slice 7b/7c will move
-  //    the composer + agent clusters). Declared FIRST so the documents hook's injected
-  //    `resetReaderDraftInputs` seam can be built from it before `useDocumentsDomain`. ————————
-  const [noteContentType, setNoteContentType] = useState<string>("markdown");
-  // Structured draft for OBJECT content types (flashcard/quiz/image/…). Seeded from
-  // the type's core `createDefault()` whenever the type changes; string types ignore
-  // it (they author through the shared text textarea). Initialized lazily so a
-  // string default doesn't seed it.
-  const [noteContent, setNoteContent] = useState<unknown>(undefined);
-  const [composerMode, setComposerMode] = useState<"ask" | "note">("ask");
-  const [chatInput, setChatInput] = useState("");
-  // V-1 (vision-input.md §2): images the user picked for the NEXT ask-ai turn but hasn't
-  // sent yet — each already imported into the vault (so it carries an assetId REF, never
-  // base64). Rendered as removable chips above the composer; folded into the user
-  // message on submit, then cleared. DEGRADE-NOT-DISAPPEAR: the attach affordance stays
-  // visible on every provider; a non-vision send just surfaces the server's 400 once.
-  const [pendingImages, setPendingImages] = useState<Array<{ assetId: string; mimeType: string }>>([]);
-  const attachImageError = useRef("");
+  // resetReaderDraftInputs trampoline (§5, slice 7b): the documents hook consumes the source-
+  // switch reset of the reader draft inputs (patchHtml + chatInput), but those atoms are
+  // COMPOSER-owned (slice 7b moved them into useComposerDomain). Same fail-LOUD idiom as
+  // parkRef above: init null (not a no-op stub) so an early invoke before the render-time
+  // assign throws rather than silently skipping the reset; `resetRef.current =
+  // composer.resetReaderDraftInputs` is assigned after the composer hook is declared (below).
+  // Documents already receives THIS `resetReaderDraftInputs` callback — now that callback IS
+  // the trampoline (its guts, setPatchHtml/setChatInput, live in composer). Unreachable early
+  // today (docs only calls it in async load handlers, post-commit), but the uniform fail-loud
+  // keeps the pattern honest (mirrors dispatchRef / parkRef).
+  const resetRef = useRef<(() => void) | null>(null);
+  const resetReaderDraftInputs = useCallback(() => resetRef.current!(), []);
+  // R5 (composerDisabled forward-ref seam, slice 7b): `composerDisabled` is a PROVIDER-BODY
+  // derive (it reads the command context + composer.chatInput/pendingImages, all provider-
+  // visible), computed AFTER commandContext (below). The composer hook's submitComposer reads
+  // it through THIS ref at CALL TIME (submit is only ever invoked in the submit handler, post-
+  // commit) so the hook never captures a stale disabled value; `disabledRef.current =
+  // composerDisabled` is assigned render-time after composerDisabled is computed (below).
+  const disabledRef = useRef(false);
   // A4b: the in-flight/last agent turn's render-only transcript (tool cards + streamed
   // text), null when no agent turn has run this session. `agentAvailable` is a mount
   // read of the ACTIVE provider's `tools` capability — the gated 🛠 button shows only
@@ -635,23 +634,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // surface shows a dismissible hint pointing at AI 提供方 settings. Best-effort: any read
   // failure leaves it false (no banner — the pre-existing silent behavior).
   const [offlineMock, setOfflineMock] = useState(false);
-  const [showTerminal, setShowTerminal] = useState(false);
-  const [patchHtml, setPatchHtml] = useState("");
   // PLAT-LAYER Part-2 Slice 7a — the generation cluster (draftNote/draftNoteSeqRef/
   // materializeAnchorRef, pendingDraft/pendingDraftRect/lastGenerationRectRef, regenerating,
   // generating + parkDraft) now lives in useGenerationDomain (instantiated after
   // docs/kit/plugin/concept/chat, below). parkDraft rides the parkRef trampoline (declared
   // above) so the documents hook keeps consuming it without a temporal-dead-zone reference.
-  // The SOURCE-SWITCH reset of the reader draft inputs (patchHtml + chatInput) that the
-  // documents hook fires after a load/refocus. Those two atoms stay in the provider
-  // (composer/patch), so the reset is injected as a STABLE coordinator seam and called at
-  // the EXACT original points — preserving timing + the error-path behavior. Not circular.
-  const resetReaderDraftInputs = useCallback(() => {
-    setPatchHtml("");
-    // W1: the chat SESSION survives a source switch (switch/attach, not wipe); only the
-    // draft input resets with the reader.
-    setChatInput("");
-  }, []);
+  // PLAT-LAYER Part-2 Slice 7b — the COMPOSER cluster (noteContentType/noteContent/
+  // composerMode/chatInput/pendingImages/patchHtml/showTerminal + attachImageError, the
+  // composer submit/attach callbacks, the patch-seed effect, and resetReaderDraftInputs) now
+  // lives in useComposerDomain (instantiated after generation, below). resetReaderDraftInputs
+  // rides the resetRef trampoline (declared above) so the documents hook keeps consuming it
+  // without a temporal-dead-zone reference; submitComposer reads composerDisabled via disabledRef.
   // PLAT-LAYER Part-2 Slice 6 — the operations + operationPrefs + operationsVersion state and
   // the operation-manager UI atoms (showOperationManager / customizeSurface) now live in
   // useOperationDomain (instantiated after `dispatch`, which runAction injects). The provider
@@ -721,6 +714,26 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // identical — the trampoline is only invoked in handlers/effects, never during render).
   parkRef.current = generation.parkDraft;
 
+  // PLAT-LAYER Part-2 Slice 7b — the COMPOSER domain: the right-panel composer state + the lone
+  // shell showTerminal toggle + the composer submit/attach actions (submitComposer /
+  // submitNoteContent / attachImage / removePendingImage / captureMistakePhoto / changeNoteContentType)
+  // + the patch-seed effect + resetReaderDraftInputs. Its 2 entityClient sites (importImageBase64 ×2)
+  // moved in. It captures the STABLE `dispatch` trampoline (declared above), reads composerDisabled
+  // via the injected disabledRef (computed below), and surfaces image-import errors through docs.setError.
+  // Instantiated AFTER generation (so the coordinator riders are all resolved), BEFORE commandContext
+  // (which reads composer.chatInput/pendingImages).
+  const composer = useComposerDomain({
+    focus,
+    dispatch,
+    onError: docs.setError,
+    disabledRef
+  });
+  // §5 knot: resolve the resetReaderDraftInputs trampoline the documents hook consumes (it
+  // resets composer-owned atoms + is documents-independent, so this render-time assign is safe
+  // + behavior-identical — the trampoline is only invoked in async load handlers, never during
+  // render).
+  resetRef.current = composer.resetReaderDraftInputs;
+
   // Native file/folder dialogs come from the Electron preload; absent in a browser.
   const canOpenLocal =
     getPlatformOptional()?.capabilities.nativeFileDialogs ??
@@ -771,16 +784,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Pre-fill the "Edit source (patch)" textarea from an HTML-surface selection (the
-  // only surface whose patches replace study-id elements). All selection/paint logic
-  // itself lives in the surface adapters now; this is just the host reacting to the
-  // shared draft to seed an unrelated input.
-  useEffect(() => {
-    const draft = focus.draft;
-    if (draft?.mode === "quote" && draft.kind === "html" && draft.studyId) {
-      setPatchHtml(`<p data-study-id="${draft.studyId}">${draft.quote}</p>`);
-    }
-  }, [focus.draft]);
+  // PLAT-LAYER Part-2 Slice 7b — the patch-seed effect (pre-fill the "Edit source (patch)"
+  // textarea from an HTML-surface selection → setPatchHtml) moved into useComposerDomain
+  // alongside the patchHtml atom it seeds.
 
   // Where the active source lives + the focused passage, so the assistant knows
   // exactly which source + passage a question is about.
@@ -1070,91 +1076,27 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [dispatch]
   );
 
-  // The right-panel composer is pure AI Chat now: no Note mode or note-type routing.
+  // R5 (composerDisabled forward-ref seam, slice 7b): the composer's primary action
+  // availability STAYS a provider-body derive — it reads the command context + the composer
+  // surface's chatInput/pendingImages (all provider-visible). The composer hook's
+  // submitComposer reads it through the disabledRef seam at call time (assigned below). The
+  // right-panel composer is pure AI Chat now: no Note mode or note-type routing.
   const composerCommandId = "anchor.ask-ai";
   // V-1: pass the pending images so an image-ONLY turn (empty text) is still available.
   const composerCtx = commandContext({
-    text: chatInput,
-    images: pendingImages.map((image) => ({ type: "image" as const, assetId: image.assetId, mimeType: image.mimeType }))
+    text: composer.chatInput,
+    images: composer.pendingImages.map((image) => ({ type: "image" as const, assetId: image.assetId, mimeType: image.mimeType }))
   });
   const composerDisabled = !getCommand(composerCommandId)?.isAvailable(composerCtx);
+  // Resolve the disabledRef seam (render-time assign — safe, submitComposer reads
+  // `disabledRef.current` only inside its submit handler, never during render).
+  disabledRef.current = composerDisabled;
 
-  // V-1: import a picked image into the vault and stage it as a pending attachment. Reads
-  // the File as base64, POSTs /api/assets (server caps the size → 400 on oversize), and
-  // pushes the returned assetId REF. Errors surface via setError (degrade-not-disappear).
-  const attachImage = useCallback(
-    async (file: File) => {
-      try {
-        attachImageError.current = "";
-        const dataBase64 = await fileToBase64(file);
-        const { assetId } = await entityClient.importImageBase64({
-          dataBase64,
-          mimeType: file.type || "image/png",
-          fileName: file.name
-        });
-        setPendingImages((prev) => [...prev, { assetId, mimeType: file.type || "image/png" }]);
-      } catch (error) {
-        docs.setError(error instanceof Error ? error.message : "图片添加失败");
-      }
-    },
-    [docs.setError]
-  );
-
-  const removePendingImage = useCallback((assetId: string) => {
-    setPendingImages((prev) => prev.filter((image) => image.assetId !== assetId));
-  }, []);
-
-  // V-2 (拍错题, vision-input.md §3): import a picked PHOTO into the vault and dispatch the
-  // `mistake-photo.capture` command with the image REF as a SIBLING payload — the server
-  // runs the VLM extract prompt and the extracted `mistake` draft parks in the generation
-  // preview (preview-then-Save). Reuses the SAME importImageBase64 path as attachImage (zero
-  // new asset plumbing). DEGRADE-NOT-DISAPPEAR: on a non-vision provider the server surfaces
-  // the clean 400 once (setError), the affordance never hides. `hint` is optional user text.
-  const captureMistakePhoto = useCallback(
-    async (file: File, hint?: string) => {
-      try {
-        const dataBase64 = await fileToBase64(file);
-        const { assetId } = await entityClient.importImageBase64({
-          dataBase64,
-          mimeType: file.type || "image/png",
-          fileName: file.name
-        });
-        await dispatch("mistake-photo.capture", {
-          images: [{ type: "image", assetId, mimeType: file.type || "image/png" }],
-          ...(hint && hint.trim() ? { text: hint.trim() } : {})
-        });
-      } catch (error) {
-        docs.setError(error instanceof Error ? error.message : "错题照片处理失败");
-      }
-    },
-    [dispatch, docs.setError]
-  );
-
-  const submitComposer = useCallback(() => {
-    if (composerDisabled) return;
-    const text = chatInput;
-    const images = pendingImages.map((image) => ({ type: "image" as const, assetId: image.assetId, mimeType: image.mimeType }));
-    setChatInput("");
-    setPendingImages([]);
-    void dispatch(composerCommandId, { text, images: images.length > 0 ? images : undefined });
-  }, [composerDisabled, chatInput, pendingImages, dispatch, composerCommandId]);
-
-  // Switching the note type re-seeds the structured draft from the NEW type's core
-  // default (object types only; string types author through the text textarea and
-  // leave the draft undefined). Keeps the editor showing a valid blank value.
-  const changeNoteContentType = useCallback((type: string) => {
-    setNoteContentType(type);
-    setNoteContent(isTextContentType(type) ? undefined : createDefaultContent(type));
-  }, []);
-
-  // Save the structured draft as a note (object content types). Sends the `content`
-  // object verbatim — the plugin's editor already shaped it; the server re-validates
-  // it against the core spec. After save, re-seed a fresh blank draft of the type.
-  const submitNoteContent = useCallback(() => {
-    void dispatch("anchor.add-note", { content: noteContent, contentType: noteContentType }).then(() =>
-      setNoteContent(createDefaultContent(noteContentType))
-    );
-  }, [dispatch, noteContent, noteContentType]);
+  // PLAT-LAYER Part-2 Slice 7b — the composer submit/attach actions (submitComposer /
+  // submitNoteContent / attachImage / removePendingImage / captureMistakePhoto /
+  // changeNoteContentType), their 2 entityClient.importImageBase64 sites, and the fileToBase64
+  // helper now live in useComposerDomain, composed via `composer` above and spread into the
+  // value memo below. submitComposer reads composerDisabled through the disabledRef seam.
 
   // The chip / patch text uses the focused passage's quote — empty for region
   // drafts (a region has no text, but the chip still shows a "Region selected" hint
@@ -1185,30 +1127,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       canOpenLocal,
       chatMessages,
       chatSessions: chatDomain.sessions,
-      composerMode,
-      setComposerMode,
-      noteContentType,
-      setNoteContentType: changeNoteContentType,
-      noteContent,
-      setNoteContent,
-      submitNoteContent,
-      chatInput,
-      setChatInput,
-      pendingImages,
-      attachImage,
-      removePendingImage,
-      captureMistakePhoto,
       visionAvailable,
       offlineMock,
-      patchHtml,
-      setPatchHtml,
-      showTerminal,
-      setShowTerminal,
       activeFileDir,
       draftQuote,
       hasRegionDraft,
       composerDisabled,
-      submitComposer,
       dispatch,
       regenerateChatReply,
       agentTurn,
@@ -1216,6 +1140,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       runAgentTurn,
       importXmindFile,
       toggleLayerFilter,
+      // Slice 7b — the COMPOSER surface spread verbatim: keeps the SAME 18 public field
+      // names/shape (composerMode/setComposerMode, noteContentType/setNoteContentType
+      // [=changeNoteContentType], noteContent/setNoteContent, submitNoteContent, chatInput/
+      // setChatInput, pendingImages, attachImage, removePendingImage, captureMistakePhoto,
+      // patchHtml/setPatchHtml, showTerminal/setShowTerminal, submitComposer) so consumers are
+      // unchanged. The coordinator-only rider (resetReaderDraftInputs) also rides along but
+      // isn't in the interface — a harmless extra no consumer reads.
+      ...composer,
       // Slice 7a — the GENERATION surface spread verbatim: keeps the SAME 15 public field
       // names/shape (pendingDraft, pendingDraftRect, openManualEditor, regenerating,
       // generating, savePendingDraft, regeneratePendingDraft, discardPendingDraft,
@@ -1270,25 +1202,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       canOpenLocal,
       chatMessages,
       chatDomain.sessions,
-      composerMode,
-      noteContentType,
-      changeNoteContentType,
-      noteContent,
-      submitNoteContent,
-      chatInput,
-      pendingImages,
-      attachImage,
-      removePendingImage,
-      captureMistakePhoto,
       visionAvailable,
       offlineMock,
-      patchHtml,
-      showTerminal,
       activeFileDir,
       draftQuote,
       hasRegionDraft,
       composerDisabled,
-      submitComposer,
       dispatch,
       regenerateChatReply,
       agentTurn,
@@ -1296,6 +1215,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       runAgentTurn,
       importXmindFile,
       toggleLayerFilter,
+      // Slice 7b — the 18 composer fields collapse to their single memoized surface; its
+      // identity changes on the SAME cadence as its fields → identical re-render behavior.
+      composer,
       // Slice 7a — the 15 generation fields collapse to their single memoized surface; its
       // identity changes on the SAME cadence as its fields → identical re-render behavior.
       generation,
