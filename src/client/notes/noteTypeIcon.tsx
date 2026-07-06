@@ -4,7 +4,9 @@
 // its own mapping. Unknown types fall back to a generic file-text glyph.
 
 import {
+  AlertTriangle,
   Bookmark,
+  BookOpen,
   Code2,
   CreditCard,
   FileText,
@@ -12,6 +14,7 @@ import {
   Image as ImageIcon,
   ListChecks,
   Network,
+  PackageCheck,
   Play,
   Workflow,
   type LucideIcon
@@ -37,7 +40,12 @@ export const ICONS: Record<string, LucideIcon> = {
   markmap: Network,
   mindmap: Network,
   concept: HelpCircle,
-  bookmark: Bookmark
+  bookmark: Bookmark,
+  "textbook.explanation": BookOpen,
+  "textbook.exercise": ListChecks,
+  "textbook.review-pack": PackageCheck,
+  mistake: AlertTriangle,
+  "textbook.mistake": AlertTriangle
 };
 
 /** The lucide icon component for a note contentType (generic file glyph if unknown). */

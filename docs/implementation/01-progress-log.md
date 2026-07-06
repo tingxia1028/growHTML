@@ -734,7 +734,10 @@ Second consumer-funnel slice: the client's scattered `window.confirm/prompt/aler
 - Gates: tsc 0 · full vitest **272f/2777t** (baseline 272/2771 → +6) · build ✓. Codex files untouched.
 
 ## ANNO-PREVIEW-001 - reader note preview mini cards (2026-07-06)
-Status: Complete. Restored the reader hover/pinned note preview from body-only raw text to a compact static mini-card: icon/type/chip header plus the note type's own `mode:"card"` body. Also added textbook/mistake icon/glyph mappings and focused regression coverage.
+Status: Complete. Restored the reader hover/pinned note preview from body-only raw text to a compact static mini-card: icon/type header plus the note type's own `mode:"card"` body. The floating card intentionally omits source/layer/difficulty chips so it stays focused on the note content. Also added textbook/mistake icon/glyph mappings and focused regression coverage.
+
+## FLOAT-NOTE-001 - reader note card placement and drag (2026-07-06)
+Status: Complete. Raised the global read-aloud selection chip above the reader note card, gave small quiz/practice previews a readable base footprint, flipped the floating card above the passage near the viewport bottom, and added header-drag pinning with anchor-relative persistence. Double-clicking a preview now sends the saved note id back to the host so the right Notes viewer focuses that note instead of trying to inline-edit inside the static reader overlay.
 
 ## STORE-SQL Stage-2 — JSONL-as-truth export/import bridge (2026-07-06, branch codex/foundation-refactor)
 Makes the whole-vault backup/export SQLite-AWARE: the `.db` is runtime truth but the PACK's source of truth is the `*.jsonl` dumps (spec R2). Default engine is still jsonl → genuine NO-OP for the current runtime; only activates for a sqlite-backed vault. Import (validate + dir-swap) unchanged.

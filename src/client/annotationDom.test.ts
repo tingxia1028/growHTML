@@ -291,7 +291,7 @@ describe("card geometry persistence", () => {
     expect(card.classList.contains("sv-note-card-show")).toBe(true);
     expect(card.style.left).toBe("40px");
     expect(card.style.top).toBe("110px");
-    expect(card.style.width).toBe("250px");
+    expect(card.style.width).toBe("260px");
   });
 
   it("keeps a click-pinned card attached to its text when the document scrolls", () => {
@@ -402,6 +402,93 @@ describe("card open-state persistence (D10)", () => {
     // The card is PINNED (survives a mouse-out — proves it's not a transient hover).
     el.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
     expect(card.classList.contains("sv-note-card-show")).toBe(true);
+  });
+
+  it("flips the floating note card above the passage when below would overflow", () => {
+    const doc = freshReaderDocument();
+    doc.body.innerHTML = '<p id="t">near bottom</p>';
+    ensureAnnotationLayer(doc);
+    const el = doc.getElementById("t")!;
+    Object.defineProperty(el, "getBoundingClientRect", {
+      value: () => ({ left: 40, top: 130, right: 150, bottom: 154, width: 110, height: 24 }),
+      configurable: true
+    });
+    applyHighlight(el, "note", "k-flip", {
+      noteHtml:
+        '<div class="sv-annotation-preview sv-annotation-preview-card" data-note-id="n-flip"><div class="sv-annotation-preview-head">Quiz</div><div class="sv-annotation-preview-body">Q</div></div>',
+      noteCount: 1
+    });
+    const view = doc.defaultView!;
+    Object.defineProperty(view, "innerHeight", { value: 180, configurable: true });
+    Object.defineProperty(view, "innerWidth", { value: 500, configurable: true });
+    const card = doc.getElementById("sv-note-card")!;
+    Object.defineProperty(card, "getBoundingClientRect", {
+      value: () => ({ left: 0, top: 0, right: 320, bottom: 100, width: 320, height: 100 }),
+      configurable: true
+    });
+
+    el.dispatchEvent(new view.MouseEvent("mouseover", { bubbles: true }));
+    expect(card.classList.contains("sv-note-card-show")).toBe(true);
+    expect(card.style.top).toBe("24px");
+  });
+
+  it("drags a pinned note card from its preview header and persists the anchor-relative offset", () => {
+    const doc = freshReaderDocument();
+    doc.body.innerHTML = '<p id="t">drag me</p>';
+    ensureAnnotationLayer(doc);
+    const el = doc.getElementById("t")!;
+    Object.defineProperty(el, "getBoundingClientRect", {
+      value: () => ({ left: 40, top: 80, right: 100, bottom: 104, width: 60, height: 24 }),
+      configurable: true
+    });
+    applyHighlight(el, "note", "k-drag", {
+      noteHtml:
+        '<div class="sv-annotation-preview sv-annotation-preview-card" data-note-id="n-drag"><div class="sv-annotation-preview-head">Quiz</div><div class="sv-annotation-preview-body">Q</div></div>',
+      noteCount: 1
+    });
+    const view = doc.defaultView!;
+    Object.defineProperty(view, "innerHeight", { value: 600, configurable: true });
+    Object.defineProperty(view, "innerWidth", { value: 800, configurable: true });
+    const card = doc.getElementById("sv-note-card")!;
+    Object.defineProperty(card, "getBoundingClientRect", {
+      value: () => {
+        const left = Number.parseFloat(card.style.left) || 40;
+        const top = Number.parseFloat(card.style.top) || 110;
+        return { left, top, right: left + 320, bottom: top + 100, width: 320, height: 100 };
+      },
+      configurable: true
+    });
+
+    el.dispatchEvent(new view.MouseEvent("mouseover", { bubbles: true }));
+    const header = card.querySelector(".sv-annotation-preview-head")!;
+    header.dispatchEvent(new view.MouseEvent("mousedown", { bubbles: true, clientX: 10, clientY: 10 }));
+    doc.dispatchEvent(new view.MouseEvent("mousemove", { bubbles: true, clientX: 60, clientY: 40 }));
+    doc.dispatchEvent(new view.MouseEvent("mouseup", { bubbles: true, clientX: 60, clientY: 40 }));
+
+    expect(card.classList.contains("sv-note-card-pinned")).toBe(true);
+    expect(card.style.left).toBe("90px");
+    expect(card.style.top).toBe("140px");
+    expect(readCardGeom(doc, "k-drag")).toMatchObject({ anchorDx: 50, anchorDy: 36, open: true });
+  });
+
+  it("double-clicking a preview dispatches the saved note id for the host note viewer", () => {
+    const doc = freshReaderDocument();
+    doc.body.innerHTML = '<p id="t">open note</p>';
+    ensureAnnotationLayer(doc);
+    const el = doc.getElementById("t")!;
+    applyHighlight(el, "note", "k-edit", {
+      noteHtml:
+        '<div class="sv-annotation-preview sv-annotation-preview-card" data-note-id="n-edit"><div class="sv-annotation-preview-head">Quiz</div><div class="sv-annotation-preview-body">Q</div></div>',
+      noteCount: 1
+    });
+    const seen: unknown[] = [];
+    doc.addEventListener("sv:note-card-action", (event) => seen.push((event as CustomEvent).detail));
+
+    el.dispatchEvent(new doc.defaultView!.MouseEvent("mouseover", { bubbles: true }));
+    const preview = doc.querySelector('[data-note-id="n-edit"]')!;
+    preview.dispatchEvent(new doc.defaultView!.MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+
+    expect(seen).toEqual([{ action: "edit", noteId: "n-edit", anchorId: "k-edit" }]);
   });
 
   it("does NOT restore a note-hidden (N1a) anchor, and none while hide-all (D11) is on", () => {

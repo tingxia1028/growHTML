@@ -5,7 +5,7 @@
 /* SPEECH-3: the chip became a two-button ROW (朗读 + 拼/注音 when the selection has
    CJK) — the fixed positioning + stratum moved here; the buttons stay dumb pills. */
 .global-speak-chip-row {
-  z-index: 260; /* above panes/overlays, same stratum as the floating toolbar */
+  z-index: 2147483002; /* above reader note cards so selected note text can be read */
   display: inline-flex;
   align-items: center;
   gap: 6px;

@@ -449,9 +449,8 @@ describe("MarkerOverlay", () => {
     overlayB.destroy();
   });
 
-  // —— F-1 follow-up: hide-all is PER-REALM too — note-slot chips hide only in the
-  //    flipped realm. ——
-  it("hide-all is PER-REALM: flipping docA hides only docA's note chips, docB stays", async () => {
+  // F-1 follow-up: hide-all is PER-REALM too; marker chips hide only in the flipped realm.
+  it("hide-all is PER-REALM: flipping docA hides only docA's chips, docB stays", async () => {
     function iframeDoc(): Document {
       const frame = document.createElement("iframe");
       document.body.appendChild(frame);
@@ -503,22 +502,27 @@ describe("MarkerOverlay", () => {
 
     const noteChipA = hostA.querySelector('[data-sv-slot="note"]') as HTMLElement;
     const noteChipB = hostB.querySelector('[data-sv-slot="note"]') as HTMLElement;
+    const anchorChipA = hostA.querySelector('[data-sv-slot="anchor"]') as HTMLElement;
+    const anchorChipB = hostB.querySelector('[data-sv-slot="anchor"]') as HTMLElement;
     expect(noteChipA.style.display).not.toBe("none");
     expect(noteChipB.style.display).not.toBe("none");
+    expect(anchorChipA.style.display).not.toBe("none");
+    expect(anchorChipB.style.display).not.toBe("none");
 
     setAllNotesHidden(docA, true);
     await flushFrame();
     expect(noteChipA.style.display).toBe("none"); // docA note chip hidden
     expect(noteChipB.style.display).not.toBe("none"); // docB unaffected
+    expect(anchorChipA.style.display).toBe("none"); // docA anchor chip hidden too
+    expect(anchorChipB.style.display).not.toBe("none"); // docB unaffected
 
     setAllNotesHidden(docA, false);
     overlayA.destroy();
     overlayB.destroy();
   });
 
-  // —— D11 hide-all (INVERSE split of the glyph switch): hides NOTE-slot chips, keeps
-  //    anchor glyphs. Composes with N1a's per-anchor toggle. ——
-  it("hide-all hides ALL note-slot chips while anchor glyphs STAY; off restores", async () => {
+  // D11 hide-all hides both marker slots while preserving per-anchor toggle state.
+  it("hide-all hides all anchor and note chips; off restores", async () => {
     const host = makeHost();
     stubAnchor(host, "hd-1", { left: 200, top: 120, right: 260, width: 60, height: 18 });
     stubAnchor(host, "hd-2", { left: 200, top: 220, right: 260, width: 60, height: 18 });
@@ -537,11 +541,12 @@ describe("MarkerOverlay", () => {
     setAllNotesHidden(document, true); // the overlay subscribed — no manual reposition
     await flushFrame();
     for (const chip of noteChips) expect(chip.style.display).toBe("none"); // CARDS/notes hidden
-    for (const chip of anchorChips) expect(chip.style.display).not.toBe("none"); // glyphs STAY
+    for (const chip of anchorChips) expect(chip.style.display).toBe("none"); // anchors hidden too
 
     setAllNotesHidden(document, false);
     await flushFrame();
     for (const chip of noteChips) expect(chip.style.display).not.toBe("none");
+    for (const chip of anchorChips) expect(chip.style.display).not.toBe("none");
     overlay.destroy();
   });
 

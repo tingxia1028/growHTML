@@ -54,6 +54,7 @@ import { setAnchorBoardOpen } from "./anchorFocusBoardStore";
 // controls, each a small self-contained component (keeps this hot file's diff tight).
 import { HideAllNotesToggle } from "./HideAllNotesToggle";
 import { ExportNotesButton } from "./ExportNotesButton";
+import { getSourceRealmDoc } from "./sourceRealmDoc";
 // Side-effect import: registers the 12 built-in client NoteType plugins so the note
 // list + composer can render/edit every content type through the registry.
 import "../notes/builtinNoteTypes";
@@ -354,6 +355,40 @@ function SourceViewerView({
       if (full) focus.setAnchor(full);
     }
   };
+
+  const paneId = pane?.paneId;
+  useEffect(() => {
+    const sourceId = paneSource?.id;
+    if (!sourceId || typeof requestAnimationFrame !== "function") return;
+    let frame = 0;
+    let attempts = 0;
+    let cleanup: (() => void) | null = null;
+    const bind = () => {
+      const doc = getSourceRealmDoc(sourceId);
+      if (!doc) {
+        if (attempts < 120) {
+          attempts += 1;
+          frame = requestAnimationFrame(bind);
+        }
+        return;
+      }
+      const onNoteCardAction = (event: Event) => {
+        const detail = (event as CustomEvent<{ action?: string; noteId?: string; anchorId?: string }>).detail;
+        if (detail?.action !== "edit" || !detail.noteId) return;
+        if (paneId) focusPane(paneId);
+        const anchor = detail.anchorId ? anchors.find((item) => item.id === detail.anchorId) : undefined;
+        if (anchor) focus.setAnchor(anchor);
+        focus.setFocus({ type: "note", noteId: detail.noteId });
+      };
+      doc.addEventListener("sv:note-card-action", onNoteCardAction);
+      cleanup = () => doc.removeEventListener("sv:note-card-action", onNoteCardAction);
+    };
+    bind();
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      cleanup?.();
+    };
+  }, [anchors, focus, focusPane, paneId, paneSource?.id]);
 
   // The built-in single-document tab (file icon + title + close) — the pre-F1 chrome.
   const singleTabStrip = (

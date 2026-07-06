@@ -145,6 +145,26 @@ describe("生词卡 render — flashcard-isomorphic front/back", () => {
     act(() => root.unmount());
     container.remove();
   });
+
+  it("full: Chinese vocab derives tone-marked pinyin from the word instead of trusting a bad phonetic field", () => {
+    const zhContent = {
+      word: "\u5b66",
+      phonetic: "/{ye}/",
+      pos: "\u52a8\u8bcd / \u540d\u8bcd / \u8bed\u7d20",
+      senses: [{ definition: "\u5b66\u4e60;\u6a21\u4eff;\u77e5\u8bc6" }]
+    };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(getNoteType("subject.vocab")!.render({ content: zhContent, mode: "full" }) as React.ReactElement));
+
+    expect(container.textContent).toContain("xu\u00e9");
+    expect(container.textContent).not.toContain("/{ye}/");
+    expect(container.textContent).toContain("\u52a8\u8bcd");
+
+    act(() => root.unmount());
+    container.remove();
+  });
 });
 
 describe("时间线 render — vertical track with expandable nodes", () => {

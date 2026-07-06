@@ -251,11 +251,10 @@ export function PdfReader({
     };
     adapterRef.current = adapter;
 
-    // Mount the view-layer marker overlay on the (absolutely-positioned) canvas so
-    // its chips sit in page/overlay coordinate space, not inside a transformed
-    // text-layer span. highlightAnchors drives its chips via setMarkers; the
-    // adapter's onLayoutChange feeds it the pdf.js reposition signals.
-    const markerOverlay = new MarkerOverlay(container, {
+    // Mount the view-layer marker overlay on the pdf.js CONTENT layer, not the scroll
+    // viewport. Long PDFs may have their first anchor several pages down; an overlay
+    // attached to the viewport top scrolls away before those anchors enter view.
+    const markerOverlay = new MarkerOverlay(viewer, {
       onAction: ({ anchorId, role }) => onMarkerActionRef.current?.(anchorId, role),
       adapter
     });

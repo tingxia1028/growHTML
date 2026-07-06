@@ -2,8 +2,8 @@
 //
 // One control that masks ALL note cards/overlays for the current source — distinct
 // from N1a's 显示锚点标记 switch (which hides anchor GLYPHS): hide-all hides the
-// CARDS/notes (hover, pinned, margin) AND the note-slot chips, while the anchor
-// glyph chips STAY so passages remain findable. Because each note's own open state
+// CARDS/notes (hover, pinned, margin), note-slot chips, and anchor glyph chips.
+// Because each note's own open state
 // lives in note.display / the geometry store, "打开的打开、关闭还是关闭" is preserved
 // — the toggle only masks, it never loses per-note state.
 //

@@ -9,6 +9,7 @@ import type { NoteEditInput, NoteRenderInput } from "../../client/notes/noteType
 import { FlipCard } from "../../client/notes/noteInteractive";
 import { Latex } from "../../client/notes/Latex";
 import type { KitNoteTypePlugin } from "../types";
+import { pinyin } from "pinyin-pro";
 import type {
   ArgumentContent,
   CauseEffectContent,
@@ -26,6 +27,22 @@ import type {
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const opt = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => String(x ?? "")) : []);
+const HAN_RE = /[\u3007\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/;
+
+type PinyinItem = { isZh?: boolean; pinyin?: string };
+
+function chinesePinyin(text: string): string | undefined {
+  if (!HAN_RE.test(text)) return undefined;
+  const syllables = (pinyin(text, { type: "all", toneType: "symbol" }) as PinyinItem[])
+    .filter((item) => item.isZh && item.pinyin)
+    .map((item) => item.pinyin!.trim())
+    .filter(Boolean);
+  return syllables.length ? syllables.join(" ") : undefined;
+}
+
+function vocabPhonetic(c: VocabContent): string | undefined {
+  return chinesePinyin(c.word) ?? c.phonetic;
+}
 
 // —— 生词卡 subject.vocab ————————————————————————————————————————————————————
 function asVocab(content: unknown): VocabContent {
@@ -50,6 +67,7 @@ function asVocab(content: unknown): VocabContent {
 
 function VocabRender({ content, mode, ctx }: NoteRenderInput) {
   const c = asVocab(content);
+  const phonetic = vocabPhonetic(c);
   // CARD: front only (word + first definition) + the flip hint — the back stays for
   // the Center View, deliberately isomorphic to the built-in flashcard card (§1.4).
   if (mode === "card") {
@@ -76,9 +94,9 @@ function VocabRender({ content, mode, ctx }: NoteRenderInput) {
           <section className="sv-flashcard-face sv-vocab-front">
             <span className="sv-flashcard-face-label">Front</span>
             <p className="sv-vocab-word">{c.word || "(empty vocab)"}</p>
-            {c.phonetic || c.pos ? (
+            {phonetic || c.pos ? (
               <p className="sv-vocab-meta">
-                {c.phonetic ? <span className="sv-vocab-phonetic">{c.phonetic}</span> : null}
+                {phonetic ? <span className="sv-vocab-phonetic">{phonetic}</span> : null}
                 {c.pos ? <span className="sv-vocab-pos">{c.pos}</span> : null}
               </p>
             ) : null}

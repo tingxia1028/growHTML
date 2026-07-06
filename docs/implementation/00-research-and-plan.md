@@ -379,3 +379,19 @@ Avoid future parallel work until core type names and storage boundaries are stab
 - Obsidian reference boundaries are documented.
 - Current GrowHTML reuse points are identified.
 - User approves a technical direction before business code changes.
+
+## ANNO-PREVIEW-001 - Reader Note Preview Mini Cards (2026-07-06)
+
+Goal: restore the in-reader floating note preview from raw content-only text to a compact, typed mini-card that distinguishes markdown, practice, flashcard, media, code, and kit note types without mounting the full React artifact card inside the reader overlay.
+
+| ID | Task | Dependencies | Can Parallelize | Primary Files | Implementation Plan | Verification Method | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| ANNO-PREVIEW-001 | Reader note preview mini-card chrome | Existing note type registry, note card metadata, annotation overlay CSS | No | `src/client/workspace/annotationNotePreview.tsx`, `src/client/annotationLayer.ts`, `src/client/notes/noteTypeIcon.tsx` | Render static preview chrome with icon/type only above the sanctioned `mode:"card"` body; keep reader overlay framework-free and preserve stacked previews for multiple notes without source/layer chips. | Focused Vitest for preview markup plus existing annotation/marker tests and `tsc --noEmit`. | Complete |
+
+## FLOAT-NOTE-001 - Reader Note Card Placement and Drag (2026-07-06)
+
+Goal: make the in-reader floating note card less intrusive and more useful: read-aloud selection chips must sit above it, small quiz/practice previews need a readable default size, the card should flip above the passage when it would collide with the viewport bottom, pinned cards should be movable, and double-clicking a preview should route the saved note into the host note viewer.
+
+| ID | Task | Dependencies | Can Parallelize | Primary Files | Implementation Plan | Verification Method | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| FLOAT-NOTE-001 | Reader note-card placement, sizing, drag, and note focus bridge | Existing `#sv-note-card`, card geometry store, NoteList focus contract | No | `src/client/annotationLayer.ts`, `src/client/workspace/views.tsx`, `src/client/speech/globalSpeakSelection.css`, tests | Add capped defaults/min sizes, viewport-aware vertical flip, header-drag for pinned cards with anchor-relative persistence, a static double-click event carrying `noteId`, and host listener that focuses the note row. | Focused annotation DOM tests, speech/global selection z-index test or CSS assertion, and `tsc --noEmit`. | Complete |

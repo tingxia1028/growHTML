@@ -234,7 +234,7 @@ export class MarkerOverlay {
     // on THIS overlay's realm document (F-1 follow-up).
     const doc = hostEl.ownerDocument;
     this.unsubscribes.push(subscribeAnchorGlyphVisibility(doc, () => this.reposition()));
-    // D11 hide-all re-runs layout too (note-slot chips hide/show; anchor glyphs stay) —
+    // D11 hide-all re-runs layout too (both anchor and note chips hide/show) —
     // per-realm, keyed on the same document.
     this.unsubscribes.push(subscribeAllNotesHidden(doc, () => this.reposition()));
     // Card-open suppression (D2): wireNoteCard flips data-sv-card-open on the realm
@@ -384,9 +384,9 @@ export class MarkerOverlay {
     const origin = { left: overlayRect.left, top: overlayRect.top };
     const doc = this.hostEl.ownerDocument;
     const glyphsVisible = getAnchorGlyphVisibility(doc);
-    // D11 hide-all: the per-source flag masks EVERY note-slot chip (the CARDS/notes),
-    // while anchor glyphs stay so passages remain findable — the inverse split of the
-    // N1a global switch (which hides glyphs and keeps note slots).
+    // D11 hide-all: the per-source flag masks EVERY reader marker for notes,
+    // including the left anchor glyphs. The dedicated glyph switch still hides
+    // glyphs alone.
     const notesAllHidden = isAllNotesHidden(doc);
     // Card-open suppression (D2): the anchor whose card the shared #sv-note-card is
     // currently showing (hover or pinned) hides BOTH its chips — wireNoteCard stamps
@@ -411,7 +411,7 @@ export class MarkerOverlay {
       // global 显示锚点标记 switch; dimmed (data attr) while its notes are toggled off.
       if (notesHidden) chips.anchor.setAttribute("data-sv-notes-hidden", "1");
       else chips.anchor.removeAttribute("data-sv-notes-hidden");
-      if (glyphsVisible) {
+      if (glyphsVisible && !notesAllHidden) {
         anchorSlots.push({
           anchorId,
           x: rects.first.left - origin.left,

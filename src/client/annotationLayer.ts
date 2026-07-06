@@ -192,9 +192,9 @@ export const ANNOTATION_CSS = `
   z-index: 2147483000;
   display: none;
   flex-direction: column;
-  width: 340px;
-  min-width: 200px;
-  max-width: 640px;
+  width: min(320px, calc(100vw - 16px));
+  min-width: 260px;
+  max-width: min(520px, calc(100vw - 16px));
   min-height: 70px;
   max-height: 70vh;
   resize: both;
@@ -205,6 +205,9 @@ export const ANNOTATION_CSS = `
   border: 1px solid #c9dcff;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
   font: 13px/1.5 Inter, "Segoe UI", Arial, sans-serif;
+}
+#sv-note-card.sv-note-card-pinned {
+  box-shadow: 0 10px 30px rgba(31, 45, 68, 0.2);
 }
 #sv-note-card.sv-note-card-show {
   display: flex;
@@ -236,23 +239,81 @@ export const ANNOTATION_CSS = `
   display: grid;
   gap: 10px;
 }
-/* Content-only card: the sanctioned note body renders directly (no artifact-card
-   chrome). Stacked previews when an anchor has multiple notes. */
-.sv-annotation-preview + .sv-annotation-preview {
-  border-top: 1px solid #e3e8ef;
-  padding-top: 8px;
+.sv-note-card-body {
+  background: #f8fbff;
+  padding: 7px;
+}
+.sv-annotation-preview-card {
+  display: block;
+  overflow: hidden;
+  border: 1px solid #d8e4f8;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(31, 45, 68, 0.08);
+}
+.sv-annotation-preview-card + .sv-annotation-preview-card {
   margin-top: 8px;
 }
+.sv-annotation-preview-head {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  gap: 6px;
+  padding: 5px 8px;
+  border-bottom: 1px solid #e9eef7;
+  background: #f7faff;
+  color: #5c6678;
+  font: 600 11px/1.2 Inter, "Segoe UI", Arial, sans-serif;
+  cursor: grab;
+  user-select: none;
+}
+.sv-note-card-dragging .sv-annotation-preview-head {
+  cursor: grabbing;
+}
+.sv-annotation-preview-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border: 1px solid #d6e4fb;
+  border-radius: 5px;
+  background: #ffffff;
+  color: #3474e6;
+}
+.sv-annotation-preview-icon svg {
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+}
+.sv-annotation-preview-type {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #263449;
+}
 .sv-note-content {
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 12.5px;
+  line-height: 1.45;
   overflow-wrap: anywhere;
+}
+.sv-annotation-preview-body {
+  padding: 8px 9px 9px;
+  color: #273142;
+}
+.sv-annotation-preview-card[data-content-type="quiz"] .sv-annotation-preview-body,
+.sv-annotation-preview-card[data-content-type="textbook.exercise"] .sv-annotation-preview-body {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
 }
 .sv-note-content > :first-child { margin-top: 0; }
 .sv-note-content > :last-child { margin-bottom: 0; }
 .sv-note-content .note-rendered {
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 12.5px;
+  line-height: 1.45;
 }
 
 /* --- Marginalia mode: persistent cards in a right-hand gutter --- */
@@ -387,6 +448,18 @@ const GLYPH_HELP_CIRCLE = svg(
 );
 // Bookmark (bookmark)
 const GLYPH_BOOKMARK = svg('<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>');
+// BookOpen (textbook.explanation)
+const GLYPH_BOOK_OPEN = svg(
+  '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>'
+);
+// PackageCheck (textbook.review-pack)
+const GLYPH_PACKAGE_CHECK = svg(
+  '<path d="m16 16 2 2 4-4"/><path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/><path d="m7.5 4.27 9 5.15"/><path d="M3.29 7 12 12l8.71-5"/><path d="M12 22V12"/>'
+);
+// AlertTriangle (mistake / textbook.mistake)
+const GLYPH_ALERT_TRIANGLE = svg(
+  '<path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>'
+);
 
 // contentType → glyph. Keys MUST cover every key in noteTypeIcon.tsx's ICONS map.
 export const MARKER_GLYPHS: Record<string, string> = {
@@ -406,7 +479,12 @@ export const MARKER_GLYPHS: Record<string, string> = {
   markmap: GLYPH_NETWORK,
   mindmap: GLYPH_NETWORK,
   concept: GLYPH_HELP_CIRCLE,
-  bookmark: GLYPH_BOOKMARK
+  bookmark: GLYPH_BOOKMARK,
+  "textbook.explanation": GLYPH_BOOK_OPEN,
+  "textbook.exercise": GLYPH_LIST_CHECKS,
+  "textbook.review-pack": GLYPH_PACKAGE_CHECK,
+  mistake: GLYPH_ALERT_TRIANGLE,
+  "textbook.mistake": GLYPH_ALERT_TRIANGLE
 };
 
 // The left "this passage is anchored" glyph — an anchor (lucide Anchor).
@@ -487,7 +565,7 @@ export function setCardOpenState(doc: Document, key: string, open: boolean): voi
 
 // Keep a restored card visible even if the viewport shrank since it was saved.
 export function clampGeom(geom: CardGeom, viewW: number, viewH: number): CardGeom {
-  const width = Math.min(geom.width, Math.max(120, viewW - 16));
+  const width = Math.min(Math.max(geom.width, 260), Math.max(120, viewW - 16));
   const height = Math.min(geom.height, Math.max(80, viewH - 16));
   const left = Math.min(Math.max(0, geom.left), Math.max(0, viewW - width));
   const top = Math.min(Math.max(0, geom.top), Math.max(0, viewH - height));
@@ -532,8 +610,8 @@ export function isAnchorNotesHidden(doc: Document | null | undefined, anchorId: 
 // --- D11 hide-all (per-document "hide all notes" toggle) ----------------------
 // A SINGLE realm-local flag that masks EVERY note card/overlay for the source —
 // distinct from N1a's 显示锚点标记 switch (which hides anchor GLYPHS): hide-all
-// hides the CARDS/notes (hover, pinned, margin) AND the note-slot chips, while the
-// anchor glyph chips STAY so the passages remain findable. Because each anchor's
+// hides the CARDS/notes (hover, pinned, margin), note-slot chips, and anchor glyph
+// chips for note-bearing anchors. Because each anchor's
 // own toggled/open state is untouched, "打开的打开、关闭还是关闭" is preserved for
 // free — the flag only masks, it never loses per-anchor state.
 //
@@ -642,7 +720,14 @@ function wireNoteCard(doc: Document): void {
   let currentKey = ""; // the data-sv-key of the anchor the card currently shows
   let currentTarget: Element | null = null;
   let anchorOffset = { x: 0, y: 6 };
+  let hasUserOffset = false;
   let resizing = false;
+  let dragging = false;
+
+  const setPinnedState = (next: boolean) => {
+    pinned = next;
+    card.classList.toggle("sv-note-card-pinned", next);
+  };
 
   // Persist the card's current rect for the active key (drag / resize end).
   const persistGeom = () => {
@@ -650,13 +735,15 @@ function wireNoteCard(doc: Document): void {
     const rect = card.getBoundingClientRect();
     if (rect.width === 0 && rect.height === 0) return; // not laid out (e.g. jsdom)
     const targetRect = currentTarget?.getBoundingClientRect();
+    const existing = readCardGeom(doc, currentKey);
     writeCardGeom(doc, currentKey, {
       left: rect.left,
       top: rect.top,
       width: rect.width,
       height: rect.height,
       anchorDx: targetRect ? rect.left - targetRect.left : undefined,
-      anchorDy: targetRect ? rect.top - targetRect.bottom : undefined
+      anchorDy: targetRect ? rect.top - targetRect.bottom : undefined,
+      open: existing?.open
     });
   };
 
@@ -672,6 +759,7 @@ function wireNoteCard(doc: Document): void {
   const placeCardAtTarget = (target: Element) => {
     if (!target.isConnected) {
       pinned = false;
+      setPinnedState(false);
       currentTarget = null;
       card.classList.remove("sv-note-card-show");
       setCardOpenAttr("");
@@ -685,9 +773,19 @@ function wireNoteCard(doc: Document): void {
     const maxLeft = view ? Math.max(8, view.innerWidth - cardWidth - 8) : Number.POSITIVE_INFINITY;
     const left = Math.min(Math.max(8, rect.left + anchorOffset.x), maxLeft);
     card.style.left = `${left}px`;
-    // Do not clamp vertically: a pinned card should travel with its source text
-    // instead of staying stuck to the viewport after the reader scrolls away.
-    card.style.top = `${rect.bottom + anchorOffset.y}px`;
+    const cardRect = card.getBoundingClientRect();
+    const styleHeight = Number.parseFloat(card.style.height);
+    const cardHeight =
+      Number.isFinite(styleHeight) && styleHeight > 0 ? styleHeight : cardRect.height > 0 ? cardRect.height : 96;
+    let top = rect.bottom + anchorOffset.y;
+    if (!hasUserOffset && view) {
+      const bottomLimit = view.innerHeight - cardHeight - 8;
+      if (top > bottomLimit) {
+        const above = rect.top - cardHeight - 6;
+        top = above >= 8 ? above : Math.max(8, bottomLimit);
+      }
+    }
+    card.style.top = `${top}px`;
   };
 
   const syncPinnedCard = () => {
@@ -702,6 +800,9 @@ function wireNoteCard(doc: Document): void {
     // Content-only: render the sanctioned note body directly (no chrome). An anchor
     // with no note previews paints highlight + markers but no card body.
     body.innerHTML = payload?.noteHtml ?? "";
+    const firstPreview = body.querySelector<HTMLElement>(".sv-annotation-preview-card[data-content-type]");
+    if (firstPreview?.dataset.contentType) card.setAttribute("data-primary-content-type", firstPreview.dataset.contentType);
+    else card.removeAttribute("data-primary-content-type");
     const view = doc.defaultView;
     const saved = currentKey ? readCardGeom(doc, currentKey) : null;
     if (saved && view) {
@@ -715,10 +816,12 @@ function wireNoteCard(doc: Document): void {
         x: typeof saved.anchorDx === "number" ? saved.anchorDx : 0,
         y: typeof saved.anchorDy === "number" ? saved.anchorDy : 6
       };
+      hasUserOffset = typeof saved.anchorDx === "number" || typeof saved.anchorDy === "number";
     } else {
       card.style.width = "";
       card.style.height = "";
       anchorOffset = { x: 0, y: 6 };
+      hasUserOffset = false;
     }
     card.classList.add("sv-note-card-show");
     // The card is now visible for this anchor — suppress its chips (D2). show()'s
@@ -733,7 +836,7 @@ function wireNoteCard(doc: Document): void {
     }
   };
   const dismiss = () => {
-    pinned = false;
+    setPinnedState(false);
     currentTarget = null;
     card.classList.remove("sv-note-card-show");
     setCardOpenAttr("");
@@ -756,7 +859,7 @@ function wireNoteCard(doc: Document): void {
       if (marginActive()) return; // margin mode has no floating pinned card
       const target = doc.querySelector(`[data-sv-key="${key.replace(/"/g, '\\"')}"]`);
       if (!target || !target.isConnected) return;
-      pinned = true;
+      setPinnedState(true);
       show(target);
     }
   });
@@ -814,12 +917,12 @@ function wireNoteCard(doc: Document): void {
         // Un-pin: collapse the card AND clear the persisted open-state (D10) so it
         // does NOT reopen on the next reload / source-reopen.
         setCardOpenState(doc, currentKey, false);
-        pinned = false;
+        setPinnedState(false);
         currentTarget = null;
         card.classList.remove("sv-note-card-show");
         setCardOpenAttr("");
       } else {
-        pinned = true;
+        setPinnedState(true);
         show(target);
         // Pin: remember this card as open at its (anchor-relative) geometry so it
         // reopens here after a reload / source-reopen (D10 open-state persist).
@@ -834,9 +937,64 @@ function wireNoteCard(doc: Document): void {
     }
   });
 
-  // No drag bar (content-only card). A mousedown on the card is a resize gesture
-  // (CSS `resize: both`); remember the resulting size for the active key.
-  card.addEventListener("mousedown", () => {
+  card.addEventListener("dblclick", (event) => {
+    const preview = closestMatch(event.target, ".sv-annotation-preview[data-note-id]");
+    const noteId = preview?.getAttribute("data-note-id");
+    if (!noteId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const EventCtor = doc.defaultView?.CustomEvent ?? CustomEvent;
+    doc.dispatchEvent(
+      new EventCtor("sv:note-card-action", {
+        bubbles: true,
+        detail: { action: "edit", noteId, anchorId: currentKey }
+      })
+    );
+  });
+
+  card.addEventListener("mousedown", (event) => {
+    const handle = closestMatch(event.target, ".sv-annotation-preview-head");
+    if (handle && card.classList.contains("sv-note-card-show")) {
+      event.preventDefault();
+      event.stopPropagation();
+      setPinnedState(true);
+      if (currentKey) setCardOpenState(doc, currentKey, true);
+      dragging = true;
+      resizing = false;
+      const start = {
+        x: event.clientX,
+        y: event.clientY,
+        left: card.getBoundingClientRect().left,
+        top: card.getBoundingClientRect().top
+      };
+      card.classList.add("sv-note-card-dragging");
+      const onMove = (move: MouseEvent) => {
+        if (!dragging) return;
+        const rect = card.getBoundingClientRect();
+        const view = doc.defaultView;
+        const maxLeft = view ? Math.max(8, view.innerWidth - rect.width - 8) : Number.POSITIVE_INFINITY;
+        const maxTop = view ? Math.max(8, view.innerHeight - rect.height - 8) : Number.POSITIVE_INFINITY;
+        const nextLeft = Math.min(Math.max(8, start.left + move.clientX - start.x), maxLeft);
+        const nextTop = Math.min(Math.max(8, start.top + move.clientY - start.y), maxTop);
+        card.style.left = `${nextLeft}px`;
+        card.style.top = `${nextTop}px`;
+        const targetRect = currentTarget?.getBoundingClientRect();
+        if (targetRect) {
+          anchorOffset = { x: nextLeft - targetRect.left, y: nextTop - targetRect.bottom };
+          hasUserOffset = true;
+        }
+      };
+      const onUp = () => {
+        dragging = false;
+        card.classList.remove("sv-note-card-dragging");
+        persistGeom();
+        doc.removeEventListener("mousemove", onMove);
+        doc.removeEventListener("mouseup", onUp);
+      };
+      doc.addEventListener("mousemove", onMove);
+      doc.addEventListener("mouseup", onUp);
+      return;
+    }
     resizing = true;
     const onUp = () => {
       resizing = false;
