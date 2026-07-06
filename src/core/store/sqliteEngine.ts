@@ -1,6 +1,18 @@
 import Database from "better-sqlite3";
 import type { z } from "zod";
-import { CLOSE, DUMP, LOAD, type StoreConfig, type StoreEngine } from "./engine";
+import {
+  CLOSE,
+  DUMP,
+  FTS_QUOTE_READER,
+  FTS_REFRESH_FOR_ANCHOR,
+  FTS_SEARCH,
+  FTS_SET_NOTE_REFRESHER,
+  FTS_SET_QUOTE_RESOLVER,
+  LOAD,
+  type FtsSpec,
+  type StoreConfig,
+  type StoreEngine
+} from "./engine";
 import { readJsonl, writeJsonlAtomic, type JsonlIssue, type JsonlReadResult } from "./jsonl";
 import type { StorageAdapter } from "../storage/adapter";
 import type { SnapshotRecord, SnapshotStore } from "./snapshotStore";
@@ -127,6 +139,23 @@ function bootstrap<T extends SnapshotRecord>(backend: Backend<T>): void {
       `CREATE INDEX IF NOT EXISTS ${quoteIdent(`${junction.table}_ref`)} ON ${jt} (${ref});`
     );
   }
+
+  // STORE-SQL Stage-5 — the FTS5 candidate-filter table (notes + sources). A contentless-style
+  // external table keyed by the record id: `id` is UNINDEXED (returned, not searched) and `doc`
+  // carries the whole FTS document. The `trigram` tokenizer does TRUE substring matching including
+  // CJK (the default unicode61 treats a CJK run as one token → mid-string CJK hits would be lost).
+  // The doc is JS-built at write time (the blob is opaque to SQL), so NO SQL triggers. The ANCHORS
+  // store sets `fts.isAnchor` purely to expose its quote reader + note fan-out — it has NO own FTS
+  // table (anchors surface through their notes), so it is skipped here.
+  if (config.fts && !config.fts.isAnchor) {
+    db.exec(
+      `CREATE VIRTUAL TABLE IF NOT EXISTS ${quoteIdent(`${table}_fts`)} USING fts5(
+  id UNINDEXED,
+  doc,
+  tokenize = 'trigram'
+);`
+    );
+  }
 }
 
 type Row = { json: string };
@@ -213,6 +242,79 @@ export const sqliteEngine: StoreEngine = <T extends SnapshotRecord>(
     )
   }));
 
+  // —— STORE-SQL Stage-5: FTS5 candidate-filter row maintenance ————————————————————————————
+  // The FTS row is kept in LOCKSTEP with the envelope row inside the SAME upsert transaction (below):
+  // a LIVE record has exactly one FTS row (id → doc); a tombstoned (deletedAt) or purged record has
+  // NONE (so a MATCH only ever returns live candidates and the tiered ranker never scores a deleted
+  // row). The doc is JS-built here (`buildFtsDoc`) because the blob is opaque to SQL — no triggers.
+  const fts = config.fts as FtsSpec<T> | undefined;
+  // A store OWNS an FTS table only when it has an fts config that is NOT the anchor quote-source
+  // (the anchors store's fts config exists solely for the quote reader + fan-out — no table).
+  const hasFtsTable = !!fts && !fts.isAnchor;
+  const ftsTable = hasFtsTable ? quoteIdent(`${table}_fts`) : "";
+  const ftsDeleteStmt = hasFtsTable ? db.prepare(`DELETE FROM ${ftsTable} WHERE id = ?`) : null;
+  const ftsInsertStmt = hasFtsTable ? db.prepare(`INSERT INTO ${ftsTable} (id, doc) VALUES (?, ?)`) : null;
+  // Live-only row read for the fan-out re-index (a tombstoned note gets no FTS row anyway).
+  const ftsGetJsonStmt = hasFtsTable ? db.prepare(`SELECT json FROM ${tbl} WHERE id = ? AND deletedAt IS NULL`) : null;
+  // (notes only) owner ids of every note whose note_anchors row references a given anchor — the
+  // write-amplification lookup that drives the anchor-quote fan-out.
+  const anchorJunction = junctions.find((j) => j.refColumn === "anchorId");
+  const notesForAnchorStmt =
+    hasFtsTable && anchorJunction
+      ? db.prepare(`SELECT ownerId FROM ${quoteIdent(anchorJunction.table)} WHERE anchorId = ?`)
+      : null;
+
+  // Injected by wireFtsAnchorNotes (createEntityStores) AFTER both stores exist:
+  //   • resolveQuote — the notes store reads an anchor's quote from the sibling anchors store's
+  //     connection SYNCHRONOUSLY (better-sqlite3 tx are sync → no await inside upsertTxn). Absent
+  //     before wiring / for a source store → quotes resolve to "" (note text + title still index).
+  //   • refreshNote — the anchors store fans out to re-extract a note's FTS doc (write-amplification).
+  let resolveQuote: ((anchorId: string) => string) | null = null;
+  let refreshNoteFts: ((noteId: string) => void) | null = null;
+
+  // Build a record's FTS document: the record-OWNED text (toSearchText + title | source title+text)
+  // PLUS its denormalized anchor QUOTES (notes only), newline-joined. Blank quotes are dropped.
+  function buildFtsDoc(record: T): string {
+    if (!hasFtsTable || !fts) return "";
+    const parts: string[] = [fts.document(record)];
+    const anchorIds = fts.anchorRefIds?.(record) ?? [];
+    for (const anchorId of anchorIds) {
+      const quote = resolveQuote ? resolveQuote(anchorId) : "";
+      if (quote) parts.push(quote);
+    }
+    return parts.filter((p) => p && p.length > 0).join("\n");
+  }
+
+  // Rewrite one record's FTS row (delete-then-insert; a LIVE record gets a row, a tombstoned one
+  // does NOT). Runs inside the caller's transaction. `record` is the fresh envelope row.
+  function writeFtsRow(record: T): void {
+    if (!hasFtsTable || !ftsDeleteStmt || !ftsInsertStmt) return;
+    ftsDeleteStmt.run(record.id);
+    if (!record.deletedAt) ftsInsertStmt.run(record.id, buildFtsDoc(record));
+  }
+
+  // Re-extract a single note's FTS doc from its CURRENT stored row (used by the anchor-quote fan-out).
+  // Reads the live blob, re-parses, rebuilds the doc with the now-current quote. Own transaction.
+  const refreshNoteFtsById = db.transaction((noteId: string) => {
+    if (!hasFtsTable || !ftsGetJsonStmt) return;
+    const row = ftsGetJsonStmt.get(noteId) as Row | undefined;
+    const record = parseOne<T>(row, schema);
+    if (record) writeFtsRow(record);
+  });
+
+  // FTS candidate MATCH: id of every LIVE record whose FTS doc matches. Belt-and-braces JOIN to the
+  // envelope with `deletedAt IS NULL` (the FTS row is dropped on tombstone anyway). The trigram
+  // tokenizer needs ≥3 chars; the search SERVICE gates on query shape (CJK ≥3) and never calls this
+  // for the query classes trigram can't reproduce (short / roman → pinyin+fuzzy scan fallback).
+  const ftsMatchStmt =
+    hasFtsTable
+      ? db.prepare(
+          `SELECT f.id AS id FROM ${ftsTable} f
+             JOIN ${tbl} e ON e.id = f.id
+            WHERE f.doc MATCH ? AND e.deletedAt IS NULL`
+        )
+      : null;
+
   // Explicit COLLATE BINARY = SQLite's default TEXT collation AND the (updatedAt, id) index's
   // collation, so ORDER BY stays index-covered. jsonl's default sort uses String.localeCompare
   // (ICU); the two AGREE for the charset entity ids actually use (lowercase prefix + "_" +
@@ -230,7 +332,29 @@ export const sqliteEngine: StoreEngine = <T extends SnapshotRecord>(
   // A soft-delete (record.deletedAt set) STILL rewrites the junctions from the record's arrays —
   // which for a normal soft-delete are unchanged, so the links SURVIVE the tombstone and a later
   // restore resurrects them. Only a real delete() purge (below) removes junction rows.
+  // Read the CURRENT anchor quote for an anchor record's id, so the fan-out only fires when the
+  // quote actually CHANGED (an anchor moves / re-anchors far more often than its quote text edits).
+  const anchorPrevQuoteStmt =
+    fts?.isAnchor ? db.prepare(`SELECT json FROM ${tbl} WHERE id = ?`) : null;
+
   const upsertTxn = db.transaction((record: T) => {
+    // (anchors only) capture the pre-upsert quote to decide whether note FTS docs must refresh.
+    let anchorQuoteChanged = false;
+    if (fts?.isAnchor && anchorPrevQuoteStmt && fts.anchorQuote) {
+      const prevRow = anchorPrevQuoteStmt.get(record.id) as Row | undefined;
+      const prev = parseOne<T>(prevRow, schema);
+      const prevQuote = prev && fts.anchorQuote ? fts.anchorQuote(prev) : undefined;
+      // `fts.anchorQuote(record)` is the RAW quote (present even on a trashed record), but the quote
+      // actually written into a note's FTS doc comes from the note-side reader, which returns "" for a
+      // TRASHED anchor. So a referencing note's doc depends on this anchor's LIVENESS, not just its
+      // quote TEXT — refresh on any liveness transition too. Else soft-delete → note re-save → restore
+      // (quote unchanged) leaves the note doc permanently blank of the quote: a silent search
+      // false-negative the scan would still find (S5 adversarial review).
+      const prevLive = !!prev && !prev.deletedAt;
+      const nowLive = !record.deletedAt;
+      anchorQuoteChanged = prevQuote !== fts.anchorQuote(record) || prevLive !== nowLive;
+    }
+
     const params: Record<string, unknown> = {
       id: record.id,
       updatedAt: record.updatedAt,
@@ -256,6 +380,16 @@ export const sqliteEngine: StoreEngine = <T extends SnapshotRecord>(
         ins.run(record.id, refId);
       }
     }
+
+    // Stage-5: keep THIS record's FTS row in lockstep (notes doc includes its anchor quotes;
+    // source doc = title + text). A tombstoned upsert removes the FTS row (writeFtsRow no-ops the
+    // insert when deletedAt is set), so a MATCH never returns a soft-deleted candidate.
+    writeFtsRow(record);
+
+    // The anchor-quote fan-out (write-amplification) is returned to the async `upsert` wrapper to
+    // run AFTER this transaction commits — it writes into the SIBLING notes `.db` (a separate
+    // connection/transaction), so it must not ride this store's transaction boundary.
+    return fts?.isAnchor && anchorQuoteChanged;
   });
 
   const store: SnapshotStore<T> = {
@@ -282,12 +416,18 @@ export const sqliteEngine: StoreEngine = <T extends SnapshotRecord>(
     },
 
     async upsert(record: T) {
-      upsertTxn(record);
+      const fanOut = upsertTxn(record);
+      // Stage-5 write-amplification: an anchor whose quote changed refreshes every referencing
+      // note's FTS doc (in the sibling notes `.db`, wired by wireFtsAnchorNotes). Post-commit so it
+      // never rides the anchors-store transaction boundary; a no-op until the vault wires it.
+      if (fanOut && refreshNoteFts) refreshNoteFts(record.id);
       return record;
     },
 
     async delete(id: string) {
-      // ON DELETE CASCADE drops this owner's junction rows in the same statement.
+      // ON DELETE CASCADE drops this owner's junction rows in the same statement. Drop the FTS row
+      // too (a purge leaves no candidate behind).
+      if (ftsDeleteStmt) ftsDeleteStmt.run(id);
       const info = deleteStmt.run(id);
       return info.changes > 0;
     }
@@ -325,6 +465,72 @@ export const sqliteEngine: StoreEngine = <T extends SnapshotRecord>(
     enumerable: false,
     configurable: true
   });
+
+  // —— STORE-SQL Stage-5 FTS hooks (installed only on FTS-backed stores) ————————————————————————
+  if (hasFtsTable && ftsMatchStmt) {
+    // FTS_SEARCH: the candidate pre-filter the search service calls (ftsSearchStore). The query is
+    // wrapped as a DOUBLE-QUOTED FTS5 phrase (inner `"` doubled) so arbitrary user input — hyphens,
+    // quotes, FTS operator words (AND/OR/NEAR) — is a safe LITERAL substring, never MATCH syntax.
+    Object.defineProperty(store, FTS_SEARCH, {
+      value: (query: string): string[] => {
+        const phrase = `"${query.replace(/"/g, '""')}"`;
+        try {
+          return (ftsMatchStmt.all(phrase) as { id: string }[]).map((row) => row.id);
+        } catch {
+          // A pathological query FTS5 still can't parse (e.g. a lone unbalanced token) → empty
+          // candidate set; the service caller treats an empty set exactly like "matched nothing".
+          return [];
+        }
+      },
+      enumerable: false,
+      configurable: true
+    });
+  }
+
+  // (notes only) FTS_REFRESH_FOR_ANCHOR: re-extract the FTS doc of every note referencing an anchor —
+  // the anchor-quote write-amplification fan-out target (wired to the anchors store by
+  // wireFtsAnchorNotes). Reads the note_anchors junction for owner note ids, refreshes each.
+  if (hasFtsTable && notesForAnchorStmt) {
+    Object.defineProperty(store, FTS_REFRESH_FOR_ANCHOR, {
+      value: (anchorId: string): void => {
+        const ownerRows = notesForAnchorStmt.all(anchorId) as { ownerId: string }[];
+        for (const { ownerId } of ownerRows) refreshNoteFtsById(ownerId);
+      },
+      enumerable: false,
+      configurable: true
+    });
+    // FTS_SET_QUOTE_RESOLVER: the anchors store's sync quote reader is injected here so buildFtsDoc
+    // can denormalize live quote text into a note's doc at write time.
+    Object.defineProperty(store, FTS_SET_QUOTE_RESOLVER, {
+      value: (fn: (anchorId: string) => string): void => {
+        resolveQuote = fn;
+      },
+      enumerable: false,
+      configurable: true
+    });
+  }
+
+  // (anchors only) FTS_QUOTE_READER: a SYNC read of an anchor's current quote from THIS store's
+  // connection (the notes store calls it inside its sync upsert transaction). FTS_SET_NOTE_REFRESHER
+  // receives the notes store's fan-out so an anchor-quote edit refreshes referencing note docs.
+  if (fts?.isAnchor && fts.anchorQuote) {
+    const quoteReaderStmt = db.prepare(`SELECT json FROM ${tbl} WHERE id = ? AND deletedAt IS NULL`);
+    Object.defineProperty(store, FTS_QUOTE_READER, {
+      value: (anchorId: string): string => {
+        const record = parseOne<T>(quoteReaderStmt.get(anchorId) as Row | undefined, schema);
+        return record && fts.anchorQuote ? fts.anchorQuote(record) : "";
+      },
+      enumerable: false,
+      configurable: true
+    });
+    Object.defineProperty(store, FTS_SET_NOTE_REFRESHER, {
+      value: (fn: (anchorId: string) => void): void => {
+        refreshNoteFts = fn;
+      },
+      enumerable: false,
+      configurable: true
+    });
+  }
 
   return store;
 };

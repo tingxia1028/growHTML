@@ -54,6 +54,72 @@ export const DUMP = Symbol.for("growhtml.sqliteEngine.dump");
 export const LOAD = Symbol.for("growhtml.sqliteEngine.load");
 
 /**
+ * A hidden FTS-MATCH hook on each sqlite-backed store (STORE-SQL Stage-5, §Stage-5). Runs a
+ * candidate PRE-FILTER against the store's `<table>_fts` virtual table and returns the ids of
+ * LIVE (non-tombstoned) records whose FTS document matches — the search service then LOADS + SCORES
+ * those with the tiered ranker in code. Returns `null` (NOT an empty array) when the store has no
+ * FTS table (jsonl engine, or a store without `fts` config) so the caller can fall back to a full
+ * scan; an empty array means "FTS ran and matched nothing". Kept off the public 8-method
+ * {@link SnapshotStore} contract via a symbol — same idiom as CLOSE/DUMP/LOAD.
+ *
+ * DECOUPLED from the native module for the same reason as CLOSE/DUMP/LOAD: the actual FTS `MATCH`
+ * query lives INSIDE the hook the sqlite engine installs, so this native-free module needs no
+ * better-sqlite3 import.
+ */
+export const FTS_SEARCH = Symbol.for("growhtml.sqliteEngine.ftsSearch");
+
+/**
+ * Run the FTS5 candidate pre-filter over a store, returning the ids of live records whose FTS
+ * document matches `query` — or `null` when the store is not FTS-backed (jsonl / no fts config),
+ * signalling the caller to fall back to the in-memory scan. See {@link FTS_SEARCH}.
+ *
+ * Lives here (not in `sqliteEngine.ts`) so importing it does NOT load better-sqlite3 — it is a pure
+ * symbol-dispatcher; the FTS query happens inside the hook the sqlite engine installs.
+ */
+export function ftsSearchStore(store: SnapshotStore<SnapshotRecord>, query: string): string[] | null {
+  const hook = (store as Record<symbol, unknown>)[FTS_SEARCH];
+  if (typeof hook !== "function") return null; // not FTS-backed → caller falls back to the scan
+  return (hook as (query: string) => string[])(query);
+}
+
+/**
+ * Cross-store FTS wiring hooks (STORE-SQL Stage-5). Anchor quotes are DENORMALIZED into each note's
+ * FTS document, but notes + anchors are SEPARATE sqlite `.db` connections — so the notes store needs
+ * a SYNCHRONOUS quote reader from the anchors store (better-sqlite3 transactions are sync, no await
+ * inside them), and the anchors store needs a fan-out callback to refresh the notes referencing an
+ * edited anchor. {@link wireFtsAnchorNotes} installs both after the stores are built. On non-sqlite
+ * (jsonl) stores the hooks are absent → wiring is a safe no-op (jsonl has no FTS to keep in sync).
+ */
+export const FTS_QUOTE_READER = Symbol.for("growhtml.sqliteEngine.ftsQuoteReader");
+export const FTS_SET_QUOTE_RESOLVER = Symbol.for("growhtml.sqliteEngine.ftsSetQuoteResolver");
+export const FTS_REFRESH_FOR_ANCHOR = Symbol.for("growhtml.sqliteEngine.ftsRefreshForAnchor");
+export const FTS_SET_NOTE_REFRESHER = Symbol.for("growhtml.sqliteEngine.ftsSetNoteRefresher");
+
+/**
+ * Wire the anchor-quote denormalization between an FTS-backed notes store and its anchors store
+ * (STORE-SQL Stage-5). Idempotent + engine-agnostic: if either store lacks the hooks (jsonl, or a
+ * store without `fts`), the missing side is skipped. Called once per vault after `createEntityStores`.
+ *   • notes ← anchors: the notes store's FTS doc-builder resolves each anchorId → its quote via the
+ *     anchors store's SYNC reader.
+ *   • anchors → notes: an anchor upsert fans out to refresh the FTS doc of every note referencing it.
+ */
+export function wireFtsAnchorNotes(
+  notesStore: SnapshotStore<SnapshotRecord>,
+  anchorsStore: SnapshotStore<SnapshotRecord>
+): void {
+  const quoteReader = (anchorsStore as Record<symbol, unknown>)[FTS_QUOTE_READER];
+  const setQuoteResolver = (notesStore as Record<symbol, unknown>)[FTS_SET_QUOTE_RESOLVER];
+  if (typeof quoteReader === "function" && typeof setQuoteResolver === "function") {
+    (setQuoteResolver as (fn: (anchorId: string) => string) => void)(quoteReader as (anchorId: string) => string);
+  }
+  const refreshForAnchor = (notesStore as Record<symbol, unknown>)[FTS_REFRESH_FOR_ANCHOR];
+  const setNoteRefresher = (anchorsStore as Record<symbol, unknown>)[FTS_SET_NOTE_REFRESHER];
+  if (typeof refreshForAnchor === "function" && typeof setNoteRefresher === "function") {
+    (setNoteRefresher as (fn: (anchorId: string) => void) => void)(refreshForAnchor as (anchorId: string) => void);
+  }
+}
+
+/**
  * Close a sqlite-backed store's DB connection if it has one (no-op for other engines).
  *
  * Lives here (not in `sqliteEngine.ts`) so importing it does NOT load better-sqlite3 — it
@@ -155,6 +221,11 @@ export type StoreConfig<T extends SnapshotRecord> = {
    * restore resurrects the links; only a real `delete()` purge removes them.
    */
   junctions?: readonly JunctionSpec<T>[];
+  /**
+   * FTS5 full-text-search config (STORE-SQL Stage-5, notes + sources only). Ignored by the
+   * jsonl engine; only the sqlite engine builds the `<table>_fts` virtual table. See {@link FtsSpec}.
+   */
+  fts?: FtsSpec<T>;
 };
 
 /** A DERIVED index column: extract the value for the row from the full record. */
@@ -178,4 +249,40 @@ export type JunctionSpec<T extends SnapshotRecord> = {
   refColumn: string;
   /** Pull the array of referenced ids from the record (e.g. note.anchorIds). */
   refIds: (record: T) => readonly string[] | undefined;
+};
+
+/**
+ * STORE-SQL Stage-5 — the per-entity FTS5 config (docs/implementation/sqlite-migration-build-spec.md
+ * §Stage-5). Declares how a record reduces to its full-text-search DOCUMENT. The sqlite engine
+ * keeps ONE `<table>_fts` FTS5 virtual table in lockstep with the envelope row INSIDE the
+ * engine-owned upsert transaction (insert/update on upsert, delete on purge) — the blob is opaque
+ * to SQL so the document is computed HERE in JS at write time, never via SQL triggers.
+ *
+ * The FTS table is a candidate PRE-FILTER only ("ranking math stays in code", Anki precedent): a
+ * `MATCH` returns candidate ids that the search service then LOADS + scores with the tiered ranker.
+ * It uses the `trigram` tokenizer (true substring matching, incl. CJK — the default unicode61
+ * tokenizer treats a CJK run as ONE token and would drop mid-string CJK hits).
+ */
+export type FtsSpec<T extends SnapshotRecord> = {
+  /**
+   * The record-OWNED half of the FTS document (e.g. a note's toSearchText + title, a source's
+   * title + searchable text). Anchor quotes are appended SEPARATELY by the engine via
+   * {@link anchorRefIds} + a quote resolver, so they can be refreshed when an anchor edits.
+   */
+  document: (record: T) => string;
+  /**
+   * (notes only) The anchor ids whose QUOTE text is denormalized into this record's FTS document.
+   * The engine resolves each id → quote via the sibling anchors store at write time. When an
+   * anchor's quote changes, every record referencing it has its FTS document refreshed
+   * (write-amplification — accepted; the quote is denormalized into the note row).
+   */
+  anchorRefIds?: (record: T) => readonly string[] | undefined;
+  /**
+   * Marks THIS store as the anchors store: its upsert must fan out to refresh the FTS documents
+   * of every note referencing the anchor (via the note_anchors junction). Set on the anchors
+   * store only. The engine reads {@link anchorQuote} to get the fresh quote text.
+   */
+  isAnchor?: boolean;
+  /** (anchors only) The quote text of an anchor record — what gets denormalized into note docs. */
+  anchorQuote?: (record: T) => string;
 };

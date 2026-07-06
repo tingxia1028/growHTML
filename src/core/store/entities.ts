@@ -25,12 +25,13 @@ import {
   type StudyLayerRecord,
   type TriggerRecord
 } from "../schema";
+import { getNoteContentSpec } from "../notes/contentTypes";
 import type { StorageAdapter } from "../storage/adapter";
 import { nodeStorage } from "../storage/nodeStorage";
-import type { StoreConfig, StoreEngine } from "./engine";
+import { wireFtsAnchorNotes, type StoreConfig, type StoreEngine } from "./engine";
 import { jsonlEngine } from "./jsonlEngine";
 import { sqliteEngine } from "./sqliteEngine";
-import { createSnapshotStore, type SnapshotStore } from "./snapshotStore";
+import { createSnapshotStore, type SnapshotRecord, type SnapshotStore } from "./snapshotStore";
 
 /**
  * STORE-SQL Stage-3 (docs/implementation/sqlite-migration-build-spec.md §Stage-3) — the DEFAULT
@@ -92,10 +93,26 @@ export type EntityStores = {
  * place the 12 entities' shapes are known.
  */
 
+// A note's registered searchable text (STORE-SQL Stage-5 FTS doc source) — the SAME extraction
+// server/services/search.ts uses, degrading to "" when a spec change throws on an old blob so one
+// bad record never poisons the whole FTS document. The note's display title is the first line of
+// this text (notes have no separate title field), so it is already included.
+function noteFtsText(note: NoteRecord): string {
+  const contentType = note.contentType ?? "markdown";
+  const spec = getNoteContentSpec(contentType);
+  if (!spec) return "";
+  try {
+    return spec.toSearchText(note.content);
+  } catch {
+    return "";
+  }
+}
+
 // notes: sourceId/contentType extracted columns + the three many-to-many junctions
 // (note_anchors/note_concepts/note_layers). status is NOT a column (N2); the legacy singular
-// note.layerId rides the json blob losslessly (N2).
-const notesSqlConfig: Pick<StoreConfig<NoteRecord>, "table" | "columns" | "junctions"> = {
+// note.layerId rides the json blob losslessly (N2). FTS doc = toSearchText + denormalized anchor
+// QUOTES (resolved from the anchors store at write time; refreshed on anchor-quote edit).
+const notesSqlConfig: Pick<StoreConfig<NoteRecord>, "table" | "columns" | "junctions" | "fts"> = {
   table: "notes",
   columns: [
     { name: "sourceId", value: (note) => note.sourceId ?? null },
@@ -105,13 +122,35 @@ const notesSqlConfig: Pick<StoreConfig<NoteRecord>, "table" | "columns" | "junct
     { table: "note_anchors", refColumn: "anchorId", refIds: (note) => note.anchorIds },
     { table: "note_concepts", refColumn: "conceptId", refIds: (note) => note.conceptIds },
     { table: "note_layers", refColumn: "layerId", refIds: (note) => note.layerIds }
-  ]
+  ],
+  fts: {
+    document: noteFtsText,
+    anchorRefIds: (note) => note.anchorIds
+  }
 };
 
-// anchors: discriminatedUnion → sourceId is the only shared, always-present index column (N1).
-const anchorsSqlConfig: Pick<StoreConfig<AnchorRecord>, "table" | "columns"> = {
+// anchors: discriminatedUnion → sourceId is the only shared, always-present index column (N1). The
+// anchor store is the FTS QUOTE source: `anchorQuote` feeds each referencing note's FTS doc, and an
+// anchor upsert whose quote changed fans out to refresh those notes (write-amplification).
+const anchorsSqlConfig: Pick<StoreConfig<AnchorRecord>, "table" | "columns" | "fts"> = {
   table: "anchors",
-  columns: [{ name: "sourceId", value: (anchor) => anchor.sourceId }]
+  columns: [{ name: "sourceId", value: (anchor) => anchor.sourceId }],
+  fts: {
+    // Anchors have no OWN FTS table (they surface through their notes) — this fts config exists
+    // only to expose the quote reader + note-refresh fan-out. `document` is unused (never built).
+    document: () => "",
+    isAnchor: true,
+    anchorQuote: (anchor) => anchor.quote
+  }
+};
+
+// sources: FTS doc = title + sourceType (the sourceType keyword hit, e.g. searching "pdf", is a
+// today's-scan behavior — search.ts matches source.sourceType). No anchor quotes on a source.
+const sourcesSqlConfig: Pick<StoreConfig<SourceRecord>, "table" | "fts"> = {
+  table: "sources",
+  fts: {
+    document: (source) => [source.title, source.sourceType].filter(Boolean).join("\n")
+  }
 };
 
 // memoryEvents: verb/sessionId extracted; createdAt indexed for range/prune reads later.
@@ -130,8 +169,8 @@ export function createEntityStores(
   engine: StoreEngine = resolveDefaultEngine()
 ): EntityStores {
   const filePath = (file: string) => path.join(studyDir, file);
-  return {
-    sources: createSnapshotStore({ filePath: filePath(entityFileNames.sources), schema: sourceSchema, storage, table: "sources", engine }),
+  const stores: EntityStores = {
+    sources: createSnapshotStore({ filePath: filePath(entityFileNames.sources), schema: sourceSchema, storage, engine, ...sourcesSqlConfig }),
     anchors: createSnapshotStore({ filePath: filePath(entityFileNames.anchors), schema: anchorSchema, storage, engine, ...anchorsSqlConfig }),
     notes: createSnapshotStore({ filePath: filePath(entityFileNames.notes), schema: noteSchema, storage, engine, ...notesSqlConfig }),
     patches: createSnapshotStore({ filePath: filePath(entityFileNames.patches), schema: patchSchema, storage, table: "patches", engine }),
@@ -144,5 +183,13 @@ export function createEntityStores(
     chatSessions: createSnapshotStore({ filePath: filePath(entityFileNames.chatSessions), schema: chatSessionSchema, storage, table: "chatSessions", engine }),
     memoryEvents: createSnapshotStore({ filePath: filePath(entityFileNames.memoryEvents), schema: memoryEventSchema, storage, engine, ...memoryEventsSqlConfig })
   };
+  // STORE-SQL Stage-5: wire the anchor-quote denormalization between the notes + anchors stores
+  // (notes ← anchors' sync quote reader for FTS-doc build; anchors → notes fan-out on quote edit).
+  // A no-op on the jsonl engine (no FTS hooks installed), so the reversibility fallback is unaffected.
+  wireFtsAnchorNotes(
+    stores.notes as SnapshotStore<SnapshotRecord>,
+    stores.anchors as SnapshotStore<SnapshotRecord>
+  );
+  return stores;
 }
 

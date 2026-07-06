@@ -14,8 +14,10 @@
 // map slot in later without any API change (design §2's honest perf gate).
 
 import { getNoteContentSpec } from "../../core/notes/contentTypes";
-import { matchPinyin } from "../../core/search/pinyin";
+import { hasCjk, matchPinyin } from "../../core/search/pinyin";
 import { matchFields, matchText, rankMatches, snippetAround, type TextMatch } from "../../core/search/rank";
+import { ftsSearchStore } from "../../core/store/engine";
+import type { SnapshotRecord, SnapshotStore } from "../../core/store/snapshotStore";
 import { listSources } from "../../core/store/sources";
 import type { StudyVault } from "../../core/vault";
 import type { SealedRuntime } from "../svpack";
@@ -142,6 +144,38 @@ function firstLine(text: string): string {
   return collapsed.length > TITLE_MAX ? `${collapsed.slice(0, TITLE_MAX)}…` : collapsed;
 }
 
+/** Minimum query length the FTS5 `trigram` tokenizer can match (a 1-2 char query returns nothing). */
+const FTS_MIN_QUERY = 3;
+
+/**
+ * STORE-SQL Stage-5 — is this query a candidate for the FTS5 pre-filter, or must it fall back to
+ * the full in-memory scan? The FTS trigram table does true SUBSTRING matching, but ONLY reproduces
+ * a SUPERSET of today's scan for LITERAL, CJK-bearing queries of ≥ 3 chars:
+ *   • < 3 chars — below the trigram floor (a 2-char CJK query like "浮力" would match nothing) → SCAN.
+ *   • roman / Latin queries — the pinyin romanization tier (`fuli`→浮力, `fl`→浮力 initials) and the
+ *     fuzzy typo tier are BOTH Latin-query-only and match text that is NOT a literal substring, so
+ *     FTS can't reproduce them → SCAN (decision (b): bypass FTS for romanized queries, so pinyin/CJK
+ *     recall is provably preserved — NO pinyin denormalization needed at write time).
+ *   • CJK-bearing, ≥ 3 chars — the ONLY matcher is literal substring (pinyin needs a pure-ASCII
+ *     query, fuzzy rejects CJK), which the trigram phrase reproduces EXACTLY → FTS pre-filter.
+ * Every FTS candidate still runs the identical field-level `matchFields`/`matchText` + ranker below,
+ * so an FTS false-positive is dropped and the result set + order match the scan byte-for-byte.
+ */
+function canUseFts(query: string): boolean {
+  return query.length >= FTS_MIN_QUERY && hasCjk(query);
+}
+
+/**
+ * The candidate id allow-list for a family, or `null` to scan every record. FTS-eligible queries
+ * ask the store's `<table>_fts` MATCH (a Set of live ids); a non-FTS query, a jsonl store, or a
+ * store without an FTS table (ftsSearchStore returns null) → `null` = full scan (unchanged path).
+ */
+function ftsCandidates(store: SnapshotStore<SnapshotRecord>, query: string): Set<string> | null {
+  if (!canUseFts(query)) return null;
+  const ids = ftsSearchStore(store, query);
+  return ids ? new Set(ids) : null;
+}
+
 // A note's searchable text via its registered spec. Stored content was validated at
 // write time, but a spec change could still throw on old data — degrade to "" so one
 // bad record never breaks the whole scan.
@@ -173,12 +207,21 @@ export async function searchVault({ vault, sealed }: SearchDeps, input: SearchIn
   const sourceTitleById = new Map(sources.map((source) => [source.id, source.title]));
   const quoteByAnchorId = new Map(anchors.map((anchor) => [anchor.id, anchor.quote]));
 
+  // STORE-SQL Stage-5: FTS5 candidate PRE-FILTER (null ⇒ scan every record — the unchanged path).
+  // For FTS-eligible queries, the note candidate set already accounts for anchor-quote hits (quotes
+  // are denormalized into the note FTS doc) so a quote-only note stays in the set. The tiered ranker
+  // below (matchFields/matchText + pinyin) still SCORES + orders every candidate — "ranking math
+  // stays in code"; FTS only narrows WHICH records the ranker sees.
+  const noteCandidates = ftsCandidates(vault.stores.notes as SnapshotStore<SnapshotRecord>, query);
+  const sourceCandidates = ftsCandidates(vault.stores.sources as SnapshotStore<SnapshotRecord>, query);
+
   const hits: SearchHit[] = [];
 
   // —— notes ——
   if (familyIncluded(filters, "note")) {
     const noteMatches: { item: NoteSearchHit; rank: number; updatedAt: string }[] = [];
     for (const note of notes) {
+      if (noteCandidates && !noteCandidates.has(note.id)) continue; // FTS pre-filter
       const contentType = note.contentType ?? "markdown";
       // Filter narrowing (cheap gates first — skip the toSearchText cost when excluded).
       if (!inList(filters?.contentType, contentType)) continue;
@@ -217,6 +260,7 @@ export async function searchVault({ vault, sealed }: SearchDeps, input: SearchIn
   if (familyIncluded(filters, "source")) {
     const sourceMatches: { item: SourceSearchHit; rank: number; updatedAt: string }[] = [];
     for (const source of sources) {
+      if (sourceCandidates && !sourceCandidates.has(source.id)) continue; // FTS pre-filter
       if (!inList(filters?.sourceType, source.sourceType)) continue;
       if (filters?.sourceId && source.id !== filters.sourceId) continue;
       if (!withinDateRange(source.updatedAt, filters)) continue;

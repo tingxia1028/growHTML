@@ -222,6 +222,24 @@ Invariant mapping (must match `snapshotStore.ts` EXACTLY):
   queryable + junctions built) + idempotency (run twice = no-op) + full suite + all e2e.
 
 **Stage S5 — FTS (completes single-machine perf; desktop track). Smaller than it looks — the extractor exists.**
+- **✅ LANDED (2026-07-06).** FTS5 **trigram** virtual tables (`notes_fts`/`sources_fts`) — trigram is load-bearing
+  (unicode61 treats a CJK run as ONE token → mid-string CJK queries miss; trigram does true substring incl. CJK).
+  The FTS doc is **JS-built at write time inside the engine-owned upsert tx** (never SQL triggers — blob is
+  opaque): notes = `toSearchText(content)` + denormalized anchor quotes; sources = title + sourceType. Kept in
+  lockstep (upsert→row, soft-delete/purge→dropped, restore→re-created). **Anchor-quote write-amplification**:
+  wired via native-free symbol dispatchers in `engine.ts` — on an anchor change the engine re-indexes
+  referencing notes' FTS docs, firing on quote-text change **OR any liveness transition** (the S5 review-BLOCKING
+  fix: the note doc's quote comes from a liveness-filtered reader, so trashed↔restored must refresh too, else a
+  soft-delete→note-resave→restore sequence silently blanks the note from search). **Pinyin recall preserved via
+  decision (b)**: `canUseFts = len≥3 && hasCjk` — only CJK-bearing ≥3 queries route through FTS (literal
+  substring is their only matcher → trigram reproduces exactly); all roman/pinyin/fuzzy/<3-char queries fall
+  back to the unchanged scan (pinyin/fuzzy are Latin-only + non-substring → any CJK in the query disables them,
+  making `hasCjk` a provable superset gate). FTS is a candidate PRE-FILTER only; the existing tiered ranker +
+  pinyin tier still SCORE ("ranking math stays in code"). Adversarial review: probe-verified the superset for 13
+  mixed-script classes + full field coverage + injection-safe phrase escaping + complete lockstep; found + fixed
+  1 BLOCKING recall false-negative (the liveness transition above), now guarded by a dedicated test. Differential
+  parity oracle (sqlite-FTS `toEqual` jsonl-scan across query classes, both transports). tsc 0 · full vitest
+  277f/2814t · build ✓.
 - The per-`contentType` searchable-text extractor ALREADY EXISTS: `NoteContentSpec.toSearchText(content)`
   (`core/notes/contentTypes.ts:17`, a registry contract; every note type implements it), used today by
   `server/services/search.ts:148-190`. S5 does NOT build one.
