@@ -180,10 +180,17 @@ openPanes/focusedPaneId → the pane model owns it, NOT the source list. `active
 All downstream take it READ-ONLY (useChatSessionDomain({activeSourceId}) :111). Directly unblocks multidoc:
 readerDomain as a keyed query → N panes each pull their own bundle; no single-active weld.
 
-### 2.5 Violations to fix (enforceable, Part-2 tail)
-Components calling `entityClient` inline (ConceptInspector.tsx, svpackViews.tsx, operationViews.tsx…) → rule:
-components read ctx/domain; only domains + `*Io.ts` call entityClient (Part-5 guard:
-`src/client/**/!(*Io|domains).tsx` ⊄ entityClient). LARGE cleanup → tail, not a blocker.
+### 2.5 Violations to fix (enforceable, Part-2 tail) — ✅ DONE + ENFORCED (Slices 8a-8e, 2026-07-06)
+Components calling `entityClient` inline → rule: components read ctx/domain; only domains + `*Io.ts` call
+entityClient. **Landed:** the "LARGE" framing was inflated — a TS-resolver re-scan found the real violation set
+was **~15 files (NOT 68 — 38 importers were `import type`-only)**. Relocated behind leaf facades in 5 sub-slices:
+8a concept (conceptIo), 8b layers (layerIo), 8c operations+svpack (operationIo/svpackIo), 8d triggers+assets+anchor
+(triggerIo/assetUrl/mediaIo/anchorIo), 8e residual (graphIo/kitIo/pluginCatalogIo/shellIo + reuse of settingsIo/
+onboardingIo). **Enforced by §5.2's `check-mobile-imports.ts` Rule C** — `checkDirectImport` (a DIRECT-import
+check, type-only edges excluded via `runtimeEdges`, exempt = `/Io\.ts$/` + `/use\w+Domain\.ts$/` + data/platform/
+WorkspaceContext/memory-capture), enforcing in `npm run check`: **179 client entries, 0 direct entityClient
+imports**. Liveness-proven (multi-line fluent + barrel-smuggle both caught). The guard IS the drift-proof detector
+that made the count honest (the earlier plan under-counted the fluent-style `entityClient\n.method(` calls).
 
 ## PART 3 — directTransport route coverage (B4: 4 routes added)
 **✅ LANDED (2026-07-06).** Added 28 routes to `directTransport.ts` (concepts/relations/operations/operation-prefs/

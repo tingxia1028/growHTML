@@ -14,9 +14,11 @@
 //                      through `catalogSource("local")` — the read-only CatalogSource
 //                      contract — never by importing the catalog registry directly.
 //
-// Data seams: install state (installedKits + disabledGroups) reads/writes through
-// entityClient's catalog seam (`putPluginCatalog` → PUT /api/plugin-prefs/catalog) +
-// the module-scope install-state store; viewer pins keep the P2 panel seam
+// Data seams: install state (installedKits + disabledGroups) reads/writes through the
+// sanctioned pluginCatalogIo seam (`pluginPrefs` mount refresh + `putPluginCatalog` →
+// PUT /api/plugin-prefs/catalog) + the module-scope install-state store (both entityClient
+// methods run syncInstallStateFrom, so the store stays in sync through the facade); viewer
+// pins keep the P2 panel seam
 // (ctx.pinViewer). Rendering is NEVER touched by install state: disabling a group or
 // uninstalling a kit hides CREATE affordances only — getNoteType() stays registered.
 
@@ -49,7 +51,7 @@ import {
   type CatalogState,
   type UserKitDef
 } from "../../kits/installState";
-import { entityClient } from "../data/entityClient";
+import { pluginCatalogIo } from "./pluginCatalogIo";
 import "./kitManager.css";
 
 const kitManagerMessages = defineMessages({
@@ -157,7 +159,7 @@ function KitManagerView({ ctx }: { ctx: WorkspaceContext }) {
   // write-back by then). Best-effort: on failure the store default keeps behaving.
   useEffect(() => {
     let live = true;
-    entityClient
+    pluginCatalogIo
       .pluginPrefs()
       .then(() => {
         if (live) setSnapshot(installStateSnapshot());
@@ -173,7 +175,7 @@ function KitManagerView({ ctx }: { ctx: WorkspaceContext }) {
   // (the response refreshed it) so this view re-renders on truth.
   const persist = (next: CatalogState, userKits?: readonly UserKitDef[]) => {
     setMarketError("");
-    entityClient
+    pluginCatalogIo
       .putPluginCatalog(userKits ? { catalogState: next, userKits: [...userKits] } : { catalogState: next })
       .then(() => setSnapshot(installStateSnapshot()))
       .catch((err) => setMarketError(err instanceof Error ? err.message : t(kitManagerMessages.saveInstallFailed)));

@@ -25,13 +25,12 @@ import { videoEmbedSrc, type VideoProvider } from "../../core/notes/parseVideoUr
 import { DiagramNote } from "../DiagramNote";
 import { assetUrl } from "../data/assetUrl";
 import { mediaIo } from "./mediaIo";
-// NOTE (§2.5 slice 8d): assetUrl + importAsset are now routed through the sanctioned
-// data/assetUrl + mediaIo seams above. builtinNoteTypes retains ONE remaining runtime
-// entityClient edge — `putPluginCatalog` (the note-install hint's catalog write) — which
-// is part of the plugin-catalog IO cluster (shared with workspace/pluginManagerViews.tsx),
-// NOT the asset/media scope of 8d. It is intentionally left here for that cluster's own
-// relocation; the Rule C guard lands green-last in 8e.
-import { entityClient } from "../data/entityClient";
+// NOTE (§2.5 slice 8d/8e): assetUrl + importAsset are routed through the sanctioned
+// data/assetUrl + mediaIo seams above; the note-install hint's catalog write
+// (`putPluginCatalog`) now flows through the shared pluginCatalogIo seam (the same cluster
+// workspace/pluginManagerViews.tsx uses). builtinNoteTypes imports no entityClient at
+// runtime — the Rule C guard is enforcing as of 8e.
+import { pluginCatalogIo } from "../workspace/pluginCatalogIo";
 import { getPlatformOptional } from "../platform/platformSingleton";
 import {
   registerNoteType,
@@ -1028,7 +1027,7 @@ function InstallToView({ contentType, providerName }: { contentType: string; pro
     const next = owner ? withKitInstalled(catalogState, owner.kitId) : withPluginInstalled(catalogState, provider.id);
     setBusy(true);
     setError(false);
-    void entityClient
+    void pluginCatalogIo
       .putPluginCatalog({ catalogState: next })
       .catch(() => setError(true))
       .finally(() => setBusy(false));

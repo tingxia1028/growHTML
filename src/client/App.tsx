@@ -7,7 +7,7 @@
 // zero edits to this file. See docs/design/workspace-runtime.md.
 
 import { useEffect, type ReactNode } from "react";
-import { entityClient } from "./data/entityClient";
+import { getSettingsIo } from "./settings/settingsIo";
 import { FocusProvider } from "./focus/FocusContext";
 import { LocaleProvider, setLocale } from "./i18n";
 import { PlatformProvider, getPlatform } from "./platform";
@@ -18,8 +18,8 @@ import { getLayoutPreset } from "./workspace/presets";
 function LocaleBootstrap({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
-    void entityClient
-      .uiPrefs()
+    void getSettingsIo()
+      .fetchUiPrefs()
       .then(({ prefs }) => {
         if (!cancelled) setLocale(prefs.locale);
       })

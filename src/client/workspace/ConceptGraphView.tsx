@@ -15,11 +15,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  entityClient,
+  graphIo,
   type ConceptGraphEdge,
   type ConceptGraphNode,
   type ConceptGraphResponse
-} from "../data/entityClient";
+} from "./graphIo";
 import { capConceptGraph, GRAPH_RENDER_CAP } from "../../core/graph/conceptGraph";
 import { normalizeConceptName } from "./conceptName";
 import { runForceLayout } from "./forceLayout";
@@ -57,7 +57,7 @@ export default function ConceptGraphView({ ctx }: { ctx: WorkspaceContext }) {
   useEffect(() => {
     let cancelled = false;
     setError("");
-    entityClient
+    graphIo
       .graph()
       .then((response) => {
         if (!cancelled) setData(response);

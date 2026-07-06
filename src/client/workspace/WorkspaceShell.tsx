@@ -83,7 +83,8 @@ import "../settings/SettingsHub";
 //   ../onboarding/OnboardingPanel → onboarding.checklist (SHELL-2 — center slot on first run)
 import "../onboarding/OnboardingPanel";
 import "./ShortcutHelp";
-import { entityClient } from "../data/entityClient";
+import { shellIo } from "./shellIo";
+import { getOnboardingIo } from "../onboarding/onboardingIo";
 import { shouldAutoOpenOnboarding } from "../onboarding/steps";
 import { registerShellNavigator } from "./shellNav";
 import { TopBar } from "./TopBar";
@@ -260,9 +261,9 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
     let cancelled = false;
     void (async () => {
       try {
-        const [{ sources }, { onboarding }] = await Promise.all([
-          entityClient.sources(),
-          entityClient.onboardingState()
+        const [{ sources }, onboarding] = await Promise.all([
+          shellIo.sources(),
+          getOnboardingIo().fetchState()
         ]);
         if (!cancelled && shouldAutoOpenOnboarding({ sourceCount: sources.length, onboarding })) {
           setOnboardingOpen(true);

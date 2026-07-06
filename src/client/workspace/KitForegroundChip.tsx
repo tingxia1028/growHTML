@@ -23,7 +23,7 @@ import {
   foregroundForSource,
   type ForegroundSourceLike
 } from "../../kits/activation";
-import { entityClient } from "../data/entityClient";
+import { kitIo } from "./kitIo";
 
 export type KitForegroundChipProps = {
   /** The active source (title/sourceType/metadata) — null renders nothing. */
@@ -135,7 +135,7 @@ export function KitForegroundChipHost({
       onPin={(kitId) => void ctx.setActiveKit(kitId)}
       onClearPin={() => {
         if (!activeSource) return;
-        void entityClient
+        void kitIo
           .updateSourceMetadata(activeSource.id, { activeKitIds: null })
           .then(() => ctx.loadSources())
           // A failed clear leaves the pin in place; the next open re-reads the truth.
