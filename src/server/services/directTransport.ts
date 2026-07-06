@@ -47,12 +47,29 @@
 //             POST /api/review/grade                  · apply one grade outcome (skip never writes)
 //   graph     GET  /api/graph                         · CG-1 derived concept graph
 //                                                       (?conceptId&depth neighborhood, ?sourceId scope)
-// Anything else — including the HTTP-only streams (SSE chat, binary assets/files)
-// — throws DirectTransportUnsupportedError naming the method+path.
+//   concepts  GET/POST /api/concepts · GET/DELETE /api/concepts/:id · POST /api/concepts/:id/merge
+//   relations GET/POST /api/relations · DELETE /api/relations/:id
+//   operations GET/POST /api/operations · GET/PATCH/DELETE /api/operations/:id
+//   op-prefs  GET/PUT /api/operation-prefs
+//   plugin    GET/PUT /api/plugin-prefs · PUT /api/plugin-prefs/catalog
+//   workspace GET/PUT /api/workspace · GET/PUT /api/workspace/onboarding · GET/PUT /api/workspace/ui-prefs
+//   layers    POST /api/sources/:id/layers · DELETE /api/layers/:id · POST /api/layers/:id/export
+//             · POST /api/layers/import/preview|commit
+//   sources   PATCH /api/sources/:id (updateSourceMetadata — LOAD-BEARING, setActiveKit)
+//   assets    POST /api/assets (base64 import, MAX_INLINE_IMAGE_BYTES cap) · GET /api/assets/:id/meta
+//   svpack    GET /api/svpack (installed sealed rows) · DELETE /api/svpack/:packId (delete blob)
+//   about     GET /api/about · GET /api/vault
+// Anything else — including the HTTP-only streams (SSE chat, binary assets/files),
+// the ingestion routes (URL/web-live/local-file/xmind — server-side file/network/unzip),
+// and the svpack crypto family (export/inspect/open/commit/identity — need identityDir +
+// device-key/ledger internals) — throws DirectTransportUnsupportedError naming the method+path.
 
 import { z } from "zod";
 import { ApiError, type VaultTransport } from "../../client/data/transport";
 import { deleteSource, listSources } from "../../core/store/sources";
+import { importAssetBytes, MAX_INLINE_IMAGE_BYTES } from "../../core/store/assets";
+import packageJson from "../../../package.json";
+import { deleteSealed, sealedImportsDir } from "../sealedImports";
 import type { StudyVault } from "../../core/vault";
 import {
   appendMemoryEvents,
@@ -71,9 +88,11 @@ import {
 import type { SealedRuntime } from "../svpack";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "./errors";
 import * as anchorsService from "./anchors";
+import * as conceptsService from "./concepts";
 import * as graphService from "./graph";
 import * as layersService from "./layers";
 import * as notesService from "./notes";
+import * as operationsService from "./operations";
 import * as patchesService from "./patches";
 import * as reviewScheduleService from "./reviewSchedule";
 import * as searchService from "./search";
@@ -81,6 +100,7 @@ import * as triggerFiresService from "./triggerFires";
 import * as sourceAuthoringService from "./sourceAuthoring";
 import * as sourceForkService from "./sourceFork";
 import * as sourcesService from "./sources";
+import * as workspaceService from "./workspace";
 
 export type DirectTransportDeps = {
   vault: StudyVault;
@@ -248,6 +268,17 @@ const routes: DirectRoute[] = [
       if (!removed) throw new NotFoundError("Source not found");
       return { ok: true };
     }
+  }),
+  // Merge-patch a source's metadata (Product Kit activation writes metadata.activeKitIds).
+  // LOAD-BEARING: setActiveKit drives kit activation through this; a missing route silently
+  // broke per-source kit switching on the direct (mobile) host. Mirrors PATCH /api/sources/:id.
+  route({
+    method: "PATCH",
+    pattern: "/api/sources/:sourceId",
+    schema: sourcesService.updateSourceRequestSchema,
+    call: async ({ deps, params, input }) => ({
+      source: await sourcesService.updateSourceMetadata({ vault: deps.vault }, { sourceId: params.sourceId, ...input })
+    })
   }),
 
   // —— Anchors ——
@@ -500,6 +531,304 @@ const routes: DirectRoute[] = [
           sourceId: query.get("sourceId") ?? undefined
         })
       })
+  }),
+
+  // —— Concepts — parity with the /api/concepts routes so mobile authors + inspects
+  // concepts identically (same schemas, same detail/delete/merge bodies). ——
+  route({
+    method: "GET",
+    pattern: "/api/concepts",
+    call: async ({ deps }) => ({ concepts: await deps.vault.stores.concepts.list() })
+  }),
+  route({
+    method: "POST",
+    pattern: "/api/concepts",
+    schema: conceptsService.createConceptRequestSchema,
+    call: async ({ deps, input }) => ({ concept: await conceptsService.createConcept({ vault: deps.vault }, input) })
+  }),
+  route({
+    method: "GET",
+    pattern: "/api/concepts/:conceptId",
+    call: ({ deps, params }) => conceptsService.getConceptDetail({ vault: deps.vault }, { conceptId: params.conceptId })
+  }),
+  route({
+    method: "DELETE",
+    pattern: "/api/concepts/:conceptId",
+    call: ({ deps, params }) => conceptsService.deleteConcept({ vault: deps.vault }, { conceptId: params.conceptId })
+  }),
+  route({
+    method: "POST",
+    pattern: "/api/concepts/:conceptId/merge",
+    schema: conceptsService.mergeConceptRequestSchema,
+    call: ({ deps, params, input }) =>
+      conceptsService.mergeConcept({ vault: deps.vault }, { conceptId: params.conceptId, ...input })
+  }),
+
+  // —— Relations — parity with the /api/relations routes (same schema, same 404 on
+  // an unknown delete). ——
+  route({
+    method: "GET",
+    pattern: "/api/relations",
+    call: async ({ deps }) => ({ relations: await deps.vault.stores.relations.list() })
+  }),
+  route({
+    method: "POST",
+    pattern: "/api/relations",
+    schema: conceptsService.createRelationRequestSchema,
+    call: async ({ deps, input }) => ({ relation: await conceptsService.createRelation({ vault: deps.vault }, input) })
+  }),
+  route({
+    method: "DELETE",
+    pattern: "/api/relations/:relationId",
+    call: async ({ deps, params }) => {
+      const removed = await deps.vault.stores.relations.delete(params.relationId);
+      if (!removed) throw new NotFoundError("Relation not found");
+      return { ok: true };
+    }
+  }),
+
+  // —— Operations (custom AI actions as data) — the DATA lifecycle (not the AI run
+  // lane) rides the transport; parity with the /api/operations routes. ——
+  route({
+    method: "GET",
+    pattern: "/api/operations",
+    call: async ({ deps }) => ({ operations: await deps.vault.stores.operations.list() })
+  }),
+  route({
+    method: "POST",
+    pattern: "/api/operations",
+    schema: operationsService.createOperationRequestSchema,
+    call: async ({ deps, input }) => ({
+      operation: await operationsService.createOperation({ vault: deps.vault }, input)
+    })
+  }),
+  route({
+    method: "GET",
+    pattern: "/api/operations/:operationId",
+    call: async ({ deps, params }) => {
+      const operation = await deps.vault.stores.operations.get(params.operationId);
+      if (!operation) throw new NotFoundError("Operation not found");
+      return { operation };
+    }
+  }),
+  route({
+    method: "PATCH",
+    pattern: "/api/operations/:operationId",
+    schema: operationsService.updateOperationRequestSchema,
+    call: async ({ deps, params, input }) => ({
+      operation: await operationsService.updateOperation(
+        { vault: deps.vault },
+        { operationId: params.operationId, ...input }
+      )
+    })
+  }),
+  route({
+    method: "DELETE",
+    pattern: "/api/operations/:operationId",
+    call: async ({ deps, params }) => {
+      const removed = await deps.vault.stores.operations.delete(params.operationId);
+      if (!removed) throw new NotFoundError("Operation not found");
+      return { ok: true };
+    }
+  }),
+
+  // —— Operation prefs (ordering / enable-disable / built-in placeholder params) ——
+  route({
+    method: "GET",
+    pattern: "/api/operation-prefs",
+    call: async ({ deps }) => ({ prefs: await workspaceService.readOperationPrefs({ vault: deps.vault }) })
+  }),
+  route({
+    method: "PUT",
+    pattern: "/api/operation-prefs",
+    schema: workspaceService.operationPrefsSchema,
+    call: async ({ deps, input }) => ({
+      prefs: await workspaceService.writeOperationPrefs({ vault: deps.vault }, input)
+    })
+  }),
+
+  // —— Plugin prefs (Kit & Plugin: disabled contributions + viewer pins + M1 market
+  // install state). Field-group ownership preserved by the SAME service writers. ——
+  route({
+    method: "GET",
+    pattern: "/api/plugin-prefs",
+    call: async ({ deps }) => ({ prefs: await workspaceService.readPluginPrefs({ vault: deps.vault }) })
+  }),
+  route({
+    method: "PUT",
+    pattern: "/api/plugin-prefs",
+    schema: workspaceService.pluginPrefsSchema,
+    call: async ({ deps, input }) => ({
+      prefs: await workspaceService.writePluginPanelPrefs({ vault: deps.vault }, input)
+    })
+  }),
+  route({
+    method: "PUT",
+    pattern: "/api/plugin-prefs/catalog",
+    schema: z.object({
+      catalogState: workspaceService.catalogStateSchema,
+      userKits: z.array(workspaceService.userKitSchema).optional()
+    }),
+    call: async ({ deps, input }) => ({
+      prefs: await workspaceService.writePluginCatalogPrefs({ vault: deps.vault }, input)
+    })
+  }),
+
+  // —— Workspace layout + onboarding + ui-prefs (three field groups, three seams). ——
+  route({
+    method: "GET",
+    pattern: "/api/workspace",
+    call: async ({ deps }) => ({ workspace: await workspaceService.readWorkspace({ vault: deps.vault }) })
+  }),
+  route({
+    method: "PUT",
+    pattern: "/api/workspace",
+    schema: workspaceService.workspaceStateSchema,
+    call: async ({ deps, input }) => ({
+      workspace: await workspaceService.writeWorkspaceLayout({ vault: deps.vault }, input)
+    })
+  }),
+  route({
+    method: "GET",
+    pattern: "/api/workspace/onboarding",
+    call: async ({ deps }) => ({ onboarding: await workspaceService.readWorkspaceOnboarding({ vault: deps.vault }) })
+  }),
+  route({
+    method: "PUT",
+    pattern: "/api/workspace/onboarding",
+    schema: workspaceService.onboardingStateSchema,
+    call: async ({ deps, input }) => ({
+      onboarding: await workspaceService.writeWorkspaceOnboarding({ vault: deps.vault }, input)
+    })
+  }),
+  route({
+    method: "GET",
+    pattern: "/api/workspace/ui-prefs",
+    call: async ({ deps }) => ({ prefs: await workspaceService.readWorkspaceUiPrefs({ vault: deps.vault }) })
+  }),
+  route({
+    method: "PUT",
+    pattern: "/api/workspace/ui-prefs",
+    schema: workspaceService.uiPrefsSchema,
+    call: async ({ deps, input }) => ({
+      prefs: await workspaceService.writeWorkspaceUiPrefs({ vault: deps.vault }, input)
+    })
+  }),
+
+  // —— Study Layers (create custom / delete / export studypack / import preview+commit).
+  // The GET list + PATCH already ride the transport above; these round out the CRUD. ——
+  route({
+    method: "POST",
+    pattern: "/api/sources/:sourceId/layers",
+    schema: layersService.createLayerRequestSchema,
+    call: async ({ deps, params, input }) => ({
+      layer: await layersService.createLayer({ vault: deps.vault }, { sourceId: params.sourceId, ...input })
+    })
+  }),
+  route({
+    method: "DELETE",
+    pattern: "/api/layers/:layerId",
+    call: async ({ deps, params }) => {
+      await layersService.deleteLayer(deps, { layerId: params.layerId });
+      return { ok: true };
+    }
+  }),
+  // Mirrors app.ts exactly: the body is { pack, refusedCount: pack.refusedCount }.
+  route({
+    method: "POST",
+    pattern: "/api/layers/:layerId/export",
+    call: async ({ deps, params }) => {
+      const pack = await layersService.exportLayer(deps, { layerId: params.layerId });
+      return { pack, refusedCount: pack.refusedCount };
+    }
+  }),
+  route({
+    method: "POST",
+    pattern: "/api/layers/import/preview",
+    schema: z.object({ pack: z.unknown() }),
+    call: async ({ deps, input }) => ({
+      preview: await layersService.previewLayerImport({ vault: deps.vault }, { pack: input.pack })
+    })
+  }),
+  route({
+    method: "POST",
+    pattern: "/api/layers/import/commit",
+    schema: z.object({ pack: z.unknown(), targetSourceId: z.string().min(1).optional() }),
+    call: async ({ deps, input }) => ({
+      result: await layersService.commitLayerImport({ vault: deps.vault }, input)
+    })
+  }),
+
+  // —— Assets (chat-image lane) — base64 import (with the MAX_INLINE_IMAGE_BYTES cap,
+  // mirrored byte-for-byte from POST /api/assets) + the meta read. The raw BYTE route
+  // (GET /api/assets/:id) stays HTTP-only (streaming/Range) — see the unrouted note. ——
+  route({
+    method: "POST",
+    pattern: "/api/assets",
+    schema: z.object({
+      dataBase64: z.string().min(1),
+      mimeType: z.string().min(1),
+      fileName: z.string().min(1).optional()
+    }),
+    // The size cap runs on the DECODED byte length BEFORE writing, exactly like app.ts
+    // (an oversize paste 400s via the SAME ValidationError → ApiError(400) mapping).
+    call: async ({ deps, input }) => {
+      const byteLength = Buffer.byteLength(input.dataBase64, "base64");
+      if (byteLength > MAX_INLINE_IMAGE_BYTES) {
+        throw new ValidationError(`Image too large (max ${MAX_INLINE_IMAGE_BYTES} bytes).`);
+      }
+      const asset = await importAssetBytes(deps.vault, input);
+      return { assetId: asset.id, asset };
+    }
+  }),
+  route({
+    method: "GET",
+    pattern: "/api/assets/:assetId/meta",
+    call: async ({ deps, params }) => {
+      const asset = await deps.vault.stores.assets.get(params.assetId);
+      if (!asset) throw new NotFoundError("Asset not found");
+      return { asset };
+    }
+  }),
+
+  // —— Protected sharing (.svpack) — the two routes that need NO identityDir/crypto:
+  // the installed-pack manager list (over the sealed runtime) + delete-the-blob. The
+  // export/inspect/open/commit/identity crypto family stays unrouted (see the note). ——
+  route({
+    method: "GET",
+    pattern: "/api/svpack",
+    call: async ({ deps }) => {
+      deps.sealed.refresh();
+      return { packs: deps.sealed.snapshot().meta };
+    }
+  }),
+  route({
+    method: "DELETE",
+    pattern: "/api/svpack/:packId",
+    call: async ({ deps, params }) => {
+      const removed = deleteSealed(sealedImportsDir(deps.vault.paths.rootDir), params.packId);
+      if (!removed) throw new NotFoundError("Sealed pack not found");
+      deps.sealed.refresh();
+      return { ok: true };
+    }
+  }),
+
+  // —— App-shell readouts (SHELL-1) — GET /api/about (id + version + packaged flag)
+  // and GET /api/vault (manifest + root path). isPackaged is NOT reachable in-process
+  // (no aiConfig/isPackaged option on the direct host) → mirror the createApp default
+  // `isPackaged === true` ⇒ false, which is also the web/dev/CLI value. ——
+  route({
+    method: "GET",
+    pattern: "/api/about",
+    call: async () => ({ app: "ai-study-vault", version: packageJson.version, isPackaged: false })
+  }),
+  route({
+    method: "GET",
+    pattern: "/api/vault",
+    call: async ({ deps }) => ({
+      manifest: deps.vault.manifest,
+      paths: { rootDir: deps.vault.paths.rootDir }
+    })
   })
 ];
 

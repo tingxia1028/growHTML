@@ -173,6 +173,15 @@ components read ctx/domain; only domains + `*Io.ts` call entityClient (Part-5 gu
 `src/client/**/!(*Io|domains).tsx` ⊄ entityClient). LARGE cleanup → tail, not a blocker.
 
 ## PART 3 — directTransport route coverage (B4: 4 routes added)
+**✅ LANDED (2026-07-06).** Added 28 routes to `directTransport.ts` (concepts/relations/operations/operation-prefs/
+plugin-prefs+catalog/workspace+onboarding+ui-prefs/source-layer/layer DELETE+export+import/PATCH sources/assets
+base64+meta/svpack list+delete/about/vault), each byte-parity-tested vs its `app.ts` Express sibling (incl.
+failure paths — consistency-400s, null-clear, merge, asset cap, 404s). A permanent COVERAGE GUARD asserts every
+entityClient path is routed OR throws `DirectTransportUnsupportedError`; adversarial-review NIT folded → it's now
+**DRIFT-PROOF** (source-derives the `/api/…` universe from `entityClient.ts`, so a future path with no guard row
+fails). Kept UNROUTED with reason: 4 ingestion (network/unzip), raw-byte/stream, the svpack CRYPTO family (need
+`identityDir`/device-key not on `DirectTransportDeps` — confirmed un-inprocess-able), AI/provider/managed lanes.
+tsc 0 · full vitest 277f/2817t · build ✓.
 `directTransport.ts:185-504` routes sources/authoring/fork/anchors/notes/patches/layers(partial)/search/
 memory/review/triggers/graph. **ADD (~28, each mirrors its app.ts Express impl):** concepts GET/POST/:id
 GET/DELETE/merge (:1144-1187); relations GET/POST/DELETE (:1189-1210); operations GET/POST/:id GET/PATCH/
