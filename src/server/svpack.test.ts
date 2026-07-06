@@ -17,12 +17,15 @@ type App = ReturnType<typeof createApp>;
 type Ctx = { app: App; vault: StudyVault; clock: { ms: number } };
 
 const madeDirs: string[] = [];
+const madeVaults: StudyVault[] = [];
 async function tmp(tag: string): Promise<string> {
   const d = await mkdtemp(path.join(os.tmpdir(), `svpack-${tag}-`));
   madeDirs.push(d);
   return d;
 }
 afterAll(async () => {
+  // STORE-SQL Stage-3: release each vault's sqlite handles before rm (no-op on jsonl).
+  for (const v of madeVaults.splice(0)) v.close();
   await Promise.all(madeDirs.map((d) => rm(d, { recursive: true, force: true })));
 });
 
@@ -32,6 +35,7 @@ const FUTURE = "2026-12-31T00:00:00Z";
 
 async function makeApp(tag: string, startMs: number = DEFAULT_NOW): Promise<Ctx> {
   const vault = await openVault({ rootDir: await tmp(`${tag}-vault`) });
+  madeVaults.push(vault);
   const identityDir = await tmp(`${tag}-id`);
   const clock = { ms: startMs };
   const app = createApp({ vault, identityDir, now: () => clock.ms });

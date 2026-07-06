@@ -11,7 +11,7 @@ import {
   type AgentStepEvent,
   type ModelProvider
 } from "../ai";
-import { openVault } from "../core/vault";
+import { openVault, type StudyVault } from "../core/vault";
 import { AGENT_EVENT_PAYLOAD_CHAR_CAP, serializePayload } from "./agent";
 import { createApp } from "./app";
 
@@ -21,12 +21,17 @@ import { createApp } from "./app";
 // createApp's modelProvider seam — no SDK, no network.
 
 const madeDirs: string[] = [];
+const madeVaults: StudyVault[] = [];
 async function tmpVault() {
   const d = await mkdtemp(path.join(os.tmpdir(), "agent-route-"));
   madeDirs.push(d);
-  return openVault({ rootDir: d });
+  const vault = await openVault({ rootDir: d });
+  madeVaults.push(vault);
+  return vault;
 }
 afterAll(async () => {
+  // STORE-SQL Stage-3: release each vault's sqlite handles before rm (no-op on jsonl).
+  for (const v of madeVaults.splice(0)) v.close();
   await Promise.all(madeDirs.map((d) => rm(d, { recursive: true, force: true })));
 });
 afterEach(() => clearToolsForTests());

@@ -96,6 +96,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  // STORE-SQL Stage-3: release the vault's sqlite handles before rm (no-op on jsonl).
+  vault?.close();
   await rm(tempDir, { recursive: true, force: true });
 });
 

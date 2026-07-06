@@ -26,6 +26,9 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  // STORE-SQL Stage-3: release the vault's sqlite `.db`/`-wal` handles before rm (Windows can't
+  // unlink an open `.db`). Safe no-op on jsonl.
+  vault?.close();
   await rm(tempDir, { recursive: true, force: true });
 });
 

@@ -21,6 +21,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vault?.close(); // STORE-SQL Stage-3: release sqlite .db handles before rm (Windows EBUSY). no-op on jsonl.
   await rm(tempDir, { recursive: true, force: true });
 });
 
@@ -324,8 +325,9 @@ describe("study layer API", () => {
 
     // Import into a FRESH vault that has its own copy of the same source.
     const tempDir2 = await mkdtemp(path.join(os.tmpdir(), "study-vault-import-"));
+    let vault2: StudyVault | undefined;
     try {
-      const vault2 = await openVault({ rootDir: tempDir2 });
+      vault2 = await openVault({ rootDir: tempDir2 });
       const app2 = createApp({ vault: vault2 });
       await request(app2).post("/api/sources/html").send({ title: "Render Thread", content: SOURCE_HTML }).expect(201);
 
@@ -339,6 +341,7 @@ describe("study layer API", () => {
       expect(importedNote?.layerIds).toEqual([result.layerId]);
       expect(importedNote?.anchorIds).toHaveLength(1);
     } finally {
+      vault2?.close(); // STORE-SQL Stage-3: release sqlite .db handles before rm (Windows EBUSY). no-op on jsonl.
       await rm(tempDir2, { recursive: true, force: true });
     }
     void anchor;

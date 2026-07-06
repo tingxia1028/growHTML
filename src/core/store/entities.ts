@@ -29,7 +29,24 @@ import type { StorageAdapter } from "../storage/adapter";
 import { nodeStorage } from "../storage/nodeStorage";
 import type { StoreConfig, StoreEngine } from "./engine";
 import { jsonlEngine } from "./jsonlEngine";
+import { sqliteEngine } from "./sqliteEngine";
 import { createSnapshotStore, type SnapshotStore } from "./snapshotStore";
+
+/**
+ * STORE-SQL Stage-3 (docs/implementation/sqlite-migration-build-spec.md §Stage-3) — the DEFAULT
+ * runtime storage engine is now SQLite (better-sqlite3): `get(id)` goes O(N)→O(1), reads stop
+ * re-scanning the whole file. `createEntityStores` runs SERVER-SIDE (Node), so `process.env` is
+ * available here.
+ *
+ * REVERSIBILITY GUARDRAIL (the user-requested switch): `STORE_ENGINE=jsonl` falls back to the
+ * previous file-backed engine for one release, so if sqlite ever misbehaves in the wild the fix
+ * is an env var — no code change / redeploy. Any OTHER value (or unset) = sqlite (the new default).
+ * Only the DEFAULT engine param resolves through here; explicit-engine call sites (the
+ * parameterized snapshotStore tests, jsonl-inherent tests) keep passing their engine directly.
+ */
+export function resolveDefaultEngine(): StoreEngine {
+  return process.env.STORE_ENGINE === "jsonl" ? jsonlEngine : sqliteEngine;
+}
 
 export const entityFileNames = {
   sources: "sources.jsonl",
@@ -110,7 +127,7 @@ const memoryEventsSqlConfig: Pick<StoreConfig<MemoryEventRecord>, "table" | "col
 export function createEntityStores(
   studyDir: string,
   storage: StorageAdapter = nodeStorage,
-  engine: StoreEngine = jsonlEngine
+  engine: StoreEngine = resolveDefaultEngine()
 ): EntityStores {
   const filePath = (file: string) => path.join(studyDir, file);
   return {

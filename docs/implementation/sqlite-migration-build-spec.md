@@ -168,6 +168,26 @@ Invariant mapping (must match `snapshotStore.ts` EXACTLY):
   Follow the `migrateStudyLayers(vault)` boot idiom (`start.ts:57`): idempotent, boot-time, marker-guarded;
   ensure the migration runs before/around `openVault`'s empty-file creation so it doesn't clobber real data.
   Keep the `.jsonl` as a backup for one release. Flip `createEntityStores` default to `sqliteEngine`.
+- **✅ FLIP LANDED (2026-07-06). Migration WAIVED by user ("all test data, fine to lose") → NO boot `.jsonl→.db`
+  backfill built; a fresh `.db` per vault, existing jsonl ignored.** `resolveDefaultEngine()` (`entities.ts:47`)
+  = `process.env.STORE_ENGINE === "jsonl" ? jsonlEngine : sqliteEngine`; `createEntityStores`'s default param
+  (`:130`) calls it. Production now defaults to SQLite; **`STORE_ENGINE=jsonl` is the one-release reversibility
+  escape hatch** (env var, no redeploy). 31 test-file teardowns now `vault.close()`/`closeSqliteStore` before
+  `rm` (Windows can't unlink an open `.db` — the crux; adversarially stress-verified 50× no EBUSY, `-wal`/`-shm`
+  sidecars released on close, all 12 handles open at `openVault`). 5 jsonl-INHERENT tests pinned to `jsonlEngine`
+  (StorageAdapter portability / close-is-no-op semantic / raw-jsonl byte serialization ×2 / dataTrust import
+  runtime) — adversarial review confirmed each is genuinely jsonl-only + none hides a fixable sqlite bug, zero
+  `expect` lines weakened. 2 new guard tests assert both directions on real on-disk artifacts. tsc 0 · full
+  vitest 274f/2789t · build ✓. Two-slice review (flip + prerequisite dispose path) both clean.
+- **▶ REMAINING Stage-3 item — sqlite-TARGET import (the flagged follow-up, next slice).** `doReplaceFromZip`
+  (`dataTrust.ts:592`) does a whole-dir rename-swap relying on "stores re-read from disk per request" — false
+  for a sqlite store holding an open `.db` connection (the dir can't be renamed under open handles on Windows,
+  and post-swap the stores point at the moved `.db`). Fix: `deps.vault` (already in `DataTrustDeps:436`)
+  `.close()` BEFORE the swap → swap → `.reopen()` (new `StudyVault.reopen()` rebuilds `stores` via
+  `createEntityStores` + `Object.assign` in place — consumers read `vault.stores.X` fresh per request, so
+  in-place mutation is picked up) AFTER, in BOTH success AND rollback paths (else the vault is left closed).
+  Then UNPIN the dataTrust import round-trip for sqlite (+ narrow the file-level jsonl pin per review NIT). Only
+  then is import proven on the sqlite runtime; export already is (`buildSqliteVault` path stays on sqlite).
 - **MUST FOLD HERE (Stage-1 adversarial-review carry-overs — latent while jsonl is default, they BITE the
   moment this flip lands):**
   - **✅ S2 — dispose path — LANDED (2026-07-06) as a standalone prerequisite slice (ahead of the flip).**

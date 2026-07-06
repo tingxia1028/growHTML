@@ -19,6 +19,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vault?.close(); // STORE-SQL Stage-3: release sqlite .db handles before rm (Windows EBUSY). no-op on jsonl.
   await rm(vaultDir, { recursive: true, force: true });
   await rm(workDir, { recursive: true, force: true });
 });

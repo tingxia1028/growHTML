@@ -12,7 +12,7 @@ import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import request from "supertest";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { fixtureAnchor, fixtureConcept, fixtureHtmlBody, fixtureNote, fixtureSource } from "../core/fixtures/golden";
 import { openVault, type StudyVault, type VaultPaths } from "../core/vault";
@@ -46,8 +46,37 @@ async function tmp(tag: string): Promise<string> {
   madeDirs.push(dir);
   return dir;
 }
+// STORE-SQL Stage-3: openVault defaults to sqlite → every vault opened here holds `.db`/`-wal`
+// handles. Track them so afterAll can close() (release handles) BEFORE rm — Windows can't unlink
+// an open `.db`. NOTE: the backup/import RUNTIME path is pinned to jsonl below (see openVaultForCtx),
+// because doReplaceFromZip does an in-place whole-dir SWAP that assumes stores re-read from disk each
+// call (jsonl) — a sqlite store holds a persistent connection to a specific `.db` file, so a swap
+// underneath it is neither visible nor (on Windows) possible while open. That is the Stage-3
+// import-runtime work, out of THIS slice's scope; the sqlite EXPORT path stays proven by the explicit
+// buildSqliteVault suite below.
+const madeVaults: StudyVault[] = [];
+async function openTrustVault(rootDir: string): Promise<StudyVault> {
+  const vault = await openVault({ rootDir });
+  madeVaults.push(vault);
+  return vault;
+}
+
+// PIN the default-vault RUNTIME to jsonl for this file (STORE-SQL Stage-3). Rationale above: the
+// backup/import path (doReplaceFromZip) is jsonl-inherent today — an in-place whole-dir swap that
+// assumes per-request disk reads, which sqlite's persistent DB connection breaks (adapting the
+// import runtime to close/reopen the vault around the swap is the separate Stage-3 import task).
+// The SQLITE export path is proven independently by the buildSqliteVault suite (which builds sqlite
+// directly, ignoring this env). resolveDefaultEngine() reads STORE_ENGINE at createEntityStores time.
+let priorStoreEngine: string | undefined;
+beforeAll(() => {
+  priorStoreEngine = process.env.STORE_ENGINE;
+  process.env.STORE_ENGINE = "jsonl";
+});
 afterAll(async () => {
+  for (const vault of madeVaults.splice(0)) vault.close();
   await Promise.all(madeDirs.map((dir) => rm(dir, { recursive: true, force: true })));
+  if (priorStoreEngine === undefined) delete process.env.STORE_ENGINE;
+  else process.env.STORE_ENGINE = priorStoreEngine;
 });
 
 type App = ReturnType<typeof createApp>;
@@ -57,7 +86,7 @@ type Ctx = { app: App; vault: StudyVault; backupsDir: string; parent: string };
 async function makeCtx(tag: string, opts?: { backupsDirInsideVault?: boolean; now?: () => number }): Promise<Ctx> {
   const parent = await tmp(tag);
   const rootDir = path.join(parent, "vault");
-  const vault = await openVault({ rootDir });
+  const vault = await openTrustVault(rootDir);
   const backupsDir = opts?.backupsDirInsideVault ? path.join(rootDir, "backups") : path.join(parent, "backups");
   const app = createApp({ vault, dataTrust: { backupsDir }, now: opts?.now });
   return { app, vault, backupsDir, parent };
@@ -220,7 +249,7 @@ describe("backup service", () => {
     const T0 = 3000 * WEEK + 12 * 60 * 60 * 1000;
     let t = T0;
     const parent = await tmp("rotate");
-    const vault = await openVault({ rootDir: path.join(parent, "vault") });
+    const vault = await openTrustVault(path.join(parent, "vault"));
     const backupsDir = path.join(parent, "backups");
     const service = createDataTrustService({ vault, backupsDir, appVersion: "0.0.0-test", now: () => t });
 
@@ -241,7 +270,7 @@ describe("backup scheduler (the MEM-2 idle-scheduler idiom)", () => {
     try {
       let t = 4000 * WEEK;
       const parent = await tmp("scheduler");
-      const vault = await openVault({ rootDir: path.join(parent, "vault") });
+      const vault = await openTrustVault(path.join(parent, "vault"));
       const backupsDir = path.join(parent, "backups");
       const service = createDataTrustService({ vault, backupsDir, appVersion: "0.0.0-test", now: () => t });
       const scheduler = createBackupScheduler(service);
@@ -275,7 +304,7 @@ describe("destructive-op guard (doc §1: backup before 清除记忆)", () => {
 
     // Bare createApp (no dataTrust option): the hook is NOT armed.
     const bareParent = await tmp("preclear-bare");
-    const bareVault = await openVault({ rootDir: path.join(bareParent, "vault") });
+    const bareVault = await openTrustVault(path.join(bareParent, "vault"));
     const bareApp = createApp({ vault: bareVault });
     await request(bareApp).delete("/api/memory").expect(200);
     expect(existsSync(path.join(bareParent, "backups"))).toBe(false);
@@ -611,7 +640,7 @@ describe("STORE-SQL Stage-2 — sqlite whole-vault round-trip (JSONL is the pack
       //    stores, so B is a plain jsonl vault (no open `.db` handles to block the Windows rename —
       //    the production Stage-3 StudyVault.close() closes them before the swap). The sqlite-vs-jsonl
       //    proof is that we REBUILD sqlite stores from the imported jsonl in step 4.
-      const vaultB = await openVault({ rootDir: rootB });
+      const vaultB = await openTrustVault(rootB); // jsonl (file pinned) — the import target holds no `.db` handles → the dir swap is clean
       const serviceB = createDataTrustService({ vault: vaultB, backupsDir: path.join(parent, "backupsB"), appVersion: "0.0.0-test" });
       const result = await serviceB.importVault(bytes);
       expect(result.ok).toBe(true);
@@ -653,9 +682,11 @@ describe("STORE-SQL Stage-2 — sqlite whole-vault round-trip (JSONL is the pack
   it("jsonl export stays a NO-OP: dumpStoreToJsonl does not rewrite a jsonl store's file", async () => {
     // A jsonl-backed vault's entity file is already truth; the Stage-2 dump must NOT touch it (so
     // jsonl-vault backups stay byte-identical). Prove it by capturing the file's mtime+bytes across
-    // an export.
+    // an export. This test is INHERENTLY about the jsonl engine — pinned to jsonl (the file-level
+    // STORE_ENGINE=jsonl beforeAll), so the "byte-identical jsonl no-op" claim keeps holding after
+    // the Stage-3 sqlite-default flip.
     const parent = await tmp("jsonl-noop");
-    const vault = await openVault({ rootDir: path.join(parent, "vault") });
+    const vault = await openTrustVault(path.join(parent, "vault"));
     const service = createDataTrustService({ vault, backupsDir: path.join(parent, "backups"), appVersion: "0.0.0-test" });
 
     const notesPath = path.join(vault.paths.studyDir, entityFileNames.notes);

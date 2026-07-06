@@ -22,12 +22,15 @@ type App = ReturnType<typeof createApp>;
 type Ctx = { app: App; vault: StudyVault; identityDir: string };
 
 const madeDirs: string[] = [];
+const madeVaults: StudyVault[] = [];
 async function tmp(tag: string): Promise<string> {
   const d = await mkdtemp(path.join(os.tmpdir(), `memory-${tag}-`));
   madeDirs.push(d);
   return d;
 }
 afterAll(async () => {
+  // STORE-SQL Stage-3: release each vault's sqlite handles before rm (no-op on jsonl).
+  for (const v of madeVaults.splice(0)) v.close();
   await Promise.all(madeDirs.map((d) => rm(d, { recursive: true, force: true })));
 });
 
@@ -36,6 +39,7 @@ const NOW = Date.UTC(2026, 6, 1, 12);
 
 async function makeApp(tag: string): Promise<Ctx> {
   const vault = await openVault({ rootDir: await tmp(`${tag}-vault`) });
+  madeVaults.push(vault);
   const identityDir = await tmp(`${tag}-id`);
   const app = createApp({ vault, identityDir, now: () => NOW });
   return { app, vault, identityDir };
@@ -366,6 +370,7 @@ describe("memory tiers — the idle/threshold scheduler", () => {
     vi.useFakeTimers();
     try {
       const vault = await openVault({ rootDir: await tmp("scheduler-vault") });
+      madeVaults.push(vault);
       const scheduler = createMemoryConsolidationScheduler(
         { vault, now: () => NOW },
         { debounceMs: 1000, threshold: 10 }

@@ -21,12 +21,15 @@ import { createApp } from "./app";
 type Ctx = { app: ReturnType<typeof createApp>; vault: StudyVault };
 
 const madeDirs: string[] = [];
+const madeVaults: StudyVault[] = [];
 async function tmp(tag: string): Promise<string> {
   const d = await mkdtemp(path.join(os.tmpdir(), `agent-tools-${tag}-`));
   madeDirs.push(d);
   return d;
 }
 afterAll(async () => {
+  // STORE-SQL Stage-3: release each vault's sqlite handles before rm (no-op on jsonl).
+  for (const v of madeVaults.splice(0)) v.close();
   await Promise.all(madeDirs.map((d) => rm(d, { recursive: true, force: true })));
 });
 afterEach(() => clearToolsForTests());
@@ -38,6 +41,7 @@ const QUOTE = "The mitochondrion is the powerhouse of the cell.";
 
 async function makeCtx(tag: string): Promise<Ctx> {
   const vault = await openVault({ rootDir: await tmp(tag) });
+  madeVaults.push(vault);
   return { app: createApp({ vault }), vault };
 }
 

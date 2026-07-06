@@ -9,7 +9,8 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { triggerSchema, vaultEntitySchema, type TriggerRecord } from ".";
 import { createEntityId, isEntityId } from "../ids";
-import { createSnapshotStore, type SnapshotStore } from "../store/snapshotStore";
+import { createSnapshotStore, type SnapshotRecord, type SnapshotStore } from "../store/snapshotStore";
+import { closeSqliteStore } from "../store/engine";
 
 const ULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
 
@@ -107,6 +108,8 @@ describe("trigger store round-trip", () => {
   });
 
   afterEach(async () => {
+    // STORE-SQL Stage-3: release sqlite handles before rm (no-op on jsonl).
+    closeSqliteStore(store as SnapshotStore<SnapshotRecord>);
     await rm(tempDir, { recursive: true, force: true });
   });
 

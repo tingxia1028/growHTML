@@ -90,9 +90,21 @@ describe("StudyVault.close() — STORE-SQL Stage-3 dispose path", () => {
     expect(existsSync(dbPath)).toBe(false);
   });
 
-  it("is a NO-OP on a jsonl-backed vault (openVault default) — does not throw", async () => {
+  it("is a NO-OP on a jsonl-backed vault (STORE_ENGINE=jsonl) — does not throw", async () => {
     const root = await tmpDir("jsonl");
-    const vault = await openVault({ rootDir: root });
+    // PIN to jsonl (STORE-SQL Stage-3): the default engine is now SQLite, where close() genuinely
+    // releases the handle and the store is UNUSABLE afterward. This test is INHERENTLY about the
+    // jsonl no-op semantics (close() leaves the store fully usable), so build a jsonl vault via the
+    // reversibility switch — resolveDefaultEngine() reads STORE_ENGINE at openVault time.
+    const priorEngine = process.env.STORE_ENGINE;
+    process.env.STORE_ENGINE = "jsonl";
+    let vault;
+    try {
+      vault = await openVault({ rootDir: root });
+    } finally {
+      if (priorEngine === undefined) delete process.env.STORE_ENGINE;
+      else process.env.STORE_ENGINE = priorEngine;
+    }
 
     // A jsonl store has no CLOSE hook, so close() must be a harmless no-op — even AFTER a write,
     // and even called TWICE (idempotent). The jsonl file stays present & untouched afterward.

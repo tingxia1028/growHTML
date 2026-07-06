@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { fixtureHtmlBody } from "../fixtures/golden";
 import { ingestHtmlSource, listSources, readSourceContent } from "../store/sources";
 import { openVault } from "../vault";
@@ -6,8 +6,24 @@ import { MemoryStorageAdapter } from "./memoryStorage";
 
 // Proves the StorageAdapter seam: the entire vault (dirs, manifest, JSONL stores,
 // source files) runs on a non-Node backend. This is the path a mobile adapter
-// (Capacitor Filesystem / SQLite) would take.
+// (Capacitor Filesystem) would take.
+//
+// PINNED to jsonl (STORE-SQL Stage-3): this test is INHERENTLY about the StorageAdapter seam,
+// which is a JSONL-engine concept. The default sqlite engine deliberately BYPASSES StorageAdapter
+// (spec §The-seam: "a DB is NOT a bag of bytes — do NOT re-back SQLite through StorageAdapter") —
+// better-sqlite3 opens real files by path and cannot run on the injected in-memory adapter. So the
+// non-Node-backend claim is a jsonl property; pin the engine this test is actually about. (The
+// deferred mobile SQLite driver is a SEPARATE native binding, not this file adapter — spec Stage-4.)
 describe("vault on a non-Node StorageAdapter", () => {
+  const priorEngine = process.env.STORE_ENGINE;
+  beforeAll(() => {
+    process.env.STORE_ENGINE = "jsonl";
+  });
+  afterAll(() => {
+    if (priorEngine === undefined) delete process.env.STORE_ENGINE;
+    else process.env.STORE_ENGINE = priorEngine;
+  });
+
   it("opens, ingests, persists, and reads back through in-memory storage", async () => {
     const storage = new MemoryStorageAdapter();
     const vault = await openVault({ rootDir: "/study", name: "Mobile Vault", storage });

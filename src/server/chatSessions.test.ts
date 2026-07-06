@@ -17,12 +17,15 @@ type App = ReturnType<typeof createApp>;
 type Ctx = { app: App; vault: StudyVault; clock: { now: number } };
 
 const madeDirs: string[] = [];
+const madeVaults: StudyVault[] = [];
 async function tmp(tag: string): Promise<string> {
   const d = await mkdtemp(path.join(os.tmpdir(), `chat-sessions-${tag}-`));
   madeDirs.push(d);
   return d;
 }
 afterAll(async () => {
+  // STORE-SQL Stage-3: release each vault's sqlite handles before rm (no-op on jsonl).
+  for (const v of madeVaults.splice(0)) v.close();
   await Promise.all(madeDirs.map((d) => rm(d, { recursive: true, force: true })));
 });
 
@@ -32,9 +35,28 @@ const NOW_ISO = new Date(NOW).toISOString();
 
 async function makeApp(tag: string): Promise<Ctx> {
   const vault = await openVault({ rootDir: await tmp(`${tag}-vault`) });
+  madeVaults.push(vault);
   const clock = { now: NOW };
   const app = createApp({ vault, identityDir: await tmp(`${tag}-id`), now: () => clock.now });
   return { app, vault, clock };
+}
+
+// A JSONL-pinned vault, for the two guard tests below that assert on the raw `chat-sessions.jsonl`
+// FILE serialization (STORE-SQL Stage-3). Those guards are INHERENTLY about the jsonl on-disk shape
+// (ref-not-base64, bare-string-not-array): under the default sqlite engine the rows live in
+// `chat-sessions.db` and the jsonl stub stays empty, so a raw `readFile` of the jsonl can't see them.
+// The equivalent store-API roundtrip (`vault.stores.chatSessions.get`) is engine-agnostic and stays
+// on the sqlite default (see the "persists an image ref array" test). resolveDefaultEngine() reads
+// STORE_ENGINE at openVault time, so set-then-restore around the open pins just this vault.
+async function makeJsonlApp(tag: string): Promise<Ctx> {
+  const prior = process.env.STORE_ENGINE;
+  process.env.STORE_ENGINE = "jsonl";
+  try {
+    return await makeApp(tag);
+  } finally {
+    if (prior === undefined) delete process.env.STORE_ENGINE;
+    else process.env.STORE_ENGINE = prior;
+  }
 }
 
 const ULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
@@ -316,7 +338,8 @@ describe("chat sessions — V-1 image message persistence", () => {
   });
 
   it("GUARD: the vault JSONL holds the assetId REF, never base64 bytes", async () => {
-    const { app, vault } = await makeApp("v1-jsonl-guard");
+    // jsonl-pinned: this guard reads the raw chat-sessions.jsonl on-disk serialization (below).
+    const { app, vault } = await makeJsonlApp("v1-jsonl-guard");
     // A base64-looking blob that must NEVER be what lands in the JSONL — only the ref.
     const base64ish = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCA',,,";
     const created = (
@@ -341,7 +364,8 @@ describe("chat sessions — V-1 image message persistence", () => {
   });
 
   it("REGRESSION: a text-only message persists as a bare string (byte-identical)", async () => {
-    const { app, vault } = await makeApp("v1-text-only");
+    // jsonl-pinned: this guard reads the raw chat-sessions.jsonl on-disk serialization (below).
+    const { app, vault } = await makeJsonlApp("v1-text-only");
     await request(app)
       .post("/api/chat/sessions")
       .send({ messages: [{ role: "user", content: "plain text only" }] })

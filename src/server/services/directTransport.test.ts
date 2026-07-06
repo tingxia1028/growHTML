@@ -68,6 +68,10 @@ beforeEach(async () => {
 
 afterEach(async () => {
   resetVaultTransport();
+  // STORE-SQL Stage-3: both vaults default to sqlite → release their `.db`/`-wal` handles BEFORE
+  // rm (Windows can't unlink an open `.db`). Safe no-op under STORE_ENGINE=jsonl.
+  directVault?.close();
+  httpVault?.close();
   await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })));
   tempDirs = [];
 });
