@@ -66,6 +66,10 @@ import { useThemeDomain } from "./useThemeDomain";
 // PLAT-LAYER Part-2 Slice 2 — the Kit & Plugin state/logic now lives in this TIER-A leaf
 // domain hook; the provider only composes its memoized surface.
 import { usePluginDomain } from "./usePluginDomain";
+// PLAT-LAYER Part-2 Slice 3 — the concept state/logic (conceptsVersion token, the 标为概念
+// toast + its undo/dismiss) now lives in this domain hook. Nearly a leaf: it takes ONE
+// injected back-edge (`refreshAnnotations`, for the undo repaint) + the error sink.
+import { useConceptDomain } from "./useConceptDomain";
 // F1 (P-A1): the pure open-panes model — the source-binding shim behind activeSourceId.
 import {
   closePane,
@@ -813,11 +817,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [importUrl, setImportUrl] = useState("");
   const [folderRoots, setFolderRoots] = useState<string[]>(readStoredFolderRoots);
   const [recentSourceIds, setRecentSourceIds] = useState<string[]>(readStoredRecentSourceIds);
-  const [conceptsVersion, setConceptsVersion] = useState(0);
-  // 标为概念 feedback (CONCEPT-UX-1): the pending toast payload + a monotonic counter
-  // so a rapid second mark re-arms the toast timer (seq changes even on equal names).
-  const [conceptMark, setConceptMark] = useState<ConceptMarkFeedback | null>(null);
-  const conceptMarkSeqRef = useRef(0);
+  // PLAT-LAYER Part-2 Slice 3 — conceptsVersion + the 标为概念 toast (conceptMark +
+  // conceptMarkSeqRef) now live in useConceptDomain; the hook is instantiated below,
+  // AFTER refreshAnnotations is declared (its undo repaint injects that back-edge).
   // D6 auto-materialize feedback: the pending "已生成笔记 · 撤销" toast payload + a
   // monotonic counter so a rapid second materialize re-arms the toast timer.
   const [draftNote, setDraftNote] = useState<DraftNoteFeedback | null>(null);
@@ -1160,6 +1162,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [activeSourceId, sourceBundles, renderedHtml, mirrorBundleToTopLevel]
   );
 
+  // PLAT-LAYER Part-2 Slice 3 — the concept domain (nearly a leaf). Instantiated HERE,
+  // right after refreshAnnotations, because undoConceptMark injects it as its one
+  // back-edge (delete the marker note → repaint). The coordinator's onConceptMarked/
+  // onConceptChanged/onRelationChanged drive concept state through the surface's
+  // bumpConceptsVersion/notifyConceptMarked setters (below, in commandContext).
+  const concept = useConceptDomain({ refreshAnnotations, onError: setError });
+
   const importFromUrl = useCallback(async () => {
     if (!importUrl.trim()) return;
     setStatus("saving");
@@ -1494,24 +1503,24 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         onAssistantDone: (message) => chatDomain.persistAssistant(message),
         // A new concept / changed link / new-or-deleted relation: bump the token so
         // concept views re-fetch, and refresh the source's notes so a freshly linked
-        // note's conceptIds show up in the study panel too.
+        // note's conceptIds show up in the study panel too. (Slice 3: the token bump
+        // now drives concept state through the useConceptDomain surface.)
         onConceptChanged: () => {
-          setConceptsVersion((value) => value + 1);
+          concept.bumpConceptsVersion();
           void refreshAnnotations();
         },
         // 标为概念 (CONCEPT-UX-1): park the feedback so ConceptMarkToast shows the
-        // concept name + the 撤销 affordance (undo = delete the marker note).
-        onConceptMarked: ({ concept, note, linkedExisting }) => {
-          conceptMarkSeqRef.current += 1;
-          setConceptMark({
-            conceptId: concept.id,
-            conceptName: concept.name,
+        // concept name + the 撤销 affordance (undo = delete the marker note). The seq
+        // stamp lives inside notifyConceptMarked now (Slice 3 — the ref stays in the hook).
+        onConceptMarked: ({ concept: markedConcept, note, linkedExisting }) => {
+          concept.notifyConceptMarked({
+            conceptId: markedConcept.id,
+            conceptName: markedConcept.name,
             noteId: note.id,
-            linkedExisting,
-            seq: conceptMarkSeqRef.current
+            linkedExisting
           });
         },
-        onRelationChanged: () => setConceptsVersion((value) => value + 1),
+        onRelationChanged: () => concept.bumpConceptsVersion(),
         // A layer was toggled/imported: bump the token (switcher re-fetches) AND
         // refresh annotations (the painted highlights follow enabled layers).
         onLayersChanged: () => {
@@ -1530,7 +1539,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       refreshAnnotations,
       parkDraft,
       loadSources,
-      openSourceInNewPane
+      openSourceInNewPane,
+      concept
     ]
   );
 
@@ -1855,26 +1865,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [activeSource]
   );
 
-  const refreshConcepts = useCallback(() => setConceptsVersion((value) => value + 1), []);
-
-  // Cheap undo for 标为概念: delete the just-created marker note — that removes the
-  // anchor↔concept link (and the paint, since painting is note-derived). The concept
-  // RECORD itself stays: the entity client has no concept-delete API, and a reusable
-  // empty concept is harmless (documented CONCEPT-UX-1 decision).
-  const undoConceptMark = useCallback(async () => {
-    const mark = conceptMark;
-    if (!mark) return;
-    setConceptMark(null);
-    try {
-      await entityClient.deleteNote(mark.noteId);
-      setConceptsVersion((value) => value + 1);
-      await refreshAnnotations();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to undo concept mark");
-    }
-  }, [conceptMark, refreshAnnotations]);
-
-  const dismissConceptMark = useCallback(() => setConceptMark(null), []);
+  // PLAT-LAYER Part-2 Slice 3 — refreshConcepts / undoConceptMark / dismissConceptMark
+  // (and undo's inline entityClient.deleteNote) now live in useConceptDomain, composed
+  // via `concept` above and spread into the value memo below.
 
   // —— D6 auto-materialize (note-presentation-unified.md §6) ——————————————————
   // Materialize an anchor-context AI answer AS a note ON `anchorId`: create it with
@@ -2396,11 +2389,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       changePatchStatus,
       canForkActiveSource,
       forkActiveSource,
-      conceptsVersion,
-      refreshConcepts,
-      conceptMark,
-      undoConceptMark,
-      dismissConceptMark,
       materializeAnchor,
       draftNote,
       undoDraftNote,
@@ -2435,7 +2423,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       // Slice 2 — the plugin surface spread verbatim: keeps the SAME 4 field names/shape
       // (installedPlugins, pluginPrefs, setContributionEnabled, pinViewer) so consumers are
       // unchanged.
-      ...plugin
+      ...plugin,
+      // Slice 3 — the concept surface spread verbatim: keeps the SAME 5 CONTEXT field
+      // names/shape (conceptsVersion, refreshConcepts, conceptMark, undoConceptMark,
+      // dismissConceptMark) so consumers are unchanged. The two coordinator-only setters
+      // (bumpConceptsVersion/notifyConceptMarked) also ride along but aren't in the
+      // interface — harmless extras no consumer reads.
+      ...concept
     }),
     [
       focus,
@@ -2518,11 +2512,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       changePatchStatus,
       canForkActiveSource,
       forkActiveSource,
-      conceptsVersion,
-      refreshConcepts,
-      conceptMark,
-      undoConceptMark,
-      dismissConceptMark,
       materializeAnchor,
       draftNote,
       undoDraftNote,
@@ -2554,7 +2543,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       theme,
       // Slice 2 — the 4 plugin fields collapse to their single memoized surface; its
       // identity changes on the SAME cadence as its fields → identical re-render behavior.
-      plugin
+      plugin,
+      // Slice 3 — the 5 concept fields collapse to their single memoized surface; its
+      // identity changes on the SAME cadence as its fields → identical re-render behavior.
+      concept
     ]
   );
 
