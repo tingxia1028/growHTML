@@ -8,7 +8,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { Download, Plus, Trash2, Upload } from "lucide-react";
-import { entityClient, type ImportPreview, type StudyLayerRecord, type StudyPack } from "../data/entityClient";
+import { layerIo, type ImportPreview, type StudyLayerRecord, type StudyPack } from "./layerIo";
 import type { WorkspaceContext } from "./viewRegistry";
 import { buildLayerTree, type LayerNode } from "./layerTree";
 import { downloadPack, isLayerEditable, isMineLayer, layerDisplayTitle, sortLayersForTree } from "./layerViews";
@@ -26,7 +26,7 @@ export function LayerLensManage({ ctx }: { ctx: WorkspaceContext }) {
     if (!activeSourceId || !title) return;
     setError("");
     try {
-      await entityClient.createLayer(activeSourceId, { title, order: sourceLayers.length });
+      await layerIo.createLayer(activeSourceId, { title, order: sourceLayers.length });
       setNewTitle("");
       refreshLayers();
     } catch (err) {
@@ -40,7 +40,7 @@ export function LayerLensManage({ ctx }: { ctx: WorkspaceContext }) {
       if (!next || !next.trim() || next.trim() === layer.title) return;
       setError("");
       try {
-        await entityClient.patchLayer(layer.id, { title: next.trim() });
+        await layerIo.patchLayer(layer.id, { title: next.trim() });
         refreshLayers();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to rename layer");
@@ -53,7 +53,7 @@ export function LayerLensManage({ ctx }: { ctx: WorkspaceContext }) {
     async (layer: StudyLayerRecord, color: string) => {
       setError("");
       try {
-        await entityClient.patchLayer(layer.id, { color });
+        await layerIo.patchLayer(layer.id, { color });
         refreshLayers();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to recolor layer");
@@ -70,7 +70,7 @@ export function LayerLensManage({ ctx }: { ctx: WorkspaceContext }) {
     async (layer: StudyLayerRecord, patch: { color?: string; decoration?: "highlight" | "underline" | "both" }) => {
       setError("");
       try {
-        await entityClient.patchLayer(layer.id, { style: { ...layer.style, ...patch } });
+        await layerIo.patchLayer(layer.id, { style: { ...layer.style, ...patch } });
         refreshLayers();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to restyle layer");
@@ -83,7 +83,7 @@ export function LayerLensManage({ ctx }: { ctx: WorkspaceContext }) {
     async (layer: StudyLayerRecord, delta: number) => {
       setError("");
       try {
-        await entityClient.patchLayer(layer.id, { order: (layer.order ?? 0) + delta });
+        await layerIo.patchLayer(layer.id, { order: (layer.order ?? 0) + delta });
         refreshLayers();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to reorder layer");
@@ -97,7 +97,7 @@ export function LayerLensManage({ ctx }: { ctx: WorkspaceContext }) {
       if (!(await platformDialogs().confirm(`Delete the "${layer.title}" layer?`))) return;
       setError("");
       try {
-        await entityClient.deleteLayer(layer.id);
+        await layerIo.deleteLayer(layer.id);
         refreshLayers();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to delete layer");
@@ -109,7 +109,7 @@ export function LayerLensManage({ ctx }: { ctx: WorkspaceContext }) {
   const exportLayer = useCallback(async (layer: StudyLayerRecord) => {
     setError("");
     try {
-      const { pack } = await entityClient.exportLayer(layer.id);
+      const { pack } = await layerIo.exportLayer(layer.id);
       downloadPack(pack, `${layer.title.replace(/[^\w.-]+/g, "_") || "layer"}.studypack`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to export layer");
@@ -121,7 +121,7 @@ export function LayerLensManage({ ctx }: { ctx: WorkspaceContext }) {
     setError("");
     try {
       const pack = JSON.parse(await file.text()) as StudyPack;
-      const { preview } = await entityClient.importPreview(pack);
+      const { preview } = await layerIo.importPreview(pack);
       setPending({ pack, preview });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not read .studypack");
@@ -132,7 +132,7 @@ export function LayerLensManage({ ctx }: { ctx: WorkspaceContext }) {
     if (!pending) return;
     setError("");
     try {
-      await entityClient.importCommit(pending.pack);
+      await layerIo.importCommit(pending.pack);
       setPending(null);
       refreshLayers();
     } catch (err) {

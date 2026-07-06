@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Upload, Download, Plus, Share2, Lock, Trash2 } from "lucide-react";
-import { entityClient, type ImportPreview, type StudyLayerRecord, type StudyPack } from "../data/entityClient";
+import { layerIo, type ImportPreview, type StudyLayerRecord, type StudyPack } from "./layerIo";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 import { SvpackExportDialog, SvpackImportDialog } from "./svpackViews";
 import { buildLayerTree, coveredLayerIds, parentToggleState, type LayerNode } from "./layerTree";
@@ -77,7 +77,7 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
     }
     setError("");
     try {
-      const response = await entityClient.layers(activeSourceId);
+      const response = await layerIo.layers(activeSourceId);
       setLayers(response.layers);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load layers");
@@ -115,7 +115,7 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
   const exportLayer = useCallback(async (layer: StudyLayerRecord) => {
     setError("");
     try {
-      const { pack } = await entityClient.exportLayer(layer.id);
+      const { pack } = await layerIo.exportLayer(layer.id);
       downloadPack(pack, `${layer.title.replace(/[^\w.-]+/g, "_") || "layer"}.studypack`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to export layer");
@@ -129,7 +129,7 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
     if (!activeSourceId || !title) return;
     setError("");
     try {
-      await entityClient.createLayer(activeSourceId, { title, order: layers.length });
+      await layerIo.createLayer(activeSourceId, { title, order: layers.length });
       setNewTitle("");
       await load();
     } catch (err) {
@@ -145,7 +145,7 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
       if (!next || !next.trim() || next.trim() === layer.title) return;
       setError("");
       try {
-        await entityClient.patchLayer(layer.id, { title: next.trim() });
+        await layerIo.patchLayer(layer.id, { title: next.trim() });
         await load();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to rename layer");
@@ -159,7 +159,7 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
     async (layer: StudyLayerRecord, color: string) => {
       setError("");
       try {
-        await entityClient.patchLayer(layer.id, { color });
+        await layerIo.patchLayer(layer.id, { color });
         await load();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to recolor layer");
@@ -177,7 +177,7 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
     async (layer: StudyLayerRecord, patch: { color?: string; decoration?: "highlight" | "underline" | "both" }) => {
       setError("");
       try {
-        await entityClient.patchLayer(layer.id, { style: { ...layer.style, ...patch } });
+        await layerIo.patchLayer(layer.id, { style: { ...layer.style, ...patch } });
         await load();
         refreshLayers();
       } catch (err) {
@@ -194,7 +194,7 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
       const nextOrder = (layer.order ?? 0) + delta;
       setError("");
       try {
-        await entityClient.patchLayer(layer.id, { order: nextOrder });
+        await layerIo.patchLayer(layer.id, { order: nextOrder });
         await load();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to reorder layer");
@@ -210,7 +210,7 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
       if (!(await platformDialogs().confirm(`Delete the "${layer.title}" layer?`))) return;
       setError("");
       try {
-        await entityClient.deleteLayer(layer.id);
+        await layerIo.deleteLayer(layer.id);
         await load();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to delete layer");
@@ -225,7 +225,7 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
     setError("");
     try {
       const pack = JSON.parse(await file.text()) as StudyPack;
-      const { preview } = await entityClient.importPreview(pack);
+      const { preview } = await layerIo.importPreview(pack);
       setPending({ pack, preview });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not read .studypack");
@@ -237,7 +237,7 @@ function LayerSwitcherView({ ctx }: { ctx: WorkspaceContext }) {
     if (!pending) return;
     setError("");
     try {
-      await entityClient.importCommit(pending.pack);
+      await layerIo.importCommit(pending.pack);
       setPending(null);
       refreshLayers();
     } catch (err) {
