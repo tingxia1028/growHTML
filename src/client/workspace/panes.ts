@@ -11,6 +11,8 @@
 // in dock.ts. V1 is single-instance-per-source: paneId is a deterministic function of the
 // sourceId, so opening the same source twice DEDUPES to focusing the existing pane.
 
+import { getPlatformOptional } from "../platform/platformSingleton";
+
 // The reader sub-state a pane owns (was global top-level state before F1). Deliberately
 // small in V1 — no per-pane Layer Lens (delta 2: layer filtering is scoped to the FOCUSED
 // pane only, which reads the single global enabledLayerIds).
@@ -152,7 +154,8 @@ export function parsePanesState(raw: unknown): PanesState {
 // result against the live sources list (prunePanes) before adopting it.
 export function readStoredPanes(): PanesState {
   try {
-    const raw = globalThis.localStorage?.getItem(OPEN_PANES_KEY);
+    const prefs = getPlatformOptional()?.prefs;
+    const raw = prefs ? prefs.get(OPEN_PANES_KEY) : globalThis.localStorage?.getItem(OPEN_PANES_KEY);
     return raw ? parsePanesState(JSON.parse(raw)) : { openPanes: [], focusedPaneId: "" };
   } catch {
     return { openPanes: [], focusedPaneId: "" };
@@ -162,7 +165,9 @@ export function readStoredPanes(): PanesState {
 // Persist the open panes + focus. No-ops if storage is unavailable.
 export function persistPanes(state: PanesState): void {
   try {
-    globalThis.localStorage?.setItem(OPEN_PANES_KEY, JSON.stringify(state));
+    const prefs = getPlatformOptional()?.prefs;
+    if (prefs) prefs.set(OPEN_PANES_KEY, JSON.stringify(state));
+    else globalThis.localStorage?.setItem(OPEN_PANES_KEY, JSON.stringify(state));
   } catch {
     // storage unavailable — keep the in-memory panes only
   }

@@ -15,7 +15,7 @@ import { registerView } from "../workspace/viewRegistry";
 import { navigateShell } from "../workspace/shellNav";
 import { IMPORT_CONFIRM_PHRASE, type BackupStatusInfo } from "../workspace/dataTrust";
 import { setMemoryCaptureEnabled } from "../memory/capture";
-import { platformDialogs } from "../platform";
+import { getPlatformOptional, platformDialogs } from "../platform";
 import { setSpeechPreferences, useSpeechPreferences } from "../speech/speechPreferences";
 import type { MemorySettings } from "../data/entityClient";
 import { listSettingsSections, registerSettingsSection } from "./registry";
@@ -258,7 +258,11 @@ function DataSection() {
   const [backupStatus, setBackupStatus] = useState<BackupStatusInfo | null>(null);
   const [backupLimit, setBackupLimit] = useState(() => {
     try {
-      return Math.max(1, Number(globalThis.localStorage?.getItem("growte.backup.restoreLimit") ?? 11));
+      const prefs = getPlatformOptional()?.prefs;
+      const raw = prefs
+        ? prefs.get("growte.backup.restoreLimit")
+        : globalThis.localStorage?.getItem("growte.backup.restoreLimit");
+      return Math.max(1, Number(raw ?? 11));
     } catch {
       return 11;
     }
@@ -299,7 +303,9 @@ function DataSection() {
     const next = Math.max(1, Math.min(99, Math.round(value || 1)));
     setBackupLimit(next);
     try {
-      globalThis.localStorage?.setItem("growte.backup.restoreLimit", String(next));
+      const prefs = getPlatformOptional()?.prefs;
+      if (prefs) prefs.set("growte.backup.restoreLimit", String(next));
+      else globalThis.localStorage?.setItem("growte.backup.restoreLimit", String(next));
     } catch {
       // best-effort local UI preference
     }

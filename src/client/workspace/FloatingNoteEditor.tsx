@@ -27,6 +27,7 @@ import { useWorkspace } from "./WorkspaceContext";
 import { getNoteType } from "../notes/noteTypeRegistry";
 import { noteTypeIcon } from "../notes/noteTypeIcon";
 import { readCardGeom, writeCardGeom } from "../annotationLayer";
+import { getPlatformOptional } from "../platform/platformSingleton";
 import type { SelectionRect } from "../selection/selectionRect";
 import "./floatingEditor.css";
 
@@ -43,7 +44,9 @@ const LOCAL_DRAFT_PREFIX = "sv-edit-draft:";
 // —— local autosave draft (per anchor/source + contentType) ——————————————————
 function readLocalDraft(key: string): unknown {
   try {
-    const raw = globalThis.localStorage?.getItem(LOCAL_DRAFT_PREFIX + key);
+    const prefs = getPlatformOptional()?.prefs;
+    const storageKey = LOCAL_DRAFT_PREFIX + key;
+    const raw = prefs ? prefs.get(storageKey) : globalThis.localStorage?.getItem(storageKey);
     if (!raw) return undefined;
     return (JSON.parse(raw) as { content?: unknown }).content;
   } catch {
@@ -53,7 +56,11 @@ function readLocalDraft(key: string): unknown {
 
 function writeLocalDraft(key: string, content: unknown): void {
   try {
-    globalThis.localStorage?.setItem(LOCAL_DRAFT_PREFIX + key, JSON.stringify({ content }));
+    const prefs = getPlatformOptional()?.prefs;
+    const storageKey = LOCAL_DRAFT_PREFIX + key;
+    const value = JSON.stringify({ content });
+    if (prefs) prefs.set(storageKey, value);
+    else globalThis.localStorage?.setItem(storageKey, value);
   } catch {
     // storage unavailable / quota — autosave is best-effort
   }
@@ -61,7 +68,10 @@ function writeLocalDraft(key: string, content: unknown): void {
 
 export function clearLocalDraft(key: string): void {
   try {
-    globalThis.localStorage?.removeItem(LOCAL_DRAFT_PREFIX + key);
+    const prefs = getPlatformOptional()?.prefs;
+    const storageKey = LOCAL_DRAFT_PREFIX + key;
+    if (prefs) prefs.remove(storageKey);
+    else globalThis.localStorage?.removeItem(storageKey);
   } catch {
     // ignore
   }

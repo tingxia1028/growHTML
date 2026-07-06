@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { getPlatformOptional } from "../platform/platformSingleton";
 
 const KEY = "growte.speech.preferences";
 const MIN_RATE = 0.5;
@@ -27,7 +28,8 @@ function normalize(value: unknown): SpeechPreferences {
 
 function readPrefs(): SpeechPreferences {
   try {
-    const raw = globalThis.localStorage?.getItem(KEY);
+    const prefs = getPlatformOptional()?.prefs;
+    const raw = prefs ? prefs.get(KEY) : globalThis.localStorage?.getItem(KEY);
     return raw ? normalize(JSON.parse(raw)) : DEFAULT_PREFS;
   } catch {
     return DEFAULT_PREFS;
@@ -54,7 +56,9 @@ export function getSpeechPreferences(): SpeechPreferences {
 export function setSpeechPreferences(next: Partial<SpeechPreferences>): SpeechPreferences {
   prefs = normalize({ ...prefs, ...next });
   try {
-    globalThis.localStorage?.setItem(KEY, JSON.stringify(prefs));
+    const store = getPlatformOptional()?.prefs;
+    if (store) store.set(KEY, JSON.stringify(prefs));
+    else globalThis.localStorage?.setItem(KEY, JSON.stringify(prefs));
   } catch {
     // Local persistence is best-effort; the in-memory preference still applies now.
   }
@@ -69,7 +73,9 @@ export function useSpeechPreferences(): SpeechPreferences {
 export function resetSpeechPreferencesForTests(): void {
   prefs = DEFAULT_PREFS;
   try {
-    globalThis.localStorage?.removeItem(KEY);
+    const store = getPlatformOptional()?.prefs;
+    if (store) store.remove(KEY);
+    else globalThis.localStorage?.removeItem(KEY);
   } catch {
     // ignored
   }

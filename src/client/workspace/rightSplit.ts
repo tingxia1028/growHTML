@@ -3,6 +3,8 @@
 // so the clamp / persist / remaining-tabs logic is unit-testable in isolation, mirroring
 // the dock engine's pure helpers (clampDockPx etc.). The component owns the React state.
 
+import { getPlatformOptional } from "../platform/platformSingleton";
+
 export type SplitSide = "top" | "bottom";
 
 // The persisted/in-memory split state. `poppedKind` null = no split (plain tab group).
@@ -61,7 +63,9 @@ export function normalizeSplit(raw: unknown, validKinds: ReadonlyArray<string>):
 // against absent/throwing storage and malformed JSON (returns the default).
 export function loadRightSplit(layoutId: string | undefined, validKinds: ReadonlyArray<string>): RightSplitState {
   try {
-    const raw = globalThis.localStorage?.getItem(rightSplitKey(layoutId));
+    const prefs = getPlatformOptional()?.prefs;
+    const key = rightSplitKey(layoutId);
+    const raw = prefs ? prefs.get(key) : globalThis.localStorage?.getItem(key);
     if (!raw) return { ...DEFAULT_RIGHT_SPLIT };
     return normalizeSplit(JSON.parse(raw), validKinds);
   } catch {
@@ -72,7 +76,10 @@ export function loadRightSplit(layoutId: string | undefined, validKinds: Readonl
 // Persist the split for a layout. No-ops if storage is unavailable.
 export function saveRightSplit(layoutId: string | undefined, state: RightSplitState): void {
   try {
-    globalThis.localStorage?.setItem(rightSplitKey(layoutId), JSON.stringify(state));
+    const prefs = getPlatformOptional()?.prefs;
+    const key = rightSplitKey(layoutId);
+    if (prefs) prefs.set(key, JSON.stringify(state));
+    else globalThis.localStorage?.setItem(key, JSON.stringify(state));
   } catch {
     // storage unavailable — keep the in-memory state only
   }

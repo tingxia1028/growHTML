@@ -16,6 +16,7 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEven
 import { X } from "lucide-react";
 import type { WorkspaceLayout, WorkspaceNode } from "../data/entityClient";
 import { resolveText, t, type LocalizedText } from "../i18n";
+import { getPlatformOptional } from "../platform/platformSingleton";
 import { renderNode } from "./viewRegistry";
 import { useWorkspace } from "./WorkspaceContext";
 import {
@@ -138,7 +139,8 @@ function modalTitle(kind: string): string {
 
 function loadSizes(): Record<string, number> {
   try {
-    const raw = globalThis.localStorage?.getItem(SIZES_KEY);
+    const prefs = getPlatformOptional()?.prefs;
+    const raw = prefs ? prefs.get(SIZES_KEY) : globalThis.localStorage?.getItem(SIZES_KEY);
     return raw ? (JSON.parse(raw) as Record<string, number>) : {};
   } catch {
     return {};
@@ -147,7 +149,8 @@ function loadSizes(): Record<string, number> {
 
 function loadCollapsed(): Record<string, boolean> {
   try {
-    const raw = globalThis.localStorage?.getItem(COLLAPSED_KEY);
+    const prefs = getPlatformOptional()?.prefs;
+    const raw = prefs ? prefs.get(COLLAPSED_KEY) : globalThis.localStorage?.getItem(COLLAPSED_KEY);
     return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
   } catch {
     return {};
@@ -287,7 +290,9 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
     setCollapsed((prev) => {
       const updated = { ...prev, [collapseKey]: next };
       try {
-        globalThis.localStorage?.setItem(COLLAPSED_KEY, JSON.stringify(updated));
+        const prefs = getPlatformOptional()?.prefs;
+        if (prefs) prefs.set(COLLAPSED_KEY, JSON.stringify(updated));
+        else globalThis.localStorage?.setItem(COLLAPSED_KEY, JSON.stringify(updated));
       } catch {
         // storage unavailable — keep the in-memory flags
       }
@@ -328,7 +333,9 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
       document.removeEventListener("mouseup", onUp);
       setSizes((prev) => {
         try {
-          globalThis.localStorage?.setItem(SIZES_KEY, JSON.stringify(prev));
+          const prefs = getPlatformOptional()?.prefs;
+          if (prefs) prefs.set(SIZES_KEY, JSON.stringify(prev));
+          else globalThis.localStorage?.setItem(SIZES_KEY, JSON.stringify(prev));
         } catch {
           // storage unavailable — keep the in-memory sizes
         }

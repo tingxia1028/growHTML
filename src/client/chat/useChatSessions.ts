@@ -23,6 +23,7 @@
 // stays a fresh start across restarts.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getPlatformOptional } from "../platform/platformSingleton";
 import {
   getChatSessionIo,
   type ChatMessage,
@@ -78,7 +79,8 @@ export type ChatSessionDomain = {
 
 function readStoredActiveSession(): string | null {
   try {
-    return globalThis.localStorage?.getItem(ACTIVE_SESSION_STORAGE_KEY) ?? null;
+    const prefs = getPlatformOptional()?.prefs;
+    return (prefs ? prefs.get(ACTIVE_SESSION_STORAGE_KEY) : globalThis.localStorage?.getItem(ACTIVE_SESSION_STORAGE_KEY)) ?? null;
   } catch {
     return null;
   }
@@ -86,7 +88,9 @@ function readStoredActiveSession(): string | null {
 
 function storeActiveSession(id: string | null): void {
   try {
-    globalThis.localStorage?.setItem(ACTIVE_SESSION_STORAGE_KEY, id ?? NONE_SENTINEL);
+    const prefs = getPlatformOptional()?.prefs;
+    if (prefs) prefs.set(ACTIVE_SESSION_STORAGE_KEY, id ?? NONE_SENTINEL);
+    else globalThis.localStorage?.setItem(ACTIVE_SESSION_STORAGE_KEY, id ?? NONE_SENTINEL);
   } catch {
     // storage unavailable — resume just won't survive a restart
   }

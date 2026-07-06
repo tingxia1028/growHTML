@@ -9,6 +9,8 @@
 // (not opened items) for V1 — a query redo covers the "get me back there" need and
 // sidesteps stale-id rendering (an opened note may be deleted; a query never dangles).
 
+import { getPlatformOptional } from "../platform/platformSingleton";
+
 const STORAGE_KEY = "growte.search.recents";
 /** How many recent queries we keep / surface (a short, glanceable list). */
 export const RECENTS_LIMIT = 6;
@@ -63,9 +65,18 @@ export function clearRecentSearches(store: RecentsStore | undefined): string[] {
   return [];
 }
 
-/** The real store, or undefined when localStorage is unreachable (SSR / hardened). */
+/** The real store, or undefined when storage is unreachable (SSR / hardened). Routes
+ *  through the platform prefs seam when set (adapting {get,set} → {getItem,setItem}),
+ *  else falls back to `window.localStorage` — byte-identical to the pre-seam behavior. */
 export function defaultRecentsStore(): RecentsStore | undefined {
   try {
+    const prefs = getPlatformOptional()?.prefs;
+    if (prefs) {
+      return {
+        getItem: (key) => prefs.get(key),
+        setItem: (key, value) => prefs.set(key, value)
+      };
+    }
     return globalThis.localStorage ?? undefined;
   } catch {
     return undefined;

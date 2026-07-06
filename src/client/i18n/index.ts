@@ -11,6 +11,7 @@ import {
   useSyncExternalStore,
   type ReactNode
 } from "react";
+import { getPlatformOptional } from "../platform/platformSingleton";
 
 export type Locale = "zh" | "en";
 
@@ -23,7 +24,8 @@ function isLocale(value: unknown): value is Locale {
 
 function readStoredLocale(): Locale {
   try {
-    const raw = globalThis.localStorage?.getItem(LOCALE_STORAGE_KEY);
+    const prefs = getPlatformOptional()?.prefs;
+    const raw = prefs ? prefs.get(LOCALE_STORAGE_KEY) : globalThis.localStorage?.getItem(LOCALE_STORAGE_KEY);
     return isLocale(raw) ? raw : DEFAULT_LOCALE;
   } catch {
     return DEFAULT_LOCALE;
@@ -42,7 +44,9 @@ export function setLocale(locale: Locale): void {
   if (currentLocale === locale) return;
   currentLocale = locale;
   try {
-    globalThis.localStorage?.setItem(LOCALE_STORAGE_KEY, locale);
+    const prefs = getPlatformOptional()?.prefs;
+    if (prefs) prefs.set(LOCALE_STORAGE_KEY, locale);
+    else globalThis.localStorage?.setItem(LOCALE_STORAGE_KEY, locale);
   } catch {
     // Storage may be unavailable in tests or hardened desktop contexts.
   }

@@ -4,6 +4,7 @@
 // engine's pure helpers. SourceTabs owns the React state; the global dock engine is
 // untouched (the split is self-contained inside the source.tabs host view).
 
+import { getPlatformOptional } from "../platform/platformSingleton";
 import { isHostRealmSource } from "../viewers";
 
 // The split state. `sidePaneId` null = no split (single body, tabbed). When set, the
@@ -56,7 +57,9 @@ export function loadSourceSplit(
   validPaneIds: ReadonlyArray<string>
 ): SourceSplitState {
   try {
-    const raw = globalThis.localStorage?.getItem(sourceSplitKey(layoutId));
+    const prefs = getPlatformOptional()?.prefs;
+    const key = sourceSplitKey(layoutId);
+    const raw = prefs ? prefs.get(key) : globalThis.localStorage?.getItem(key);
     if (!raw) return { ...NO_SPLIT };
     return normalizeSourceSplit(JSON.parse(raw), validPaneIds);
   } catch {
@@ -66,7 +69,10 @@ export function loadSourceSplit(
 
 export function saveSourceSplit(layoutId: string | undefined, state: SourceSplitState): void {
   try {
-    globalThis.localStorage?.setItem(sourceSplitKey(layoutId), JSON.stringify(state));
+    const prefs = getPlatformOptional()?.prefs;
+    const key = sourceSplitKey(layoutId);
+    if (prefs) prefs.set(key, JSON.stringify(state));
+    else globalThis.localStorage?.setItem(key, JSON.stringify(state));
   } catch {
     // storage unavailable — keep the in-memory state only
   }

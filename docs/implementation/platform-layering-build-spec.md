@@ -60,6 +60,17 @@ export interface PlatformAdapter {
 UserMenu.tsx:210 — capabilities gate them, `native.openUrl` routes the external-URL open.)
 
 ### 1.3 localStorage prefs migration — REAL scope (B2: ~4× the first estimate)
+**✅ LANDED (2026-07-06).** 14 client files routed through `getPlatformOptional()?.prefs` with a
+`globalThis.localStorage` fallback (byte-identical pre-`setPlatform` + in provider-less tests): applyTheme,
+speechPreferences, searchRecents (shape-adapted to its injected `RecentsStore`), useChatSessions, panes,
+rightSplit, sourceSplit, i18n, annotations, WorkspaceContext (module helpers + inline setActiveLayout/Theme),
+FloatingNoteEditor, WorkspaceShell, views (`sv-library-collapsed`), SettingsHub (`growte.backup.restoreLimit`).
+Dead-code `readStoredAnnotationMode`/`persistAnnotationMode`/`sv-annotation-mode` DELETED (write-only key; read
+hardcoded `"margin"` → `DEFAULT_ANNOTATION_MODE`). LEFT (correctly, not the app-prefs seam): `annotationLayer.ts
+cardStore(doc)` reads the reader IFRAME realm's own `localStorage` (`sv-card-geom:*`). SKIPPED (codex-owned):
+`anchorViews.tsx` — so the `views ⊄ localStorage` boundary is NOT fully green until codex funnels its files.
+Adversarial review: PASS (byte-parity probe-verified, no findings). tsc 0 · full vitest 277f/2817t · build ✓.
+Still TODO for Part-1: native (window.studyVault, 7 files) + clipboard + the ~8 confirm/prompt/alert stragglers.
 Three kinds:
 - **PREFS via ~30 `readStored*/persist*` helper pairs → rewrite the BODIES to `getPlatform().prefs.*`**
   (`sv-*` keys: ACTIVE_LAYOUT WorkspaceContext.tsx:284, RECENT_SOURCE_IDS :303, FOLDER_ROOTS :325,

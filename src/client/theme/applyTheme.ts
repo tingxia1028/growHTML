@@ -9,6 +9,7 @@
 // re-seeds :root from the registry so the token layer is complete + self-describing.
 // (V2 grows this same injector to also emit raw theme CSS / user overrides / snippets.)
 
+import { getPlatformOptional } from "../platform/platformSingleton";
 import { DEFAULT_THEME_ID } from "./builtins";
 import { getTheme, listThemes } from "./registry";
 
@@ -71,7 +72,9 @@ export function setActiveTheme(id: string): void {
 /** The persisted active theme id, or the default when none is stored / storage is unavailable. */
 export function readPersistedThemeId(): string {
   try {
-    return globalThis.localStorage?.getItem(THEME_STORAGE_KEY) || DEFAULT_THEME_ID;
+    const prefs = getPlatformOptional()?.prefs;
+    const raw = prefs ? prefs.get(THEME_STORAGE_KEY) : globalThis.localStorage?.getItem(THEME_STORAGE_KEY);
+    return raw || DEFAULT_THEME_ID;
   } catch {
     return DEFAULT_THEME_ID;
   }

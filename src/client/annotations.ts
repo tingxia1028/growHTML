@@ -7,6 +7,7 @@
 // and hand each renderer only the anchors whose kind it claims. A renderer owns
 // the DOM painting for its kinds. Built-in: the HTML study-id highlighter.
 
+import { getPlatformOptional } from "./platform/platformSingleton";
 import {
   ANNOTATION_CSS,
   ANNOTATION_STYLE_ID,
@@ -26,23 +27,13 @@ import {
 //  - "margin":   inline highlight + persistent cards laid out in a side gutter,
 //                connected to their anchor, leaving the original text uncovered (default).
 export type HtmlAnnotationMode = "floating" | "margin";
-const MODE_STORAGE_KEY = "sv-annotation-mode";
 
-// Read/write the persisted mode. The React layer (WorkspaceContext) owns the live
-// mode state and threads it into decorateAnnotations(doc, { mode }); these helpers
-// just seed that state from — and persist it to — localStorage so the choice
-// survives reloads. Reading the stored value never throws (sandboxed realms).
-export function readStoredAnnotationMode(): HtmlAnnotationMode {
-  return "margin";
-}
-
-export function persistAnnotationMode(mode: HtmlAnnotationMode): void {
-  try {
-    globalThis.localStorage?.setItem(MODE_STORAGE_KEY, mode);
-  } catch {
-    // storage unavailable — the in-memory React state still drives the paint.
-  }
-}
+// The presentation mode is pinned to "margin" (the old "floating"/Document tab was
+// removed 2026-07-04 — see TopBar.tsx). The former readStoredAnnotationMode/
+// persistAnnotationMode storage pair was DEAD (the read hardcoded "margin" and never
+// touched storage, so the write's `sv-annotation-mode` key was never read back); it
+// was deleted during the PLAT-LAYER prefs funnel rather than routed through a seam.
+export const DEFAULT_ANNOTATION_MODE: HtmlAnnotationMode = "margin";
 
 // Global "显示锚点标记" switch (D2 amendment, 2026-07-04): the Anchor panel toggle
 // hides EVERY anchor glyph chip across readers (note-slot chips stay). Same
@@ -54,7 +45,9 @@ const ANCHOR_GLYPH_STORAGE_KEY = "sv-anchor-glyph-markers";
 
 export function readStoredAnchorGlyphVisibility(): boolean {
   try {
-    return globalThis.localStorage?.getItem(ANCHOR_GLYPH_STORAGE_KEY) !== "hidden";
+    const prefs = getPlatformOptional()?.prefs;
+    const raw = prefs ? prefs.get(ANCHOR_GLYPH_STORAGE_KEY) : globalThis.localStorage?.getItem(ANCHOR_GLYPH_STORAGE_KEY);
+    return raw !== "hidden";
   } catch {
     return true; // storage unavailable — default to visible
   }
@@ -62,7 +55,10 @@ export function readStoredAnchorGlyphVisibility(): boolean {
 
 export function persistAnchorGlyphVisibility(visible: boolean): void {
   try {
-    globalThis.localStorage?.setItem(ANCHOR_GLYPH_STORAGE_KEY, visible ? "shown" : "hidden");
+    const prefs = getPlatformOptional()?.prefs;
+    const value = visible ? "shown" : "hidden";
+    if (prefs) prefs.set(ANCHOR_GLYPH_STORAGE_KEY, value);
+    else globalThis.localStorage?.setItem(ANCHOR_GLYPH_STORAGE_KEY, value);
   } catch {
     // storage unavailable — the in-memory overlay store still drives the paint.
   }
@@ -101,7 +97,10 @@ const NOTES_HIDDEN_STORAGE_PREFIX = "sv-notes-hidden:";
 export function readStoredNotesHidden(sourceId: string): boolean {
   if (!sourceId) return false;
   try {
-    return globalThis.localStorage?.getItem(NOTES_HIDDEN_STORAGE_PREFIX + sourceId) === "hidden";
+    const prefs = getPlatformOptional()?.prefs;
+    const key = NOTES_HIDDEN_STORAGE_PREFIX + sourceId;
+    const raw = prefs ? prefs.get(key) : globalThis.localStorage?.getItem(key);
+    return raw === "hidden";
   } catch {
     return false; // storage unavailable — default to shown
   }
@@ -110,8 +109,15 @@ export function readStoredNotesHidden(sourceId: string): boolean {
 export function persistNotesHidden(sourceId: string, hidden: boolean): void {
   if (!sourceId) return;
   try {
-    if (hidden) globalThis.localStorage?.setItem(NOTES_HIDDEN_STORAGE_PREFIX + sourceId, "hidden");
-    else globalThis.localStorage?.removeItem(NOTES_HIDDEN_STORAGE_PREFIX + sourceId);
+    const prefs = getPlatformOptional()?.prefs;
+    const key = NOTES_HIDDEN_STORAGE_PREFIX + sourceId;
+    if (prefs) {
+      if (hidden) prefs.set(key, "hidden");
+      else prefs.remove(key);
+    } else {
+      if (hidden) globalThis.localStorage?.setItem(key, "hidden");
+      else globalThis.localStorage?.removeItem(key);
+    }
   } catch {
     // storage unavailable — the in-memory store still drives the paint.
   }

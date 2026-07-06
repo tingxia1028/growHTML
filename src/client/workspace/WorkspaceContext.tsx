@@ -35,7 +35,7 @@ import {
   type StudyLayerRecord
 } from "../data/entityClient";
 import { useFocus, draftQuoteText, type FocusContextValue, type AnchorDraft } from "../focus/FocusContext";
-import { platformDialogs } from "../platform";
+import { getPlatformOptional, platformDialogs } from "../platform";
 import { selectionRectToPageRect } from "../surfaces/pdfSelectionRect";
 // A4b: the agent-loop transcript — a render-only turn state accumulated from the agent
 // SSE (entityClient.agentStream). Distinct from the persisted chat log; only done.message
@@ -53,8 +53,7 @@ import type { PaintAnchor } from "../surfaces/types";
 // bottom. Best-effort — null falls back to a reader-panel-anchored position.
 import { getSelectionRect, type SelectionRect } from "../selection/selectionRect";
 import {
-  persistAnnotationMode,
-  readStoredAnnotationMode,
+  DEFAULT_ANNOTATION_MODE,
   type HtmlAnnotationMode
 } from "../annotations";
 import { activeKitIdsForSource, CORE_KIT_ID } from "../../kits/activation";
@@ -285,7 +284,9 @@ function orderActions(actions: ToolbarAction[], prefs: OperationPrefs): ToolbarA
 const ACTIVE_LAYOUT_KEY = "sv-active-layout";
 function loadActiveLayout(): string {
   try {
-    return globalThis.localStorage?.getItem(ACTIVE_LAYOUT_KEY) || DEFAULT_LAYOUT_ID;
+    const prefs = getPlatformOptional()?.prefs;
+    const raw = prefs ? prefs.get(ACTIVE_LAYOUT_KEY) : globalThis.localStorage?.getItem(ACTIVE_LAYOUT_KEY);
+    return raw || DEFAULT_LAYOUT_ID;
   } catch {
     return DEFAULT_LAYOUT_ID;
   }
@@ -295,7 +296,9 @@ function loadActiveLayout(): string {
 // the same precedent as the layout id above). Orthogonal to layout — separate key.
 function loadActiveTheme(): string {
   try {
-    return globalThis.localStorage?.getItem(THEME_STORAGE_KEY) || DEFAULT_THEME_ID;
+    const prefs = getPlatformOptional()?.prefs;
+    const raw = prefs ? prefs.get(THEME_STORAGE_KEY) : globalThis.localStorage?.getItem(THEME_STORAGE_KEY);
+    return raw || DEFAULT_THEME_ID;
   } catch {
     return DEFAULT_THEME_ID;
   }
@@ -305,7 +308,8 @@ const RECENT_SOURCE_IDS_KEY = "sv-recent-source-ids";
 
 function readStoredRecentSourceIds(): string[] {
   try {
-    const raw = globalThis.localStorage?.getItem(RECENT_SOURCE_IDS_KEY);
+    const prefs = getPlatformOptional()?.prefs;
+    const raw = prefs ? prefs.get(RECENT_SOURCE_IDS_KEY) : globalThis.localStorage?.getItem(RECENT_SOURCE_IDS_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
   } catch {
@@ -315,7 +319,9 @@ function readStoredRecentSourceIds(): string[] {
 
 function persistRecentSourceIds(ids: string[]): void {
   try {
-    globalThis.localStorage?.setItem(RECENT_SOURCE_IDS_KEY, JSON.stringify(ids));
+    const prefs = getPlatformOptional()?.prefs;
+    if (prefs) prefs.set(RECENT_SOURCE_IDS_KEY, JSON.stringify(ids));
+    else globalThis.localStorage?.setItem(RECENT_SOURCE_IDS_KEY, JSON.stringify(ids));
   } catch {
     // storage unavailable - keep the in-memory order
   }
@@ -327,7 +333,8 @@ const FOLDER_ROOTS_KEY = "sv-folder-roots";
 
 function readStoredFolderRoots(): string[] {
   try {
-    const raw = globalThis.localStorage?.getItem(FOLDER_ROOTS_KEY);
+    const prefs = getPlatformOptional()?.prefs;
+    const raw = prefs ? prefs.get(FOLDER_ROOTS_KEY) : globalThis.localStorage?.getItem(FOLDER_ROOTS_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed.filter((root): root is string => typeof root === "string") : [];
   } catch {
@@ -337,7 +344,9 @@ function readStoredFolderRoots(): string[] {
 
 function persistFolderRoots(roots: string[]): void {
   try {
-    globalThis.localStorage?.setItem(FOLDER_ROOTS_KEY, JSON.stringify(roots));
+    const prefs = getPlatformOptional()?.prefs;
+    if (prefs) prefs.set(FOLDER_ROOTS_KEY, JSON.stringify(roots));
+    else globalThis.localStorage?.setItem(FOLDER_ROOTS_KEY, JSON.stringify(roots));
   } catch {
     // storage unavailable - keep the in-memory roots
   }
@@ -852,9 +861,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   >(null);
   const [activeLayoutId, setActiveLayoutId] = useState<string>(loadActiveLayout);
   const [activeThemeId, setActiveThemeId] = useState<string>(loadActiveTheme);
-  // Note-presentation mode for the DOM HTML reader. Seeded from localStorage so the
-  // choice survives reloads; the setter mirrors it back to storage.
-  const [annotationMode, setAnnotationModeState] = useState<HtmlAnnotationMode>(readStoredAnnotationMode);
+  // Note-presentation mode for the DOM HTML reader. Pinned to the "margin" default
+  // (the "floating"/Document tab was removed 2026-07-04 — see TopBar.tsx); the setter
+  // keeps the field for the context surface but the value never leaves "margin".
+  const [annotationMode, setAnnotationModeState] = useState<HtmlAnnotationMode>(DEFAULT_ANNOTATION_MODE);
   const [layersVersion, setLayersVersion] = useState(0);
   // The AI draft awaiting preview/edit/save (null = nothing pending), plus a flag for
   // an in-flight regenerate so the preview can show/disable while it re-runs.
@@ -1938,10 +1948,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const dismissDraftNote = useCallback(() => setDraftNote(null), []);
 
-  // Flip the note-presentation mode and persist the choice (so it survives reload).
+  // Flip the note-presentation mode. Persistence was removed with the dead
+  // readStoredAnnotationMode/persistAnnotationMode pair (the stored key was never read
+  // back — the mode is effectively pinned to "margin"); the setter still drives the
+  // live React state so the context surface is unchanged.
   const setAnnotationMode = useCallback((mode: HtmlAnnotationMode) => {
     setAnnotationModeState(mode);
-    persistAnnotationMode(mode);
   }, []);
 
   // Reload the layer switcher (token) AND repaint the reader (enabled layers drive
@@ -2388,7 +2400,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const setActiveLayout = useCallback((id: string) => {
     setActiveLayoutId(id);
     try {
-      globalThis.localStorage?.setItem(ACTIVE_LAYOUT_KEY, id);
+      const prefs = getPlatformOptional()?.prefs;
+      if (prefs) prefs.set(ACTIVE_LAYOUT_KEY, id);
+      else globalThis.localStorage?.setItem(ACTIVE_LAYOUT_KEY, id);
     } catch {
       // storage unavailable — keep the in-memory choice
     }
@@ -2400,7 +2414,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setActiveThemeId(id);
     applyActiveTheme(id); // flips <html data-theme> + color-scheme — the whole-app re-skin
     try {
-      globalThis.localStorage?.setItem(THEME_STORAGE_KEY, id);
+      const prefs = getPlatformOptional()?.prefs;
+      if (prefs) prefs.set(THEME_STORAGE_KEY, id);
+      else globalThis.localStorage?.setItem(THEME_STORAGE_KEY, id);
     } catch {
       // storage unavailable — keep the in-memory choice
     }

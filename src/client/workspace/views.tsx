@@ -28,6 +28,7 @@ import {
   X
 } from "lucide-react";
 import { TerminalPanel } from "../TerminalPanel";
+import { getPlatformOptional } from "../platform/platformSingleton";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 import { PanelMenu } from "./PanelMenu";
 import { entityClient } from "../data/entityClient";
@@ -105,7 +106,8 @@ const LIBRARY_COLLAPSED_KEY = "sv-library-collapsed";
 
 function readCollapsedSections(): Record<string, boolean> {
   try {
-    const raw = globalThis.localStorage?.getItem(LIBRARY_COLLAPSED_KEY);
+    const prefs = getPlatformOptional()?.prefs;
+    const raw = prefs ? prefs.get(LIBRARY_COLLAPSED_KEY) : globalThis.localStorage?.getItem(LIBRARY_COLLAPSED_KEY);
     const parsed: unknown = raw ? JSON.parse(raw) : null;
     return parsed && typeof parsed === "object" ? (parsed as Record<string, boolean>) : {};
   } catch {
@@ -175,7 +177,9 @@ function LibraryView({ ctx }: { ctx: WorkspaceContext }) {
     setCollapsedMap((previous) => {
       const next = { ...previous, [id]: !previous[id] };
       try {
-        globalThis.localStorage?.setItem(LIBRARY_COLLAPSED_KEY, JSON.stringify(next));
+        const prefs = getPlatformOptional()?.prefs;
+        if (prefs) prefs.set(LIBRARY_COLLAPSED_KEY, JSON.stringify(next));
+        else globalThis.localStorage?.setItem(LIBRARY_COLLAPSED_KEY, JSON.stringify(next));
       } catch {
         // Persistence is best-effort; the in-memory toggle still applies.
       }
