@@ -34,6 +34,26 @@ export const CLOSE = Symbol.for("growhtml.sqliteEngine.close");
 export const DUMP = Symbol.for("growhtml.sqliteEngine.dump");
 
 /**
+ * A hidden LOAD hook on each sqlite-backed store (STORE-SQL Stage-3, §Stage-3). The SYMMETRIC
+ * inverse of {@link DUMP}: the pack's source of truth is the `*.jsonl` dumps (spec R2), so on a
+ * sqlite-TARGET vault import the swapped-in jsonl must be PUMPED into the fresh (empty) `.db`,
+ * else a freshly-opened sqlite store reads an empty cache and the imported data is invisible.
+ * The installed hook reads the jsonl file and `upsert`s each record — which for notes rebuilds
+ * the note_anchors/note_concepts/note_layers junctions (+ any FTS) from the record arrays FOR
+ * FREE (the engine-owned upsert transaction). Kept off the public 8-method {@link SnapshotStore}
+ * contract via a symbol — same idiom as CLOSE/DUMP.
+ *
+ * DECOUPLED from the native module for the same reason as {@link CLOSE}/{@link DUMP} (see above):
+ * the actual jsonl READ + upsert loop lives INSIDE the hook that sqliteEngine.ts installs, so this
+ * native-free module needs no `readJsonl` import. On a JSONL-backed store there is NO hook → LOAD
+ * is a NO-OP: the jsonl file IS the store (already read directly), and a redundant rewrite would
+ * trip the byte-identical-backup guard.
+ *
+ * Exported so `sqliteEngine.ts` INSTALLS the hook under the shared constant (see {@link CLOSE}).
+ */
+export const LOAD = Symbol.for("growhtml.sqliteEngine.load");
+
+/**
  * Close a sqlite-backed store's DB connection if it has one (no-op for other engines).
  *
  * Lives here (not in `sqliteEngine.ts`) so importing it does NOT load better-sqlite3 — it
@@ -64,6 +84,30 @@ export async function dumpStoreToJsonl(
 ): Promise<void> {
   const hook = (store as Record<symbol, unknown>)[DUMP];
   if (typeof hook !== "function") return; // not sqlite-backed → the jsonl file is already truth
+  await (hook as (jsonlPath: string, storage?: StorageAdapter) => Promise<void>)(jsonlPath, storage);
+}
+
+/**
+ * Pump a jsonl file into a store's backend (STORE-SQL Stage-3, §Stage-3) — the SYMMETRIC inverse of
+ * {@link dumpStoreToJsonl}. For a SQLITE-backed store the installed {@link LOAD} hook reads every
+ * record from `jsonlPath` and `upsert`s it into the (freshly-swapped-in, empty) `.db`, rebuilding
+ * the note junction rows (note_anchors/note_concepts/note_layers) from each record's id arrays for
+ * free. For any OTHER engine (jsonl — the reversibility fallback) it is a NO-OP: the jsonl file IS
+ * the store, read directly on the next request — a redundant rewrite would break the byte-identical
+ * jsonl-backup guarantee.
+ *
+ * Lives here (not in `sqliteEngine.ts`) so importing it does NOT load better-sqlite3 — it is a pure
+ * symbol-dispatcher; the actual jsonl read + upsert loop happens inside the hook the sqlite engine
+ * installs. Precondition: the store's backend already points at the swapped-in dir (the caller
+ * `close()`d + `reopen()`ed the vault first).
+ */
+export async function loadStoreFromJsonl(
+  store: SnapshotStore<SnapshotRecord>,
+  jsonlPath: string,
+  storage?: StorageAdapter
+): Promise<void> {
+  const hook = (store as Record<symbol, unknown>)[LOAD];
+  if (typeof hook !== "function") return; // not sqlite-backed → the jsonl file is already the store
   await (hook as (jsonlPath: string, storage?: StorageAdapter) => Promise<void>)(jsonlPath, storage);
 }
 

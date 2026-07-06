@@ -15,9 +15,12 @@
 // vault identity}. Export streams the zip; import is full REPLACE (merge is NOT V1 —
 // svpack is the merge path): explicit confirm phrase required, zip validated
 // structurally BEFORE anything is touched, automatic pre-import backup FIRST, then
-// staging-dir extract → two-rename swap (rollback on failure) → in-process reload
-// (manifest re-read + sealed-runtime refresh via onVaultReplaced; the jsonl stores
-// read from disk per request, so no store reopen is needed).
+// vault.close() (release the sqlite `.db` handles so the dir can be renamed on Windows)
+// → staging-dir extract → two-rename swap (rollback on failure) → vault.reopen() (fresh
+// handles on the swapped-in dir, in BOTH success and rollback paths) → rebuild the store
+// backend from the swapped-in jsonl (the pack's source of truth: on sqlite this pumps the
+// jsonl into the fresh empty `.db` and rebuilds note junctions; a NO-OP on the jsonl
+// fallback) → in-process reload (manifest re-read + sealed-runtime refresh via onVaultReplaced).
 //
 // Backups double as transfer packs: a backup zip carries the same manifest, so
 // restore (POST /api/backup/restore) and manual recovery ("导入全库" a backup zip)
@@ -31,7 +34,7 @@ import express, { type Express } from "express";
 import { z } from "zod";
 import { strFromU8, strToU8, unzipSync, Zip, ZipDeflate } from "fflate";
 import { entityFileNames } from "../core/store/entities";
-import { dumpStoreToJsonl } from "../core/store/engine";
+import { dumpStoreToJsonl, loadStoreFromJsonl } from "../core/store/engine";
 import type { SnapshotRecord, SnapshotStore } from "../core/store/snapshotStore";
 import { vaultManifestSchema, type VaultManifest } from "../core/schema";
 import type { StudyVault } from "../core/vault";
@@ -620,19 +623,39 @@ export function createDataTrustService(deps: DataTrustDeps): DataTrustService {
       throw error;
     }
 
-    // 3. Two-rename swap; roll back if the second rename fails.
-    await renameWithRetry(rootDir, replaced);
+    // 3. Two-rename swap; roll back if the second rename fails. STORE-SQL Stage-3: a SQLITE-backed
+    // vault holds 12 open `.db`/`-wal` handles under `.study/` — Windows can't rename the dir under
+    // them (EPERM/EBUSY). So close() FIRST (release the handles) → swap → reopen() in a `finally` so
+    // the vault ALWAYS ends open on whatever is now at rootDir: the NEW content on success, or the
+    // ORIGINAL content on rollback (incl. a first-rename failure, which leaves rootDir untouched).
+    // On the jsonl fallback both close() and reopen() are harmless no-ops (stores read per request).
+    deps.vault.close();
     try {
-      await renameWithRetry(staging, rootDir);
-    } catch (error) {
-      await renameWithRetry(replaced, rootDir);
-      await rm(staging, { recursive: true, force: true }).catch(() => undefined);
-      throw new VaultImportError(500, "swap-failed", `替换失败, 已回滚到原库: ${error instanceof Error ? error.message : error}`);
+      await renameWithRetry(rootDir, replaced);
+      try {
+        await renameWithRetry(staging, rootDir);
+      } catch (error) {
+        await renameWithRetry(replaced, rootDir);
+        await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+        throw new VaultImportError(500, "swap-failed", `替换失败, 已回滚到原库: ${error instanceof Error ? error.message : error}`);
+      }
+      await rm(replaced, { recursive: true, force: true }).catch(() => undefined);
+    } finally {
+      // rootDir now holds NEW (success) or ORIGINAL (rollback / first-rename failure) content →
+      // open fresh handles on it either way, so the vault is never left closed & unusable.
+      deps.vault.reopen();
     }
-    await rm(replaced, { recursive: true, force: true }).catch(() => undefined);
 
-    // 4. In-process reload: manifest is cached on the vault object (stores read from
-    // disk per request and need nothing); the sealed runtime re-unseals via the hook.
+    // 4. Rebuild the store backend from the swapped-in jsonl (the pack's source of truth, spec R2).
+    // On SQLITE the freshly-reopened `.db` is EMPTY (the pack excludes the `.db` cache) — pump each
+    // entity's jsonl into it so the imported data is visible + note junctions are rebuilt. On the
+    // jsonl fallback loadStoreFromJsonl is a NO-OP (the jsonl file IS the store, read per request).
+    for (const [key, fileName] of Object.entries(entityFileNames)) {
+      const store = vault.stores[key as keyof typeof vault.stores] as SnapshotStore<SnapshotRecord>;
+      await loadStoreFromJsonl(store, path.join(vault.paths.studyDir, fileName), vault.storage);
+    }
+
+    // 5. In-process reload: refresh the cached manifest; the sealed runtime re-unseals via the hook.
     Object.assign(vault.manifest, validated.vaultManifest);
     deps.onVaultReplaced?.();
 

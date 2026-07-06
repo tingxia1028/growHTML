@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import type { z } from "zod";
-import { CLOSE, DUMP, type StoreConfig, type StoreEngine } from "./engine";
-import { writeJsonlAtomic, type JsonlIssue, type JsonlReadResult } from "./jsonl";
+import { CLOSE, DUMP, LOAD, type StoreConfig, type StoreEngine } from "./engine";
+import { readJsonl, writeJsonlAtomic, type JsonlIssue, type JsonlReadResult } from "./jsonl";
 import type { StorageAdapter } from "../storage/adapter";
 import type { SnapshotRecord, SnapshotStore } from "./snapshotStore";
 
@@ -305,6 +305,22 @@ export const sqliteEngine: StoreEngine = <T extends SnapshotRecord>(
     value: async (jsonlPath: string, dumpStorage?: StorageAdapter) => {
       const { records } = await store.readWithIssues();
       await writeJsonlAtomic(jsonlPath, records, dumpStorage ?? config.storage);
+    },
+    enumerable: false,
+    configurable: true
+  });
+
+  // Stage-3 load hook (SYMMETRIC inverse of DUMP): pump a jsonl file's records into this fresh
+  // `.db` on a sqlite-TARGET vault import. Each `upsert` runs the engine-owned transaction, so the
+  // note junction rows (note_anchors/note_concepts/note_layers) are rebuilt from the record arrays
+  // for free. `readJsonl` schema-validates + skips blank lines (invalid rows dropped, parity with
+  // the dump); the whole load is idempotent (upsert by PK) and safe to re-run.
+  Object.defineProperty(store, LOAD, {
+    value: async (jsonlPath: string, loadStorage?: StorageAdapter) => {
+      const { records } = await readJsonl<T>(jsonlPath, schema, loadStorage ?? config.storage);
+      for (const record of records) {
+        upsertTxn(record);
+      }
     },
     enumerable: false,
     configurable: true

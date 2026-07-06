@@ -65,6 +65,9 @@ async function buildSqliteVault(rootDir: string): Promise<StudyVault> {
       for (const store of Object.values(stores)) {
         closeSqliteStore(store as SnapshotStore<SnapshotRecord>);
       }
+    },
+    reopen() {
+      Object.assign(stores, createEntityStores(studyDir, nodeStorage, sqliteEngine));
     }
   };
 }

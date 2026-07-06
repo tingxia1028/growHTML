@@ -7,12 +7,12 @@
 // REPLACE semantics on a fixture vault with the automatic pre-import backup, and
 // restore-from-backup with its pre-restore safety backup.
 
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import request from "supertest";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { fixtureAnchor, fixtureConcept, fixtureHtmlBody, fixtureNote, fixtureSource } from "../core/fixtures/golden";
 import { openVault, type StudyVault, type VaultPaths } from "../core/vault";
@@ -61,23 +61,33 @@ async function openTrustVault(rootDir: string): Promise<StudyVault> {
   return vault;
 }
 
-// PIN the default-vault RUNTIME to jsonl for this file (STORE-SQL Stage-3). Rationale above: the
-// backup/import path (doReplaceFromZip) is jsonl-inherent today — an in-place whole-dir swap that
-// assumes per-request disk reads, which sqlite's persistent DB connection breaks (adapting the
-// import runtime to close/reopen the vault around the swap is the separate Stage-3 import task).
-// The SQLITE export path is proven independently by the buildSqliteVault suite (which builds sqlite
-// directly, ignoring this env). resolveDefaultEngine() reads STORE_ENGINE at createEntityStores time.
-let priorStoreEngine: string | undefined;
-beforeAll(() => {
-  priorStoreEngine = process.env.STORE_ENGINE;
-  process.env.STORE_ENGINE = "jsonl";
-});
+// STORE-SQL Stage-3: the file-level jsonl pin is GONE (review NIT — narrowed). Now that
+// doReplaceFromZip closes → swaps → reopens → rebuilds the store backend from the swapped-in jsonl
+// (loadStoreFromJsonl), the backup/import/restore path works on the SQLITE default too, so the
+// default vaults here run on sqlite (the production engine). The only genuinely jsonl-INHERENT test
+// (the byte-identical jsonl-backup no-op) pins jsonl LOCALLY via withJsonlEngine(); a dedicated
+// sqlite-TARGET import round-trip below proves the swap on the real sqlite runtime.
 afterAll(async () => {
   for (const vault of madeVaults.splice(0)) vault.close();
   await Promise.all(madeDirs.map((dir) => rm(dir, { recursive: true, force: true })));
-  if (priorStoreEngine === undefined) delete process.env.STORE_ENGINE;
-  else process.env.STORE_ENGINE = priorStoreEngine;
 });
+
+/**
+ * Run `fn` with STORE_ENGINE pinned to jsonl (STORE-SQL Stage-3 reversibility switch, read by
+ * resolveDefaultEngine at createEntityStores time), restoring the prior value after. For the one
+ * genuinely jsonl-inherent test (the byte-identical jsonl-backup no-op) — everything else runs on
+ * the sqlite default.
+ */
+async function withJsonlEngine<T>(fn: () => Promise<T>): Promise<T> {
+  const prior = process.env.STORE_ENGINE;
+  process.env.STORE_ENGINE = "jsonl";
+  try {
+    return await fn();
+  } finally {
+    if (prior === undefined) delete process.env.STORE_ENGINE;
+    else process.env.STORE_ENGINE = prior;
+  }
+}
 
 type App = ReturnType<typeof createApp>;
 type Ctx = { app: App; vault: StudyVault; backupsDir: string; parent: string };
@@ -461,7 +471,8 @@ describe("POST /api/vault/import", () => {
     expect(res.body.counts.sources).toBe(2);
     expect(res.body.preImportBackup).toMatch(/-pre-import\.zip$/);
 
-    // Replace semantics: B now serves A's data (stores read from disk per request).
+    // Replace semantics: B now serves A's data (on the sqlite default, doReplaceFromZip closed B's
+    // stores, swapped the dir, reopened, and pumped the swapped-in jsonl into B's fresh .db).
     expect(await listSourceTitles(ctxB.app)).toEqual(["A1", "A2"]);
     const bInfo = await request(ctxB.app).get("/api/vault/info").expect(200);
     expect(bInfo.body.vault.createdAt).toBe(aInfo.body.vault.createdAt);
@@ -545,6 +556,13 @@ async function buildSqliteVault(rootDir: string): Promise<StudyVault> {
       for (const store of Object.values(stores)) {
         closeSqliteStore(store as SnapshotStore<SnapshotRecord>);
       }
+    },
+    // The real StudyVault.reopen() dispose-and-rebuild loop, but pinned to sqliteEngine so the
+    // import swap rebuilds SQLITE stores in place (production reopen() resolves the default engine,
+    // which is sqlite when STORE_ENGINE isn't jsonl; this file pins jsonl for the DEFAULT vaults, so
+    // a sqlite import target must build sqlite explicitly — the Stage-3 sqlite-import proof).
+    reopen() {
+      Object.assign(stores, createEntityStores(studyDir, nodeStorage, sqliteEngine));
     }
   };
 }
@@ -635,24 +653,28 @@ describe("STORE-SQL Stage-2 — sqlite whole-vault round-trip (JSONL is the pack
       expect(validated.manifest.counts.notes).toBe(1);
       expect(validated.manifest.counts.anchors).toBe(2); // live + tombstone (line count, not list())
 
-      // 3. Import into a FRESH vault B (full REPLACE via the real service pipeline). The import is
-      //    an ENGINE-AGNOSTIC whole-dir two-rename swap that validates jsonl lines and never reopens
-      //    stores, so B is a plain jsonl vault (no open `.db` handles to block the Windows rename —
-      //    the production Stage-3 StudyVault.close() closes them before the swap). The sqlite-vs-jsonl
-      //    proof is that we REBUILD sqlite stores from the imported jsonl in step 4.
-      const vaultB = await openTrustVault(rootB); // jsonl (file pinned) — the import target holds no `.db` handles → the dir swap is clean
+      // 3. Import A's pack into a SQLITE-runtime vault B (the STORE-SQL Stage-3 GUARD — the sqlite
+      //    import round-trip, previously blocked on the EPERM/empty-.db pair). B is seeded with its
+      //    OWN data first so we prove the old data is GONE post-swap. doReplaceFromZip now:
+      //    vault.close() (release B's 12 `.db` handles so the dir rename works) → two-rename swap →
+      //    vault.reopen() (fresh handles on the swapped-in dir) → loadStoreFromJsonl per entity
+      //    (pump the pack's jsonl into the freshly-reopened EMPTY `.db`, rebuilding note junctions).
+      const vaultB = await buildSqliteVault(rootB);
+      madeVaults.push(vaultB); // afterAll closes any leftover handles
       const serviceB = createDataTrustService({ vault: vaultB, backupsDir: path.join(parent, "backupsB"), appVersion: "0.0.0-test" });
+      // B's own OLD data — a distinct source that must NOT survive the full-REPLACE import.
+      const oldSource = { ...fixtureSource, id: "src_01ARZ3NDEKTSV4RRFFQ69G5FYY", title: "B-only, to be replaced" };
+      await vaultB.stores.sources.upsert(oldSource);
+      expect((await vaultB.stores.sources.getAny(oldSource.id))?.id).toBe(oldSource.id);
+
       const result = await serviceB.importVault(bytes);
       expect(result.ok).toBe(true);
       expect(result.counts.notes).toBe(1);
 
-      // 4. Read the imported entities back — jsonl is the pack's TRUTH, so a jsonl store reads them
-      //    directly from the swapped dir (pre-Stage-3; the Stage-3 boot builder will rebuild the `.db`
-      //    from this same jsonl). No stale `.db` survived the swap (the pack carried none; the swap
-      //    replaced the whole dir) — the jsonl alone is a complete, portable, restorable copy.
-      expect(existsSync(path.join(rootB, ".study", "notes.db"))).toBe(false);
-      const rebuilt = createEntityStores(path.join(rootB, ".study"), nodeStorage); // jsonl (default)
-      const notes = await rebuilt.notes.list();
+      // 4. Read the imported entities back THROUGH B's reopened sqlite store API (not a hand-rebuilt
+      //    jsonl store): the load pumped the swapped-in jsonl into B's fresh `.db`, so the imported
+      //    data is queryable on the live sqlite runtime.
+      const notes = await vaultB.stores.notes.list();
       expect(notes).toHaveLength(1);
       expect(notes[0].id).toBe(note.id);
       expect(notes[0].anchorIds).toEqual([fixtureAnchor.id]);
@@ -660,20 +682,44 @@ describe("STORE-SQL Stage-2 — sqlite whole-vault round-trip (JSONL is the pack
       expect(notes[0].layerIds).toEqual([layer.id]);
       expect(notes[0].layerId).toBe(layer.id); // legacy singular survived the blob round-trip
 
+      // The OLD B-only data is GONE (full REPLACE, not a merge).
+      expect(await vaultB.stores.sources.getAny(oldSource.id)).toBeNull();
+
       // The tombstone survived: hidden from list(), present in listTrashed()/getAny().
-      expect((await rebuilt.anchors.list()).map((a) => a.id)).toEqual([fixtureAnchor.id]);
-      expect((await rebuilt.anchors.listTrashed()).map((a) => a.id)).toEqual([trashedAnchor.id]);
-      expect((await rebuilt.anchors.getAny(trashedAnchor.id))?.deletedAt).toBe(trashedAnchor.deletedAt);
+      expect((await vaultB.stores.anchors.list()).map((a) => a.id)).toEqual([fixtureAnchor.id]);
+      expect((await vaultB.stores.anchors.listTrashed()).map((a) => a.id)).toEqual([trashedAnchor.id]);
+      expect((await vaultB.stores.anchors.getAny(trashedAnchor.id))?.deletedAt).toBe(trashedAnchor.deletedAt);
 
       // Other entity types round-tripped.
-      expect((await rebuilt.sources.list()).map((s) => s.id)).toEqual([fixtureSource.id]);
-      expect((await rebuilt.concepts.list()).map((c) => c.id)).toEqual([fixtureConcept.id]);
-      expect((await rebuilt.layers.list()).map((l) => l.id)).toEqual([layer.id]);
+      expect((await vaultB.stores.sources.list()).map((s) => s.id)).toEqual([fixtureSource.id]);
+      expect((await vaultB.stores.concepts.list()).map((c) => c.id)).toEqual([fixtureConcept.id]);
+      expect((await vaultB.stores.layers.list()).map((l) => l.id)).toEqual([layer.id]);
+
+      // The note junctions were REBUILT in B's `.db` (the projection a listNotes-by-anchor JOIN reads).
+      const { default: Database } = await import("better-sqlite3");
+      const probe = new Database(path.join(rootB, ".study", "notes.db"), { readonly: true });
+      try {
+        const owners = (ref: string, id: string, col: string) =>
+          (probe.prepare(`SELECT ownerId FROM ${ref} WHERE ${col} = ?`).all(id) as { ownerId: string }[]).map((r) => r.ownerId);
+        expect(owners("note_anchors", fixtureAnchor.id, "anchorId")).toEqual([note.id]);
+        expect(owners("note_concepts", fixtureConcept.id, "conceptId")).toEqual([note.id]);
+        expect(owners("note_layers", layer.id, "layerId")).toEqual([note.id]);
+      } finally {
+        probe.close();
+      }
 
       // 5. The non-entity files survived the whole export→import round-trip.
       expect(await readFile(path.join(rootB, "sources", "fake.html"), "utf8")).toBe("<p>ingested html</p>");
       expect([...(await readFile(path.join(rootB, "assets", "diagram.bin")))]).toEqual([1, 2, 3, 4, 5]);
       expect([...(await readFile(path.join(rootB, "assets", "user-backup.db")))]).toEqual([9, 8, 7]);
+
+      // 6. After close() B's `.db` handles are released — the file is deletable (Windows EPERM proof).
+      closeVault(vaultB);
+      const dbPathB = path.join(rootB, ".study", "notes.db");
+      const movedB = `${dbPathB}.moved`;
+      await expect(rename(dbPathB, movedB)).resolves.toBeUndefined();
+      await expect(rm(movedB, { force: true })).resolves.toBeUndefined();
+      expect(existsSync(dbPathB)).toBe(false);
     } finally {
       closeVault(vaultA);
     }
@@ -682,20 +728,22 @@ describe("STORE-SQL Stage-2 — sqlite whole-vault round-trip (JSONL is the pack
   it("jsonl export stays a NO-OP: dumpStoreToJsonl does not rewrite a jsonl store's file", async () => {
     // A jsonl-backed vault's entity file is already truth; the Stage-2 dump must NOT touch it (so
     // jsonl-vault backups stay byte-identical). Prove it by capturing the file's mtime+bytes across
-    // an export. This test is INHERENTLY about the jsonl engine — pinned to jsonl (the file-level
-    // STORE_ENGINE=jsonl beforeAll), so the "byte-identical jsonl no-op" claim keeps holding after
-    // the Stage-3 sqlite-default flip.
-    const parent = await tmp("jsonl-noop");
-    const vault = await openTrustVault(path.join(parent, "vault"));
-    const service = createDataTrustService({ vault, backupsDir: path.join(parent, "backups"), appVersion: "0.0.0-test" });
+    // an export. This test is INHERENTLY about the jsonl engine — pinned to jsonl LOCALLY (the
+    // file-level pin was narrowed away in Stage-3), so the "byte-identical jsonl no-op" claim keeps
+    // holding after the sqlite-default flip.
+    await withJsonlEngine(async () => {
+      const parent = await tmp("jsonl-noop");
+      const vault = await openTrustVault(path.join(parent, "vault"));
+      const service = createDataTrustService({ vault, backupsDir: path.join(parent, "backups"), appVersion: "0.0.0-test" });
 
-    const notesPath = path.join(vault.paths.studyDir, entityFileNames.notes);
-    await vault.stores.notes.upsert(fixtureNote);
-    const before = await readFile(notesPath);
+      const notesPath = path.join(vault.paths.studyDir, entityFileNames.notes);
+      await vault.stores.notes.upsert(fixtureNote);
+      const before = await readFile(notesPath);
 
-    await exportBytes(service);
+      await exportBytes(service);
 
-    const after = await readFile(notesPath);
-    expect(after.equals(before)).toBe(true); // the jsonl file is untouched by the (no-op) dump
+      const after = await readFile(notesPath);
+      expect(after.equals(before)).toBe(true); // the jsonl file is untouched by the (no-op) dump
+    });
   });
 });

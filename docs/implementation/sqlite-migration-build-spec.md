@@ -179,8 +179,22 @@ Invariant mapping (must match `snapshotStore.ts` EXACTLY):
   runtime) — adversarial review confirmed each is genuinely jsonl-only + none hides a fixable sqlite bug, zero
   `expect` lines weakened. 2 new guard tests assert both directions on real on-disk artifacts. tsc 0 · full
   vitest 274f/2789t · build ✓. Two-slice review (flip + prerequisite dispose path) both clean.
-- **▶ REMAINING Stage-3 item — sqlite-TARGET import (the flagged follow-up, next slice).** `doReplaceFromZip`
-  (`dataTrust.ts:592`) does a whole-dir rename-swap relying on "stores re-read from disk per request" — false
+- **✅ sqlite-TARGET import — LANDED (2026-07-06). Stage-3 is now COMPLETE (dispose → flip → import all green
+  + adversarially reviewed).** `StudyVault.reopen()` (self-closing: closes old backends before rebuilding, so
+  it's leak-safe regardless of caller discipline — the review-S1 hardening) + `loadStoreFromJsonl`/`LOAD`
+  symbol (native-free dispatcher in `engine.ts`, sqlite hook mirrors `dumpStoreToJsonl`; `readJsonl`→`upsertTxn`
+  per row, junctions rebuilt free, tombstones preserved, torn/invalid rows dropped-not-thrown so no partial-
+  import corruption; genuine no-op on jsonl). `doReplaceFromZip` choreography: `close()` → two-rename swap
+  (rollback) → `reopen()` in a `finally` (vault ALWAYS ends open — new content on success, original on
+  rollback) → per-entity `loadStoreFromJsonl` (success path only — pumps the pack's jsonl into the fresh `.db`)
+  → manifest refresh. The Stage-2 whole-vault round-trip was CONVERTED into the sqlite import GUARD (import a
+  non-empty pack into a sqlite vault B → entities queryable via B's reopened API, junctions rebuilt in B's
+  `.db`, old B data gone, tombstone + non-entity files survive, `.db` deletable after close). Adversarial
+  review: SHOULD-FIX×1 (reopen self-closing — folded) + 2 NITs (folded) + probe-verified load fidelity, no
+  BLOCKING. The file-level jsonl pin was narrowed (only the byte-identical no-op stays jsonl via
+  `withJsonlEngine()`); import/restore/rotation all run on the sqlite default now. tsc 0 · full vitest
+  275f/2794t · build ✓. — [historical scope note follows] `doReplaceFromZip`
+  (`dataTrust.ts:592`) did a whole-dir rename-swap relying on "stores re-read from disk per request" — false
   for a sqlite store holding an open `.db` connection (the dir can't be renamed under open handles on Windows,
   and post-swap the stores point at the moved `.db`). Fix: `deps.vault` (already in `DataTrustDeps:436`)
   `.close()` BEFORE the swap → swap → `.reopen()` (new `StudyVault.reopen()` rebuilds `stores` via

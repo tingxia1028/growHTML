@@ -38,6 +38,16 @@ export type StudyVault = {
    * better-sqlite3's `db.close()` is sync; call it once on server/process shutdown.
    */
   close: () => void;
+  /**
+   * Rebuild every entity store IN PLACE against whatever now lives at `paths.studyDir`
+   * (STORE-SQL Stage-3 import path, §Stage-3). Used by the data-trust import/restore swap: the
+   * caller `close()`s FIRST (releasing the old `.db` handles so Windows can rename the dir), swaps
+   * the vault dir, then `reopen()`s so the stores hold FRESH handles on the swapped-in content.
+   * Mutates `vault.stores` in place (`Object.assign`) so every consumer — which reads
+   * `vault.stores.X` fresh per request — picks up the new backends without any rewiring. Safe on
+   * jsonl too: it just rebuilds the (stateless, per-request-file-reading) jsonl stores harmlessly.
+   */
+  reopen: () => void;
 };
 
 export function getDefaultVaultRoot() {
@@ -129,6 +139,20 @@ export async function openVault(input?: {
       for (const store of Object.values(stores)) {
         closeSqliteStore(store as SnapshotStore<SnapshotRecord>);
       }
+    },
+    // STORE-SQL Stage-3 import path: rebuild the 12 stores against the current on-disk studyDir and
+    // swap them into `vault.stores` in place. Consumers read `vault.stores.X` fresh per request, so
+    // the in-place mutation is picked up with no rewiring. Note `stores` (the closure the close()
+    // loop iterates) IS `vault.stores`, so a later close() releases these NEW handles.
+    // Self-closes the OLD backends first so reopen() is leak-safe regardless of caller discipline
+    // (close-after-close is a safe no-op via each engine's open guard) — a reopen() without a
+    // preceding close() would otherwise orphan 12 sqlite `.db` handles.
+    reopen() {
+      for (const store of Object.values(stores)) {
+        closeSqliteStore(store as SnapshotStore<SnapshotRecord>);
+      }
+      const next = createEntityStores(paths.studyDir, storage);
+      Object.assign(stores, next);
     }
   };
 }
