@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fixtureAnchor, fixtureConcept, fixtureNote, fixturePatch } from "../fixtures/golden";
 import { createEntityId } from "../ids";
 import { noteSchema, patchSchema, type NoteRecord, type PatchRecord } from "../schema";
+import { nodeStorage } from "../storage/nodeStorage";
 import { jsonlEngine } from "./jsonlEngine";
 import { appendJsonlRecord, readJsonl } from "./jsonl";
 import { createSnapshotStore, type SnapshotRecord, type SnapshotStore } from "./snapshotStore";
@@ -28,7 +29,7 @@ describe.each(engines)("snapshot store [$name engine]", ({ name, engine }) => {
   beforeEach(async () => {
     tempDir = await mkdtemp(path.join(os.tmpdir(), "study-vault-store-"));
     filePath = path.join(tempDir, "patches.jsonl");
-    store = createSnapshotStore({ filePath, schema: patchSchema, table: "patches", engine });
+    store = createSnapshotStore({ filePath, schema: patchSchema, table: "patches", storage: nodeStorage, engine });
   });
 
   afterEach(async () => {
@@ -198,6 +199,7 @@ describe.each(engines)("snapshot store [$name engine]", ({ name, engine }) => {
           filePath,
           schema: patchSchema,
           table: "patches_sorted",
+          storage: nodeStorage,
           engine,
           sort: (a, b) => a.id.localeCompare(b.id)
         })
@@ -251,7 +253,7 @@ describe("sqlite junction integrity (notes)", () => {
     tempDir = await mkdtemp(path.join(os.tmpdir(), "study-vault-junction-"));
     const filePath = path.join(tempDir, "notes.jsonl");
     dbPath = path.join(tempDir, "notes.db");
-    store = createSnapshotStore({ filePath, schema: noteSchema, engine: sqliteEngine, ...notesConfig });
+    store = createSnapshotStore({ filePath, schema: noteSchema, storage: nodeStorage, engine: sqliteEngine, ...notesConfig });
   });
 
   afterEach(async () => {
@@ -339,10 +341,10 @@ describe("append-only logs", () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "study-vault-store-log-"));
     try {
       const logPath = path.join(tempDir, "ai-calls.jsonl");
-      await appendJsonlRecord(logPath, fixturePatch);
-      await appendJsonlRecord(logPath, { ...fixturePatch, status: "reverted" });
+      await appendJsonlRecord(logPath, fixturePatch, nodeStorage);
+      await appendJsonlRecord(logPath, { ...fixturePatch, status: "reverted" }, nodeStorage);
 
-      const result = await readJsonl(logPath, patchSchema);
+      const result = await readJsonl(logPath, patchSchema, nodeStorage);
 
       expect(result.records.map((record) => record.status)).toEqual(["pending", "reverted"]);
       expect(result.issues).toEqual([]);

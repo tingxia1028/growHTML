@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell } from "electron";
 import log from "electron-log/main";
 import { startServer, type StartedServer } from "../src/server/start";
-import { getDefaultVaultRoot } from "../src/core/vault";
+import { getDefaultVaultRoot } from "../src/server/vaultRoot";
 import { DEV_SERVER_URL, isDevMode, resolveVaultRoot } from "./shell";
 import { registerPtyBridge } from "./pty-bridge";
 

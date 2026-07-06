@@ -12,7 +12,8 @@ import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import packageJson from "../../package.json";
 import { PUBLISHER_KEY_FILE, loadOrCreatePublisher } from "../core/identity/publisher";
-import { openVault, type StudyVault } from "../core/vault";
+import { type StudyVault } from "../core/vault";
+import { openTestVault } from "../core/testing/openTestVault";
 import { createApp } from "./app";
 
 let tempDir = "";
@@ -25,7 +26,7 @@ const PRISTINE = { dismissed: false, completedAt: null, doneSteps: [], sampleSou
 beforeEach(async () => {
   tempDir = await mkdtemp(path.join(os.tmpdir(), "study-vault-shell-"));
   identityDir = path.join(tempDir, "identity");
-  vault = await openVault({ rootDir: path.join(tempDir, "vault") });
+  vault = await openTestVault({ rootDir: path.join(tempDir, "vault") });
   app = createApp({ vault, identityDir });
 });
 

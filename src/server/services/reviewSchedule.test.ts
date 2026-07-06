@@ -8,7 +8,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { openVault, type StudyVault } from "../../core/vault";
+import { type StudyVault } from "../../core/vault";
+import { openTestVault } from "../../core/testing/openTestVault";
 import {
   readReviewSchedule,
   recordReviewGrade,
@@ -24,7 +25,7 @@ let vault: StudyVault;
 
 beforeEach(async () => {
   tempDir = await mkdtemp(path.join(os.tmpdir(), "study-vault-review-srs-"));
-  vault = await openVault({ rootDir: tempDir });
+  vault = await openTestVault({ rootDir: tempDir });
 });
 
 afterEach(async () => {

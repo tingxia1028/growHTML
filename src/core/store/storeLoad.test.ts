@@ -15,12 +15,13 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { fixtureAnchor, fixtureConcept, fixtureNote, fixturePatch } from "../fixtures/golden";
 import { noteSchema, patchSchema, type NoteRecord } from "../schema";
-import { openVault } from "../vault";
+import { openTestVault } from "../testing/openTestVault";
 import { createSnapshotStore, type SnapshotRecord, type SnapshotStore } from "./snapshotStore";
 import { sqliteEngine } from "./sqliteEngine";
 import { jsonlEngine } from "./jsonlEngine";
 import { closeSqliteStore, loadStoreFromJsonl } from "./engine";
 import { writeJsonlAtomic } from "./jsonl";
+import { nodeStorage } from "../storage/nodeStorage";
 
 const cleanups: string[] = [];
 async function tmpDir(tag: string): Promise<string> {
@@ -67,8 +68,8 @@ describe("loadStoreFromJsonl (STORE-SQL Stage-3)", () => {
       layerId // legacy singular — must round-trip through the blob
     });
     // A jsonl file on disk (the swapped-in pack truth), and a FRESH empty sqlite store over it.
-    await writeJsonlAtomic(jsonlPath, [note]);
-    const store = createSnapshotStore({ filePath: jsonlPath, schema: noteSchema, engine: sqliteEngine, ...notesConfig });
+    await writeJsonlAtomic(jsonlPath, [note], nodeStorage);
+    const store = createSnapshotStore({ filePath: jsonlPath, schema: noteSchema, storage: nodeStorage, engine: sqliteEngine, ...notesConfig });
     try {
       // Before load the .db is empty (the pack ships jsonl only, never the .db cache).
       expect(await store.list()).toEqual([]);
@@ -101,8 +102,8 @@ describe("loadStoreFromJsonl (STORE-SQL Stage-3)", () => {
     const dir = await tmpDir("idempotent");
     const jsonlPath = path.join(dir, "notes.jsonl");
     const note: NoteRecord = noteSchema.parse({ ...fixtureNote, anchorIds: [fixtureAnchor.id] });
-    await writeJsonlAtomic(jsonlPath, [note]);
-    const store = createSnapshotStore({ filePath: jsonlPath, schema: noteSchema, engine: sqliteEngine, ...notesConfig });
+    await writeJsonlAtomic(jsonlPath, [note], nodeStorage);
+    const store = createSnapshotStore({ filePath: jsonlPath, schema: noteSchema, storage: nodeStorage, engine: sqliteEngine, ...notesConfig });
     try {
       await loadStoreFromJsonl(store as SnapshotStore<SnapshotRecord>, jsonlPath);
       await loadStoreFromJsonl(store as SnapshotStore<SnapshotRecord>, jsonlPath);
@@ -125,7 +126,7 @@ describe("loadStoreFromJsonl (STORE-SQL Stage-3)", () => {
     // Write with an unusual-but-valid serialization the loader would NORMALIZE if it rewrote.
     const raw = `${JSON.stringify(fixturePatch)}\n`;
     await writeFile(jsonlPath, raw, "utf8");
-    const store = createSnapshotStore({ filePath: jsonlPath, schema: patchSchema, table: "patches", engine: jsonlEngine });
+    const store = createSnapshotStore({ filePath: jsonlPath, schema: patchSchema, table: "patches", storage: nodeStorage, engine: jsonlEngine });
 
     await loadStoreFromJsonl(store as SnapshotStore<SnapshotRecord>, jsonlPath);
 
@@ -140,7 +141,7 @@ describe("loadStoreFromJsonl (STORE-SQL Stage-3)", () => {
 describe("StudyVault.reopen() (STORE-SQL Stage-3)", () => {
   it("write → close → reopen: data still queryable + a fresh write works (sqlite default)", async () => {
     const dir = await tmpDir("reopen");
-    const vault = await openVault({ rootDir: dir });
+    const vault = await openTestVault({ rootDir: dir });
     try {
       const { fixtureSource } = await import("../fixtures/golden");
       await vault.stores.sources.upsert(fixtureSource);
@@ -172,7 +173,7 @@ describe("StudyVault.reopen() (STORE-SQL Stage-3)", () => {
 
   it("reopen WITHOUT a preceding close() self-closes the old backends — no leaked handle (sqlite default)", async () => {
     const dir = await tmpDir("reopen-noclose");
-    const vault = await openVault({ rootDir: dir });
+    const vault = await openTestVault({ rootDir: dir });
     try {
       const { fixtureSource } = await import("../fixtures/golden");
       await vault.stores.sources.upsert(fixtureSource);

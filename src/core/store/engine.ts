@@ -202,7 +202,7 @@ export type StoreConfig<T extends SnapshotRecord> = {
   filePath: string;
   schema: z.ZodType<T>;
   sort?: (a: T, b: T) => number;
-  storage?: StorageAdapter;
+  storage: StorageAdapter;
 
   // —— SQLite-only config (ignored by the jsonl engine) ——
   /** Table name for the sqlite backend (defaults to a slug derived from the file name). */

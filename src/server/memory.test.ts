@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { openVault, type StudyVault } from "../core/vault";
+import { type StudyVault } from "../core/vault";
+import { openTestVault } from "../core/testing/openTestVault";
 import { createApp } from "./app";
 import {
   createMemoryConsolidationScheduler,
@@ -38,7 +39,7 @@ afterAll(async () => {
 const NOW = Date.UTC(2026, 6, 1, 12);
 
 async function makeApp(tag: string): Promise<Ctx> {
-  const vault = await openVault({ rootDir: await tmp(`${tag}-vault`) });
+  const vault = await openTestVault({ rootDir: await tmp(`${tag}-vault`) });
   madeVaults.push(vault);
   const identityDir = await tmp(`${tag}-id`);
   const app = createApp({ vault, identityDir, now: () => NOW });
@@ -369,7 +370,7 @@ describe("memory tiers — the idle/threshold scheduler", () => {
   it("debounces appends into ONE trailing pass; the count threshold fires immediately", async () => {
     vi.useFakeTimers();
     try {
-      const vault = await openVault({ rootDir: await tmp("scheduler-vault") });
+      const vault = await openTestVault({ rootDir: await tmp("scheduler-vault") });
       madeVaults.push(vault);
       const scheduler = createMemoryConsolidationScheduler(
         { vault, now: () => NOW },

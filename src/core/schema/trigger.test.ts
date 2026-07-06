@@ -11,6 +11,7 @@ import { triggerSchema, vaultEntitySchema, type TriggerRecord } from ".";
 import { createEntityId, isEntityId } from "../ids";
 import { createSnapshotStore, type SnapshotRecord, type SnapshotStore } from "../store/snapshotStore";
 import { closeSqliteStore } from "../store/engine";
+import { nodeStorage } from "../storage/nodeStorage";
 
 const ULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
 
@@ -104,7 +105,7 @@ describe("trigger store round-trip", () => {
 
   beforeEach(async () => {
     tempDir = await mkdtemp(path.join(os.tmpdir(), "trigger-store-"));
-    store = createSnapshotStore({ filePath: path.join(tempDir, "triggers.jsonl"), schema: triggerSchema });
+    store = createSnapshotStore({ filePath: path.join(tempDir, "triggers.jsonl"), schema: triggerSchema, storage: nodeStorage });
   });
 
   afterEach(async () => {

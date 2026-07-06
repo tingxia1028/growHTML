@@ -14,6 +14,7 @@ import { pathToFileURL } from "node:url";
 import { createEntityId } from "../src/core/ids";
 import { noteSchema, sourceSchema, type NoteRecord } from "../src/core/schema";
 import { openVault } from "../src/core/vault";
+import { nodeStorage } from "../src/core/storage/nodeStorage";
 import { ingestHtmlSource, listSources } from "../src/core/store/sources";
 import { ensureOwnedLayer } from "../src/core/study-layer/layers";
 import { installServerKits } from "../src/kits/server";
@@ -58,7 +59,7 @@ function makeNote(
 
 async function main() {
   const rootDir = process.env.STUDY_VAULT_ROOT ?? path.resolve(process.cwd(), ".vault-dev");
-  const vault = await openVault({ rootDir });
+  const vault = await openVault({ rootDir, storage: nodeStorage });
   installServerKits(); // register kit content specs + layer policy (export filter)
 
   const existing = (await listSources(vault)).find((s) => s.title === TITLE);

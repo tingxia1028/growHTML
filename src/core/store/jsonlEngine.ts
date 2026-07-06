@@ -1,4 +1,3 @@
-import { nodeStorage } from "../storage/nodeStorage";
 import type { StoreConfig, StoreEngine } from "./engine";
 import { readJsonl, writeJsonlAtomic } from "./jsonl";
 import type { SnapshotRecord, SnapshotStore } from "./snapshotStore";
@@ -12,7 +11,7 @@ import type { SnapshotRecord, SnapshotStore } from "./snapshotStore";
 export const jsonlEngine: StoreEngine = <T extends SnapshotRecord>(
   config: StoreConfig<T>
 ): SnapshotStore<T> => {
-  const storage = config.storage ?? nodeStorage;
+  const storage = config.storage;
   const sortRecords =
     config.sort ??
     ((a: T, b: T) => {

@@ -13,7 +13,8 @@ import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { openVault, type StudyVault } from "../core/vault";
+import { type StudyVault } from "../core/vault";
+import { openTestVault } from "../core/testing/openTestVault";
 import { createGatewayApp } from "../gateway/app";
 import { AuthService, InMemoryAuthStore, InMemorySessionStore, MockSmsSender } from "../gateway/auth";
 import { CreditsLedger } from "../gateway/ledger";
@@ -92,7 +93,7 @@ let vault: StudyVault;
 
 beforeEach(async () => {
   tempDir = await mkdtemp(path.join(os.tmpdir(), "study-vault-managed-routes-"));
-  vault = await openVault({ rootDir: path.join(tempDir, "vault") });
+  vault = await openTestVault({ rootDir: path.join(tempDir, "vault") });
 });
 
 afterEach(async () => {

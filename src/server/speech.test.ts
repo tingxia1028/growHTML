@@ -8,7 +8,8 @@ import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { openVault, type StudyVault } from "../core/vault";
+import { type StudyVault } from "../core/vault";
+import { openTestVault } from "../core/testing/openTestVault";
 import { createApp } from "./app";
 import {
   createSpeechService,
@@ -34,7 +35,7 @@ function binaryParser(res: any, callback: (err: Error | null, body: Buffer) => v
 
 beforeEach(async () => {
   tempDir = await mkdtemp(path.join(os.tmpdir(), "study-vault-speech-"));
-  vault = await openVault({ rootDir: tempDir });
+  vault = await openTestVault({ rootDir: tempDir });
 });
 
 afterEach(async () => {

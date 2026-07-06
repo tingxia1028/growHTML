@@ -12,7 +12,8 @@ import { z } from "zod";
 import { createEntityId } from "../../core/ids";
 import { registerNoteContentSpec } from "../../core/notes/contentTypes";
 import { anchorSchema, noteSchema, sourceSchema, type NoteRecord } from "../../core/schema";
-import { openVault, type StudyVault } from "../../core/vault";
+import { type StudyVault } from "../../core/vault";
+import { openTestVault } from "../../core/testing/openTestVault";
 import { createSealedRuntime, type SealedRuntime } from "../svpack";
 import { createDirectTransport } from "./directTransport";
 import { MAX_HITS_PER_FAMILY, searchVault, type NoteSearchHit, type SourceSearchHit } from "./search";
@@ -90,7 +91,7 @@ async function seedNote(input: {
 
 beforeEach(async () => {
   tempDir = await mkdtemp(path.join(os.tmpdir(), "study-vault-search-"));
-  vault = await openVault({ rootDir: tempDir });
+  vault = await openTestVault({ rootDir: tempDir });
   sealed = createSealedRuntime({
     vault,
     identityDir: path.join(tempDir, "identity"),

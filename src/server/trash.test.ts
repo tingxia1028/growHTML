@@ -13,7 +13,8 @@ import { strFromU8, unzipSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fixtureHtmlBody } from "../core/fixtures/golden";
 import { trashCascadeOf } from "../core/store/trash";
-import { openVault, type StudyVault } from "../core/vault";
+import { type StudyVault } from "../core/vault";
+import { openTestVault } from "../core/testing/openTestVault";
 import { createApp } from "./app";
 import { createDataTrustService } from "./dataTrust";
 import {
@@ -32,7 +33,7 @@ let app: ReturnType<typeof createApp>;
 
 beforeEach(async () => {
   tempDir = await mkdtemp(path.join(os.tmpdir(), "study-vault-trash-"));
-  vault = await openVault({ rootDir: path.join(tempDir, "vault") });
+  vault = await openTestVault({ rootDir: path.join(tempDir, "vault") });
   app = createApp({ vault, identityDir: path.join(tempDir, "identity") });
 });
 

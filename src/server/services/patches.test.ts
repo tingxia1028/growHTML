@@ -14,7 +14,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createHtmlSelectionAnchor } from "../../adapters/html/anchor";
 import { readSourceContent } from "../../core/store/sources";
 import { type HtmlSelectionAnchor } from "../../core/schema";
-import { openVault, type StudyVault } from "../../core/vault";
+import { type StudyVault } from "../../core/vault";
+import { openTestVault } from "../../core/testing/openTestVault";
 import { ConflictError } from "./errors";
 import { createPatch, updatePatchStatus } from "./patches";
 import { ingestHtml, renderSource } from "./sources";
@@ -24,7 +25,7 @@ let vault: StudyVault;
 
 beforeEach(async () => {
   tempDir = await mkdtemp(path.join(os.tmpdir(), "study-vault-patches-"));
-  vault = await openVault({ rootDir: tempDir });
+  vault = await openTestVault({ rootDir: tempDir });
 });
 
 afterEach(async () => {

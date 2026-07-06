@@ -3,7 +3,9 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { demoHtml } from "../src/core/demo/sampleDoc";
 import { ingestHtmlSource, listSources } from "../src/core/store/sources";
-import { getDefaultVaultRoot, openVault, type StudyVault } from "../src/core/vault";
+import { openVault, type StudyVault } from "../src/core/vault";
+import { nodeStorage } from "../src/core/storage/nodeStorage";
+import { getDefaultVaultRoot } from "../src/server/vaultRoot";
 import type { SourceRecord } from "../src/core/schema";
 
 export type SeedVaultOptions = {
@@ -23,7 +25,7 @@ export type SeedVaultResult = {
 export { demoHtml } from "../src/core/demo/sampleDoc";
 
 export async function seedVault(options: SeedVaultOptions = {}): Promise<SeedVaultResult> {
-  const vault = await openVault({ rootDir: options.rootDir ?? getDefaultVaultRoot() });
+  const vault = await openVault({ rootDir: options.rootDir ?? getDefaultVaultRoot(), storage: nodeStorage });
   const existingSources = await listSources(vault);
   if (existingSources.length > 0) {
     return {

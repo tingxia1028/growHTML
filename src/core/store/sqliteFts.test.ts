@@ -13,7 +13,8 @@ import { createEntityId } from "../ids";
 import { anchorSchema, noteSchema, type AnchorRecord, type NoteRecord } from "../schema";
 import type { SnapshotRecord, SnapshotStore } from "./snapshotStore";
 import { ftsSearchStore } from "./engine";
-import { openVault, type StudyVault } from "../vault";
+import { type StudyVault } from "../vault";
+import { openTestVault } from "../testing/openTestVault";
 
 const stamp = (iso: string) => ({ createdAt: iso, updatedAt: iso });
 
@@ -24,7 +25,7 @@ const priorEngine = process.env.STORE_ENGINE;
 beforeEach(async () => {
   delete process.env.STORE_ENGINE; // unset ⇒ sqlite (the default) — this suite is sqlite-specific
   dir = await mkdtemp(path.join(os.tmpdir(), "sqlite-fts-"));
-  vault = await openVault({ rootDir: dir });
+  vault = await openTestVault({ rootDir: dir });
 });
 
 afterEach(async () => {

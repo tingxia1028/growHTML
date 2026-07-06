@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { openVault, type StudyVault } from "../core/vault";
+import { type StudyVault } from "../core/vault";
+import { openTestVault } from "../core/testing/openTestVault";
 import { createApp } from "./app";
 import { foregroundForSource } from "../kits/activation";
 import { detectKit } from "../core/subject/detectSubject";
@@ -28,7 +29,7 @@ let app: ReturnType<typeof createApp>;
 
 beforeEach(async () => {
   tempDir = await mkdtemp(path.join(os.tmpdir(), "study-vault-subject-switch-"));
-  vault = await openVault({ rootDir: tempDir });
+  vault = await openTestVault({ rootDir: tempDir });
   app = createApp({ vault });
 });
 

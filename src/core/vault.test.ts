@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { entityFileNames } from "./store/entities";
-import { assetsDirName, appendLogFileNames, exportsDirName, manifestFileName, openVault, sourcesDirName, studyDirName, type StudyVault } from "./vault";
+import { assetsDirName, appendLogFileNames, exportsDirName, manifestFileName, sourcesDirName, studyDirName, type StudyVault } from "./vault";
+import { openTestVault } from "./testing/openTestVault";
 import { vaultManifestSchema } from "./schema";
 import { fixtureAsset } from "./fixtures/golden";
 
@@ -12,8 +13,8 @@ let tempDir = "";
 // STORE-SQL Stage-3: openVault now defaults to sqlite → each vault holds `.db`/`-wal` handles.
 // Track them so afterEach can close() them BEFORE rm — Windows can't unlink an open `.db`.
 const openVaults: StudyVault[] = [];
-async function openTestVault(input?: { name?: string }): Promise<StudyVault> {
-  const vault = await openVault({ rootDir: tempDir, name: input?.name });
+async function openTrackedVault(input?: { name?: string }): Promise<StudyVault> {
+  const vault = await openTestVault({ rootDir: tempDir, name: input?.name });
   openVaults.push(vault);
   return vault;
 }
@@ -29,7 +30,7 @@ afterEach(async () => {
 
 describe("openVault", () => {
   it("creates the expected vault layout", async () => {
-    const vault = await openTestVault({ name: "Test Vault" });
+    const vault = await openTrackedVault({ name: "Test Vault" });
 
     await expect(access(path.join(tempDir, studyDirName))).resolves.toBeUndefined();
     await expect(access(path.join(tempDir, sourcesDirName))).resolves.toBeUndefined();
@@ -54,8 +55,8 @@ describe("openVault", () => {
   });
 
   it("preserves an existing manifest", async () => {
-    const first = await openTestVault({ name: "First" });
-    const second = await openTestVault({ name: "Second" });
+    const first = await openTrackedVault({ name: "First" });
+    const second = await openTrackedVault({ name: "Second" });
     const manifestText = await readFile(path.join(tempDir, studyDirName, manifestFileName), "utf8");
 
     expect(second.manifest).toEqual(first.manifest);
@@ -77,7 +78,7 @@ describe("openVault — default storage engine (STORE-SQL Stage-3 flip + reversi
 
   it("defaults to SQLite: a write materializes a `.db` in the study dir (no jsonl content)", async () => {
     delete process.env.STORE_ENGINE; // unset ⇒ the new default (sqlite)
-    const vault = await openTestVault();
+    const vault = await openTrackedVault();
     await vault.stores.assets.upsert(fixtureAsset);
 
     const studyDir = path.join(tempDir, studyDirName);
@@ -90,7 +91,7 @@ describe("openVault — default storage engine (STORE-SQL Stage-3 flip + reversi
 
   it("STORE_ENGINE=jsonl reverts to the file engine: the write lands in `.jsonl`, no `.db`", async () => {
     process.env.STORE_ENGINE = "jsonl"; // the reversibility switch
-    const vault = await openTestVault();
+    const vault = await openTrackedVault();
     await vault.stores.assets.upsert(fixtureAsset);
 
     const studyDir = path.join(tempDir, studyDirName);

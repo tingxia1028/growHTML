@@ -8,7 +8,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fixtureHtmlBody } from "../../core/fixtures/golden";
-import { openVault, type StudyVault } from "../../core/vault";
+import { type StudyVault } from "../../core/vault";
+import { openTestVault } from "../../core/testing/openTestVault";
 import { installServerKits } from "../../kits/server";
 import { createSealedRuntime, type SealedRuntime } from "../svpack";
 import { NotFoundError, ValidationError } from "./errors";
@@ -28,7 +29,7 @@ let sealed: SealedRuntime;
 
 beforeEach(async () => {
   tempDir = await mkdtemp(path.join(os.tmpdir(), "study-vault-services-"));
-  vault = await openVault({ rootDir: tempDir });
+  vault = await openTestVault({ rootDir: tempDir });
   // Real sealed runtime over an empty vault: no packs ⇒ empty snapshot, and it must
   // never create the identity dir as a side effect (svpack §8.1).
   sealed = createSealedRuntime({

@@ -1,6 +1,5 @@
 import type { z } from "zod";
 import type { StorageAdapter } from "../storage/adapter";
-import { nodeStorage } from "../storage/nodeStorage";
 
 export type JsonlIssue = {
   line: number;
@@ -16,7 +15,7 @@ export type JsonlReadResult<T> = {
 export async function readJsonl<T>(
   filePath: string,
   schema: z.ZodType<T>,
-  storage: StorageAdapter = nodeStorage
+  storage: StorageAdapter
 ): Promise<JsonlReadResult<T>> {
   const text = await storage.readText(filePath);
   if (text === null) {
@@ -57,13 +56,13 @@ export async function readJsonl<T>(
 export async function writeJsonlAtomic<T>(
   filePath: string,
   records: readonly T[],
-  storage: StorageAdapter = nodeStorage
+  storage: StorageAdapter
 ) {
   const body = records.map((record) => JSON.stringify(record)).join("\n");
   const text = body ? `${body}\n` : "";
   await storage.writeTextAtomic(filePath, text);
 }
 
-export async function appendJsonlRecord<T>(filePath: string, record: T, storage: StorageAdapter = nodeStorage) {
+export async function appendJsonlRecord<T>(filePath: string, record: T, storage: StorageAdapter) {
   await storage.appendText(filePath, `${JSON.stringify(record)}\n`);
 }

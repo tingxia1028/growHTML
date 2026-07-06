@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fixtureHtmlBody, fixtureTimestamp } from "../fixtures/golden";
-import { openVault, sourcesDirName, type StudyVault } from "../vault";
+import { sourcesDirName, type StudyVault } from "../vault";
+import { openTestVault } from "../testing/openTestVault";
 import { computeContentHash, ingestHtmlSource, listSources, readSourceContent, slugifySourceTitle } from "./sources";
 
 let tempDir = "";
@@ -11,8 +12,8 @@ let tempDir = "";
 // Track them so afterEach can close() (release the handles) BEFORE rm — Windows can't unlink an
 // open `.db`. close() is a safe no-op if STORE_ENGINE=jsonl.
 const openVaults: StudyVault[] = [];
-async function openTestVault(): Promise<StudyVault> {
-  const vault = await openVault({ rootDir: tempDir });
+async function openTrackedVault(): Promise<StudyVault> {
+  const vault = await openTestVault({ rootDir: tempDir });
   openVaults.push(vault);
   return vault;
 }
@@ -28,7 +29,7 @@ afterEach(async () => {
 
 describe("source ingest", () => {
   it("writes an HTML source file and records it in sources.jsonl", async () => {
-    const vault = await openTestVault();
+    const vault = await openTrackedVault();
     const source = await ingestHtmlSource(vault, {
       title: "Render Thread Study Note",
       content: fixtureHtmlBody,
@@ -48,7 +49,7 @@ describe("source ingest", () => {
   });
 
   it("creates unique files for repeated imports", async () => {
-    const vault = await openTestVault();
+    const vault = await openTrackedVault();
     const first = await ingestHtmlSource(vault, { title: "Same", content: "<p>one</p>" });
     const second = await ingestHtmlSource(vault, { title: "Same", content: "<p>two</p>" });
 

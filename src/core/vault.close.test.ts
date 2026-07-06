@@ -13,7 +13,8 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { fixtureSource } from "./fixtures/golden";
 import { schemaVersion, vaultManifestSchema, type VaultManifest } from "./schema";
-import { openVault, type StudyVault, type VaultPaths } from "./vault";
+import { type StudyVault, type VaultPaths } from "./vault";
+import { openTestVault } from "./testing/openTestVault";
 import { createEntityStores } from "./store/entities";
 import { closeSqliteStore } from "./store/engine";
 import { sqliteEngine } from "./store/sqliteEngine";
@@ -103,7 +104,7 @@ describe("StudyVault.close() — STORE-SQL Stage-3 dispose path", () => {
     process.env.STORE_ENGINE = "jsonl";
     let vault;
     try {
-      vault = await openVault({ rootDir: root });
+      vault = await openTestVault({ rootDir: root });
     } finally {
       if (priorEngine === undefined) delete process.env.STORE_ENGINE;
       else process.env.STORE_ENGINE = priorEngine;

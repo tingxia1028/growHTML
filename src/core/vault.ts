@@ -4,7 +4,6 @@ import { closeSqliteStore } from "./store/engine";
 import type { SnapshotRecord, SnapshotStore } from "./store/snapshotStore";
 import { schemaVersion, vaultManifestSchema, type VaultManifest } from "./schema";
 import type { StorageAdapter } from "./storage/adapter";
-import { nodeStorage } from "./storage/nodeStorage";
 
 export const studyDirName = ".study";
 export const sourcesDirName = "sources";
@@ -50,12 +49,6 @@ export type StudyVault = {
   reopen: () => void;
 };
 
-export function getDefaultVaultRoot() {
-  return process.env.STUDY_VAULT_ROOT
-    ? path.resolve(process.env.STUDY_VAULT_ROOT)
-    : path.resolve(process.cwd(), "data", "vault");
-}
-
 function getVaultPaths(rootDir: string): VaultPaths {
   const resolvedRoot = path.resolve(rootDir);
   const studyDir = path.join(resolvedRoot, studyDirName);
@@ -100,20 +93,20 @@ async function ensureManifest(storage: StorageAdapter, paths: VaultPaths, name?:
   return manifest;
 }
 
-export async function openVault(input?: {
-  rootDir?: string;
+export async function openVault(input: {
+  rootDir: string;
   name?: string;
-  storage?: StorageAdapter;
+  storage: StorageAdapter;
 }): Promise<StudyVault> {
-  const storage = input?.storage ?? nodeStorage;
-  const paths = getVaultPaths(input?.rootDir ?? getDefaultVaultRoot());
+  const storage = input.storage;
+  const paths = getVaultPaths(input.rootDir);
 
   await storage.ensureDir(paths.studyDir);
   await storage.ensureDir(paths.sourcesDir);
   await storage.ensureDir(paths.assetsDir);
   await storage.ensureDir(paths.exportsDir);
 
-  const manifest = await ensureManifest(storage, paths, input?.name);
+  const manifest = await ensureManifest(storage, paths, input.name);
 
   for (const fileName of Object.values(entityFileNames)) {
     await ensureTextFile(storage, path.join(paths.studyDir, fileName), "");

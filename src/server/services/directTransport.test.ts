@@ -18,7 +18,8 @@ import {
   type VaultTransport
 } from "../../client/data/entityClient";
 import { fixtureHtmlBody } from "../../core/fixtures/golden";
-import { openVault, type StudyVault } from "../../core/vault";
+import { type StudyVault } from "../../core/vault";
+import { openTestVault } from "../../core/testing/openTestVault";
 import { installServerKits } from "../../kits/server";
 import { createApp } from "../app";
 import { createSealedRuntime } from "../svpack";
@@ -53,7 +54,7 @@ let app: ReturnType<typeof createApp>;
 
 beforeEach(async () => {
   // Direct side: entityClient over createDirectTransport — services called in-process.
-  directVault = await openVault({ rootDir: await tmp("vault") });
+  directVault = await openTestVault({ rootDir: await tmp("vault") });
   const sealed = createSealedRuntime({
     vault: directVault,
     identityDir: await tmp("id"),
@@ -63,7 +64,7 @@ beforeEach(async () => {
   configureVaultTransport(direct);
 
   // HTTP side: the SAME flow over the real express app, for field comparison.
-  httpVault = await openVault({ rootDir: await tmp("http-vault") });
+  httpVault = await openTestVault({ rootDir: await tmp("http-vault") });
   app = createApp({ vault: httpVault, identityDir: await tmp("http-id"), now: () => NOW });
 });
 

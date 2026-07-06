@@ -14,7 +14,8 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createEntityId } from "../../core/ids";
 import { anchorSchema, noteSchema, sourceSchema, type AnchorRecord, type NoteRecord } from "../../core/schema";
-import { openVault, type StudyVault } from "../../core/vault";
+import { type StudyVault } from "../../core/vault";
+import { openTestVault } from "../../core/testing/openTestVault";
 import { createSealedRuntime, type SealedRuntime } from "../svpack";
 import { createDirectTransport } from "./directTransport";
 import { searchVault, type NoteSearchHit, type SearchHit } from "./search";
@@ -29,7 +30,7 @@ async function openHarness(engine: "sqlite" | "jsonl"): Promise<Harness> {
   if (engine === "jsonl") process.env.STORE_ENGINE = "jsonl";
   else delete process.env.STORE_ENGINE; // unset ⇒ sqlite (the default)
   try {
-    const vault = await openVault({ rootDir: dir });
+    const vault = await openTestVault({ rootDir: dir });
     const sealed = createSealedRuntime({ vault, identityDir: path.join(dir, "identity"), now: () => Date.now() });
     return { vault, sealed, dir };
   } finally {

@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { openVault, type StudyVault } from "../core/vault";
+import { type StudyVault } from "../core/vault";
+import { openTestVault } from "../core/testing/openTestVault";
 import { createApp } from "./app";
 
 let vaultDir = "";
@@ -14,7 +15,7 @@ let app: ReturnType<typeof createApp>;
 beforeEach(async () => {
   vaultDir = await mkdtemp(path.join(os.tmpdir(), "study-vault-lf-"));
   workDir = await mkdtemp(path.join(os.tmpdir(), "study-files-"));
-  vault = await openVault({ rootDir: vaultDir });
+  vault = await openTestVault({ rootDir: vaultDir });
   app = createApp({ vault });
 });
 

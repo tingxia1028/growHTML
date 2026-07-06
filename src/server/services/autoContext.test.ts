@@ -12,7 +12,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ModelProvider, ProviderCapabilities } from "../../ai/provider";
 import type { ProfileFactView } from "../../core/memory/profile";
 import { sourceSchema } from "../../core/schema";
-import { openVault, type StudyVault } from "../../core/vault";
+import { type StudyVault } from "../../core/vault";
+import { openTestVault } from "../../core/testing/openTestVault";
 import { installServerKits } from "../../kits/server";
 import { composeAutoContext } from "./autoContext";
 
@@ -24,7 +25,7 @@ let vault: StudyVault;
 
 beforeEach(async () => {
   tempDir = await mkdtemp(path.join(os.tmpdir(), "study-vault-auto-context-"));
-  vault = await openVault({ rootDir: tempDir });
+  vault = await openTestVault({ rootDir: tempDir });
 });
 
 afterEach(async () => {

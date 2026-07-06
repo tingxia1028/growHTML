@@ -9,7 +9,8 @@ import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createHtmlSelectionAnchor } from "../../adapters/html/anchor";
 import { ingestBinarySource, readSourceContent } from "../../core/store/sources";
-import { openVault, type StudyVault } from "../../core/vault";
+import { type StudyVault } from "../../core/vault";
+import { openTestVault } from "../../core/testing/openTestVault";
 import { createApp } from "../app";
 import { NotFoundError, ValidationError } from "./errors";
 import { forkSource } from "./sourceFork";
@@ -21,7 +22,7 @@ let vault: StudyVault;
 
 beforeEach(async () => {
   tempDir = await mkdtemp(path.join(os.tmpdir(), "study-vault-fork-"));
-  vault = await openVault({ rootDir: tempDir });
+  vault = await openTestVault({ rootDir: tempDir });
 });
 
 afterEach(async () => {

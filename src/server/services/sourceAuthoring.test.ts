@@ -14,7 +14,8 @@ import { createHtmlSelectionAnchor } from "../../adapters/html/anchor";
 import { createEntityId } from "../../core/ids";
 import { studyLayerSchema, type HtmlSelectionAnchor } from "../../core/schema";
 import { ingestHtmlSource, readSourceContent } from "../../core/store/sources";
-import { openVault, type StudyVault } from "../../core/vault";
+import { type StudyVault } from "../../core/vault";
+import { openTestVault } from "../../core/testing/openTestVault";
 import { createApp } from "../app";
 import {
   createAuthoredSource,
@@ -30,7 +31,7 @@ let vault: StudyVault;
 
 beforeEach(async () => {
   tempDir = await mkdtemp(path.join(os.tmpdir(), "study-vault-authoring-"));
-  vault = await openVault({ rootDir: tempDir });
+  vault = await openTestVault({ rootDir: tempDir });
 });
 
 afterEach(async () => {

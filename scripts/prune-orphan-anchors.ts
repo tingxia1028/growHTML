@@ -3,7 +3,9 @@
 // Run with the dev server STOPPED (it holds the vault in memory and rewrites jsonl on
 // upsert, so editing under a live server gets clobbered).
 //   npx tsx scripts/prune-orphan-anchors.ts <sourceId|all> [--dry]
-import { getDefaultVaultRoot, openVault } from "../src/core/vault";
+import { openVault } from "../src/core/vault";
+import { nodeStorage } from "../src/core/storage/nodeStorage";
+import { getDefaultVaultRoot } from "../src/server/vaultRoot";
 
 const arg = process.argv[2];
 const dry = process.argv.includes("--dry");
@@ -12,7 +14,7 @@ if (!arg) {
   process.exit(1);
 }
 
-const vault = await openVault({ rootDir: getDefaultVaultRoot() });
+const vault = await openVault({ rootDir: getDefaultVaultRoot(), storage: nodeStorage });
 const [anchors, notes, patches] = await Promise.all([
   vault.stores.anchors.list(),
   vault.stores.notes.list(),

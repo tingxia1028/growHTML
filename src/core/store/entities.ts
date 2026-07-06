@@ -27,7 +27,6 @@ import {
 } from "../schema";
 import { getNoteContentSpec } from "../notes/contentTypes";
 import type { StorageAdapter } from "../storage/adapter";
-import { nodeStorage } from "../storage/nodeStorage";
 import { wireFtsAnchorNotes, type StoreConfig, type StoreEngine } from "./engine";
 import { jsonlEngine } from "./jsonlEngine";
 import { sqliteEngine } from "./sqliteEngine";
@@ -165,7 +164,7 @@ const memoryEventsSqlConfig: Pick<StoreConfig<MemoryEventRecord>, "table" | "col
 
 export function createEntityStores(
   studyDir: string,
-  storage: StorageAdapter = nodeStorage,
+  storage: StorageAdapter,
   engine: StoreEngine = resolveDefaultEngine()
 ): EntityStores {
   const filePath = (file: string) => path.join(studyDir, file);

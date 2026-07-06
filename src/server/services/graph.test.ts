@@ -12,7 +12,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createEntityId } from "../../core/ids";
-import { openVault, type StudyVault } from "../../core/vault";
+import { type StudyVault } from "../../core/vault";
+import { openTestVault } from "../../core/testing/openTestVault";
 import { installServerKits } from "../../kits/server";
 import { NotFoundError } from "./errors";
 import * as conceptsService from "./concepts";
@@ -28,7 +29,7 @@ const query = (raw: Record<string, string> = {}) => graphQuerySchema.parse(raw);
 
 beforeEach(async () => {
   tempDir = await mkdtemp(path.join(os.tmpdir(), "study-vault-graph-"));
-  vault = await openVault({ rootDir: tempDir });
+  vault = await openTestVault({ rootDir: tempDir });
 });
 
 afterEach(async () => {

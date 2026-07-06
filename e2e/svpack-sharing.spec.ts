@@ -141,12 +141,14 @@ async function startPublisherApp(opts: {
   const repoRoot = process.cwd();
   const vaultUrl = pathToFileURL(path.join(repoRoot, "src", "core", "vault.ts")).href;
   const appUrl = pathToFileURL(path.join(repoRoot, "src", "server", "app.ts")).href;
+  const nodeStorageUrl = pathToFileURL(path.join(repoRoot, "src", "core", "storage", "nodeStorage.ts")).href;
   await writeFile(
     opts.bootPath,
     [
       `import { openVault } from ${JSON.stringify(vaultUrl)};`,
       `import { createApp } from ${JSON.stringify(appUrl)};`,
-      `const vault = await openVault({ rootDir: process.env.SVPACK_PUB_VAULT });`,
+      `import { nodeStorage } from ${JSON.stringify(nodeStorageUrl)};`,
+      `const vault = await openVault({ rootDir: process.env.SVPACK_PUB_VAULT, storage: nodeStorage });`,
       `const app = createApp({ vault, identityDir: process.env.SVPACK_PUB_IDENTITY, now: () => Date.now() });`,
       `const server = app.listen(0, "127.0.0.1", () => {`,
       `  console.log("SVPACK_PUB_PORT=" + server.address().port);`,

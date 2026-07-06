@@ -14,6 +14,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createEntityId } from "../src/core/ids";
 import { openVault } from "../src/core/vault";
+import { nodeStorage } from "../src/core/storage/nodeStorage";
 import { ingestHtmlSource, listSources } from "../src/core/store/sources";
 import { ensureOwnedLayer } from "../src/core/study-layer/layers";
 import { fingerprintForSource } from "../src/core/study-layer/fingerprint";
@@ -33,7 +34,7 @@ const SOURCE_HTML = `<article>
 
 async function main() {
   const rootDir = process.env.STUDY_VAULT_ROOT ?? path.resolve(process.cwd(), ".vault-dev");
-  const vault = await openVault({ rootDir });
+  const vault = await openVault({ rootDir, storage: nodeStorage });
 
   // Reuse the smoke source across runs (so re-running doesn't pile up duplicates).
   const existing = (await listSources(vault)).find((s) => s.title === TITLE);

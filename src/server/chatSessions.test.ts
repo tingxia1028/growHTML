@@ -9,7 +9,8 @@ import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterAll, describe, expect, it } from "vitest";
-import { openVault, type StudyVault } from "../core/vault";
+import { type StudyVault } from "../core/vault";
+import { openTestVault } from "../core/testing/openTestVault";
 import { createApp } from "./app";
 import { deriveSessionTitle, SESSION_TITLE_MAX_CHARS } from "./services/chatSessions";
 
@@ -34,7 +35,7 @@ const NOW = Date.UTC(2026, 6, 4, 12);
 const NOW_ISO = new Date(NOW).toISOString();
 
 async function makeApp(tag: string): Promise<Ctx> {
-  const vault = await openVault({ rootDir: await tmp(`${tag}-vault`) });
+  const vault = await openTestVault({ rootDir: await tmp(`${tag}-vault`) });
   madeVaults.push(vault);
   const clock = { now: NOW };
   const app = createApp({ vault, identityDir: await tmp(`${tag}-id`), now: () => clock.now });

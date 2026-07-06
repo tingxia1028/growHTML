@@ -7,7 +7,8 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { openVault, type StudyVault } from "../vault";
+import { type StudyVault } from "../vault";
+import { openTestVault } from "../testing/openTestVault";
 import { importAssetBytes, MAX_INLINE_IMAGE_BYTES, readAssetBytes } from "./assets";
 
 let tempDir = "";
@@ -15,7 +16,7 @@ let vault: StudyVault;
 
 beforeEach(async () => {
   tempDir = await mkdtemp(path.join(os.tmpdir(), "study-vault-assets-"));
-  vault = await openVault({ rootDir: tempDir });
+  vault = await openTestVault({ rootDir: tempDir });
 });
 
 afterEach(async () => {

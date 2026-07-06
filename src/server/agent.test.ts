@@ -11,7 +11,8 @@ import {
   type AgentStepEvent,
   type ModelProvider
 } from "../ai";
-import { openVault, type StudyVault } from "../core/vault";
+import { type StudyVault } from "../core/vault";
+import { openTestVault } from "../core/testing/openTestVault";
 import { AGENT_EVENT_PAYLOAD_CHAR_CAP, serializePayload } from "./agent";
 import { createApp } from "./app";
 
@@ -25,7 +26,7 @@ const madeVaults: StudyVault[] = [];
 async function tmpVault() {
   const d = await mkdtemp(path.join(os.tmpdir(), "agent-route-"));
   madeDirs.push(d);
-  const vault = await openVault({ rootDir: d });
+  const vault = await openTestVault({ rootDir: d });
   madeVaults.push(vault);
   return vault;
 }

@@ -4,7 +4,8 @@ import path from "node:path";
 import request from "supertest";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { clearToolsForTests, getTool, listTools, type ToolDefinition } from "../ai";
-import { openVault, type StudyVault } from "../core/vault";
+import { type StudyVault } from "../core/vault";
+import { openTestVault } from "../core/testing/openTestVault";
 import {
   AGENT_TOOL_RESULT_CHAR_BUDGET,
   ANCHOR_QUOTE_CHAR_CAP,
@@ -40,7 +41,7 @@ const HTML =
 const QUOTE = "The mitochondrion is the powerhouse of the cell.";
 
 async function makeCtx(tag: string): Promise<Ctx> {
-  const vault = await openVault({ rootDir: await tmp(tag) });
+  const vault = await openTestVault({ rootDir: await tmp(tag) });
   madeVaults.push(vault);
   return { app: createApp({ vault }), vault };
 }

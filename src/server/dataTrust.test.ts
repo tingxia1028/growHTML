@@ -15,7 +15,8 @@ import request from "supertest";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { fixtureAnchor, fixtureConcept, fixtureHtmlBody, fixtureNote, fixtureSource } from "../core/fixtures/golden";
-import { openVault, type StudyVault, type VaultPaths } from "../core/vault";
+import { type StudyVault, type VaultPaths } from "../core/vault";
+import { openTestVault } from "../core/testing/openTestVault";
 import { schemaVersion, studyLayerSchema, vaultManifestSchema, type StudyLayerRecord } from "../core/schema";
 import { createEntityStores, entityFileNames } from "../core/store/entities";
 import { closeSqliteStore } from "../core/store/engine";
@@ -56,7 +57,7 @@ async function tmp(tag: string): Promise<string> {
 // buildSqliteVault suite below.
 const madeVaults: StudyVault[] = [];
 async function openTrustVault(rootDir: string): Promise<StudyVault> {
-  const vault = await openVault({ rootDir });
+  const vault = await openTestVault({ rootDir });
   madeVaults.push(vault);
   return vault;
 }

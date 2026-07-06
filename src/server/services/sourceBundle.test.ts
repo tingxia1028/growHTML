@@ -7,7 +7,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { NoteRecord } from "../../core/schema";
-import { openVault, type StudyVault } from "../../core/vault";
+import { type StudyVault } from "../../core/vault";
+import { openTestVault } from "../../core/testing/openTestVault";
 import { installServerKits } from "../../kits/server";
 import { createSealedRuntime, type SealedRuntime, type SealedSnapshot } from "../svpack";
 import * as notesService from "./notes";
@@ -28,7 +29,7 @@ let sealed: SealedRuntime;
 
 beforeEach(async () => {
   tempDir = await mkdtemp(path.join(os.tmpdir(), "study-vault-bundle-"));
-  vault = await openVault({ rootDir: tempDir });
+  vault = await openTestVault({ rootDir: tempDir });
   sealed = createSealedRuntime({ vault, identityDir: path.join(tempDir, "identity"), now: () => Date.now() });
 });
 

@@ -1,5 +1,7 @@
 import { createServer, type Server } from "node:http";
 import { openVault } from "../core/vault";
+import { nodeStorage } from "../core/storage/nodeStorage";
+import { getDefaultVaultRoot } from "./vaultRoot";
 import { migrateStudyLayers } from "../core/study-layer/layers";
 import { createApp } from "./app";
 import { defaultBackupsDir } from "./dataTrust";
@@ -52,7 +54,7 @@ export type StartedServer = {
 // Reused by the CLI entry (`src/server/index.ts`) and the Electron main process.
 export async function startServer(options: StartServerOptions = {}): Promise<StartedServer> {
   const host = options.host ?? "127.0.0.1";
-  const vault = await openVault({ rootDir: options.vaultRoot });
+  const vault = await openVault({ rootDir: options.vaultRoot ?? getDefaultVaultRoot(), storage: nodeStorage });
   // Backfill the owned-layer membership for any pre-Study-Layer anchors/notes.
   await migrateStudyLayers(vault);
   // MEM-2 app-start consolidation pass (learner-memory §4): roll captured events into

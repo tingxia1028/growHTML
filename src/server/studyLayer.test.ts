@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { openVault, type StudyVault } from "../core/vault";
+import { type StudyVault } from "../core/vault";
+import { openTestVault } from "../core/testing/openTestVault";
 import { createApp } from "./app";
 
 let tempDir = "";
@@ -16,7 +17,7 @@ const SOURCE_HTML = "<article><p>The render thread submits commands.</p></articl
 
 beforeEach(async () => {
   tempDir = await mkdtemp(path.join(os.tmpdir(), "study-vault-layer-api-"));
-  vault = await openVault({ rootDir: tempDir });
+  vault = await openTestVault({ rootDir: tempDir });
   app = createApp({ vault });
 });
 
@@ -327,7 +328,7 @@ describe("study layer API", () => {
     const tempDir2 = await mkdtemp(path.join(os.tmpdir(), "study-vault-import-"));
     let vault2: StudyVault | undefined;
     try {
-      vault2 = await openVault({ rootDir: tempDir2 });
+      vault2 = await openTestVault({ rootDir: tempDir2 });
       const app2 = createApp({ vault: vault2 });
       await request(app2).post("/api/sources/html").send({ title: "Render Thread", content: SOURCE_HTML }).expect(201);
 
