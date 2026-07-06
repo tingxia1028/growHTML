@@ -53,8 +53,7 @@ import type { PaintAnchor } from "../surfaces/types";
 // bottom. Best-effort — null falls back to a reader-panel-anchored position.
 import { getSelectionRect, type SelectionRect } from "../selection/selectionRect";
 import { type HtmlAnnotationMode } from "../annotations";
-import { activeKitIdsForSource, CORE_KIT_ID } from "../../kits/activation";
-import { installedKits, kitSurfaceItems } from "../../kits/clientContext";
+import { kitSurfaceItems } from "../../kits/clientContext";
 import { type PluginRecord } from "../../kits/plugin";
 // PLAT-LAYER Part-2 Slice 1 — the layout + theme state/logic now live in these two
 // TIER-A leaf domain hooks; the provider only composes their memoized surfaces.
@@ -71,6 +70,11 @@ import { useConceptDomain } from "./useConceptDomain";
 // panes ↔ sourceBundles ↔ activeSourceId ↔ top-level reader-state cluster + all its
 // fetch/mutation IO + 5 effects. The provider composes its memoized surface.
 import { useDocumentsDomain } from "./useDocumentsDomain";
+// PLAT-LAYER Part-2 Slice 5 — the KIT domain (a TIER-C composer over the pipeline): owns
+// the per-source activeKitIds resolver, the installedKits list, and setActiveKit (whose
+// inline entityClient.updateSourceMetadata write moves in). Reads documents outputs
+// (activeSource / activeSourceId / loadSources / setError) via the landed `docs` surface.
+import { useKitDomain } from "./useKitDomain";
 // F1 (P-A1): the open-panes model type — the pure panes engine + its callers moved into
 // useDocumentsDomain (Slice 4b); the provider keeps only the OpenPane type for its interface.
 import { type OpenPane } from "./panes";
@@ -738,6 +742,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // Instantiated BEFORE plugin/concept/chat because those now consume its surface
   // (docs.setError / docs.refreshAnnotations / docs.activeSourceId).
   const docs = useDocumentsDomain({ focus, parkDraft, resetReaderDraftInputs });
+
+  // PLAT-LAYER Part-2 Slice 5 — the KIT domain (TIER-C): the per-source activeKitIds
+  // resolver + installedKits + setActiveKit (whose inline entityClient.updateSourceMetadata
+  // → loadSources write now lives in the hook). It CONSUMES documents outputs, so it is
+  // instantiated AFTER `docs`: activeSource feeds the foreground resolver, and
+  // activeSourceId/loadSources/setError back the pin write + its error path.
+  const kit = useKitDomain({
+    activeSource: docs.activeSource,
+    activeSourceId: docs.activeSourceId,
+    loadSources: docs.loadSources,
+    onError: docs.setError
+  });
 
   // PLAT-LAYER Part-2 Slice 2 — the Kit & Plugin domain (a TIER-A leaf): owns
   // installedPlugins + pluginPrefs, the mount-load effect, and the setContributionEnabled/
@@ -1441,26 +1457,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     focus.setDraft(regionDraft);
   }, [focus]);
 
-  // Effective kit ids for the active source (per-source activation). Recomputed from
-  // the active source's metadata; rendering is never gated by this.
-  const activeKitIds = useMemo(() => activeKitIdsForSource(docs.activeSource), [docs.activeSource]);
-
-  // Apply a Product Kit to the active source ("core" = none). Persists to
-  // source.metadata.activeKitIds, then reloads sources so the gate recomputes.
-  const setActiveKit = useCallback(
-    async (kitId: string) => {
-      if (!docs.activeSourceId) return;
-      const nextKitIds = kitId === CORE_KIT_ID ? [] : [kitId];
-      try {
-        await entityClient.updateSourceMetadata(docs.activeSourceId, { activeKitIds: nextKitIds });
-        await docs.loadSources();
-      } catch (err) {
-        docs.setError(err instanceof Error ? err.message : "Failed to set kit");
-      }
-    },
-    [docs.activeSourceId, docs.loadSources, docs.setError]
-  );
-
   // —— operations (custom AI actions as data) ——
   const refreshOperations = useCallback(() => setOperationsVersion((value) => value + 1), []);
 
@@ -1526,7 +1522,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // source-actions toolbar. Built-in kit items are gated by the active source's kits;
   // custom ops are workspace-wide.
   const selectionActions = useMemo<ToolbarAction[]>(() => {
-    const builtin: ToolbarAction[] = kitSurfaceItems("selection-toolbar", activeKitIds).map((item) => ({
+    const builtin: ToolbarAction[] = kitSurfaceItems("selection-toolbar", kit.activeKitIds).map((item) => ({
       id: item.commandId,
       title: resolveText(item.title),
       icon: operationPrefs.icons?.[item.commandId] ?? item.icon,
@@ -1592,7 +1588,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       operationPrefs,
       "passage"
     );
-  }, [activeKitIds, locale, operations, operationPrefs, focus.draft]);
+  }, [kit.activeKitIds, locale, operations, operationPrefs, focus.draft]);
 
   // The Anchor Action Bar renders the SAME ordered "passage" list as the inline selection
   // toolbar — one shared surface, one config. Aliased to `selectionActions` so there is a
@@ -1601,7 +1597,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const anchorBarActions = selectionActions;
 
   const sourceActions = useMemo<ToolbarAction[]>(() => {
-    const builtin: ToolbarAction[] = kitSurfaceItems("source-actions", activeKitIds).map((item) => ({
+    const builtin: ToolbarAction[] = kitSurfaceItems("source-actions", kit.activeKitIds).map((item) => ({
       id: item.commandId,
       title: resolveText(item.title),
       icon: operationPrefs.icons?.[item.commandId] ?? item.icon,
@@ -1624,7 +1620,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         variables: op.declaredVariables
       }));
     return orderActionsForSurface([...builtin, ...custom], operationPrefs, "source");
-  }, [activeKitIds, locale, operations, operationPrefs]);
+  }, [kit.activeKitIds, locale, operations, operationPrefs]);
 
   // Fire a merged action: a built-in dispatches its command id directly; a custom op
   // goes through the generic operation.run command (which materializes the passage,
@@ -1703,9 +1699,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       undoDraftNote,
       dismissDraftNote,
       toggleLayerFilter,
-      activeKitIds,
-      installedKits,
-      setActiveKit,
+      // Slice 5 — the kit surface spread verbatim: keeps the SAME 3 field names/shape
+      // (activeKitIds, installedKits, setActiveKit) so consumers are unchanged.
+      ...kit,
       operations,
       operationPrefs,
       operationsVersion,
@@ -1796,8 +1792,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       undoDraftNote,
       dismissDraftNote,
       toggleLayerFilter,
-      activeKitIds,
-      setActiveKit,
+      // Slice 5 — the 3 kit fields collapse to their single memoized surface; its identity
+      // changes only when activeKitIds/setActiveKit change (installedKits is a stable module
+      // const) → identical re-render behavior.
+      kit,
       operations,
       operationPrefs,
       operationsVersion,
