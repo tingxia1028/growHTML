@@ -19,7 +19,7 @@
 
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import { Network, Plus } from "lucide-react";
-import { entityClient, type ConceptRecord } from "../data/entityClient";
+import { conceptIo, type ConceptRecord } from "../concept/conceptIo";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 // Side-effect import: registers the concept / relation inspectors.
 import "../inspectors/views";
@@ -95,8 +95,8 @@ function ConceptListView({ ctx, initialMode = "list" }: { ctx: WorkspaceContext;
     try {
       // Concepts + ALL notes in one round: the counts join over notes' conceptIds.
       const [conceptsResponse, notesResponse] = await Promise.all([
-        entityClient.concepts(),
-        entityClient.allNotes()
+        conceptIo.concepts(),
+        conceptIo.allNotes()
       ]);
       setConcepts(conceptsResponse.concepts);
       setNoteCounts(conceptNoteCounts(notesResponse.notes));

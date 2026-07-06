@@ -4,7 +4,7 @@
 // it (back-refs), and the relations touching it; and it offers the MANUAL actions:
 //   • link an existing note to this concept   → concept.link-note
 //   • 关联到… (one autocomplete pick)          → relation.create with kind "related"
-//   • delete a relation                        → entityClient.deleteRelation
+//   • delete a relation                        → conceptIo.deleteRelation
 //
 // CONCEPT-UX-1 §3: the 10-kind relation form is GONE from this surface — relating two
 // concepts is one autocomplete pick that immediately creates a `related` relation. The
@@ -21,11 +21,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { GitMerge, Link2, Trash2 } from "lucide-react";
 import {
-  entityClient,
+  conceptIo,
   type ConceptRecord,
   type NoteRecord,
   type RelationRecord
-} from "../data/entityClient";
+} from "../concept/conceptIo";
 import { noteText } from "../workspace/WorkspaceContext";
 import { ConceptAutocomplete } from "../workspace/ConceptChips";
 import { conceptMessages } from "../workspace/conceptMessages";
@@ -57,9 +57,9 @@ export function ConceptInspector({ conceptId, ctx }: { conceptId: string; ctx: I
       // Detail (concept + back-ref notes + relations), plus the candidate lists the
       // pickers need: all concepts (relation target) and all notes (note to link).
       const [detailResponse, conceptsResponse, notesResponse] = await Promise.all([
-        entityClient.conceptDetail(conceptId),
-        entityClient.concepts(),
-        entityClient.allNotes()
+        conceptIo.conceptDetail(conceptId),
+        conceptIo.concepts(),
+        conceptIo.allNotes()
       ]);
       setDetail(detailResponse);
       setAllConcepts(conceptsResponse.concepts);
@@ -130,7 +130,7 @@ export function ConceptInspector({ conceptId, ctx }: { conceptId: string; ctx: I
   const deleteRelation = useCallback(
     async (relationId: string) => {
       try {
-        await entityClient.deleteRelation(relationId);
+        await conceptIo.deleteRelation(relationId);
         refreshConcepts();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to delete relation");
@@ -143,7 +143,7 @@ export function ConceptInspector({ conceptId, ctx }: { conceptId: string; ctx: I
     if (!detail) return;
     if (!(await platformDialogs().confirm(`Delete concept "${detail.concept.name}"? Linked notes will keep their content.`))) return;
     try {
-      await entityClient.deleteConcept(detail.concept.id);
+      await conceptIo.deleteConcept(detail.concept.id);
       refreshConcepts();
       focus.setFocus(null);
     } catch (err) {
@@ -157,7 +157,7 @@ export function ConceptInspector({ conceptId, ctx }: { conceptId: string; ctx: I
     if (!target) return;
     if (!(await platformDialogs().confirm(`Merge "${detail.concept.name}" into "${target.name}"?`))) return;
     try {
-      const result = await entityClient.mergeConcept(detail.concept.id, target.id);
+      const result = await conceptIo.mergeConcept(detail.concept.id, target.id);
       refreshConcepts();
       focus.setFocus({ type: "concept", conceptId: result.concept.id });
     } catch (err) {

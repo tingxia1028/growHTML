@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
-import { entityClient, type ConceptRecord, type NoteRecord } from "../data/entityClient";
+import { conceptIo, type ConceptRecord, type NoteRecord } from "../concept/conceptIo";
 import { useWorkspaceOptional } from "./WorkspaceContext";
 import { conceptNameFromSelection, matchConceptByName, normalizeConceptName, collapseConceptText } from "./conceptName";
 import { conceptMessages } from "./conceptMessages";
@@ -210,8 +210,8 @@ export function ConceptChips({
 // concept names once, and wires link/create/navigate:
 //   link     → concept.link-note command when a workspace ctx exists (appends to
 //              note.conceptIds + bumps conceptsVersion + repaints), else a direct
-//              entityClient.updateNote (standalone/tests).
-//   create   → entityClient.createConcept (deduped by normalized name first), then link.
+//              conceptIo.updateNote (standalone/tests).
+//   create   → conceptIo.createConcept (deduped by normalized name first), then link.
 //   navigate → focus.setFocus({type:"concept"}) — the existing focus contract; the
 //              host's onNavigated (FocusOverlay passes onClose) fires after.
 export function NoteConceptChips({
@@ -236,7 +236,7 @@ export function NoteConceptChips({
   useEffect(() => {
     setConceptIds(note.conceptIds ?? []);
     let cancelled = false;
-    void entityClient
+    void conceptIo
       .concepts()
       .then(({ concepts: loaded }) => {
         if (!cancelled) setConcepts(loaded);
@@ -260,7 +260,7 @@ export function NoteConceptChips({
           noteConceptIds: current
         });
       } else {
-        await entityClient.updateNote(note.id, { conceptIds: [...current, concept.id] });
+        await conceptIo.updateNote(note.id, { conceptIds: [...current, concept.id] });
       }
       setConceptIds((prev) => (prev.includes(concept.id) ? prev : [...prev, concept.id]));
     },
@@ -290,7 +290,7 @@ export function NoteConceptChips({
         // Dedupe exactly like 选中即建: an existing same-named concept links instead.
         let concept = matchConceptByName(concepts, name);
         if (!concept) {
-          concept = (await entityClient.createConcept({ name: conceptNameFromSelection(name) })).concept;
+          concept = (await conceptIo.createConcept({ name: conceptNameFromSelection(name) })).concept;
           setConcepts((prev) => [...prev, concept as ConceptRecord]);
           ws?.refreshConcepts();
         }

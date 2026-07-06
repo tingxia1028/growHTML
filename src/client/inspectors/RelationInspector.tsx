@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
-import { entityClient, type ConceptRecord, type RelationRecord } from "../data/entityClient";
+import { conceptIo, type ConceptRecord, type RelationRecord } from "../concept/conceptIo";
 import type { InspectorContext } from "./registry";
 
 export function RelationInspector({ relationId, ctx }: { relationId: string; ctx: InspectorContext }) {
@@ -20,8 +20,8 @@ export function RelationInspector({ relationId, ctx }: { relationId: string; ctx
     setError("");
     try {
       const [relationsResponse, conceptsResponse] = await Promise.all([
-        entityClient.relations(),
-        entityClient.concepts()
+        conceptIo.relations(),
+        conceptIo.concepts()
       ]);
       setRelation(relationsResponse.relations.find((item) => item.id === relationId) ?? null);
       setConcepts(conceptsResponse.concepts);
@@ -39,7 +39,7 @@ export function RelationInspector({ relationId, ctx }: { relationId: string; ctx
   const deleteRelation = useCallback(async () => {
     if (!relation) return;
     try {
-      await entityClient.deleteRelation(relation.id);
+      await conceptIo.deleteRelation(relation.id);
       focus.setFocus(null);
       refreshConcepts();
     } catch (err) {
