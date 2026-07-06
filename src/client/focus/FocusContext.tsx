@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
-import { entityClient, type AnyAnchor, type CreateAnchorInput } from "../data/entityClient";
+import type { AnyAnchor, CreateAnchorInput } from "../data/entityClient";
+import { anchorIo } from "./anchorIo";
 import type { Rect, RegionTarget } from "../../core/region/region";
 
 // AnchorDraft — a passage the user has selected/marked in a reader but not yet
@@ -166,7 +167,7 @@ export type FocusProviderProps = {
 
 export function FocusProvider({
   children,
-  createAnchor = entityClient.createAnchor,
+  createAnchor = anchorIo.createAnchor,
   onAnchorMaterialized
 }: FocusProviderProps) {
   const [focus, setFocusState] = useState<FocusTarget | null>(null);

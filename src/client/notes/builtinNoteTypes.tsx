@@ -23,6 +23,14 @@ import { escapeHtml, renderNoteContent } from "../../adapters/notes/render";
 import { FlipCard, useChoiceQuiz } from "./noteInteractive";
 import { videoEmbedSrc, type VideoProvider } from "../../core/notes/parseVideoUrl";
 import { DiagramNote } from "../DiagramNote";
+import { assetUrl } from "../data/assetUrl";
+import { mediaIo } from "./mediaIo";
+// NOTE (§2.5 slice 8d): assetUrl + importAsset are now routed through the sanctioned
+// data/assetUrl + mediaIo seams above. builtinNoteTypes retains ONE remaining runtime
+// entityClient edge — `putPluginCatalog` (the note-install hint's catalog write) — which
+// is part of the plugin-catalog IO cluster (shared with workspace/pluginManagerViews.tsx),
+// NOT the asset/media scope of 8d. It is intentionally left here for that cluster's own
+// relocation; the Rule C guard lands green-last in 8e.
 import { entityClient } from "../data/entityClient";
 import { getPlatformOptional } from "../platform/platformSingleton";
 import {
@@ -584,7 +592,7 @@ function mediaDuration(media: MediaContent): string | null {
 function MediaRender({ content, mode, kind }: NoteRenderInput & { kind: "image" | "audio" | "video" }) {
   const media = asMedia(content);
   if (!media.assetId) return <div className="note-rendered sv-media-empty">No media selected.</div>;
-  const src = entityClient.assetUrl(media.assetId);
+  const src = assetUrl(media.assetId);
   const duration = mediaDuration(media);
 
   // "card" → a LIGHTWEIGHT thumbnail (§10.3): image shows the actual <img> thumbnail
@@ -628,7 +636,7 @@ function MediaEditor({ content, onChange, accept }: NoteEditInput & { accept: st
       (await (getPlatformOptional()?.files.pickFile() ??
         (window.studyVault?.openFile?.() ?? Promise.resolve(null)))) ?? null;
     if (!path) return;
-    const { asset } = await entityClient.importAsset(path);
+    const { asset } = await mediaIo.importAsset(path);
     onChange({ ...media, assetId: asset.id });
   };
   return (

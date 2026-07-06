@@ -13,8 +13,7 @@
 import { reviewDueStats } from "../review/queue";
 import { getReviewIo } from "../review/reviewIo";
 import { evaluateTrigger, type TriggerEvalContext } from "../../core/trigger/evaluate";
-import type { TriggerRecord, TriggerFiresState, TriggerFireState } from "../data/entityClient";
-import { entityClient } from "../data/entityClient";
+import { triggerIo, type TriggerRecord, type TriggerFiresState, type TriggerFireState } from "./triggerIo";
 import { getBuiltInTriggers, isTriggerArmed } from "../triggers/registry";
 import { isIdle } from "./idleSignal";
 import { localClockFrom, type LocalClock } from "./localClock";
@@ -55,21 +54,21 @@ async function computeReviewDueViaIo(): Promise<{ due: number; hasGradedHistory:
 export const defaultTickIo: ProactiveTickIo = {
   fetchTriggers: async () => {
     try {
-      return (await entityClient.triggers()).triggers;
+      return (await triggerIo.triggers()).triggers;
     } catch {
       return [];
     }
   },
   fetchFires: async () => {
     try {
-      return (await entityClient.triggerFires()).fires;
+      return (await triggerIo.triggerFires()).fires;
     } catch {
       return {};
     }
   },
   recordFire: async (triggerId, input) => {
     try {
-      await entityClient.recordTriggerFire(triggerId, input);
+      await triggerIo.recordTriggerFire(triggerId, input);
     } catch {
       // A lost fire-record only risks one extra nudge later — never block the surface.
     }

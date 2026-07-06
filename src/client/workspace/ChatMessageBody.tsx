@@ -19,7 +19,8 @@
 
 import { FilePlus2, RefreshCw } from "lucide-react";
 import { classifyContent } from "../../core/notes/classifyContent";
-import { entityClient, type ContentPart } from "../data/entityClient";
+import type { ContentPart } from "../data/entityClient";
+import { assetUrl } from "../data/assetUrl";
 import { getNoteType } from "../notes/noteTypeRegistry";
 import { ArtifactCard } from "./ArtifactCard";
 // 朗读 (SPEECH-1b 朗读通用化): every ASSISTANT reply is readable — the user's law says
@@ -57,7 +58,7 @@ function MessageImages({ content }: { content: string | ContentPart[] }) {
         <img
           key={`${part.assetId}-${index}`}
           className="chat-msg-image"
-          src={entityClient.assetUrl(part.assetId)}
+          src={assetUrl(part.assetId)}
           alt="attached image"
           loading="lazy"
         />

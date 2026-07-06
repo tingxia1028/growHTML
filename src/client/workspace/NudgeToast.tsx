@@ -14,7 +14,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Bell, Clock, X } from "lucide-react";
-import { entityClient } from "../data/entityClient";
+import { triggerIo } from "./triggerIo";
 import { navigateShell } from "./shellNav";
 import { getPlatformOptional } from "../platform/platformSingleton";
 import { clearNudge, subscribeNudge, type PendingNudge } from "./nudgeStore";
@@ -73,12 +73,12 @@ export function NudgeToast() {
   };
 
   const snooze = () => {
-    void entityClient.snoozeTrigger(nudge.triggerId, Date.now() + SNOOZE_MS).catch(() => undefined);
+    void triggerIo.snoozeTrigger(nudge.triggerId, Date.now() + SNOOZE_MS).catch(() => undefined);
     clearNudge();
   };
 
   const dismiss = () => {
-    void entityClient.dismissTrigger(nudge.triggerId).catch(() => undefined);
+    void triggerIo.dismissTrigger(nudge.triggerId).catch(() => undefined);
     clearNudge();
   };
 

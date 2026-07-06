@@ -31,7 +31,7 @@ import { TerminalPanel } from "../TerminalPanel";
 import { getPlatformOptional } from "../platform/platformSingleton";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 import { PanelMenu } from "./PanelMenu";
-import { entityClient } from "../data/entityClient";
+import { assetUrl } from "../data/assetUrl";
 import { resolveText, t } from "../i18n";
 import { libraryMessages } from "./libraryMessages";
 import {
@@ -818,7 +818,7 @@ function StudyView({ ctx }: { ctx: WorkspaceContext }) {
           <div className="chat-image-pending" aria-label="Pending images">
             {pendingImages.map((image) => (
               <span key={image.assetId} className="chat-image-pending-chip" data-asset-id={image.assetId}>
-                <img src={entityClient.assetUrl(image.assetId)} alt="pending attachment" />
+                <img src={assetUrl(image.assetId)} alt="pending attachment" />
                 <button
                   type="button"
                   className="chat-image-pending-remove"
