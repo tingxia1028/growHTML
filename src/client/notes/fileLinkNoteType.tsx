@@ -20,6 +20,7 @@
 import { useState } from "react";
 import { File as FileIcon } from "lucide-react";
 import { FILE_LINK_CONTENT_TYPE, type FileLinkContent } from "../../core/notes/contentTypes";
+import { getPlatformOptional } from "../platform/platformSingleton";
 import { registerNoteType, type NoteEditInput, type NoteRenderInput } from "./noteTypeRegistry";
 import "./fileLinkNoteType.css";
 
@@ -63,7 +64,8 @@ function FileLinkOpenAction({ path }: { path: string }) {
       return;
     }
     try {
-      await navigator.clipboard.writeText(path);
+      await (getPlatformOptional()?.clipboard.writeText(path) ??
+        navigator.clipboard.writeText(path));
       setFeedback("已复制");
     } catch {
       setFeedback("复制失败");

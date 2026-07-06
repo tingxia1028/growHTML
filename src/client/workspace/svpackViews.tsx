@@ -31,7 +31,7 @@ import {
   type SvpackPinStatus,
   type SvpackValidity
 } from "../data/entityClient";
-import { platformDialogs } from "../platform";
+import { getPlatformOptional, platformDialogs } from "../platform";
 
 // —— Pure helpers (exported for tests) ————————————————————————————————————————
 
@@ -216,7 +216,8 @@ export function SvpackExportDialog({ layer, onClose }: { layer: StudyLayerRecord
   }, [busy, cleanLabels, validDate, layer.id]);
 
   const copyCode = useCallback((code: string) => {
-    void navigator.clipboard?.writeText(code);
+    void (getPlatformOptional()?.clipboard.writeText(code) ??
+      navigator.clipboard?.writeText(code));
   }, []);
 
   return (

@@ -8,9 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { setLocale } from "../i18n";
+import { memoryPlatform } from "../platform/memoryPlatform";
+import { setPlatform } from "../platform/platformSingleton";
 import { getView } from "./viewRegistry";
 import { setTrashIoForTests, type TrashListing } from "./trashIo";
-import { setTrashUiForTests, TrashPanel } from "./trashViews";
+import { TrashPanel } from "./trashViews";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -54,6 +56,9 @@ const listing: TrashListing = {
 
 beforeEach(() => {
   setLocale("zh");
+  // Default platform: confirm→true so destructive gates proceed unless a test
+  // overrides with its own memoryPlatform (PLAT-LAYER — the dialogs funnel).
+  setPlatform(memoryPlatform({ dialogs: { confirm: () => Promise.resolve(true) } }));
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -63,7 +68,6 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   setTrashIoForTests(null);
-  setTrashUiForTests(null);
   setLocale("zh");
   vi.restoreAllMocks();
 });
@@ -72,6 +76,16 @@ async function renderPanel() {
   await act(async () => {
     root.render(<TrashPanel />);
   });
+}
+
+// The purge handlers now await platformDialogs() before touching the IO seam, so a
+// click resolves across several microtasks — flush a few act() ticks to settle them.
+async function flush(times = 3): Promise<void> {
+  for (let i = 0; i < times; i += 1) {
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
 }
 
 const text = () => container.textContent ?? "";
@@ -149,8 +163,8 @@ describe("TrashPanel (trash.panel view)", () => {
   it("彻底删除 asks for confirmation and only purges on accept", async () => {
     const purge = vi.fn(async () => ({ ok: true as const, purged: { sources: 0, notes: 1, anchors: 0, patches: 0 } }));
     setTrashIoForTests({ fetchTrash: async () => listing, purge });
-    const confirm = vi.fn(() => false);
-    setTrashUiForTests({ confirm });
+    const confirm = vi.fn(async () => false);
+    setPlatform(memoryPlatform({ dialogs: { confirm } }));
     await renderPanel();
 
     const purgeButton = container.querySelector<HTMLButtonElement>(
@@ -159,42 +173,69 @@ describe("TrashPanel (trash.panel view)", () => {
     await act(async () => {
       purgeButton.click();
     });
+    await flush();
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(purge).not.toHaveBeenCalled(); // declined
 
-    confirm.mockReturnValue(true);
+    confirm.mockResolvedValue(true);
     await act(async () => {
       purgeButton.click();
     });
+    await flush();
     expect(purge).toHaveBeenCalledWith("note_01HZZZZZZZZZZZZZZZZZZZZN1");
+  });
+
+  it("a double-click can't open two dialogs / double-purge (async-dialog re-entrancy guard)", async () => {
+    const purge = vi.fn(async () => ({ ok: true as const, purged: { sources: 0, notes: 1, anchors: 0, patches: 0 } }));
+    setTrashIoForTests({ fetchTrash: async () => listing, purge });
+    // A DEFERRED confirm we resolve by hand — models a genuinely-async (mobile/Capacitor) dialog, where
+    // the second click would land while the first dialog is still open. The sync in-flight ref must swallow it.
+    let resolveConfirm: (v: boolean) => void = () => {};
+    const confirm = vi.fn(() => new Promise<boolean>((res) => { resolveConfirm = res; }));
+    setPlatform(memoryPlatform({ dialogs: { confirm } }));
+    await renderPanel();
+
+    const purgeButton = container.querySelector<HTMLButtonElement>(
+      '[data-id="note_01HZZZZZZZZZZZZZZZZZZZZN1"] .trash-purge'
+    )!;
+    await act(async () => { purgeButton.click(); });
+    await act(async () => { purgeButton.click(); }); // second click while dialog #1 is still open
+    expect(confirm).toHaveBeenCalledTimes(1); // only ONE dialog opened — guard blocked re-entry
+
+    await act(async () => { resolveConfirm(true); });
+    await flush();
+    expect(purge).toHaveBeenCalledTimes(1); // exactly one purge, not two
   });
 
   it("清空回收站 requires typing the EXACT phrase (cancel = no-op, mismatch = alert)", async () => {
     const purgeAll = vi.fn(async () => ({ ok: true as const, purged: { sources: 1, notes: 2, anchors: 3, patches: 0 } }));
     setTrashIoForTests({ fetchTrash: async () => listing, purgeAll });
-    const prompt = vi.fn<(message: string) => string | null>(() => null);
-    const alert = vi.fn();
-    setTrashUiForTests({ prompt, alert });
+    const prompt = vi.fn<(message: string) => Promise<string | null>>(async () => null);
+    const alert = vi.fn(async () => {});
+    setPlatform(memoryPlatform({ dialogs: { prompt, alert } }));
     await renderPanel();
 
     const purgeAllButton = container.querySelector<HTMLButtonElement>(".trash-purge-all")!;
     await act(async () => {
       purgeAllButton.click(); // cancelled prompt
     });
+    await flush();
     expect(purgeAll).not.toHaveBeenCalled();
     expect(alert).not.toHaveBeenCalled();
 
-    prompt.mockReturnValue("清空");
+    prompt.mockResolvedValue("清空");
     await act(async () => {
       purgeAllButton.click(); // wrong phrase
     });
+    await flush();
     expect(purgeAll).not.toHaveBeenCalled();
     expect(alert).toHaveBeenCalledTimes(1);
 
-    prompt.mockReturnValue("清空回收站");
+    prompt.mockResolvedValue("清空回收站");
     await act(async () => {
       purgeAllButton.click();
     });
+    await flush();
     expect(purgeAll).toHaveBeenCalledWith("清空回收站");
   });
 

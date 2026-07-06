@@ -10,33 +10,17 @@
 // Every string lives in trashMessages (zh/en). Styles are scoped in trash.css
 // (styles.css untouched — contended).
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { t } from "../i18n";
+import { platformDialogs } from "../platform";
 import { registerView } from "./viewRegistry";
 import { getTrashIo, PURGE_ALL_CONFIRM_PHRASE, type TrashListing, type TrashNoteItem, type TrashSourceItem } from "./trashIo";
 import { trashMessages as m } from "./trashMessages";
 import "./trash.css";
 
-// —— UI seam (native dialogs by default; tests inject — the dataTrust idiom) ————
-
-export type TrashUi = {
-  confirm(message: string): boolean;
-  prompt(message: string): string | null;
-  alert(message: string): void;
-};
-
-const defaultUi: TrashUi = {
-  confirm: (message) => window.confirm(message),
-  prompt: (message) => window.prompt(message),
-  alert: (message) => window.alert(message)
-};
-
-let ui: TrashUi = defaultUi;
-
-/** Test seam: override the confirm/prompt/alert edges (null restores natives). */
-export function setTrashUiForTests(next: Partial<TrashUi> | null): void {
-  ui = next ? { ...defaultUi, ...next } : defaultUi;
-}
+// Destructive confirms/prompts/alerts route through platformDialogs() (the swappable
+// adapter — mobile supplies native dialogs). Tests inject answers via
+// memoryPlatform({ dialogs }) + setPlatform (no hand-rolled UI seam).
 
 // —— Helpers ————————————————————————————————————————————————————————————————————
 
@@ -57,6 +41,12 @@ export function TrashPanel() {
   const [listing, setListing] = useState<TrashListing | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // A SYNCHRONOUS in-flight guard for the dialog-opening handlers. `busy` (state) is only set inside
+  // run() AFTER the awaited dialog resolves, and is stale-captured in the async closure — so with a
+  // genuinely-async dialog (the future mobile/Capacitor adapter this refactor targets) a second click
+  // would open a second dialog and fire a DOUBLE purge (destructive). A ref set before any await blocks
+  // the re-entry (desktop/web window.* dialogs are sync-blocking, so this is inert there — S5-review fold).
+  const dialogInFlight = useRef(false);
 
   const load = useCallback(async () => {
     setError("");
@@ -89,20 +79,36 @@ export function TrashPanel() {
   const restore = (id: string) => void run(() => getTrashIo().restore(id));
 
   const purgeOne = (id: string) => {
-    if (!ui.confirm(t(m.confirmPurgeOne))) return;
-    void run(() => getTrashIo().purge(id));
+    if (dialogInFlight.current) return;
+    dialogInFlight.current = true;
+    void (async () => {
+      try {
+        if (!(await platformDialogs().confirm(t(m.confirmPurgeOne)))) return;
+        await run(() => getTrashIo().purge(id));
+      } finally {
+        dialogInFlight.current = false;
+      }
+    })();
   };
 
   // 清空回收站 — the typed confirm phrase (the TRUST-2 import idiom): a cancelled
   // prompt is a silent no-op; a wrong phrase alerts and touches nothing.
   const purgeAll = () => {
-    const answer = ui.prompt(t(m.purgeAllPrompt));
-    if (answer === null) return;
-    if (answer.trim() !== PURGE_ALL_CONFIRM_PHRASE) {
-      ui.alert(t(m.purgeAllMismatch));
-      return;
-    }
-    void run(() => getTrashIo().purgeAll(PURGE_ALL_CONFIRM_PHRASE));
+    if (dialogInFlight.current) return;
+    dialogInFlight.current = true;
+    void (async () => {
+      try {
+        const answer = await platformDialogs().prompt(t(m.purgeAllPrompt));
+        if (answer === null) return;
+        if (answer.trim() !== PURGE_ALL_CONFIRM_PHRASE) {
+          await platformDialogs().alert(t(m.purgeAllMismatch));
+          return;
+        }
+        await run(() => getTrashIo().purgeAll(PURGE_ALL_CONFIRM_PHRASE));
+      } finally {
+        dialogInFlight.current = false;
+      }
+    })();
   };
 
   const isEmpty = !!listing && listing.sources.length === 0 && listing.notes.length === 0;

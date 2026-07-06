@@ -31,8 +31,10 @@ function makeUi(promptAnswer: string | null = null) {
   const prompts: string[] = [];
   let reloads = 0;
   const ui: DataTrustUi = {
-    alert: (message) => alerts.push(message),
-    prompt: (message) => {
+    alert: async (message) => {
+      alerts.push(message);
+    },
+    prompt: async (message) => {
       prompts.push(message);
       return promptAnswer;
     },

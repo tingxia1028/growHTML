@@ -13,6 +13,7 @@
 
 import { strFromU8, unzipSync } from "fflate";
 import { createHttpTransport } from "../data/transport";
+import { platformDialogs } from "../platform";
 
 /** Must match the server's IMPORT_CONFIRM_PHRASE (src/server/dataTrust.ts). */
 export const IMPORT_CONFIRM_PHRASE = "替换全库";
@@ -96,17 +97,19 @@ export function setDataTrustIoForTests(next: Partial<DataTrustIo> | null): void 
   io = next ? { ...defaultIo, ...next } : defaultIo;
 }
 
-// —— UI seam (native dialogs by default; tests inject) ——————————————————————————
+// —— UI seam (dialogs ride platformDialogs: mobile-swappable; tests inject) ————————
+// alert/prompt are ASYNC (they route through the platform's async dialogs). `reload`
+// stays sync — it's a window action, not a dialog, with no PlatformDialogs analog.
 
 export type DataTrustUi = {
-  alert(message: string): void;
-  prompt(message: string): string | null;
+  alert(message: string): Promise<void>;
+  prompt(message: string): Promise<string | null>;
   reload(): void;
 };
 
 const defaultUi: DataTrustUi = {
-  alert: (message) => window.alert(message),
-  prompt: (message) => window.prompt(message),
+  alert: (message) => platformDialogs().alert(message),
+  prompt: (message) => platformDialogs().prompt(message),
   reload: () => window.location.reload()
 };
 
@@ -179,9 +182,9 @@ export async function runBackupNow(ui: DataTrustUi = defaultUi): Promise<void> {
     } catch {
       // status readout is best-effort — the backup itself already succeeded
     }
-    ui.alert(`已备份:${backup.name}(共 ${total} 份)`);
+    await ui.alert(`已备份:${backup.name}(共 ${total} 份)`);
   } catch (error) {
-    ui.alert(`备份失败:${errorMessage(error)}`);
+    await ui.alert(`备份失败:${errorMessage(error)}`);
   }
 }
 
@@ -191,7 +194,7 @@ export async function runExportVault(ui: DataTrustUi = defaultUi): Promise<void>
     const { blob, fileName } = await io.exportVault();
     downloadBlob(blob, fileName);
   } catch (error) {
-    ui.alert(`导出失败:${errorMessage(error)}`);
+    await ui.alert(`导出失败:${errorMessage(error)}`);
   }
 }
 
@@ -205,7 +208,7 @@ export async function importVaultFromFile(file: File, ui: DataTrustUi = defaultU
   const bytes = new Uint8Array(await file.arrayBuffer());
   const peek = peekVaultZip(bytes);
   if (!peek) {
-    ui.alert("这不是有效的全库包(.growte-vault.zip):缺少或无法解析 growte-vault.json 清单。");
+    await ui.alert("这不是有效的全库包(.growte-vault.zip):缺少或无法解析 growte-vault.json 清单。");
     return;
   }
 
@@ -229,22 +232,22 @@ export async function importVaultFromFile(file: File, ui: DataTrustUi = defaultU
     `导入将【完整替换】当前库「${currentName}」,导入前会自动创建备份。`,
     `输入「${IMPORT_CONFIRM_PHRASE}」以确认:`
   ];
-  const answer = ui.prompt(lines.join("\n"));
+  const answer = await ui.prompt(lines.join("\n"));
   if (answer === null) return; // cancelled
   if (answer.trim() !== IMPORT_CONFIRM_PHRASE) {
-    ui.alert("确认口令不符,已取消导入。库未被修改。");
+    await ui.alert("确认口令不符,已取消导入。库未被修改。");
     return;
   }
 
   try {
     const result = await io.importVault(bytes, IMPORT_CONFIRM_PHRASE);
-    ui.alert(
+    await ui.alert(
       `导入完成,已替换全库。导入前备份:${result.preImportBackup}。` +
         (result.restartRequired ? "请重启应用以完成加载。" : "界面将刷新。")
     );
     if (!result.restartRequired) ui.reload();
   } catch (error) {
-    ui.alert(`导入失败:${errorMessage(error)}(当前库保持不变)`);
+    await ui.alert(`导入失败:${errorMessage(error)}(当前库保持不变)`);
   }
 }
 

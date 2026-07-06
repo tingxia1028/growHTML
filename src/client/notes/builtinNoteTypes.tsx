@@ -24,6 +24,7 @@ import { FlipCard, useChoiceQuiz } from "./noteInteractive";
 import { videoEmbedSrc, type VideoProvider } from "../../core/notes/parseVideoUrl";
 import { DiagramNote } from "../DiagramNote";
 import { entityClient } from "../data/entityClient";
+import { getPlatformOptional } from "../platform/platformSingleton";
 import {
   registerNoteType,
   spec,
@@ -495,7 +496,10 @@ function CodeRender({ content, mode }: NoteRenderInput) {
           type="button"
           className="sv-code-copy link-button"
           title="Copy code"
-          onClick={() => void navigator.clipboard?.writeText(snippet.code)}
+          onClick={() =>
+            void (getPlatformOptional()?.clipboard.writeText(snippet.code) ??
+              navigator.clipboard?.writeText(snippet.code))
+          }
         >
           Copy
         </button>
