@@ -55,7 +55,16 @@ vi.mock("../data/entityClient", () => ({
     ),
     generateStructured: vi.fn(() =>
       Promise.resolve({ content: { question: "1/2+1/3=?", wrongAnswer: "2/5", correctAnswer: "5/6" }, concepts: [] })
-    )
+    ),
+    // Slice 7b NIT — the source-switch reset test seeds a source (via a per-test sources
+    // override) and switches to it; the focused-source load fetches these four bundle parts
+    // (fetchSourceBundle), so stub them empty. Default (empty sources) → these never fire, so
+    // the importImageBase64 tests above are unaffected.
+    rendered: vi.fn(() => Promise.resolve({ content: "<p>hi</p>" })),
+    anchors: vi.fn(() => Promise.resolve({ anchors: [] })),
+    notes: vi.fn(() => Promise.resolve({ notes: [] })),
+    patches: vi.fn(() => Promise.resolve({ patches: [] })),
+    layers: vi.fn(() => Promise.resolve({ layers: [] }))
   }
 }));
 
@@ -186,5 +195,51 @@ describe("composer domain — the importImageBase64 back-edges", () => {
     // Degrade-not-disappear: the error surfaced (docs.setError sink) and nothing staged.
     expect(ctx.error).toBe("图片太大");
     expect(ctx.pendingImages).toEqual([]);
+  });
+});
+
+// Slice 7b NIT (carried into 7c): the resetReaderDraftInputs seam is the highest-value 7b
+// behavior and was previously UNPINNED. It fires end to end on an ACTIVE-SOURCE SWITCH:
+//   ctx.setActiveSourceId(id)  → docs' focused-source-load effect  → loadSourceWorkspace(id)
+//   → (on fetch success) the resetReaderDraftInputs TRAMPOLINE  → composer clears patchHtml
+//   + chatInput.
+// This pins that whole chain against the REAL provider (composer + docs + the resetRef
+// trampoline), proving the reset-atoms actually live in composer and the docs→composer seam
+// is wired. (W1 contract: the reset clears ONLY the reader draft inputs — the chat SESSION
+// survives a switch — so we assert exactly patchHtml + chatInput clear.)
+describe("composer domain — the source-switch resetReaderDraftInputs seam (7b NIT)", () => {
+  it("switching the active source clears patchHtml + chatInput via the reset trampoline", async () => {
+    // Seed TWO sources: the FIRST auto-opens on mount (so its load+reset already fired);
+    // switching to the SECOND (uncached) is the real SWITCH that must fire the reset again.
+    vi.mocked(entityClient.sources).mockResolvedValueOnce({
+      sources: [
+        { id: "src_A", title: "Doc A", sourceType: "html", path: "/a", contentHash: "ha" },
+        { id: "src_B", title: "Doc B", sourceType: "html", path: "/b", contentHash: "hb" }
+      ]
+    } as never);
+    await mount();
+    // The first source auto-opened; seed the composer's reader draft inputs AFTER that
+    // mount-time reset so the switch below is what clears them.
+    await act(async () => {
+      ctx.setPatchHtml("<p data-study-id=\"x\">dirty patch</p>");
+      ctx.setChatInput("half-typed question");
+    });
+    await flush();
+    expect(ctx.patchHtml).toBe("<p data-study-id=\"x\">dirty patch</p>");
+    expect(ctx.chatInput).toBe("half-typed question");
+
+    // The ACTIVE-SOURCE SWITCH to the uncached second source: fires docs' load effect →
+    // loadSourceWorkspace("src_B") → (fetch success) resetReaderDraftInputs → composer clears.
+    await act(async () => {
+      ctx.setActiveSourceId("src_B");
+    });
+    await flush();
+
+    // The focused-source load actually ran for the switched-to source (the reset only fires
+    // on its success path).
+    expect(entityClient.anchors).toHaveBeenCalledWith("src_B");
+    // Both composer-owned reader draft inputs reset (the pinned 7b behavior).
+    expect(ctx.patchHtml).toBe("");
+    expect(ctx.chatInput).toBe("");
   });
 });

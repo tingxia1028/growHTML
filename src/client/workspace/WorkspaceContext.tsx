@@ -13,17 +13,18 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useRef,
-  useState,
   type ReactNode
 } from "react";
+// PLAT-LAYER Part-2 Slice 7c — the provider no longer CALLS entityClient in its body (the
+// LAST call site, sourceBundle, moved into useAgentDomain with the rest of the agent bridge).
+// The `entityClient` value import survives ONLY for the `client: entityClient` seam-pass at
+// commandContext (:782) — a by-design reference handed to the command registry (commands do
+// their own IO), NOT a provider-body call — so it does not block the "only-composes" flip.
 import {
   entityClient,
-  chatContentText,
   type AnyAnchor,
-  type ChatContext,
   type ChatMessage,
   type NoteRecord,
   type OperationPrefs,
@@ -36,10 +37,11 @@ import {
 } from "../data/entityClient";
 import { useFocus, draftQuoteText, type FocusContextValue } from "../focus/FocusContext";
 import { getPlatformOptional, platformDialogs } from "../platform";
-// A4b: the agent-loop transcript — a render-only turn state accumulated from the agent
-// SSE (entityClient.agentStream). Distinct from the persisted chat log; only done.message
-// becomes a real assistant turn (via the existing persistAssistant seam).
-import { initialAgentTurn, reduceAgentEvent, type AgentTurnState } from "./agentTurnReducer";
+// PLAT-LAYER Part-2 Slice 7c — the A4b agent-loop transcript reducer (initialAgentTurn /
+// reduceAgentEvent / AgentTurnState) moved into useAgentDomain with the runAgentTurn runner
+// that was its only provider caller. The AgentTurnState TYPE stays imported below for the
+// WorkspaceContextValue interface (agentTurn's declared type).
+import { type AgentTurnState } from "./agentTurnReducer";
 import { BOOKMARK_CONTENT_TYPE } from "../../core/notes/contentTypes";
 // PLAT-LAYER Part-2 Slice 7b — createDefaultContent / isTextContentType moved into
 // useComposerDomain with the note-type composer callbacks (changeNoteContentType /
@@ -101,10 +103,15 @@ import { useLocale } from "../i18n";
 // Transcript + session list/load/save live in src/client/chat; this provider only
 // delegates (chatMessages keeps its exact shape; the switcher gets ONE bundled api).
 import { useChatSessionDomain, type ChatSessionsApi } from "../chat/useChatSessions";
-// W2 (ai-workspace §W2): the PURE assembly of the chat's source-context set (focused
-// source ∪ session attachments, deduped + capped). The bundle fetch lives here (the
-// resolver below); the merge/cap stays pure and unit-tested next door.
-import { assembleContextSources, type ResolvedBundle } from "../chat/chatContextAssembly";
+// PLAT-LAYER Part-2 Slice 7c — the AGENT domain (the FINAL Slice-7 sub-slice — it flips the
+// "WorkspaceContext only-composes" acceptance row GREEN). Owns the agent-loop transcript +
+// the provider-capability readouts, runAgentTurn + regenerateChatReply, and — the BRIDGE —
+// buildChatContext + resolveAttachmentBundles (their consumers are runAgentTurn AND the
+// coordinator's commandContext). Its 3 entityClient sites (aiProviders in the mount effect,
+// agentStream in runAgentTurn, and sourceBundle in resolveAttachmentBundles — the LAST
+// provider-body entityClient call) move in. The W2 chatContextAssembly (assembleContextSources
+// / ResolvedBundle) it consumed moved with resolveAttachmentBundles.
+import { useAgentDomain } from "./useAgentDomain";
 
 export type Status = "idle" | "loading" | "saving" | "error";
 
@@ -618,22 +625,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // commit) so the hook never captures a stale disabled value; `disabledRef.current =
   // composerDisabled` is assigned render-time after composerDisabled is computed (below).
   const disabledRef = useRef(false);
-  // A4b: the in-flight/last agent turn's render-only transcript (tool cards + streamed
-  // text), null when no agent turn has run this session. `agentAvailable` is a mount
-  // read of the ACTIVE provider's `tools` capability — the gated 🛠 button shows only
-  // when true (a provider that lacks runAgent would 501).
-  const [agentTurn, setAgentTurn] = useState<AgentTurnState | null>(null);
-  const [agentAvailable, setAgentAvailable] = useState(false);
-  // V-2 (拍错题): a mount read of the ACTIVE provider's `vision` capability. The 拍错题
-  // capture affordance stays visible regardless (degrade-not-disappear); this flag only
-  // lets the UI HINT when a non-vision provider would surface the clean 400 on send.
-  const [visionAvailable, setVisionAvailable] = useState(false);
-  // Offline-Mock honesty (alpha polish): the ACTIVE provider is the deterministic offline
-  // `mock` (fresh install, no real provider configured) — its replies are canned echoes.
-  // Read once from the SAME aiProviders() mount effect (active.kind === "mock"); the chat
-  // surface shows a dismissible hint pointing at AI 提供方 settings. Best-effort: any read
-  // failure leaves it false (no banner — the pre-existing silent behavior).
-  const [offlineMock, setOfflineMock] = useState(false);
+  // PLAT-LAYER Part-2 Slice 7c — the AGENT cluster (agentTurn + the provider-capability
+  // readouts agentAvailable/visionAvailable/offlineMock), the aiProviders availability effect,
+  // the agent runner (runAgentTurn) + the chat-card regenerate (regenerateChatReply), and the
+  // BRIDGE (buildChatContext + resolveAttachmentBundles, whose consumers are runAgentTurn AND
+  // commandContext) now live in useAgentDomain (instantiated after generation/composer, BEFORE
+  // commandContext — which reads agent.buildChatContext/resolveAttachmentBundles). Its 3
+  // entityClient sites (aiProviders/agentStream/sourceBundle — the LAST provider-body call)
+  // moved with them; agent captures the STABLE `dispatch` trampoline (declared above).
   // PLAT-LAYER Part-2 Slice 7a — the generation cluster (draftNote/draftNoteSeqRef/
   // materializeAnchorRef, pendingDraft/pendingDraftRect/lastGenerationRectRef, regenerating,
   // generating + parkDraft) now lives in useGenerationDomain (instantiated after
@@ -750,103 +749,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // mount, rememberSourceId on id change, the focused-source load, the per-pane background
   // load, persist-panes) moved with them.
 
-  // A4b: read the ACTIVE provider's tool capability once on mount so the gated 🛠 button
-  // knows whether the agent loop is available. The GET returns the descriptor list with
-  // capabilities; match the active id and read `tools`. Best-effort — any failure leaves
-  // the button hidden (plain chat still works).
-  useEffect(() => {
-    // Feature-detect the readout (tests stub a partial entityClient without it) so a
-    // missing method never throws inside the effect — the button just stays hidden.
-    if (typeof entityClient.aiProviders !== "function") return;
-    let cancelled = false;
-    void Promise.resolve()
-      .then(() => entityClient.aiProviders())
-      .then((info) => {
-        if (cancelled) return;
-        const active = info.providers.find((provider) => provider.id === info.active.id);
-        setAgentAvailable(active?.capabilities?.tools === true);
-        // V-2: the same readout feeds the 拍错题 vision hint (degrade-not-disappear).
-        setVisionAvailable(active?.capabilities?.vision === true);
-        // Offline-Mock honesty: the server reports the active provider's capability kind
-        // (aiProviders.ts → active.kind = capabilities.kind), which is "mock" for BOTH the
-        // mock and mock-agent providers — a keyless/offline default. The chat surface hints.
-        setOfflineMock(info.active.kind === "mock");
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setAgentAvailable(false);
-          setVisionAvailable(false);
-          setOfflineMock(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // PLAT-LAYER Part-2 Slice 7c — the AGENT domain: the agent-loop transcript + the ACTIVE-
+  // provider capability readouts (agentAvailable/visionAvailable/offlineMock), runAgentTurn +
+  // regenerateChatReply, and the BRIDGE (buildChatContext + resolveAttachmentBundles). Its 3
+  // entityClient sites (aiProviders in the mount effect / agentStream in runAgentTurn /
+  // sourceBundle in resolveAttachmentBundles — the LAST provider-body entityClient call) moved
+  // in. It captures the STABLE `dispatch` trampoline (declared above; regenerateChatReply
+  // dispatches anchor.ask-ai) and reads the precise chat surface slice (messages +
+  // recordHistory/appendAssistant + sessions.attachments) + documents outputs (activeSource /
+  // activeSourceId / setStatus / setError). Instantiated AFTER generation/composer, BEFORE
+  // commandContext (which reads agent.buildChatContext/resolveAttachmentBundles directly off
+  // the surface — no trampoline needed, agent is declared before it).
+  const agent = useAgentDomain({
+    chat: chatDomain,
+    focus,
+    activeSource: docs.activeSource,
+    activeSourceId: docs.activeSourceId,
+    dispatch,
+    onStatus: docs.setStatus,
+    onError: docs.setError
+  });
 
   // PLAT-LAYER Part-2 Slice 7b — the patch-seed effect (pre-fill the "Edit source (patch)"
   // textarea from an HTML-surface selection → setPatchHtml) moved into useComposerDomain
   // alongside the patchHtml atom it seeds.
-
-  // Where the active source lives + the focused passage, so the assistant knows
-  // exactly which source + passage a question is about.
-  const buildChatContext = useCallback((): ChatContext => {
-    const activeSource = docs.activeSource;
-    const meta = (activeSource?.metadata ?? {}) as Record<string, unknown>;
-    const url = (meta.sourceUrl ?? meta.normalizedUrl) as string | undefined;
-    const filePath = meta.originalPath as string | undefined;
-    const draft = focus.draft;
-    const quoteDraft = draft?.mode === "quote" ? draft : null;
-    const anchorLike = focus.anchor as { contextBefore?: string; contextAfter?: string; page?: number } | null;
-    const page = (draft && "page" in draft ? draft.page : undefined) ?? anchorLike?.page;
-    const locationParts: string[] = [];
-    if (url) locationParts.push(url);
-    else if (filePath) locationParts.push(filePath);
-    else if (activeSource?.path) locationParts.push(activeSource.path);
-    if (page) locationParts.push(`page ${page}`);
-    return {
-      sourceTitle: activeSource?.title,
-      sourceType: activeSource?.sourceType,
-      location: locationParts.join(" · ") || undefined,
-      quote: quoteDraft?.quote ?? focus.anchor?.quote,
-      contextBefore: quoteDraft?.prefix ?? anchorLike?.contextBefore,
-      contextAfter: quoteDraft?.suffix ?? anchorLike?.contextAfter
-    };
-  }, [docs.activeSource, focus.draft, focus.anchor]);
-
-  // W2 (ai-workspace §W2): resolve the chat's source-context set — the FOCUSED source
-  // (passage-level, keyed by activeSourceId) UNION the session's explicit attachments
-  // (source-level), de-duped by sourceId (focused-first). Fetch each source's bundle
-  // (bounded excerpt + sealed-filtered notes) then hand the PURE assembler the union +
-  // the cross-source cap. CHAT-ONLY: awaited by anchor.ask-ai via the feature-detected
-  // resolveAttachmentBundles seam; nothing else calls it. Bundle-fetch failures degrade
-  // to skipping that source (a broken read must not sink the whole ask).
-  const attachments = chatDomain.sessions.attachments;
-  const resolveAttachmentBundles = useCallback(async (): Promise<ChatContext["sources"]> => {
-    const focusedId = docs.activeSourceId || "";
-    // The de-dup KEY set: focused source first, then each attached source not equal to it.
-    const attachedIds = attachments.map((item) => item.sourceId);
-    const orderedIds = [focusedId, ...attachedIds].filter(Boolean);
-    if (orderedIds.length === 0) return undefined;
-    const includeNotesById = new Map(attachments.map((item) => [item.sourceId, item.includeNotes]));
-    const seen = new Set<string>();
-    const resolved: ResolvedBundle[] = [];
-    for (const sourceId of orderedIds) {
-      if (seen.has(sourceId)) continue;
-      seen.add(sourceId);
-      const focused = sourceId === focusedId;
-      // Focused source: always include its notes; an attachment honors its includeNotes flag.
-      const includeNotes = focused ? true : includeNotesById.get(sourceId) ?? true;
-      try {
-        const { bundle } = await entityClient.sourceBundle(sourceId, includeNotes);
-        resolved.push({ sourceId, focused, bundle });
-      } catch {
-        // Skip a source whose bundle can't be read — the rest of the context still helps.
-      }
-    }
-    const sources = assembleContextSources(resolved);
-    return sources.length > 0 ? sources : undefined;
-  }, [docs.activeSourceId, attachments]);
 
   // Assemble the shared CommandContext. Commands collaborate through focus, the
   // entity client, and these action callbacks — never by touching node internals.
@@ -857,9 +783,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       sourceId: docs.activeSourceId || undefined,
       payload,
       chatMessages,
-      chatContext: buildChatContext(),
+      chatContext: agent.buildChatContext(),
       // W2: the CHAT-ONLY attachment resolver (anchor.ask-ai feature-detects + awaits it).
-      resolveAttachmentBundles,
+      resolveAttachmentBundles: agent.resolveAttachmentBundles,
       actions: {
         onNoteCreated: () => void docs.refreshAnnotations(),
         // W3 (ai-workspace §W3): a chat transcript was synthesized into a NEW markdown
@@ -929,8 +855,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       docs,
       chatMessages,
       chatDomain,
-      buildChatContext,
-      resolveAttachmentBundles,
+      agent,
       generation,
       concept
     ]
@@ -979,70 +904,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // composed via `generation` above and spread into the value memo below. Their 3 entityClient
   // sites (generateStructured / classifyForm / createNote) moved with them.
 
-  // §10 chat card "Regenerate": re-ask the most recent user question, appending a fresh
-  // assistant reply to the thread (the streaming ask path handles the rest). A no-op if
-  // there is no prior user prompt.
-  const regenerateChatReply = useCallback(() => {
-    const lastUser = [...chatMessages].reverse().find((message) => message.role === "user");
-    if (!lastUser) return;
-    // V-1: collapse a multimodal turn to text for the re-ask (image → `[image]`).
-    void dispatch("anchor.ask-ai", { text: chatContentText(lastUser.content) });
-  }, [chatMessages, dispatch]);
-
-  // A4b: run ONE agent turn (the 🛠 用工具 button). Invoked DIRECTLY here — not through
-  // the command registry — because the tool cards are render-only state with no
-  // persistence contract until `done` (DELTA 4). Mirrors askAi's context assembly:
-  //   • record the user turn EXACTLY ONCE via the existing recordHistory seam (DELTA 5);
-  //     the SSE `done` must NOT re-append it.
-  //   • reuse buildChatContext() + resolveAttachmentBundles() exactly as askAi does.
-  //   • fold each SSE event into agentTurn via the pure reducer; on `done` persist the
-  //     final message as the ONE real assistant turn (persistAssistant), then clear the
-  //     transcript; on reject keep the accumulated items in an error state.
-  const runAgentTurn = useCallback(
-    async (rawText: string) => {
-      const text = rawText.trim();
-      if (!text) return;
-      const history: ChatMessage[] = [...chatMessages, { role: "user", content: text }];
-      // Record the user turn ONCE (the visible transcript + persistence seam).
-      chatDomain.recordHistory(history);
-      docs.setStatus("saving");
-      docs.setError("");
-      setAgentTurn(initialAgentTurn());
-      try {
-        const sources = await resolveAttachmentBundles();
-        const context: ChatContext | undefined =
-          sources && sources.length > 0 ? { ...buildChatContext(), sources } : buildChatContext();
-        const { message } = await entityClient.agentStream(
-          { messages: history, context },
-          {
-            onStep: () => setAgentTurn((turn) => reduceAgentEvent(turn ?? initialAgentTurn(), { type: "step", index: 0 })),
-            onTextDelta: (delta) =>
-              setAgentTurn((turn) => reduceAgentEvent(turn ?? initialAgentTurn(), { type: "text-delta", delta })),
-            onToolCall: (call) =>
-              setAgentTurn((turn) => reduceAgentEvent(turn ?? initialAgentTurn(), { type: "tool-call", ...call })),
-            onToolResult: (result) =>
-              setAgentTurn((turn) => reduceAgentEvent(turn ?? initialAgentTurn(), { type: "tool-result", ...result }))
-          }
-        );
-        // The final answer becomes the ONE real assistant turn — appended to the visible
-        // chat log AND persisted via appendAssistant (Add-as-note / regenerate keep
-        // working). Unlike the streaming ask path there were no applyChunk deltas
-        // building a visible bubble (the transcript did), so append (not persist) here.
-        // Mark the transcript done, then drop the tool cards.
-        setAgentTurn((turn) => reduceAgentEvent(turn ?? initialAgentTurn(), { type: "done", message, provider: "" }));
-        chatDomain.appendAssistant(message);
-        setAgentTurn(null);
-        docs.setStatus("idle");
-      } catch (err) {
-        const messageText = err instanceof Error ? err.message : "工具调用失败";
-        // Keep the accumulated tool cards but flip the turn to error so the user sees why.
-        setAgentTurn((turn) => reduceAgentEvent(turn ?? initialAgentTurn(), { type: "error", error: messageText }));
-        docs.setError(messageText);
-        docs.setStatus("error");
-      }
-    },
-    [chatMessages, chatDomain, buildChatContext, resolveAttachmentBundles, docs.setStatus, docs.setError]
-  );
+  // PLAT-LAYER Part-2 Slice 7c — regenerateChatReply (the §10 chat-card re-ask) and
+  // runAgentTurn (the 🛠 用工具 agent turn) now live in useAgentDomain, composed via `agent`
+  // above and spread into the value memo below. Their entityClient site (agentStream) moved
+  // with runAgentTurn; the shared buildChatContext + resolveAttachmentBundles bridge (and its
+  // sourceBundle site) moved into the same hook (both are agent-owned + coordinator riders).
 
   // .xmind import (adaptive-note-forms Phase 4 item 3). Open a native file dialog and
   // delegate to importXmindFromPath (defined next to openFileDialog above, which also
@@ -1127,19 +993,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       canOpenLocal,
       chatMessages,
       chatSessions: chatDomain.sessions,
-      visionAvailable,
-      offlineMock,
       activeFileDir,
       draftQuote,
       hasRegionDraft,
       composerDisabled,
       dispatch,
-      regenerateChatReply,
-      agentTurn,
-      agentAvailable,
-      runAgentTurn,
       importXmindFile,
       toggleLayerFilter,
+      // Slice 7c — the AGENT surface spread verbatim: keeps the SAME 6 public field
+      // names/shape (agentTurn, agentAvailable, visionAvailable, offlineMock, runAgentTurn,
+      // regenerateChatReply) so consumers are unchanged. The coordinator-only riders
+      // (buildChatContext/resolveAttachmentBundles) also ride along but aren't in the
+      // interface — harmless extras no consumer reads (commandContext reads them off `agent`).
+      ...agent,
       // Slice 7b — the COMPOSER surface spread verbatim: keeps the SAME 18 public field
       // names/shape (composerMode/setComposerMode, noteContentType/setNoteContentType
       // [=changeNoteContentType], noteContent/setNoteContent, submitNoteContent, chatInput/
@@ -1202,19 +1068,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       canOpenLocal,
       chatMessages,
       chatDomain.sessions,
-      visionAvailable,
-      offlineMock,
       activeFileDir,
       draftQuote,
       hasRegionDraft,
       composerDisabled,
       dispatch,
-      regenerateChatReply,
-      agentTurn,
-      agentAvailable,
-      runAgentTurn,
       importXmindFile,
       toggleLayerFilter,
+      // Slice 7c — the 6 agent fields collapse to their single memoized surface; its
+      // identity changes on the SAME cadence as its fields → identical re-render behavior.
+      agent,
       // Slice 7b — the 18 composer fields collapse to their single memoized surface; its
       // identity changes on the SAME cadence as its fields → identical re-render behavior.
       composer,
