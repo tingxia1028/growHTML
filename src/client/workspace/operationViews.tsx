@@ -28,14 +28,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Wand2, Plus, Play, RotateCcw, Trash2, Copy, GripVertical } from "lucide-react";
 import {
-  entityClient,
+  operationIo,
   type OperationInput,
   type OperationRecord,
   type OperationVariable
-} from "../data/entityClient";
+} from "./operationIo";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 import type { ActionSurface, CustomizeSurface } from "./WorkspaceContext";
-import type { OperationPrefs } from "../data/entityClient";
+import type { OperationPrefs } from "./operationIo";
 import { ICON_CHOICES, actionIcon } from "./actionIcons";
 import { extractVariables, renderTemplate } from "../../ai/template";
 import { listNoteContentSpecs } from "../../core/notes/contentTypes";
@@ -383,11 +383,11 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
     setError("");
     try {
       if (editId) {
-        await entityClient.updateOperation(editId, body);
+        await operationIo.updateOperation(editId, body);
         refreshOperations();
         return editId;
       }
-      const { operation } = await entityClient.createOperation(body);
+      const { operation } = await operationIo.createOperation(body);
       setEditId(operation.id);
       refreshOperations();
       return operation.id;
@@ -416,7 +416,7 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
       if (!(await platformDialogs().confirm(t(m.deleteConfirm).replace("{name}", operation.name)))) return;
       setError("");
       try {
-        await entityClient.deleteOperation(operation.id);
+        await operationIo.deleteOperation(operation.id);
         if (editId === operation.id) resetBuilder();
         refreshOperations();
       } catch (err) {
@@ -436,7 +436,7 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
       const variables = syncVariables(template, []);
       setError("");
       try {
-        const { operation } = await entityClient.createOperation({
+        const { operation } = await operationIo.createOperation({
           name: `${action.title}${t(m.forkSuffix)}`,
           mode: "template",
           outputContentType: prompt.outputType,
@@ -457,10 +457,10 @@ function OperationManagerView({ ctx }: { ctx: WorkspaceContext }) {
 
   // —— manager prefs writes ——
   const savePrefs = useCallback(
-    async (next: Parameters<typeof entityClient.saveOperationPrefs>[0]) => {
+    async (next: Parameters<typeof operationIo.saveOperationPrefs>[0]) => {
       setError("");
       try {
-        await entityClient.saveOperationPrefs(next);
+        await operationIo.saveOperationPrefs(next);
         refreshOperations();
       } catch (err) {
         setError(err instanceof Error ? err.message : t(m.prefsFailed));

@@ -11,16 +11,17 @@
 //     (paste-tolerant) → OPEN (re-anchor preview counts) → COMMIT (sealed, read-only)
 //     → success. Includes the sealed-imports list (GET /api/svpack + delete).
 //
-// All data access goes through entityClient (views never fetch). Server failures carry
-// a machine `code` (ApiError) that maps to an HONEST Chinese message — wrong code,
-// expired, stale revision and publisher-key mismatch are never blurred together.
+// All data access goes through the svpackIo seam (PLAT-LAYER §2.5 Rule C — the component
+// never imports entityClient directly; svpackIo is the leaf facade over it). Server
+// failures carry a machine `code` (ApiError) that maps to an HONEST Chinese message —
+// wrong code, expired, stale revision and publisher-key mismatch are never blurred together.
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Copy, Download, Plus, Trash2, Upload, X } from "lucide-react";
 import {
   ApiError,
-  entityClient,
+  svpackIo,
   type SealedPackRow,
   type SealedPackStatus,
   type StudyLayerRecord,
@@ -30,7 +31,7 @@ import {
   type SvpackOpenResult,
   type SvpackPinStatus,
   type SvpackValidity
-} from "../data/entityClient";
+} from "./svpackIo";
 import { getPlatformOptional, platformDialogs } from "../platform";
 
 // —— Pure helpers (exported for tests) ————————————————————————————————————————
@@ -203,7 +204,7 @@ export function SvpackExportDialog({ layer, onClose }: { layer: StudyLayerRecord
     setBusy(true);
     setError("");
     try {
-      const exported = await entityClient.exportSvpack(layer.id, {
+      const exported = await svpackIo.exportSvpack(layer.id, {
         recipients: cleanLabels.map((label) => ({ label })),
         validUntil: validUntilIso(validDate)
       });
@@ -355,7 +356,7 @@ export function SvpackImportDialog({ onClose, onCommitted }: { onClose(): void; 
 
   const loadSealed = useCallback(async () => {
     try {
-      const { packs } = await entityClient.sealedImports();
+      const { packs } = await svpackIo.sealedImports();
       setSealedRows(packs);
     } catch {
       // The manager list failing must not block an import; the section just stays empty.
@@ -378,7 +379,7 @@ export function SvpackImportDialog({ onClose, onCommitted }: { onClose(): void; 
       const b64 = await fileToBase64(file);
       setFileB64(b64);
       setFileName(file.name);
-      setInspect(await entityClient.inspectSvpack(b64));
+      setInspect(await svpackIo.inspectSvpack(b64));
     } catch (err) {
       setFileB64(null);
       setError(mapSvpackError(err));
@@ -392,7 +393,7 @@ export function SvpackImportDialog({ onClose, onCommitted }: { onClose(): void; 
     setError("");
     setOpened(null);
     try {
-      setOpened(await entityClient.openSvpack(fileB64, normalizeCodeInput(code)));
+      setOpened(await svpackIo.openSvpack(fileB64, normalizeCodeInput(code)));
     } catch (err) {
       setError(mapSvpackError(err));
     } finally {
@@ -406,7 +407,7 @@ export function SvpackImportDialog({ onClose, onCommitted }: { onClose(): void; 
     setBusy(true);
     setError("");
     try {
-      const result = await entityClient.commitSvpack(fileB64, normalizeCodeInput(code));
+      const result = await svpackIo.commitSvpack(fileB64, normalizeCodeInput(code));
       setCommitted(result);
       onCommitted();
       void loadSealed();
@@ -424,7 +425,7 @@ export function SvpackImportDialog({ onClose, onCommitted }: { onClose(): void; 
       }
       setError("");
       try {
-        await entityClient.deleteSealedImport(packId);
+        await svpackIo.deleteSealedImport(packId);
         await loadSealed();
         onCommitted(); // the sealed layer/notes just left the read model
       } catch (err) {
