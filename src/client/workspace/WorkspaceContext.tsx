@@ -59,7 +59,10 @@ import {
 import { activeKitIdsForSource, CORE_KIT_ID } from "../../kits/activation";
 import { installedKits, kitSurfaceItems, setDisabledContributions } from "../../kits/clientContext";
 import { listInstalledPlugins, type PluginRecord } from "../../kits/plugin";
-import { LAYOUT_PRESETS, DEFAULT_LAYOUT_ID } from "./presets";
+// PLAT-LAYER Part-2 Slice 1 — the layout + theme state/logic now live in these two
+// TIER-A leaf domain hooks; the provider only composes their memoized surfaces.
+import { useLayoutDomain } from "./useLayoutDomain";
+import { useThemeDomain } from "./useThemeDomain";
 // F1 (P-A1): the pure open-panes model — the source-binding shim behind activeSourceId.
 import {
   closePane,
@@ -85,13 +88,6 @@ import {
 // F1 (P-A2): the pure per-pane paint pipeline (extracted verbatim from the focused memos
 // → byte-identical for the focused pane; run per-source for background panes).
 import { buildPaintPipeline } from "./paneSelectors";
-// Theme V1 — a workspace-wide visual choice, a strict SIBLING of the layout switcher
-// (it never reads activeLayoutId). The side-effect import populates the theme registry
-// before listThemes() runs at provider mount, mirroring views.tsx's kit import.
-import "../theme/builtins";
-import { DEFAULT_THEME_ID } from "../theme/builtins";
-import { listThemes } from "../theme/registry";
-import { setActiveTheme as applyActiveTheme, THEME_STORAGE_KEY } from "../theme/applyTheme";
 import { renderAnnotationNotePreview } from "./annotationNotePreview";
 // SRC-3: fork an imported source into an editable authored copy (the fork IO lives in
 // the SRC-2 authoring IO module, not the contended entityClient).
@@ -278,30 +274,6 @@ function orderActionsForSurface(
 // pre-R6.3 behavior; implemented via the same primitive.
 function orderActions(actions: ToolbarAction[], prefs: OperationPrefs): ToolbarAction[] {
   return arrangeActions(actions, prefs.order, prefs.disabled);
-}
-
-// Active dock layout preset id, persisted so the chosen layout sticks across reloads.
-const ACTIVE_LAYOUT_KEY = "sv-active-layout";
-function loadActiveLayout(): string {
-  try {
-    const prefs = getPlatformOptional()?.prefs;
-    const raw = prefs ? prefs.get(ACTIVE_LAYOUT_KEY) : globalThis.localStorage?.getItem(ACTIVE_LAYOUT_KEY);
-    return raw || DEFAULT_LAYOUT_ID;
-  } catch {
-    return DEFAULT_LAYOUT_ID;
-  }
-}
-
-// Active theme id, persisted so the chosen skin sticks across reloads (V1: localStorage,
-// the same precedent as the layout id above). Orthogonal to layout — separate key.
-function loadActiveTheme(): string {
-  try {
-    const prefs = getPlatformOptional()?.prefs;
-    const raw = prefs ? prefs.get(THEME_STORAGE_KEY) : globalThis.localStorage?.getItem(THEME_STORAGE_KEY);
-    return raw || DEFAULT_THEME_ID;
-  } catch {
-    return DEFAULT_THEME_ID;
-  }
 }
 
 const RECENT_SOURCE_IDS_KEY = "sv-recent-source-ids";
@@ -859,8 +831,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const materializeAnchorRef = useRef<
     ((anchorId: string, contentType: string, content: unknown) => Promise<NoteRecord | null>) | null
   >(null);
-  const [activeLayoutId, setActiveLayoutId] = useState<string>(loadActiveLayout);
-  const [activeThemeId, setActiveThemeId] = useState<string>(loadActiveTheme);
+  // PLAT-LAYER Part-2 Slice 1 — layout + theme are TIER-A leaf domains (zero pipeline
+  // reads); each hook returns a memoized surface the value memo spreads verbatim.
+  const layout = useLayoutDomain();
+  const theme = useThemeDomain();
   // Note-presentation mode for the DOM HTML reader. Pinned to the "margin" default
   // (the "floating"/Document tab was removed 2026-07-04 — see TopBar.tsx); the setter
   // keeps the field for the context surface but the value never leaves "margin".
@@ -2400,32 +2374,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [dispatch, convertSelectionToRegion]
   );
 
-  // —— workspace layout switching ——
-  const availableLayouts = useMemo(() => LAYOUT_PRESETS.map((preset) => ({ id: preset.id, name: preset.name })), []);
-  const setActiveLayout = useCallback((id: string) => {
-    setActiveLayoutId(id);
-    try {
-      const prefs = getPlatformOptional()?.prefs;
-      if (prefs) prefs.set(ACTIVE_LAYOUT_KEY, id);
-      else globalThis.localStorage?.setItem(ACTIVE_LAYOUT_KEY, id);
-    } catch {
-      // storage unavailable — keep the in-memory choice
-    }
-  }, []);
-
-  // —— theme switching (sibling of layout) ——
-  const availableThemes = useMemo(() => listThemes().map((theme) => ({ id: theme.id, name: theme.name })), []);
-  const setActiveTheme = useCallback((id: string) => {
-    setActiveThemeId(id);
-    applyActiveTheme(id); // flips <html data-theme> + color-scheme — the whole-app re-skin
-    try {
-      const prefs = getPlatformOptional()?.prefs;
-      if (prefs) prefs.set(THEME_STORAGE_KEY, id);
-      else globalThis.localStorage?.setItem(THEME_STORAGE_KEY, id);
-    } catch {
-      // storage unavailable — keep the in-memory choice
-    }
-  }, []);
+  // —— layout + theme switching moved to useLayoutDomain / useThemeDomain (Slice 1);
+  // their memoized surfaces (`layout`, `theme`) are spread into the value memo below. ——
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({
@@ -2547,12 +2497,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       openOperationManager,
       registerOpenOperationManager,
       customizeSurface,
-      activeLayoutId,
-      availableLayouts,
-      setActiveLayout,
-      activeThemeId,
-      availableThemes,
-      setActiveTheme,
+      // Slice 1 — layout + theme surfaces spread verbatim: keeps the SAME 6 field
+      // names/shape (activeLayoutId, availableLayouts, setActiveLayout, activeThemeId,
+      // availableThemes, setActiveTheme) so consumers are unchanged.
+      ...layout,
+      ...theme,
       installedPlugins,
       pluginPrefs,
       setContributionEnabled,
@@ -2669,12 +2618,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       openOperationManager,
       registerOpenOperationManager,
       customizeSurface,
-      activeLayoutId,
-      availableLayouts,
-      setActiveLayout,
-      activeThemeId,
-      availableThemes,
-      setActiveTheme,
+      // Slice 1 — the 6 layout/theme fields collapse to their 2 memoized surfaces; each
+      // surface's identity changes on the SAME cadence as its fields → identical re-render.
+      layout,
+      theme,
       installedPlugins,
       pluginPrefs,
       setContributionEnabled,
