@@ -1,9 +1,10 @@
-import path from "node:path";
 import { createEntityStores, entityFileNames, type EntityStores } from "./store/entities";
 import { closeSqliteStore } from "./store/engine";
+import type { StoreEngine } from "./store/engine";
 import type { SnapshotRecord, SnapshotStore } from "./store/snapshotStore";
 import { schemaVersion, vaultManifestSchema, type VaultManifest } from "./schema";
 import type { StorageAdapter } from "./storage/adapter";
+import { joinPath } from "./storage/paths";
 
 export const studyDirName = ".study";
 export const sourcesDirName = "sources";
@@ -50,17 +51,20 @@ export type StudyVault = {
 };
 
 function getVaultPaths(rootDir: string): VaultPaths {
-  const resolvedRoot = path.resolve(rootDir);
-  const studyDir = path.join(resolvedRoot, studyDirName);
+  // PLAT-LAYER Part-4b: the caller supplies an already-resolved PHYSICAL root (4a: getVaultRoot
+  // in src/server/vaultRoot.ts does the `path.resolve`); the portable core only composes LOGICAL
+  // paths as POSIX `/`-strings via joinPath (the StorageAdapter maps logical→physical). No
+  // `node:path` here — that would re-couple the store graph to a Node backend.
+  const studyDir = joinPath(rootDir, studyDirName);
 
   return {
-    rootDir: resolvedRoot,
+    rootDir,
     studyDir,
-    sourcesDir: path.join(resolvedRoot, sourcesDirName),
-    assetsDir: path.join(resolvedRoot, assetsDirName),
-    exportsDir: path.join(resolvedRoot, exportsDirName),
-    manifestPath: path.join(studyDir, manifestFileName),
-    pluginSettingsPath: path.join(studyDir, pluginSettingsFileName)
+    sourcesDir: joinPath(rootDir, sourcesDirName),
+    assetsDir: joinPath(rootDir, assetsDirName),
+    exportsDir: joinPath(rootDir, exportsDirName),
+    manifestPath: joinPath(studyDir, manifestFileName),
+    pluginSettingsPath: joinPath(studyDir, pluginSettingsFileName)
   };
 }
 
@@ -97,6 +101,13 @@ export async function openVault(input: {
   rootDir: string;
   name?: string;
   storage: StorageAdapter;
+  /**
+   * Optional store engine override. Left UNDEFINED, `createEntityStores` falls through to
+   * `resolveDefaultEngine()` (reads `STORE_ENGINE` at open time — the sqlite default). Injecting
+   * `jsonlEngine` (PLAT-LAYER Part-4 §4.4 acceptance test) keeps a portable-core open off the
+   * sqlite/native edge, exercising ONLY the StorageAdapter seam.
+   */
+  engine?: StoreEngine;
 }): Promise<StudyVault> {
   const storage = input.storage;
   const paths = getVaultPaths(input.rootDir);
@@ -109,16 +120,16 @@ export async function openVault(input: {
   const manifest = await ensureManifest(storage, paths, input.name);
 
   for (const fileName of Object.values(entityFileNames)) {
-    await ensureTextFile(storage, path.join(paths.studyDir, fileName), "");
+    await ensureTextFile(storage, joinPath(paths.studyDir, fileName), "");
   }
 
   for (const fileName of appendLogFileNames) {
-    await ensureTextFile(storage, path.join(paths.studyDir, fileName), "");
+    await ensureTextFile(storage, joinPath(paths.studyDir, fileName), "");
   }
 
   await ensureTextFile(storage, paths.pluginSettingsPath, "{}\n");
 
-  const stores = createEntityStores(paths.studyDir, storage);
+  const stores = createEntityStores(paths.studyDir, storage, input.engine);
 
   return {
     paths,
@@ -144,7 +155,7 @@ export async function openVault(input: {
       for (const store of Object.values(stores)) {
         closeSqliteStore(store as SnapshotStore<SnapshotRecord>);
       }
-      const next = createEntityStores(paths.studyDir, storage);
+      const next = createEntityStores(paths.studyDir, storage, input.engine);
       Object.assign(stores, next);
     }
   };

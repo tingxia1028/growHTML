@@ -1,7 +1,6 @@
-import path from "node:path";
 import { createEntityId } from "../ids";
 import { sha256Hex } from "../storage/sha256";
-import { assertSafeRelativePath } from "../storage/paths";
+import { assertSafeRelativePath, joinPath } from "../storage/paths";
 import { sourceSchema, type CreatedBy, type SourceRecord, type SourceType } from "../schema";
 import type { StudyVault } from "../vault";
 import type { SnapshotStore } from "./snapshotStore";
@@ -71,15 +70,15 @@ function sourceFileName(input: { id: string; title: string; sourceType: SourceTy
 }
 
 function sourceRelativePath(input: { id: string; title: string; sourceType: SourceType }) {
-  return path.posix.join("sources", sourceFileName(input));
+  return joinPath("sources", sourceFileName(input));
 }
 
 export async function ingestSource(vault: StudyVault, input: IngestSourceInput): Promise<SourceRecord> {
   const id = createEntityId("source");
   const now = input.createdAt ?? new Date().toISOString();
   const fileName = sourceFileName({ id, title: input.title, sourceType: input.sourceType });
-  const relativePath = path.posix.join("sources", fileName);
-  const filePath = path.join(vault.paths.sourcesDir, fileName);
+  const relativePath = joinPath("sources", fileName);
+  const filePath = joinPath(vault.paths.sourcesDir, fileName);
 
   await vault.storage.writeText(filePath, input.content);
 
@@ -169,8 +168,8 @@ export async function ingestBinarySource(
   const id = createEntityId("source");
   const now = input.createdAt ?? new Date().toISOString();
   const fileName = sourceFileName({ id, title: input.title, sourceType: input.sourceType });
-  const relativePath = path.posix.join("sources", fileName);
-  const filePath = path.join(vault.paths.sourcesDir, fileName);
+  const relativePath = joinPath("sources", fileName);
+  const filePath = joinPath(vault.paths.sourcesDir, fileName);
 
   await vault.storage.writeBytes(filePath, input.data);
 
@@ -258,7 +257,7 @@ function resolveSourcePath(vault: StudyVault, source: SourceRecord) {
 
 function resolveRelativeSourcePath(vault: StudyVault, relativePath: string) {
   assertSafeRelativePath(relativePath);
-  return path.join(vault.paths.rootDir, relativePath);
+  return joinPath(vault.paths.rootDir, relativePath);
 }
 
 export async function readSourceContent(vault: StudyVault, source: SourceRecord) {

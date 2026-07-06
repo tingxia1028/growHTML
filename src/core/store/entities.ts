@@ -1,4 +1,3 @@
-import path from "node:path";
 import {
   anchorSchema,
   assetSchema,
@@ -26,6 +25,7 @@ import {
   type TriggerRecord
 } from "../schema";
 import { getNoteContentSpec } from "../notes/contentTypes";
+import { joinPath } from "../storage/paths";
 import type { StorageAdapter } from "../storage/adapter";
 import { wireFtsAnchorNotes, type StoreConfig, type StoreEngine } from "./engine";
 import { jsonlEngine } from "./jsonlEngine";
@@ -167,7 +167,7 @@ export function createEntityStores(
   storage: StorageAdapter,
   engine: StoreEngine = resolveDefaultEngine()
 ): EntityStores {
-  const filePath = (file: string) => path.join(studyDir, file);
+  const filePath = (file: string) => joinPath(studyDir, file);
   const stores: EntityStores = {
     sources: createSnapshotStore({ filePath: filePath(entityFileNames.sources), schema: sourceSchema, storage, engine, ...sourcesSqlConfig }),
     anchors: createSnapshotStore({ filePath: filePath(entityFileNames.anchors), schema: anchorSchema, storage, engine, ...anchorsSqlConfig }),

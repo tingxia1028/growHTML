@@ -1,7 +1,6 @@
-import path from "node:path";
 import { createEntityId } from "../ids";
 import { sha256Hex } from "../storage/sha256";
-import { assertSafeRelativePath } from "../storage/paths";
+import { assertSafeRelativePath, basename, extname, joinPath } from "../storage/paths";
 import { assetSchema, type AssetRecord, type AssetType } from "../schema";
 import type { StudyVault } from "../vault";
 
@@ -60,8 +59,8 @@ export async function importAssetBytes(vault: StudyVault, input: ImportAssetByte
   const id = createEntityId("asset");
   const ext = EXT_BY_MIME[input.mimeType] ?? "";
   const fileName = `${id}${ext}`;
-  const relativePath = path.posix.join("assets", fileName);
-  await vault.storage.writeBytes(path.join(vault.paths.assetsDir, fileName), buffer);
+  const relativePath = joinPath("assets", fileName);
+  await vault.storage.writeBytes(joinPath(vault.paths.assetsDir, fileName), buffer);
 
   const now = input.createdAt ?? new Date().toISOString();
   const record = assetSchema.parse({
@@ -96,7 +95,12 @@ export async function importLocalAsset(
   absPath: string,
   input: ImportLocalAssetInput
 ): Promise<AssetRecord> {
-  const resolved = path.resolve(absPath);
+  // `absPath` is an already-absolute OS path (the desktop file-picker / route param — every caller
+  // passes absolute). PLAT-LAYER Part-4b drops the `path.resolve` (portable core imports no
+  // `node:path`); the StorageAdapter reads it verbatim. `extname`/`basename` are pure helpers that
+  // split on BOTH `[\\/]` separators, so they correctly introspect a Windows path like
+  // `C:\Users\me\photo.jpg` (a `/`-only joiner would NOT).
+  const resolved = absPath;
   const bytes = await vault.storage.readBytes(resolved);
   if (bytes === null) throw new Error(`Asset file not found: ${resolved}`);
 
@@ -108,10 +112,10 @@ export async function importLocalAsset(
   if (existing) return existing;
 
   const id = createEntityId("asset");
-  const ext = path.extname(resolved);
+  const ext = extname(resolved);
   const fileName = `${id}${ext}`;
-  const relativePath = path.posix.join("assets", fileName);
-  await vault.storage.writeBytes(path.join(vault.paths.assetsDir, fileName), buffer);
+  const relativePath = joinPath("assets", fileName);
+  await vault.storage.writeBytes(joinPath(vault.paths.assetsDir, fileName), buffer);
 
   const now = input.createdAt ?? new Date().toISOString();
   const record = assetSchema.parse({
@@ -122,7 +126,7 @@ export async function importLocalAsset(
     updatedAt: now,
     createdBy: "user",
     assetType: assetTypeFromMime(input.mimeType),
-    fileName: path.basename(resolved),
+    fileName: basename(resolved),
     mimeType: input.mimeType,
     byteSize: buffer.length,
     path: relativePath,
@@ -137,7 +141,7 @@ export async function importLocalAsset(
 
 function resolveAssetPath(vault: StudyVault, asset: AssetRecord) {
   assertSafeRelativePath(asset.path);
-  return path.join(vault.paths.rootDir, asset.path);
+  return joinPath(vault.paths.rootDir, asset.path);
 }
 
 export async function readAssetBytes(vault: StudyVault, asset: AssetRecord): Promise<Buffer> {
