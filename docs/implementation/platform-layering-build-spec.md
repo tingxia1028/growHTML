@@ -9,6 +9,8 @@ the architecture is right." Recurring lesson: the ARCHITECTURE is sound; residua
 best caught by tsc + tests at build time, not more paper rounds. BUILD ORDER: §5.1 barrel fix (1-line,
 verified 3×) → Part-1 platform scaffold → funnel → Part-2 pipeline (isolated-first). Assumptions in §Self-attack.
 
+**BUILD PROGRESS (2026-07-06):** ✅ §5.1 barrel fix · ✅ Part-1 scaffold + FULL funnel (assets→prefs→dialogs→clipboard→native+files+capabilities) — **platform adapter fully consumed** · ✅ Part-3 directTransport (+28 routes, drift-proof coverage guard) · 🔨 Part-4 de-Node (4a rootDir/storage-required IN PROGRESS, 4b node:path→logical-paths NEXT) · ⏳ §5.2 mobile-import guard · ⏳ Part-2 WorkspaceContext split (XL, LAST). STORE-SQL #47 (parallel track) COMPLETE (dispose→flip→import→FTS S5); only S6 multi-device deferred. Baseline: **277f/2818t**.
+
 ## 0. Verified baseline (round-1 corrected counts)
 | Funnel | Verified at HEAD | Note |
 |---|---|---|
@@ -260,9 +262,9 @@ program/resolver for the Part-2 rule (components ⊄ entityClient).
 | Criterion | Rule | Today |
 |---|---|---|
 | core ⊄ React/window/electron | scan `src/core/**` | **GREEN** |
-| portable ⊄ node:fs/path | forbid in `src/core/**` | **RED — only vault.ts** (Part 4) |
-| views ⊄ fetch/studyVault/localStorage | forbid in `src/client/**` outside `platform/`+`*Io.ts` | **RED** (Part 1) |
-| entityClient all-through-transport | no bare `fetch(/api/…)` outside transport + 3 streams | **PARTIAL** (Part 1) |
+| portable ⊄ node:fs/path | forbid in `src/core/**` | **RED — Part 4 IN PROGRESS**: 4a (rootDir/storage required + getDefaultVaultRoot→`server/vaultRoot.ts`, core stops importing nodeStorage) landing; 4b (node:path→logical `/`-paths in vault/entities/assets/sources) pending. Store graph offenders: vault.ts/entities.ts/assets.ts/sources.ts `node:path`. identity/* + crypto = signing subsystem, NOT openVault-reachable → out of scope (like sqliteEngine) |
+| views ⊄ fetch/studyVault/localStorage | forbid in `src/client/**` outside `platform/`+`*Io.ts` | **✅ MOSTLY GREEN — Part 1 COMPLETE**: platform adapter fully consumed. `window.studyVault` drained from consumers (native+files+capabilities funnel); prefs/dialogs/clipboard/assets all route through the adapter. Residual: `anchorViews.tsx` localStorage (codex-owned — awaits codex funnel) |
+| entityClient all-through-transport | no bare `fetch(/api/…)` outside transport + 3 streams | **✅ GREEN — Part 3 landed**: directTransport +28 routes, byte-parity vs Express, drift-proof coverage guard (source-derives the /api universe from entityClient.ts); 3 streams + 4 ingestion routes = documented mobile-gap exceptions |
 | WorkspaceContext only-composes | no useState/inline entityClient in the provider | **RED** (Part 2) |
 | mobile-build node-free | §5.2 resolver on the mobile entry graph | **UNENFORCED** (blocked by §5.1) |
 
