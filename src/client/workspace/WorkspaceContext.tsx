@@ -57,12 +57,15 @@ import {
   type HtmlAnnotationMode
 } from "../annotations";
 import { activeKitIdsForSource, CORE_KIT_ID } from "../../kits/activation";
-import { installedKits, kitSurfaceItems, setDisabledContributions } from "../../kits/clientContext";
-import { listInstalledPlugins, type PluginRecord } from "../../kits/plugin";
+import { installedKits, kitSurfaceItems } from "../../kits/clientContext";
+import { type PluginRecord } from "../../kits/plugin";
 // PLAT-LAYER Part-2 Slice 1 — the layout + theme state/logic now live in these two
 // TIER-A leaf domain hooks; the provider only composes their memoized surfaces.
 import { useLayoutDomain } from "./useLayoutDomain";
 import { useThemeDomain } from "./useThemeDomain";
+// PLAT-LAYER Part-2 Slice 2 — the Kit & Plugin state/logic now lives in this TIER-A leaf
+// domain hook; the provider only composes its memoized surface.
+import { usePluginDomain } from "./usePluginDomain";
 // F1 (P-A1): the pure open-panes model — the source-binding shim behind activeSourceId.
 import {
   closePane,
@@ -692,12 +695,6 @@ export type WorkspaceContextValue = {
   pinViewer(target: { contentType?: string; noteId?: string }, viewerId: string): void;
 };
 
-const EMPTY_PLUGIN_PREFS: PluginPrefs = {
-  disabledContributions: [],
-  viewerAssociations: { byContentType: {}, byNoteId: {} },
-  userKits: []
-};
-
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
@@ -835,6 +832,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // reads); each hook returns a memoized surface the value memo spreads verbatim.
   const layout = useLayoutDomain();
   const theme = useThemeDomain();
+  // PLAT-LAYER Part-2 Slice 2 — the Kit & Plugin domain (also a TIER-A leaf): owns
+  // installedPlugins + pluginPrefs, the mount-load effect, and the setContributionEnabled/
+  // pinViewer write seams (its entityClient.pluginPrefs/putPluginPrefs calls moved with it).
+  const plugin = usePluginDomain({ onError: setError });
   // Note-presentation mode for the DOM HTML reader. Pinned to the "margin" default
   // (the "floating"/Document tab was removed 2026-07-04 — see TopBar.tsx); the setter
   // keeps the field for the context surface but the value never leaves "margin".
@@ -866,12 +867,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [operations, setOperations] = useState<OperationRecord[]>([]);
   const [operationPrefs, setOperationPrefs] = useState<OperationPrefs>(EMPTY_OPERATION_PREFS);
   const [operationsVersion, setOperationsVersion] = useState(0);
-  // Kit & Plugin: the per-vault prefs (disabled contribution ids + declared P3/P4 slots).
-  // Loaded once on mount; the disabled set is pushed into the clientContext module setter
-  // so surface/command filtering reflects it. The installed plugins are read from the
-  // registry (populated at install), snapshotted so a toggle re-renders consumers.
-  const [pluginPrefs, setPluginPrefs] = useState<PluginPrefs>(EMPTY_PLUGIN_PREFS);
-  const [installedPlugins] = useState<readonly PluginRecord[]>(() => listInstalledPlugins());
   // The shell owns which view-kind fills the switchable left slot (it's local shell
   // state, not in the dock tree), so it REGISTERS a "show the operation manager" handler
   // here. The Customize-Toolbar footer in any ActionMoreMenu calls openOperationManager()
@@ -2177,75 +2172,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     };
   }, [operationsVersion]);
 
-  // Load the Kit & Plugin prefs on mount and push the disabled set into the clientContext
-  // module setter, so surface/command filtering reflects the user's toggles from the first
-  // render. Additive + best-effort: a failure leaves nothing disabled (the panel + toolbars
-  // still work). No version token — the panel mutates prefs through setContributionEnabled,
-  // which updates state directly.
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const { prefs } = await entityClient.pluginPrefs();
-        if (cancelled) return;
-        setPluginPrefs(prefs);
-        setDisabledContributions(prefs.disabledContributions);
-      } catch {
-        // plugin prefs are additive — keep the panel + toolbars working with nothing disabled
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // The single WRITE seam for the Kit & Plugin manager (IRON LAW): merge one contribution
-  // id into/out of `disabledContributions`, push the next disabled set into the
-  // clientContext module setter (so surface/command filtering updates immediately), update
-  // local state (so the panel re-renders its toggle), and PUT the next prefs. Mirrors
-  // saveActionPrefs — the panel never calls entityClient directly.
-  const setContributionEnabled = useCallback(
-    (contributionId: string, enabled: boolean) => {
-      setPluginPrefs((prev) => {
-        const set = new Set(prev.disabledContributions);
-        if (enabled) set.delete(contributionId);
-        else set.add(contributionId);
-        const nextDisabled = Array.from(set);
-        const next: PluginPrefs = { ...prev, disabledContributions: nextDisabled };
-        setDisabledContributions(nextDisabled);
-        void entityClient.putPluginPrefs(next).catch((err) => {
-          setError(err instanceof Error ? err.message : "Failed to save plugin prefs");
-        });
-        return next;
-      });
-    },
-    []
-  );
-
-  // Viewer pin — the user-explicit-association tier of the exclusive viewer resolver
-  // (plugin-viewer-model §4). Merge the (target → viewerId) association into
-  // viewerAssociations.byNoteId or byContentType, update local state (so the resolver +
-  // panel re-render), and PUT the next prefs. Mirrors setContributionEnabled: the note
-  // "Open with…" control and the manager panel's conflict picker call this; neither
-  // touches entityClient directly. A note pin (noteId) and a type pin (contentType) can
-  // both be set in one call; each honored where present.
-  const pinViewer = useCallback(
-    (target: { contentType?: string; noteId?: string }, viewerId: string) => {
-      setPluginPrefs((prev) => {
-        const associations = prev.viewerAssociations ?? { byContentType: {}, byNoteId: {} };
-        const byContentType = { ...associations.byContentType };
-        const byNoteId = { ...associations.byNoteId };
-        if (target.noteId) byNoteId[target.noteId] = viewerId;
-        if (target.contentType) byContentType[target.contentType] = viewerId;
-        const next: PluginPrefs = { ...prev, viewerAssociations: { byContentType, byNoteId } };
-        void entityClient.putPluginPrefs(next).catch((err) => {
-          setError(err instanceof Error ? err.message : "Failed to save viewer association");
-        });
-        return next;
-      });
-    },
-    []
-  );
+  // PLAT-LAYER Part-2 Slice 2 — the Kit & Plugin mount-load effect + the
+  // setContributionEnabled/pinViewer write seams (and their entityClient.pluginPrefs/
+  // putPluginPrefs calls) now live in `usePluginDomain`; the provider only spreads its
+  // surface into the value memo below.
 
   // Merge a slot's built-in kit actions with the custom ops of the matching scope, then
   // order/filter by prefs. Anchor scope ↔ the selection toolbar; source scope ↔ the
@@ -2502,10 +2432,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       // availableThemes, setActiveTheme) so consumers are unchanged.
       ...layout,
       ...theme,
-      installedPlugins,
-      pluginPrefs,
-      setContributionEnabled,
-      pinViewer
+      // Slice 2 — the plugin surface spread verbatim: keeps the SAME 4 field names/shape
+      // (installedPlugins, pluginPrefs, setContributionEnabled, pinViewer) so consumers are
+      // unchanged.
+      ...plugin
     }),
     [
       focus,
@@ -2622,10 +2552,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       // surface's identity changes on the SAME cadence as its fields → identical re-render.
       layout,
       theme,
-      installedPlugins,
-      pluginPrefs,
-      setContributionEnabled,
-      pinViewer
+      // Slice 2 — the 4 plugin fields collapse to their single memoized surface; its
+      // identity changes on the SAME cadence as its fields → identical re-render behavior.
+      plugin
     ]
   );
 
