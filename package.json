@@ -12,7 +12,7 @@
     "dev:client": "vite --host 127.0.0.1",
     "build": "tsc && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "check": "tsc --noEmit",
+    "check": "tsc --noEmit && tsx scripts/check-mobile-imports.ts",
     "test": "vitest run",
     "seed": "tsx scripts/seed.ts",
     "e2e": "playwright test",
