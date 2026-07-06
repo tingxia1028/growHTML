@@ -45,7 +45,10 @@ import "./builtinNoteTypes.css";
 // Whether the desktop file picker is available (media EDIT needs it; render is
 // browser-friendly). Checked lazily so SSR / jsdom without a window don't crash.
 function canPickFile(): boolean {
-  return typeof window !== "undefined" && !!window.studyVault?.openFile;
+  return (
+    getPlatformOptional()?.capabilities.nativeFileDialogs ??
+    (typeof window !== "undefined" && !!window.studyVault?.openFile)
+  );
 }
 
 // Inert, escaped <pre> — never interprets the text as HTML/markdown. Used both for
@@ -621,7 +624,9 @@ function MediaEditor({ content, onChange, accept }: NoteEditInput & { accept: st
   const media = asMedia(content);
   const desktop = canPickFile();
   const pick = async () => {
-    const path = await window.studyVault?.openFile?.();
+    const path =
+      (await (getPlatformOptional()?.files.pickFile() ??
+        (window.studyVault?.openFile?.() ?? Promise.resolve(null)))) ?? null;
     if (!path) return;
     const { asset } = await entityClient.importAsset(path);
     onChange({ ...media, assetId: asset.id });

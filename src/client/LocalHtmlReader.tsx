@@ -10,6 +10,7 @@ import {
   type WebAnchorMsg
 } from "./selection/webviewSelection";
 import { anchorsOfKind, type SurfaceReaderProps } from "./surfaces/types";
+import { getPlatformOptional } from "./platform/platformSingleton";
 
 // Local-HTML webview surface adapter. Renders a local HTML page (served from its
 // original directory by /api/local) in a single isolated Electron <webview> — a
@@ -75,7 +76,9 @@ export function LocalHtmlReader({ src, sourceId, anchors, onSelect, onMarkerActi
   // The anchor pusher returned by bindWebviewAnchors, so the anchors-changed effect
   // can re-send into the same already-bound webview.
   const pushAnchorsRef = useRef<(() => void) | null>(null);
-  const isDesktop = typeof window !== "undefined" && !!window.studyVault?.desktop;
+  const isDesktop =
+    getPlatformOptional()?.kind === "desktop" ||
+    (typeof window !== "undefined" && !!window.studyVault?.desktop);
 
   // Create the webview once and keep it mounted for the lifetime of the reader.
   useEffect(() => {

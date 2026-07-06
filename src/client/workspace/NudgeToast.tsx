@@ -16,6 +16,7 @@ import { createPortal } from "react-dom";
 import { Bell, Clock, X } from "lucide-react";
 import { entityClient } from "../data/entityClient";
 import { navigateShell } from "./shellNav";
+import { getPlatformOptional } from "../platform/platformSingleton";
 import { clearNudge, subscribeNudge, type PendingNudge } from "./nudgeStore";
 import { isHidden } from "./idleSignal";
 import { nudgeMessages } from "./nudgeMessages";
@@ -31,7 +32,12 @@ const SNOOZE_MS = 3 * 60 * 60_000;
  * (Notification is absent in jsdom/older shells) — the toast is the guaranteed surface.
  */
 export function maybeNotify(nudge: PendingNudge): boolean {
-  if (typeof Notification === "undefined") return false;
+  // Capability gate for the OS Notification API; the new Notification() call below is
+  // unchanged. Fallback mirrors the old direct `typeof Notification` feature-detect.
+  const notificationAvailable =
+    getPlatformOptional()?.capabilities.notification ??
+    typeof Notification !== "undefined";
+  if (!notificationAvailable) return false;
   if (!isHidden()) return false; // only escalate when the user isn't looking at the app
   if (Notification.permission === "granted") {
     try {

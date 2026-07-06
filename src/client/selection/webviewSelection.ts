@@ -21,6 +21,7 @@ import {
   subscribeMarkerPrefsChanged
 } from "../annotations";
 import type { PaintAnchor } from "../surfaces/types";
+import { getPlatformOptional } from "../platform/platformSingleton";
 
 export type WebSelection = { exact: string; prefix: string; suffix: string };
 
@@ -83,7 +84,10 @@ export type WebAnchorPrefs = {
 // The preload file:// url the host attaches to each guest webview so it captures
 // selections. Absent outside the desktop app (returns undefined → no capture).
 export function webviewPreloadUrl(): string | undefined {
-  return typeof window !== "undefined" ? window.studyVault?.webviewPreloadUrl : undefined;
+  return (
+    getPlatformOptional()?.native?.webviewPreloadUrl ??
+    (typeof window !== "undefined" ? window.studyVault?.webviewPreloadUrl : undefined)
+  );
 }
 
 // Attach the shared selection-capture wiring to one webview: set the guest preload,

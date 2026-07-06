@@ -908,7 +908,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [customizeSurface, setCustomizeSurface] = useState<CustomizeSurface>(undefined);
 
   // Native file/folder dialogs come from the Electron preload; absent in a browser.
-  const canOpenLocal = typeof window !== "undefined" && !!window.studyVault?.openFile;
+  const canOpenLocal =
+    getPlatformOptional()?.capabilities.nativeFileDialogs ??
+    (typeof window !== "undefined" && !!window.studyVault?.openFile);
   const activeFilePath =
     (sources.find((source) => source.id === activeSourceId)?.metadata?.originalPath as string | undefined) ?? undefined;
 
@@ -1270,14 +1272,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // import above, everything else ingests as a source. The native dialog has no
   // extension filter, so the split happens here by extension.
   const openFileDialog = useCallback(async () => {
-    const filePath = await window.studyVault?.openFile?.();
+    const filePath = await (getPlatformOptional()?.files.pickFile() ??
+      (window.studyVault?.openFile?.() ?? Promise.resolve(null)));
     if (!filePath) return;
     if (/\.xmind$/i.test(filePath)) await importXmindFromPath(filePath);
     else await openLocalFile(filePath);
   }, [openLocalFile, importXmindFromPath]);
 
   const openFolderDialog = useCallback(async () => {
-    const dir = await window.studyVault?.pickDirectory?.();
+    const dir = await (getPlatformOptional()?.files.pickDirectory() ??
+      (window.studyVault?.pickDirectory?.() ?? Promise.resolve(null)));
     if (dir) addFolderRoot(dir);
   }, [addFolderRoot]);
 
@@ -1836,7 +1840,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // parks in the SAME preview/save loop every other generated note uses; contentType
   // comes from the SERVER response, never a host literal — no new renderer, no bypass.
   const importXmindFile = useCallback(async () => {
-    const filePath = await window.studyVault?.openFile?.();
+    const filePath = await (getPlatformOptional()?.files.pickFile() ??
+      (window.studyVault?.openFile?.() ?? Promise.resolve(null)));
     if (!filePath) return;
     await importXmindFromPath(filePath);
   }, [importXmindFromPath]);

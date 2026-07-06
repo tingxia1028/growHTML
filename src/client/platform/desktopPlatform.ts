@@ -30,7 +30,10 @@ export function desktopPlatform(): PlatformAdapter {
     ? {
         shellOpenPath: studyVault.openPath,
         openUrl: (url: string) => {
-          window.open(url, "_blank");
+          // `noopener` is mandatory for external-URL opens (else the opened tab gets `window.opener`
+          // access → reverse tabnabbing). Every openUrl consumer (e.g. UserMenu's feedback link) relies
+          // on this safe default, so it lives in the adapter, not per-call.
+          window.open(url, "_blank", "noopener");
         },
         windowControls: studyVault.windowControls,
         webviewPreloadUrl: studyVault.webviewPreloadUrl,

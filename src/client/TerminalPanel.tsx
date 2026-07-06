@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import { getPlatformOptional } from "./platform/platformSingleton";
 
 type TerminalPanelProps = {
   // When set (e.g. the folder of the file being read), seeds the working dir.
@@ -20,8 +21,22 @@ export function TerminalPanel({ defaultCwd = "" }: TerminalPanelProps) {
   const [cwd, setCwd] = useState(defaultCwd);
   const [running, setRunning] = useState(false);
 
-  const pty = typeof window !== "undefined" ? window.studyVault?.pty : undefined;
-  const pickDirectory = typeof window !== "undefined" ? window.studyVault?.pickDirectory : undefined;
+  const platform = getPlatformOptional();
+  const pty =
+    platform?.native?.pty ??
+    (typeof window !== "undefined" ? window.studyVault?.pty : undefined);
+  // The folder picker: route the CALL through the platform adapter, gate the button on the
+  // nativeFileDialogs capability. That capability derives from studyVault.openFile while the picker
+  // is pickDirectory — a deliberate coupling: the desktop preload (electron/preload.ts) always exposes
+  // openFile + pickDirectory TOGETHER, so !!openFile === !!pickDirectory in every real build. If a
+  // future/partial bridge ever splits them, add a dedicated folderDialogs capability rather than leaning
+  // on this invariant. Fallback mirrors the old window.studyVault read.
+  const canPickDirectory =
+    platform?.capabilities.nativeFileDialogs ??
+    (typeof window !== "undefined" ? !!window.studyVault?.pickDirectory : false);
+  const pickDirectory = () =>
+    platform?.files.pickDirectory() ??
+    (window.studyVault?.pickDirectory?.() ?? Promise.resolve(null));
 
   // Follow the active source's folder until a session is running (don't yank the
   // cwd out from under a live terminal, and don't fight the user's manual edit
@@ -91,7 +106,7 @@ export function TerminalPanel({ defaultCwd = "" }: TerminalPanelProps) {
   }
 
   async function chooseDirectory() {
-    const picked = await pickDirectory?.();
+    const picked = await pickDirectory();
     if (picked) setCwd(picked);
   }
 
@@ -105,7 +120,7 @@ export function TerminalPanel({ defaultCwd = "" }: TerminalPanelProps) {
           onChange={(event) => setCwd(event.target.value)}
           placeholder="Working directory (defaults to the file's folder)"
         />
-        {pickDirectory ? (
+        {canPickDirectory ? (
           <button className="icon-button" type="button" onClick={() => void chooseDirectory()}>
             Choose…
           </button>

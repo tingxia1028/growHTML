@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getSpeechStatus } from "./speechStatus";
+import { getPlatformOptional } from "../platform/platformSingleton";
 
 export type VoiceInputState = "idle" | "recording" | "transcribing";
 
@@ -143,7 +144,13 @@ export function useVoiceInput(options: { language?: string } = {}): VoiceInputCo
   const start = useCallback(async () => {
     if (!available || sessionRef.current) return;
     const recorderCtor = (globalThis as { MediaRecorder?: MediaRecorderCtor }).MediaRecorder;
-    if (!recorderCtor || !navigator.mediaDevices?.getUserMedia) {
+    // The mic-availability gate rides the platform capability; the actual
+    // getUserMedia call below is unchanged (the adapter exposes only the capability,
+    // not a mic method). Fallback mirrors the old direct navigator probe.
+    const micAvailable =
+      getPlatformOptional()?.capabilities.microphone ??
+      !!navigator.mediaDevices?.getUserMedia;
+    if (!recorderCtor || !micAvailable) {
       setError("此环境不支持录音（缺少 MediaRecorder）");
       return;
     }

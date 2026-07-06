@@ -18,6 +18,7 @@ import {
   X
 } from "lucide-react";
 import { defineMessages, t, useLocale } from "../i18n";
+import { getPlatformOptional } from "../platform/platformSingleton";
 import type { WorkspaceContext } from "./viewRegistry";
 // N6/§D12: the "Anchor Focus" tab now opens the Anchor Focus BOARD (a real anchors+notes
 // surface), replacing the weak one-anchor reveal. The board mounts in the shell overlay;
@@ -54,7 +55,12 @@ export function TopBar({ ctx }: TopBarProps) {
   const overlayActive = !boardOpen;
   const focusActive = boardOpen;
 
-  const windowControls = typeof window !== "undefined" ? window.studyVault?.windowControls : undefined;
+  // Custom window chrome: present only in the desktop shell (capabilities.windowChrome).
+  // The object itself carries the minimize/toggleMaximize/close methods, so read it via
+  // the native slot with the same window.studyVault fallback the old code used.
+  const windowControls =
+    getPlatformOptional()?.native?.windowControls ??
+    (typeof window !== "undefined" ? window.studyVault?.windowControls : undefined);
 
   return (
     <header className={`topbar${windowControls ? " topbar-desktop-window" : ""}`}>

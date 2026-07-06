@@ -22,6 +22,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { defineMessages, t, useLocale } from "../i18n";
 import { backupStatusLine, runBackupNow, runExportVault, runImportVault } from "./dataTrust";
 import { navigateShell } from "./shellNav";
+import { getPlatformOptional } from "../platform/platformSingleton";
 import { getUserMenuIo } from "./userMenuIo";
 
 const FEEDBACK_ISSUES_URL = "https://github.com/tingxia1028/growHTML/issues";
@@ -207,7 +208,9 @@ export function UserMenu() {
       label: t(userMenuMessages.feedback),
       title: t(userMenuMessages.feedbackTitle),
       action: () => {
-        window.open(FEEDBACK_ISSUES_URL, "_blank", "noopener");
+        const openUrl = getPlatformOptional()?.native?.openUrl;
+        if (openUrl) openUrl(FEEDBACK_ISSUES_URL);
+        else window.open(FEEDBACK_ISSUES_URL, "_blank", "noopener");
       }
     },
     {

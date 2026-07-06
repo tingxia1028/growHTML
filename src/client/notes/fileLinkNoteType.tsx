@@ -45,10 +45,16 @@ export function fileLinkBasename(path: string): string {
 // Whether the desktop shell-open bridge is present (Electron). Checked lazily so
 // SSR / jsdom without a window don't crash — same idiom as canPickFile.
 function canShellOpen(): boolean {
-  return typeof window !== "undefined" && !!window.studyVault?.openPath;
+  return (
+    getPlatformOptional()?.capabilities.shellOpen ??
+    (typeof window !== "undefined" && !!window.studyVault?.openPath)
+  );
 }
 function canPickFile(): boolean {
-  return typeof window !== "undefined" && !!window.studyVault?.openFile;
+  return (
+    getPlatformOptional()?.capabilities.nativeFileDialogs ??
+    (typeof window !== "undefined" && !!window.studyVault?.openFile)
+  );
 }
 
 // The 打开 action: desktop → shell.openPath via the bridge (surfacing its error
@@ -59,7 +65,9 @@ function FileLinkOpenAction({ path }: { path: string }) {
   const activate = async () => {
     if (!path) return;
     if (desktop) {
-      const error = await window.studyVault!.openPath!(path);
+      const shellOpenPath =
+        getPlatformOptional()?.native?.shellOpenPath ?? window.studyVault?.openPath;
+      const error = await shellOpenPath!(path);
       setFeedback(error ? `打开失败：${error}` : "");
       return;
     }
@@ -126,7 +134,9 @@ function FileLinkEditor({ content, onChange }: NoteEditInput) {
   const c = asFileLink(content);
   const desktop = canPickFile();
   const pick = async () => {
-    const picked = await window.studyVault?.openFile?.();
+    const picked =
+      (await (getPlatformOptional()?.files.pickFile() ??
+        (window.studyVault?.openFile?.() ?? Promise.resolve(null)))) ?? null;
     if (!picked) return;
     onChange({ ...c, path: picked });
   };
