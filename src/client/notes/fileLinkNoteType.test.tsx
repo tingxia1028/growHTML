@@ -135,6 +135,23 @@ describe("file-link render — ONE getNoteType().render path", () => {
 describe("file-link 打开 action — desktop bridge vs web clipboard", () => {
   const plugin = () => getNoteType(FILE_LINK_CONTENT_TYPE)!;
 
+  it("workspace: the 打开 button opens the file inside Growte when the host provides openLocalFile", async () => {
+    const openLocalFile = vi.fn(async () => {});
+    const { container, dispose } = mount(
+      plugin().render({
+        content: { path: "C:\\docs\\paper.pdf" },
+        ctx: { openLocalFile }
+      })
+    );
+    const button = container.querySelector<HTMLButtonElement>(".sv-file-link-open")!;
+    expect(button.textContent).toBe("打开");
+    expect(button.getAttribute("data-file-link-path")).toBe("C:\\docs\\paper.pdf");
+    act(() => button.click());
+    await flush();
+    expect(openLocalFile).toHaveBeenCalledWith("C:\\docs\\paper.pdf");
+    dispose();
+  });
+
   it("desktop: the 打开 button dispatches the bridge's openPath with the note's path", async () => {
     const openPath = vi.fn().mockResolvedValue("");
     (window as { studyVault?: unknown }).studyVault = { desktop: true, platform: "win32", openPath };

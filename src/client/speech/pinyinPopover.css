@@ -52,7 +52,9 @@
 .pinyin-popover-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 320; /* above the floating toolbar / speak chip stratum (260) */
+  /* Above reader note cards (2147483000) and the global speak chip (2147483002).
+     This modal is opened from those tools, so it must cover its launcher. */
+  z-index: 2147483003;
   display: flex;
   align-items: center;
   justify-content: center;

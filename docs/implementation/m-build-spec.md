@@ -1,9 +1,9 @@
-# M — 插件市场 (marketplace) M2 + M3 + mock remote source — BUILD SPEC
+# M — 插件市场 (marketplace) M2 + M3 + source-aware market list — BUILD SPEC
 
 Status: Plan (code-grounded, self-verified) → **F4/F5/M1/MH-0 ALREADY SHIPPED** (the backlog's "M needs
 F4/F5 first" is a stale docs-vs-code trap — the THIRD track this session where the foundation was more
 complete than the backlog claimed). Remaining LOCAL/CI slice = **M2 (preview + user-defined kits) + M3
-(import hints) + a mock remote catalog source** — small, additive, register-only, NO core refactor, NO
+(import hints) + source-aware market merging** — small, additive, register-only, NO core refactor, NO
 schema migration. ~6 commits.
 
 ## STEP 0 — VERIFY the foundation is done (do NOT rebuild; cite)
@@ -12,7 +12,7 @@ schema migration. ~6 commits.
 - **M1 + MH-0 DONE**: catalog read model (`catalog.ts`), install-state transitions (`installState.ts`), the `CatalogSource` seam + `registerCatalogSource` (`catalogSource.ts`), the two-tab 套件管理器 UI (`pluginManagerViews.tsx` — 市场 browse via `catalogSource("local")` :107-120, Install via `withKitInstalled` :437, 已安装 enable/disable + groups + uninstall), server `PUT /api/plugin-prefs/catalog` (`app.ts:1390-1395`, split-write guarded `app.test.ts:1173-1238`). Confirmed shipped `plugin-viewer-model.md:326`.
 If any of these is NOT as described, STOP and report (don't build atop a phantom). Otherwise: DO NOT rebuild them.
 
-## CORE-vs-KIT (verified): catalog/installState/catalogSource = CORE ORGAN (registry infra); the market UI (`pluginManagerViews.tsx`) = CORE-CLIENT (host surface for ALL kits, NOT codex-owned — safe to extend); preview render + import-hint = CORE-CLIENT reusing `getNoteType().render`/`ArtifactCard`/`InertNote`; the mock remote source = a mock of EXTERNAL infra behind `registerCatalogSource`. No new entity/type/kit; server schema already carries `catalogState`/`userKits`.
+## CORE-vs-KIT (verified): catalog/installState/catalogSource = CORE ORGAN (registry infra); the market UI (`pluginManagerViews.tsx`) = CORE-CLIENT (host surface for ALL kits, NOT codex-owned — safe to extend); preview render + import-hint = CORE-CLIENT reusing `getNoteType().render`/`ArtifactCard`/`InertNote`; future external registries attach behind `registerCatalogSource`. No new entity/type/kit; server schema already carries `catalogState`/`userKits`.
 
 ## Commit sequence (each compiles + FULL vitest green; baseline 265f/2705t; ALL additive/register-only)
 **M.1 — M2a: preview fixtures on the catalog + a pure selector.**
@@ -32,9 +32,9 @@ If any of these is NOT as described, STOP and report (don't build atop a phantom
 **M.5 — M3b: the per-note InertNote fallback affordance.**
 - Extend `InertNote` (`builtinNoteTypes.tsx:973`): thread `contentType` in (additive prop, back-compat default); when unknown but `providerOf(contentType)` resolves → "安装 X 以完整查看" + a click that installs via the existing `withKitInstalled` seam; else "unsupported type" (`plugin-viewer-model.md:320`).
 - **Tests (HARD)**: InertNote with a cataloged-but-uninstalled type renders the install hint + click installs the kit; unknown type renders "unsupported".
-**M.6 — mock remote catalog source (the EXTERNAL boundary, mocked) + source-aware market list.**
-- A `remoteMockCatalogSource: CatalogSource` (dev/test only) with 1-2 fabricated `source:"registry"` listings + a stub `fetchArtifact` that THROWS a typed "not-available-in-V1" error; registered behind an env/dev flag via `registerCatalogSource` (production shows only `local`). Make the market list merge `local` + registered sources (a small `useEffect` list-merge, NO UI-contract change — MH-0 preserved).
-- **Tests (HARD)**: `catalogSource.test.ts` — the mock source lists through the SAME contract; the UI renders a `source:"registry"` listing identically; `fetchArtifact` on the mock returns the typed stub error (the future-402/remote boundary). CI-verifiable proof a real remote registry slots in unchanged.
+**M.6 — source-aware market list.**
+- Keep the `CatalogSource` registry seam and market merge path, but do not ship demo registry listings in the app. Future hosted sources should register through `registerCatalogSource`; local/default market data remains bundled only until a real registry exists.
+- **Tests (HARD)**: `catalogSource.test.ts` and `pluginManagerViews.test.tsx` cover the registration/merge contract with test-local sources only, so no demo goods leak into the app catalog.
 
 Sequencing: 1→2 (preview data before UI), 4→5 (resolution before affordance); 3 and 6 independent after 1. (Commit 0 = a docs reconcile of the stale F4/F5 status in `architecture-review.md:36-42` + `roadmap.md:41` — I handle it with the impl-log, the build agent does NOT touch docs.)
 

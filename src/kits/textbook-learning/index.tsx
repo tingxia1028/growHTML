@@ -91,6 +91,7 @@ const languageMember: KitMemberPlugin = {
 export const textbookLearningKit: ProductKit = {
   id: "textbook-learning",
   name: "Textbook Learning Kit",
+  icon: "book-open",
   description: "Turn a source into a textbook: explain passages, generate practice, track mistakes, review.",
   contentSpecs: textbookContentSpecs,
   prompts: textbookPrompts,

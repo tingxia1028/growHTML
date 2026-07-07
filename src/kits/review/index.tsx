@@ -18,6 +18,7 @@ import type { ProductKit } from "../types";
 export const reviewKit: ProductKit = {
   id: "review",
   name: "Review Kit",
+  icon: "book-open-check",
   description:
     "复习:把到期的卡片/错题/弱项汇成一场复习,逐题作答→自评/AI 判分→写回记忆(SRS 引擎与队列在核心)。",
   // No contentSpecs (the review.grade type + SRS engine are CORE), no prompts, no members —

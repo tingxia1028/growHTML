@@ -7,10 +7,9 @@
 //     + a one-line note gist; full: the same plus the whole note text. Both carry the
 //     打开 action. ONE registry render path (the adaptive-note display contract) —
 //     never a bespoke bypass.
-//   • 打开 — desktop (the electron bridge exposes openPath → shell.openPath): open
-//     the file with the OS default app; a plain browser can't open local paths, so
-//     the SAME button degrades to 复制路径 (navigator.clipboard). Detection = the
-//     bridge API's presence, the same idiom the media editors use (canPickFile).
+//   • 打开 — inside a Growte workspace, import/focus the file as a Growte source.
+//     Outside a workspace, desktop falls back to shell.openPath; web falls back to
+//     复制路径 (navigator.clipboard).
 //   • edit — the composer's declared form: path (+ a desktop 选择文件… picker via the
 //     EXISTING dialog:openFile IPC) + optional title + optional note.
 //
@@ -57,13 +56,20 @@ function canPickFile(): boolean {
   );
 }
 
-// The 打开 action: desktop → shell.openPath via the bridge (surfacing its error
-// string when the OS refuses); web → copy the path to the clipboard instead.
-function FileLinkOpenAction({ path }: { path: string }) {
+// The 打开 action: workspace → Growte source; standalone desktop → shell.openPath;
+// web → copy the path to the clipboard instead. The data-file-link-path attr is for
+// framework-free annotation previews: React handlers are stripped by renderToStaticMarkup,
+// so the annotation layer forwards the click back to the workspace host.
+function FileLinkOpenAction({ path, openLocalFile }: { path: string; openLocalFile?: (filePath: string) => Promise<void> | void }) {
   const desktop = canShellOpen();
   const [feedback, setFeedback] = useState("");
   const activate = async () => {
     if (!path) return;
+    if (openLocalFile) {
+      await openLocalFile(path);
+      setFeedback("");
+      return;
+    }
     if (desktop) {
       const shellOpenPath =
         getPlatformOptional()?.native?.shellOpenPath ?? window.studyVault?.openPath;
@@ -84,7 +90,8 @@ function FileLinkOpenAction({ path }: { path: string }) {
       <button
         type="button"
         className="link-button sv-file-link-open"
-        title={desktop ? "用系统默认应用打开" : "复制文件路径"}
+        data-file-link-path={path}
+        title={openLocalFile ? "在 Growte 中打开" : desktop ? "用系统默认应用打开" : "复制文件路径"}
         onClick={(event) => {
           // The card sits inside clickable rows (note list / preview cards) — don't
           // let the action also toggle/select the row.
@@ -92,7 +99,7 @@ function FileLinkOpenAction({ path }: { path: string }) {
           void activate();
         }}
       >
-        {desktop ? "打开" : "复制路径"}
+        {openLocalFile || desktop ? "打开" : "复制路径"}
       </button>
       {feedback ? (
         <small className="sv-file-link-feedback" role="status">
@@ -103,7 +110,7 @@ function FileLinkOpenAction({ path }: { path: string }) {
   );
 }
 
-function FileLinkRender({ content, mode }: NoteRenderInput) {
+function FileLinkRender({ content, mode, ctx }: NoteRenderInput) {
   const c = asFileLink(content);
   const title = c.title?.trim() || fileLinkBasename(c.path) || "(no file)";
   // Card (§10.3): a one-line note gist; the full note text shows in mode:"full".
@@ -113,7 +120,7 @@ function FileLinkRender({ content, mode }: NoteRenderInput) {
       <div className="sv-file-link-head">
         <FileIcon className="sv-file-link-icon" size={15} aria-hidden="true" />
         <span className="sv-file-link-title">{title}</span>
-        <FileLinkOpenAction path={c.path} />
+        <FileLinkOpenAction path={c.path} openLocalFile={ctx?.openLocalFile} />
       </div>
       <div className="sv-file-link-path">{c.path || "(no path)"}</div>
       {c.note ? (

@@ -15,6 +15,7 @@ import {
   createSpeechService,
   DEFAULT_STT_BASE_URL,
   DEFAULT_TTS_VOICE,
+  ENGLISH_TTS_VOICE,
   STT_MAX_AUDIO_BYTES,
   TTS_MAX_TEXT_LENGTH,
   TTS_VOICES,
@@ -49,7 +50,7 @@ const FAKE_WEBM = Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x01, 0x02, 0x03, 0x04, 0
 // Hermetic by default: the stt probe resolves DOWN (never touches the network);
 // tests inject their own probe/transcriber through the second argument.
 function appWith(
-  synthesizeEdge: (input: { text: string; voice: string }) => Promise<Buffer>,
+  synthesizeEdge: (input: { text: string; voice: string; rate?: number }) => Promise<Buffer>,
   stt: { probeSttHealth?: SttHealthProbe; transcribeStt?: SttTranscriber; sttBaseUrl?: string } = {}
 ) {
   return createApp({
@@ -76,6 +77,20 @@ describe("POST /api/speech/tts", () => {
     expect(response.headers["content-type"]).toContain("audio/mpeg");
     expect(Buffer.compare(response.body as Buffer, FAKE_MP3)).toBe(0);
     expect(synth).toHaveBeenCalledExactlyOnceWith({ text: "你好，请朗读这段话。", voice: DEFAULT_TTS_VOICE });
+  });
+
+  it("auto-selects the English voice for English text when no voice override is supplied", async () => {
+    const synth = vi.fn(async () => FAKE_MP3);
+    await request(appWith(synth))
+      .post("/api/speech/tts")
+      .send({ text: "A student reads an English passage before practice." })
+      .buffer()
+      .parse(binaryParser)
+      .expect(200);
+    expect(synth).toHaveBeenCalledExactlyOnceWith({
+      text: "A student reads an English passage before practice.",
+      voice: ENGLISH_TTS_VOICE
+    });
   });
 
   it("honours a voice override from the curated list", async () => {

@@ -130,6 +130,8 @@ export type KitMemberPlugin = {
 export type ProductKit = {
   id: string;
   name: string;
+  /** Optional lucide icon name used by kit pickers and marketplace chrome. */
+  icon?: string;
   description: string;
   /**
    * What KIND of market unit this registration vehicle is (plugin-viewer-model §8.1):

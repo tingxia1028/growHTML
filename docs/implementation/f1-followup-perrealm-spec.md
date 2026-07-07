@@ -39,3 +39,7 @@ Gate blocks two PDF/image panes because host-realm bodies share THREE things: (1
 Layer edits (commits 1-2) + HideAllNotesToggle/anchorViews/webviewSelection/webview-preload + tests = DISJOINT from W2. ONLY risk: the commit-3 host-control→realm-doc bridge, if landed in views.tsx SourceViewerView, collides. Mitigation: route via SourceTabs/readers, not views.tsx. (per-paneId alt would touch WorkspaceContext.tsx = direct collision — another reason for per-realm.) → **build after W2 lands.**
 
 ## Test plan (MANDATORY): annotationDom.test.ts (two-realm hide-all independence + single-realm preserved) · markerOverlay.test.ts (two-realm glyph independence) · anchorViews.test.tsx + webviewSelection.test.ts (doc-arg) · e2e/multi-doc.spec.ts (two iframe panes, hide-all/glyph isolation).
+> Superseded note (2026-07-07): LIB-TABS-SPLIT-001 intentionally removed the host-realm
+> split gate, so PDF/PDF and PDF/image can now split side by side. This spec remains useful
+> as background for overlay-state risks, but new work should fix any concrete per-pane
+> overlay leak directly instead of re-blocking host-realm splits.

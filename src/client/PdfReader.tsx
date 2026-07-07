@@ -266,6 +266,7 @@ export function PdfReader({
     // Fit each page to the container width; 'page-width' is a dynamic value, so
     // pdf.js keeps it fit as the pane is resized.
     eventBus.on("pagesinit", () => {
+      if (cancelled) return;
       pdfViewer.currentScaleValue = "page-width";
     });
     // Pages (and their text layers) render lazily as they scroll into view —
@@ -274,8 +275,12 @@ export function PdfReader({
     // and region boxes are repainted at the new scale (region boxes are percent-
     // sized so they track the page box regardless; text highlights re-match the
     // freshly-rebuilt text-layer spans). No zoom-specific repaint path needed.
-    eventBus.on("pagerendered", () => highlightAnchors());
+    eventBus.on("pagerendered", () => {
+      if (cancelled) return;
+      highlightAnchors();
+    });
     eventBus.on("textlayerrendered", () => {
+      if (cancelled) return;
       highlightAnchors();
       // A freshly rendered text layer changes anchor geometry — the adapter's
       // layout signal repositions the overlay chips.
@@ -285,6 +290,7 @@ export function PdfReader({
     // zoom, the initial page-width fit, AND automatic re-fits when the pane resizes
     // (page-width is dynamic, so resizing re-dispatches scalechanging).
     eventBus.on("scalechanging", (evt: { scale: number }) => {
+      if (cancelled) return;
       setScale(evt.scale);
       // Zoom re-lays out the pages; the adapter's layout signal nudges the marker
       // chips to the new geometry (the subsequent page re-render also repaints,
@@ -304,9 +310,12 @@ export function PdfReader({
       resizeFrames.add(id);
     };
     const fitToContainer = () => {
+      if (cancelled) return;
       queueFrame(() => {
+        if (cancelled) return;
         pdfViewer.currentScaleValue = "page-width";
         queueFrame(() => {
+          if (cancelled) return;
           pdfViewer.currentScaleValue = "page-width";
           emitLayoutChange();
         });
@@ -481,12 +490,13 @@ export function PdfReader({
       layoutListeners.clear();
       if (markerOverlayRef.current === markerOverlay) markerOverlayRef.current = null;
       if (adapterRef.current === adapter) adapterRef.current = null;
-      loadingTask.destroy().catch(() => {});
       try {
         pdfViewer.setDocument(null as never);
+        linkService.setDocument(null as never, null);
       } catch {
         /* already torn down */
       }
+      loadingTask.destroy().catch(() => {});
       if (pdfViewerRef.current === pdfViewer) pdfViewerRef.current = null;
       if (eventBusRef.current === eventBus) eventBusRef.current = null;
     };

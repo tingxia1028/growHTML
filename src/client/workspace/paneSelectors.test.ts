@@ -7,10 +7,71 @@ import { noteText } from "./WorkspaceContext";
 import { renderAnnotationNotePreview } from "./annotationNotePreview";
 import {
   buildPaintPipeline,
+  DRAFT_REGION_ANCHOR_ID,
   enabledLayerIdsOf,
+  mergeFocusedRegionDraft,
   notesForSource,
+  regionDraftToAnchor,
   resolveAnchorPaintStyle
 } from "./paneSelectors";
+
+describe("region draft paint anchors", () => {
+  it("maps the active PDF region draft to a temporary paintable anchor", () => {
+    const draft = {
+      mode: "region" as const,
+      sourceId: "s1",
+      kind: "pdf" as const,
+      page: 9,
+      rect: [0.1, 0.2, 0.3, 0.4] as [number, number, number, number]
+    };
+
+    expect(regionDraftToAnchor(draft, "s1")).toEqual({
+      id: DRAFT_REGION_ANCHOR_ID,
+      sourceId: "s1",
+      anchorKind: "pdf_selection",
+      page: 9,
+      quote: "",
+      contextBefore: "",
+      contextAfter: "",
+      rect: [0.1, 0.2, 0.3, 0.4]
+    });
+  });
+
+  it("merges only the active source's region draft into the paint pipeline", () => {
+    const anchors = [htmlAnchor("a1", "s1", "First")];
+    const draft = {
+      mode: "region" as const,
+      sourceId: "s1",
+      kind: "image" as const,
+      rect: [0.2, 0.3, 0.4, 0.5] as [number, number, number, number]
+    };
+
+    const ignored = mergeFocusedRegionDraft(anchors, draft, "other");
+    expect(ignored).toBe(anchors);
+
+    const merged = mergeFocusedRegionDraft(anchors, draft, "s1");
+    expect(merged.map((anchor) => anchor.id)).toEqual(["a1", DRAFT_REGION_ANCHOR_ID]);
+
+    const { paintAnchors } = buildPaintPipeline({
+      visibleAnchors: merged,
+      notes: [],
+      sourceLayers: [],
+      enabledLayerIds: new Set<string>()
+    });
+    expect(paintAnchors.find((anchor) => anchor.id === DRAFT_REGION_ANCHOR_ID)).toEqual({
+      id: DRAFT_REGION_ANCHOR_ID,
+      anchorKind: "image_region",
+      quote: "",
+      contextBefore: undefined,
+      contextAfter: undefined,
+      studyId: undefined,
+      page: undefined,
+      rect: [0.2, 0.3, 0.4, 0.5],
+      note: "",
+      notePreviews: []
+    });
+  });
+});
 
 // The pre-F1 inline mapping (copied VERBATIM from the WorkspaceContext memos as they were
 // before extraction) — the regression lock compares buildPaintPipeline against THIS so any

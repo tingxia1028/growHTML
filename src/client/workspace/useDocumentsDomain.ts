@@ -76,7 +76,7 @@ import {
   type OpenPane
 } from "./panes";
 import { getBundle, hasBundle, pruneBundles, putBundle, type SourceBundle } from "./sourceBundles";
-import { buildPaintPipeline } from "./paneSelectors";
+import { buildPaintPipeline, mergeFocusedRegionDraft } from "./paneSelectors";
 import { getSourceAuthoringIo, isForkableImportedSource } from "./sourceAuthoringIo";
 import { DEFAULT_ANNOTATION_MODE, type HtmlAnnotationMode } from "../annotations";
 import { mergeFocusedAnchor } from "./WorkspaceContext";
@@ -329,10 +329,12 @@ export function useDocumentsDomain({
   // Server anchor lists are intentionally note-backed so historical no-note anchors
   // do not repaint. The current focused anchor is different: it may have just been
   // materialized and not yet returned by the note-backed refresh. Merge it in so the
-  // reader can immediately show/reveal the marker for the active passage.
+  // reader can immediately show/reveal the marker for the active passage. Region drafts
+  // also merge as a temporary paint-only anchor so "convert to region" immediately draws a
+  // box without writing a stored anchor until a later materialize path needs one.
   const visibleAnchors = useMemo(
-    () => mergeFocusedAnchor(anchors, focus.anchor, activeSourceId),
-    [anchors, focus.anchor, activeSourceId]
+    () => mergeFocusedRegionDraft(mergeFocusedAnchor(anchors, focus.anchor, activeSourceId), focus.draft, activeSourceId),
+    [anchors, focus.anchor, focus.draft, activeSourceId]
   );
 
   // The enabled-layer set — the multi-select filter's "on" set. Driven off each
@@ -592,14 +594,14 @@ export function useDocumentsDomain({
     try {
       const response = await entityClient.ingestUrl(importUrl.trim());
       await loadSources();
-      setActiveSourceId(response.source.id);
+      openSourceInNewPane(response.source.id);
       setImportUrl("");
       setStatus("idle");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to import URL");
       setStatus("error");
     }
-  }, [importUrl, loadSources, setActiveSourceId]);
+  }, [importUrl, loadSources, openSourceInNewPane]);
 
   const openLiveUrl = useCallback(async () => {
     if (!importUrl.trim()) return;
@@ -608,14 +610,14 @@ export function useDocumentsDomain({
     try {
       const response = await entityClient.ingestWebLive(importUrl.trim());
       await loadSources();
-      setActiveSourceId(response.source.id);
+      openSourceInNewPane(response.source.id);
       setImportUrl("");
       setStatus("idle");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to open live URL");
       setStatus("error");
     }
-  }, [importUrl, loadSources, setActiveSourceId]);
+  }, [importUrl, loadSources, openSourceInNewPane]);
 
   const openLocalFile = useCallback(
     async (filePath: string) => {
@@ -624,14 +626,14 @@ export function useDocumentsDomain({
       try {
         const response = await entityClient.ingestLocalFile(filePath);
         await loadSources();
-        setActiveSourceId(response.source.id);
+        openSourceInNewPane(response.source.id);
         setStatus("idle");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to open file");
         setStatus("error");
       }
     },
-    [loadSources, setActiveSourceId]
+    [loadSources, openSourceInNewPane]
   );
 
   // The path half of the .xmind import (server unzip+parse → markmap outline parked in
@@ -745,13 +747,13 @@ export function useDocumentsDomain({
     try {
       const { source } = await getSourceAuthoringIo().forkSource(activeSource.id);
       await loadSources();
-      setActiveSourceId(source.id);
+      openSourceInNewPane(source.id);
       setStatus("idle");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fork source");
       setStatus("error");
     }
-  }, [activeSource, loadSources, setActiveSourceId]);
+  }, [activeSource, loadSources, openSourceInNewPane]);
 
   const canForkActiveSource = useMemo(
     () => !!activeSource && isForkableImportedSource(activeSource),

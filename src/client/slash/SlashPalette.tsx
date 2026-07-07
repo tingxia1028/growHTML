@@ -128,9 +128,7 @@ export function SlashPalette({ query, entries, activeIndex, onPick, onNavigate }
               <RowIcon entry={entry} />
               <span className="slash-palette-main">
                 <span className="slash-palette-title">{entry.title}</span>
-                <span className="slash-palette-id">{entry.id}</span>
               </span>
-              {entry.kitId ? <span className="slash-palette-kit">{entry.kitId}</span> : null}
             </li>
           );
         })}

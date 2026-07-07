@@ -98,9 +98,9 @@ import { startIdleTracking } from "./idleSignal";
 import { startProactiveTick } from "./proactiveTick";
 import { GlobalSpeakSelection } from "../speech/GlobalSpeakSelection";
 import { GlobalSearch } from "../search/GlobalSearch";
-// N6/§D12: the Anchor Focus board overlay — mounted once here (like the floating editor /
-// global search above), opened by the TopBar's Anchor Focus tab via the shared store.
-import { AnchorBoardMount } from "./AnchorFocusBoard";
+// Anchor Focus is a center/document-pane mode. The TopBar flips this transient store;
+// renderDock swaps the center slot to the registered anchor.focus.board view.
+import { useAnchorBoardOpen } from "./anchorFocusBoardStore";
 
 // px size overrides keyed by dock child key (leaf nodeId, else its tree path).
 const SIZES_KEY = "sv-panel-widths";
@@ -186,6 +186,7 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [modalKind, setModalKind] = useState<string | null>(null);
   const modalCloseRef = useRef<HTMLButtonElement | null>(null);
+  const anchorBoardOpen = useAnchorBoardOpen();
 
   // Register the "show the operation manager" handler the Customize-Toolbar seam fires
   // (R6.3): the manager is reachable as the left-slot kind, so showing it = swapping the
@@ -452,6 +453,10 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
         const swapped: WorkspaceNode = { ...wsNode, kind: ONBOARDING_KIND };
         return renderNode(swapped, ctx);
       }
+      if (wsNode.id === CENTER_SLOT_NODE_ID && anchorBoardOpen) {
+        const swapped: WorkspaceNode = { ...wsNode, kind: "anchor.focus.board" };
+        return renderNode(swapped, ctx);
+      }
       return renderNode(wsNode, ctx);
     }
     return <div className={`dock-split dock-${node.direction}`}>{renderChildren(node, path)}</div>;
@@ -505,9 +510,6 @@ export function WorkspaceShell({ layout }: { layout: WorkspaceLayout }) {
           single shell mount; no per-view wiring) and dispatches through the existing
           contracts only (focus.setAnchor / setActiveSourceId / navigateShell). */}
       <GlobalSearch />
-      {/* N6/§D12: the Anchor Focus board overlay (renders nothing until the TopBar tab
-          opens it) — a read-only anchors+notes surface reusing the §10 PreviewCard. */}
-      <AnchorBoardMount />
       {modalKind ? (
         <div
           className="shell-modal-backdrop"

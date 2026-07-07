@@ -17,6 +17,7 @@ import type { ProductKit } from "../types";
 export const bookmarksKit: ProductKit = {
   id: "bookmarks",
   name: "Bookmarks Kit",
+  icon: "bookmark",
   description:
     "书签:把阅读中标记的书签汇成一条可跳转的书签栏(来源内),点一下即回到对应段落。",
   // No contentSpecs (the `bookmark` type is a CORE built-in), no prompts, no members —

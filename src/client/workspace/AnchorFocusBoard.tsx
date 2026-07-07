@@ -1,5 +1,5 @@
-// Anchor Focus board (N6 / D12) — a full-surface, read-only board centered on the active
-// source's anchors + notes, replacing the weak one-anchor "Anchor Focus" reveal. Two
+// Anchor Focus board (N6 / D12) — a full-surface, read-only board in the document pane,
+// centered on the active source's anchors + notes. Two
 // layouts, a header toggle, and the §10 filters (只看当前Layer + search + fullscreen):
 //
 //   A — by document order (default): rows = anchors in reading order; each row shows the
@@ -127,39 +127,14 @@ function LayerLayout({ columns }: { columns: LayerColumn[] }) {
   );
 }
 
-import { useAnchorBoardOpen, setAnchorBoardOpen } from "./anchorFocusBoardStore";
-
 export type AnchorFocusBoardProps = {
-  /** Close the board (returns the TopBar to the overlay/document tab). */
+  /** Close the board (returns the TopBar to the Notes Overlay/document tab). */
   onClose(): void;
 };
 
-// Shell mount: rendered once in WorkspaceShell chrome (like FloatingNoteEditor /
-// GlobalSearch). Renders nothing until the TopBar's "Anchor Focus" tab opens the board;
-// Escape or the ✕/backdrop closes it. Keeps the shell edit to one import + one JSX line.
-export function AnchorBoardMount() {
-  const open = useAnchorBoardOpen();
-  if (!open) return null;
-  const close = () => setAnchorBoardOpen(false);
-  return (
-    <div
-      className="anchor-board-backdrop"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) close();
-      }}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") close();
-      }}
-    >
-      <AnchorFocusBoard onClose={close} />
-    </div>
-  );
-}
-
-// The board surface. Rendered inside an overlay by the shell mount; a standalone caller
-// (tests) can mount it directly. All state (layout, filter, search, fullscreen) is local —
-// the board is a transient view, not persisted workspace state.
+// The board surface. WorkspaceShell renders it inside the center/document slot; all state
+// (layout, filter, search, fullscreen) is local because the board is a transient view
+// mode, not persisted workspace data.
 export function AnchorFocusBoard({ onClose }: AnchorFocusBoardProps) {
   useLocale();
   const { activeSource, anchors, notes, sourceLayers, enabledLayerIds } = useWorkspace();
@@ -220,7 +195,7 @@ export function AnchorFocusBoard({ onClose }: AnchorFocusBoardProps) {
   );
 
   return (
-    <div className={`anchor-board${fullscreen ? " anchor-board-fullscreen" : ""}`} data-layout={layout} role="dialog" aria-label={t(messages.title)}>
+    <div className={`anchor-board${fullscreen ? " anchor-board-fullscreen" : ""}`} data-layout={layout} role="region" aria-label={t(messages.title)}>
       <header className="anchor-board-head">
         <div className="anchor-board-head-left">
           <h2 className="anchor-board-title">{t(messages.title)}</h2>

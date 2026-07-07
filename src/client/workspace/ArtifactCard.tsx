@@ -52,6 +52,7 @@ function snippetOf(content: unknown): string {
 // plugins explicitly return a LIGHT preview for "card" so the thread never mounts a live
 // diagram/iframe. Null → the wrapper alone.
 function cardBody(block: FocusOverlayBlock, prefs?: PluginPrefs): ReactNode {
+  const renderCtx = block.openLocalFile ? { openLocalFile: block.openLocalFile } : undefined;
   const resolved = resolveViewer(
     { content: block.content, note: block.note, contentType: block.contentType },
     prefs
@@ -65,7 +66,7 @@ function cardBody(block: FocusOverlayBlock, prefs?: PluginPrefs): ReactNode {
   }
   const plugin = getNoteType(block.contentType);
   if (plugin) {
-    const node = plugin.render({ content: block.content, note: block.note, mode: "card" });
+    const node = plugin.render({ content: block.content, note: block.note, mode: "card", ctx: renderCtx });
     if (node) return node;
   }
   return null;
@@ -105,8 +106,13 @@ export function ArtifactCard({ block }: { block: FocusOverlayBlock }) {
   const ws = useWorkspaceOptional();
   const meta = noteCardMeta(block.contentType, block.content);
   const title = block.title ?? meta.title ?? (snippetOf(block.content).slice(0, 80) || block.contentType);
-  const displayBlock = { ...block, title, extra: block.extra ?? meta.extra };
-  const body = cardBody(block, ws?.pluginPrefs);
+  const displayBlock = {
+    ...block,
+    title,
+    extra: block.extra ?? meta.extra,
+    openLocalFile: block.openLocalFile ?? ws?.openLocalFile
+  };
+  const body = cardBody(displayBlock, ws?.pluginPrefs);
   const Icon = noteTypeIcon(block.contentType);
   // D6: a DRAFT note (auto-materialized from an anchor-context AI answer) gets a
   // distinguishing wrapper marker. This is a WRAPPER FLAG — the body still comes through

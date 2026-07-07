@@ -23,6 +23,7 @@ const POPOVER_WIDTH = 248;
 const ESTIMATED_HEIGHT = 360;
 /** Min gap from the viewport edges so the popover never sits flush against them. */
 const VIEWPORT_MARGIN = 8;
+const TOOLBAR_POPOVER_EVENT = "sv:toolbar-popover-open";
 
 const SURFACE_LABELS: Record<ActionMoreMenuProps["surface"], string> = {
   inline: "More — Selection",
@@ -54,6 +55,7 @@ export function ActionMoreMenu({ items, onRun, busy, surface, onCustomize }: Act
   // The portaled popover element — the second "inside" node, and the source of the
   // measured height used to decide whether to flip above the trigger.
   const popoverRef = useRef<HTMLDivElement | null>(null);
+  const ownerIdRef = useRef(`more-${surface}`);
   const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
 
   // Compute the fixed position from the trigger rect. Right-aligned + clamped horizontally;
@@ -103,6 +105,15 @@ export function ActionMoreMenu({ items, onRun, busy, surface, onCustomize }: Act
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
+  useEffect(() => {
+    const onToolbarPopoverOpen = (event: Event) => {
+      const owner = (event as CustomEvent<{ owner?: string }>).detail?.owner;
+      if (owner !== ownerIdRef.current) setOpen(false);
+    };
+    document.addEventListener(TOOLBAR_POPOVER_EVENT, onToolbarPopoverOpen);
+    return () => document.removeEventListener(TOOLBAR_POPOVER_EVENT, onToolbarPopoverOpen);
+  }, []);
+
   const groups = groupActions(items);
 
   return (
@@ -115,7 +126,16 @@ export function ActionMoreMenu({ items, onRun, busy, surface, onCustomize }: Act
         aria-haspopup="menu"
         aria-expanded={open}
         title="More"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          if (open) {
+            setOpen(false);
+            return;
+          }
+          document.dispatchEvent(
+            new CustomEvent(TOOLBAR_POPOVER_EVENT, { detail: { owner: ownerIdRef.current } })
+          );
+          setOpen(true);
+        }}
       >
         <MoreHorizontal size={16} />
       </button>

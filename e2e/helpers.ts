@@ -120,7 +120,8 @@ export async function openLibraryMenu(page: Page) {
   await expect(popover).toBeVisible();
 }
 
-// Open the Reader chrome ⋯ menu (Product Kit select + status). Idempotent.
+// Ensure Reader actions are reachable. The Product Kit select is visible in the toolbar;
+// older/overflow-only chrome still opens the menu as a fallback. Idempotent.
 export async function openReaderMenu(page: Page) {
   const kit = page.locator(".kit-select");
   if (await kit.isVisible().catch(() => false)) return;

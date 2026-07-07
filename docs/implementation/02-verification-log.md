@@ -829,9 +829,61 @@ Key finding from the planning pass (supersedes the PLANNED stub above): the Acti
 | 2026-07-05 | M-001 | pluginManagerViews.test (composer) | + New kit writes userKits + installs it; members render as toggleable groups in 已安装; uninstall drops it | Passed |
 | 2026-07-05 | M-001 | importHints.test | core→no hint; unknown→no hint; not-effective-installed provider→hint w/ owning kit; installed→no hint | Passed (+file) |
 | 2026-07-05 | M-001 | InertNote.test | cataloged-but-uninstalled type → "安装 X 以完整查看" + click installs the owning kit (withKitInstalled); unknown type → "unsupported" | Passed (+file) |
-| 2026-07-05 | M-001 | catalogSource.test | remoteMockCatalogSource lists through the SAME CatalogSource contract; UI renders source:"registry" identically; fetchArtifact throws the typed NotAvailableInV1Error stub | Passed |
+| 2026-07-05 | M-001 | catalogSource.test | CatalogSource registration keeps local/default listings isolated while preserving the future source merge contract | Passed |
 | 2026-07-06 | ANNO-PREVIEW-001 | `npm test -- src/client/workspace/annotationNotePreview.test.tsx src/client/annotationMarkers.test.ts src/client/markerOverlay.test.ts` | Reader note preview mini-card markup, noteTypeIcon/MARKER_GLYPHS parity, and overlay marker regressions. | Passed (3 files / 51 tests) |
 | 2026-07-06 | ANNO-PREVIEW-001 | `npm test -- src/client/workspace/paneSelectors.test.ts src/client/annotationDom.test.ts` | Workspace note preview pipeline and annotation DOM card behavior after restoring mini-card chrome. | Passed (2 files / 66 tests) |
 | 2026-07-06 | ANNO-PREVIEW-001 | `npm exec tsc -- --noEmit` | TypeScript compile after preview/icon/CSS/test changes. | Passed |
 | 2026-07-06 | FLOAT-NOTE-001 | `npm test -- src/client/annotationDom.test.ts src/client/markerOverlay.test.ts src/client/workspace/annotationNotePreview.test.tsx src/client/speech/globalSpeakSelection.test.tsx` | Reader note-card flip/drag/double-click regressions, overlay marker regressions, preview mini-card markup, and global read-aloud chip CSS coverage. | Passed (4 files / 111 tests) |
 | 2026-07-06 | FLOAT-NOTE-001 | `npm exec tsc -- --noEmit` | TypeScript compile after reader note-card placement/drag/focus bridge changes. | Passed |
+| 2026-07-06 | EXT-PLAT-001A | `npm.cmd test -- src/server/app.test.ts src/server/start.test.ts src/server/shellRoutes.test.ts` | Focused server coverage for `/api/health`, `/api/about`, and `startServer` after extracting app-info routes. | Passed (3 files / 72 tests) |
+| 2026-07-06 | EXT-PLAT-001A | `npm.cmd exec tsc -- --noEmit` | TypeScript compile after adding `src/server/routes/appInfo.ts` and wiring it from `createApp`. | Passed |
+| 2026-07-07 | ANCHOR-FOCUS-PANE-001 | `npm.cmd test -- src/client/workspace/WorkspaceShell.test.tsx src/client/workspace/TopBar.test.tsx src/client/workspace/AnchorFocusBoard.test.tsx` | Focused coverage for Anchor Focus rendering inside the document pane, TopBar tab state, and existing board layout behavior. | Passed (3 files / 12 tests; jsdom printed a non-failing canvas `getContext` notice) |
+| 2026-07-07 | ANCHOR-FOCUS-PANE-001 | `npm.cmd exec tsc -- --noEmit` | TypeScript compile after removing the shell overlay mount and routing the board through the center slot. First run exited 1 with no diagnostics; `--pretty false` and a repeated original command both passed. | Passed |
+| 2026-07-07 | ANCHOR-FOCUS-PANE-001 | `npm.cmd run check` | Project check after the center-slot view-mode change, including the mobile/client import-boundary guard. | Passed (Rule A green, Rule C green) |
+| 2026-07-07 | KIT-TOOLBAR-001 | `npm.cmd test -- src/kits/activation.test.ts src/kits/subject/subjectKits.test.tsx src/client/workspace/actionIcons.test.ts` | Focused coverage for foreground kit filtering, Math Kit subject toolbar visibility, and distinct subject/toolkit icon resolution. | Passed (3 files / 30 tests) |
+| 2026-07-07 | KIT-TOOLBAR-001 | `npm.cmd test -- src/client/slash/adapters.test.tsx src/client/slash/operationAdapter.test.tsx src/client/slash/SlashPalette.test.tsx src/client/slash/ToolbarSlashButton.test.tsx` | Slash palette/button coverage because slash entries reuse the same foreground-filtered kit surface items. | Passed (4 files / 53 tests) |
+| 2026-07-07 | KIT-TOOLBAR-001 | `npm.cmd run check` | TypeScript and import-boundary check after moving Product Kit selection into the reader toolbar and widening kit/icon types. | Passed (Rule A green, Rule C green) |
+| 2026-07-07 | LIB-TABS-SPLIT-001 | `npm test -- src/client/workspace/libraryView.test.tsx src/client/workspace/sourceTabs.test.tsx src/client/workspace/sourceSplit.test.ts src/client/workspace/documentsDomain.characterization.test.tsx` | Focused Library, SourceTabs/sourceSplit, and documents-domain coverage for folder-source filtering, tab-opening defaults, and PDF/image split eligibility. | Passed (4 files / 44 tests; jsdom printed a non-failing canvas `getContext` notice) |
+| 2026-07-07 | LIB-TABS-SPLIT-001 | `npm exec tsc -- --noEmit` | TypeScript compile after Library, documents-domain, and SourceTabs changes. | Passed |
+| 2026-07-07 | LIB-TABS-SPLIT-001 | `npm run build` | Production client build after split and Library behavior changes. | Passed (Vite chunk-size warning unchanged/non-failing) |
+# 2026-07-07 - SOURCE-GROUPS-001
+
+Commands:
+
+- `npm test -- src/client/workspace/sourceSplit.test.ts src/client/workspace/sourceTabs.test.ts`
+  - Result: passed, 2 files / 20 tests.
+- `npm test -- src/client/workspace/sourceViewerKit.test.tsx src/client/workspace/sourceSplit.test.ts src/client/workspace/sourceTabs.test.tsx`
+  - Result: passed, 3 files / 21 tests. Vitest printed the existing jsdom canvas `getContext()` warning while importing the views graph; test status was green.
+- `npm run check`
+  - Result: passed. TypeScript, mobile import Rule A, Rule C, and import-boundary guard all green.
+- `npm test -- src/client/workspace/WorkspaceContext.render.test.tsx src/kits/activation.test.ts`
+  - Result: passed, 2 files / 22 tests.
+- `npm test -- src/client/workspace/documentsDomain.characterization.test.tsx src/client/workspace/NoteListPanel.test.tsx`
+  - Result: passed, 2 files / 9 tests.
+- `npm test -- src/client/workspace/sourceTabs.test.tsx src/client/workspace/sourceSplit.test.ts`
+  - Result: passed, 2 files / 24 tests after adding pane-replacement and active-group reconciliation coverage.
+- `npm test -- src/client/workspace/sourceTabs.test.tsx src/client/workspace/sourceSplit.test.ts src/client/workspace/sourceViewerKit.test.tsx`
+  - Result: passed, 3 files / 25 tests. Vitest printed the existing jsdom canvas `getContext()` warning while importing the views graph; test status was green.
+- `npm run check`
+  - Result: passed. TypeScript, mobile import Rule A, Rule C, and import-boundary guard all green.
+- Browser smoke via system Edge at `http://127.0.0.1:5173/`
+  - Result: passed. Scenario opened multiple PDF documents, split the reader, continued switching/opening documents, and verified `.app-frame` stayed mounted with two `.reader-panel`s and `.source-split`. Console had no `error`/`pageerror` entries after the PDF teardown guard; remaining pdf.js wasm/cMap warnings were non-fatal.
+
+Notes:
+
+- Did not run full `npm test` for this slice; focused coverage targets the changed source split/tab model and the right-sidebar active-source data path.
+
+# 2026-07-07 - REGION-ANCHOR-001
+
+Commands:
+
+- `npm test -- src/client/workspace/anchorViews.test.tsx src/client/workspace/paneSelectors.test.ts`
+  - Result: passed, 2 files / 20 tests.
+- `npm exec tsc -- --noEmit`
+  - Result: passed.
+- `npm run build`
+  - Result: passed. Vite emitted the existing chunk-size warning only.
+
+Notes:
+
+- Did not run the full Vitest suite; focused coverage targets the changed right Anchor panel and paint selector paths.

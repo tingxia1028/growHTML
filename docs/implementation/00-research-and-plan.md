@@ -395,3 +395,57 @@ Goal: make the in-reader floating note card less intrusive and more useful: read
 | ID | Task | Dependencies | Can Parallelize | Primary Files | Implementation Plan | Verification Method | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | FLOAT-NOTE-001 | Reader note-card placement, sizing, drag, and note focus bridge | Existing `#sv-note-card`, card geometry store, NoteList focus contract | No | `src/client/annotationLayer.ts`, `src/client/workspace/views.tsx`, `src/client/speech/globalSpeakSelection.css`, tests | Add capped defaults/min sizes, viewport-aware vertical flip, header-drag for pinned cards with anchor-relative persistence, a static double-click event carrying `noteId`, and host listener that focuses the note row. | Focused annotation DOM tests, speech/global selection z-index test or CSS assertion, and `tsc --noEmit`. | Complete |
+
+## EXT-PLAT-001 - Extension and Platform Foundation Optimizations (2026-07-06)
+
+Goal: start the plugin-extension and multi-platform architecture cleanup on branch `codex/extension-platform-optimizations` with small, behavior-preserving slices. The first slice extracts app metadata routes into a registered route module, so `createApp` keeps moving away from a monolithic route body and toward extension-owned route groups.
+
+| ID | Task | Dependencies | Can Parallelize | Primary Files | Implementation Plan | Verification Method | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| EXT-PLAT-001A | Extract app info routes | Existing `createApp` route wiring | No | `src/server/app.ts`, `src/server/routes/appInfo.ts`, focused server tests | Move `/api/health` and `/api/about` into `registerAppInfoRoutes(app, { appVersion, isPackaged })`; keep response JSON identical and call the module before feature routes. | `npm.cmd test -- src/server/app.test.ts src/server/start.test.ts src/server/shellRoutes.test.ts`; `npm.cmd exec tsc -- --noEmit` | Complete |
+
+## ANCHOR-FOCUS-PANE-001 - Anchor Focus Occupies Document Pane (2026-07-07)
+
+Goal: make Anchor Focus a document-pane mode instead of a shell popup. Clicking Anchor Focus in the top bar should replace the currently opened document column with the anchor board; clicking Notes Overlay should switch that same column back to the reader/notes overlay.
+
+| ID | Task | Dependencies | Can Parallelize | Primary Files | Implementation Plan | Verification Method | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| ANCHOR-FOCUS-PANE-001 | Render Anchor Focus inside the center document slot | Existing anchor board store and registered `anchor.focus.board` view | No | `src/client/workspace/WorkspaceShell.tsx`, `src/client/workspace/TopBar.tsx`, `src/client/workspace/AnchorFocusBoard.tsx`, `src/client/workspace/anchorFocusBoard.css`, focused shell tests | Remove the shell-level backdrop mount. Let `WorkspaceShell` swap the center/source slot to `anchor.focus.board` while the store is open, and back to the reader when Notes Overlay closes it. Restyle the board as pane-filling chrome rather than a centered dialog. | Focused `WorkspaceShell`/`TopBar`/`AnchorFocusBoard` tests; `npm.cmd exec tsc -- --noEmit` | Complete |
+
+## KIT-TOOLBAR-001 - Foreground Kit Filtering and Visible Kit Switcher (2026-07-07)
+
+Goal: make passage toolbars respect the active Product Kit instead of showing every installed kit action, and make the current toolkit visible/editable from the document header rather than hidden inside the overflow menu. Kit/tool icons should be distinct enough to scan.
+
+| ID | Task | Dependencies | Can Parallelize | Primary Files | Implementation Plan | Verification Method | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| KIT-TOOLBAR-001 | Filter kit toolbar actions and expose a visible kit switcher | Existing ProductKit activation, kit surface registry, reader toolbar | No | `src/kits/clientContext.tsx`, `src/kits/types.ts`, `src/kits/*/index.tsx`, `src/client/workspace/views.tsx`, `src/client/workspace/actionIcons.ts`, focused tests | Change `kitSurfaceItems(slot, foregroundKitIds)` so a defined foreground filters to that kit's members; keep `undefined` as the all-actions manager/listing mode. Track runtime kit member ids for subject kits. Promote the Product Kit selector from the Reader overflow into the visible toolbar with a kit icon, and map subject kit icon names to lucide icons. | Focused kit activation/subject/icon tests; `npm.cmd run check` | Complete |
+
+## LIB-TABS-SPLIT-001 - Library Folder Rows and Default Multi-Tab Opening (2026-07-07)
+
+Goal: make the Library model match the visible product intent: files opened from mounted folders should stay represented by the folder tree and Recent Read, not duplicated in the Documents section; ordinary Library opens should add/focus tabs by default instead of replacing the current reader; PDF/image readers should be allowed in the source split rather than blocked by a hard V1 gate.
+
+| ID | Task | Dependencies | Can Parallelize | Primary Files | Implementation Plan | Verification Method | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| LIB-TABS-SPLIT-001A | Hide mounted-folder sources from Documents and default source opens to tabs | Existing local-file `metadata.originalPath`, open panes model | No | `src/client/workspace/libraryBuiltins.tsx`, `src/client/workspace/useDocumentsDomain.ts`, `src/client/workspace/libraryView.test.tsx`, `src/client/workspace/documentsDomain.characterization.test.tsx` | Filter the Documents section to exclude sources whose original local path is under an opened folder root; change Library source rows and file/url import completion to `openSourceInNewPane` so click/open adds or focuses a tab by default. | Focused Library and documents-domain tests; `tsc --noEmit`; `npm run build`. | Complete |
+| LIB-TABS-SPLIT-001B | Allow PDF/PDF and PDF/image split candidates | Existing SourceTabs/sourceSplit model | No | `src/client/workspace/sourceSplit.ts`, `src/client/workspace/SourceTabs.tsx`, `src/client/workspace/sourceTabs.test.tsx` | Remove the hard host-realm split block and make the split affordance available for any two open panes. Keep a follow-up note that the reader annotation overlay still has shared host-level card state until it is pane-scoped. | Focused SourceTabs tests; `tsc --noEmit`; `npm run build`. | Complete |
+
+## SOURCE-GROUPS-001 - VS-Code-Like Source Editor Groups (2026-07-07)
+
+Goal: make the document split feel like editor groups instead of a single tab strip with one detached pane. Each split side should own its visible tabs, tabs should move by drag/drop between sides, and the right sidebar should follow the focused editor group's source.
+
+Avoid lines: do not touch `markerOverlay`, `annotations`, `anchorViews`, `webview-preload`, `sourceEditor`, `library*`, `readerForSource`, `sources` services, `playwright.electron*`, or e2e infrastructure.
+
+| ID | Task | Dependencies | Can Parallelize | Primary Files | Implementation Plan | Verification Method | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| SOURCE-GROUPS-001A | Source tab groups + drag/drop | Existing `source.tabs` host and persisted `sourceSplit` state | No | `src/client/workspace/SourceTabs.tsx`, `src/client/workspace/sourceSplit.ts`, `src/client/styles.css`, `src/client/workspace/sourceTabs.test.tsx` | Extend split state from one `sidePaneId` to a right-group pane id list while migrating old persisted state. Render left and right tab strips from group membership; clicking/dragging tabs focuses/moves panes between groups; keep the global pane model and source services unchanged. | Focused `sourceTabs.test.tsx`; `npm run check`. | Complete |
+| SOURCE-GROUPS-001B | Per-pane Product Kit selector | SOURCE-GROUPS-001A and existing source metadata kit resolver | No | `src/client/workspace/useKitDomain.ts`, `WorkspaceContext.tsx`, `views.tsx`, `sourceViewerKit.test.tsx` | Expose explicit per-source kit resolution/write helpers; make each split reader header render and pin the kit for its own `paneSource` instead of the globally focused source. | Focused source viewer kit test; `npm run check`. | Complete |
+| SOURCE-GROUPS-001C | Multi-file switching stability | SOURCE-GROUPS-001A | No | `src/client/workspace/SourceTabs.tsx`, `src/client/workspace/sourceSplit.ts`, `src/client/PdfReader.tsx`, focused tests | Reconcile pane-id replacements synchronously before paint, preserving the replaced pane's editor group so split panes do not briefly collapse to a single PDF reader. Quiet stale PDF callbacks during teardown so rapid switching does not surface destroyed-transport errors. | Focused SourceTabs/sourceSplit tests; `npm run check`; browser smoke for multi-PDF switching. | Complete |
+
+## REGION-ANCHOR-001 - Region Anchor Focus and Temporary Paint (2026-07-07)
+
+Goal: make "convert to region" behave like a real region anchor candidate. After conversion, the right Anchor panel must recognize the region context even though it has no quote text, and the source viewer must draw the region box immediately as a focused draft preview. Actual anchor persistence stays lazy through the existing `focus.materializeAnchor()` path when a note/action needs a saved anchor.
+
+| ID | Task | Dependencies | Can Parallelize | Primary Files | Implementation Plan | Verification Method | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| REGION-ANCHOR-001A | Let the right Anchor panel recognize region anchors/drafts | Existing focus draft union and anchor excerpt view | No | `src/client/workspace/anchorViews.tsx`, `src/client/workspace/anchorViews.test.tsx` | Gate the focused panel on `focus.anchor || focus.draft` instead of quote text, render a localized "Region anchor" excerpt for region anchors/drafts, keep speak disabled for empty text, and keep linked notes only for saved anchors. | Focused anchor view tests plus TypeScript. | Complete |
+| REGION-ANCHOR-001B | Paint the current region draft as a temporary source-viewer box | REGION-ANCHOR-001A, current paint pipeline | No | `src/client/workspace/paneSelectors.ts`, `src/client/workspace/useDocumentsDomain.ts`, `src/client/workspace/paneSelectors.test.ts` | Convert an active PDF/image region draft for the active source into a temporary `AnyAnchor` with a stable draft id, merge it into the focused pane's visible anchors, and let the existing PDF/image readers draw it through `.pdf-region-box` / `.image-region-box`. | Focused pane selector tests plus TypeScript. | Complete |

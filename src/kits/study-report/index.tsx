@@ -31,6 +31,7 @@ const studyReportMember: KitMemberPlugin = {
 export const studyReportKit: ProductKit = {
   id: "study-report",
   name: "Study Report Kit",
+  icon: "file-text",
   description:
     "学习报告:把 MEM-2 记忆里的复习/错题/活跃/弱项,按本周/本月自动总结成一份可编辑的报告,存进报告列表。",
   contentSpecs: studyReportContentSpecs,

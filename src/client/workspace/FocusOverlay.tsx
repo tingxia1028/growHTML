@@ -59,6 +59,7 @@ export type FocusOverlayBlock = {
   section?: string;
   /** Jump back to the source anchor (wired by the host); shows the ⤴ affordance when set. */
   onJumpToAnchor?: () => void;
+  openLocalFile?: (filePath: string) => Promise<void> | void;
 };
 
 const FOCUSABLE =
@@ -128,8 +129,10 @@ export function FocusOverlay({ block, onClose }: { block: FocusOverlayBlock; onC
   const plugin = getNoteType(block.contentType);
   // The FULL interactive view — the SAME render a saved note uses. Mounted only now
   // (while the overlay is open). Unknown type → inert fallback (never crashes).
+  const openLocalFile = block.openLocalFile ?? ws?.openLocalFile;
+  const renderCtx = openLocalFile ? { openLocalFile } : undefined;
   const body: ReactNode = plugin
-    ? plugin.render({ content: block.content, note: block.note, mode: "full" })
+    ? plugin.render({ content: block.content, note: block.note, mode: "full", ctx: renderCtx })
     : <InertNote content={block.content} contentType={block.contentType} />;
   const Icon = noteTypeIcon(block.contentType);
   const meta = noteCardMeta(block.contentType, block.content);

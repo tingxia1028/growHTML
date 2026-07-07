@@ -574,7 +574,7 @@ SRC-4 ✅. Verdict: extend SRC-2b (zero-dep in-place) + a block toolbar & templa
 Operation adapter (`slash/operationAdapter.ts`) mirrors `slashEntriesFromNoteTypes`: built-in kit actions (KitPrompt-backed surface items, effective-installed + foreground gated via `kitSurfaceItems`) THEN custom `op_` records (per-vault). A picked operation dispatches the shipped `operation.run` (`operationRunPayload` — id=operationId, scope on the entry, AUTO output); never reimplements running. Engine gains pinyin matching (full 全拼 + 首字母, reusing SEARCH-2's `pinyinForms`; `RANK_PINYIN` lowest tier, roman-query only). `slashEntries()` merges note types + operations, `rankByActiveKit` floats the active kit first (stable). Memory-recency scoped out (no cheap client signal). **Mount completed (SC-3.3):** views.tsx composer swapped `slashEntriesFromNoteTypes()` → `slashEntries({operations, disabled, foregroundKitIds})` reading ctx.operations/operationPrefs/activeKitIds; `pickSlashEntry` routes `kind==="operation"` → operation.run. Operations now visible + runnable in the /palette. Gates: tsc 0 · vitest 224f/2382t.
 
 ## F-1-001 — per-realm scoping of annotation-visibility singletons (2026-07-05, commits a9eb939, 71ff755)
-annotationLayer hide-all (A/B `notesHiddenAll`+listeners) + markerOverlay anchor-glyph (H/I `anchorGlyphsVisible`+listeners) converted from module `let`s to `WeakMap<Document,…>`; getters/setters/subscribe gained a `doc` param (mirroring the file's already-per-realm `hiddenNoteAnchorsByDoc`). Host controls (HideAllNotesToggle, AnchorGlyphSwitch) bridge to the focused pane's realm Document via a NEW per-source `sourceRealmDoc` registry (readers register their realm doc) — **views.tsx/WorkspaceContext NOT touched** (zero paneId plumbing). Webview guest keys on its own document; host-push reads persisted prefs off a new marker-prefs bus. Fixes the F1 multi-doc cross-pane hide-all/glyph LEAK. Clears blocker (1) of DELTA-3; host-realm split gate stays disabled pending (2) host-card-per-pane + (3) host-realm per-source seeding. Gates: tsc 0 · vitest 224f/2386t · build · e2e 5 passed (per-pane isolation + single-pane regression).
+annotationLayer hide-all (A/B `notesHiddenAll`+listeners) + markerOverlay anchor-glyph (H/I `anchorGlyphsVisible`+listeners) converted from module `let`s to `WeakMap<Document,…>`; getters/setters/subscribe gained a `doc` param (mirroring the file's already-per-realm `hiddenNoteAnchorsByDoc`). Host controls (HideAllNotesToggle, AnchorGlyphSwitch) bridge to the focused pane's realm Document via a NEW per-source `sourceRealmDoc` registry (readers register their realm doc) — **views.tsx/WorkspaceContext NOT touched** (zero paneId plumbing). Webview guest keys on its own document; host-push reads persisted prefs off a new marker-prefs bus. Fixes the F1 multi-doc cross-pane hide-all/glyph LEAK. Historical note: this originally left the host-realm split gate disabled pending host-card-per-pane work; LIB-TABS-SPLIT-001 (2026-07-07) later superseded that product choice and allows PDF/PDF and PDF/image split, with overlay scoping tracked as follow-up only if a concrete conflict appears. Gates: tsc 0 · vitest 224f/2386t · build · e2e 5 passed (per-pane isolation + single-pane regression).
 
 ## W3-001 — AI doc synthesis (ai-workspace §W3) (2026-07-05, commits a033efb→79e042a)
 `synthesisDocSchema`+`buildSynthesisMessages` (pure, provider-seam only) → `synthesizeDocument` service (structured gen `contentType:""`, ingest AUTHORED markdown, `looksLikeBarePath` guard → `SynthesisPathResultError`) → `POST /api/chat/synthesize` (HTTP-only, NO directTransport — AI excluded by design) → `entityClient.synthesize()` → `chat.synthesize` command (client `Pick` +`synthesize`, `onSourceSynthesized`) → StudyView 生成文档 button opening the new doc in a NEW pane (F1). Rides the plain chat lane (no profileContext leak); reuses W2 sealed-filtered attachment bundles; `#`/`##` headings = TOC. Transcript cap 24000 (drop-oldest, keep final user turn). Plan + implementation both adversarially reviewed (5 deltas). Gates: tsc 0 · vitest 226f/2406t · build · e2e chat-synthesize green.
@@ -669,15 +669,15 @@ Turn the managed AI provider from a DISABLED placeholder into a selectable, logg
 - Gates: tsc 0 · full vitest 265f/2705t (baseline 262/2677, +3f/+28t; the 90 gateway/managed stay green) · build · e2e managed-gateway (alone + co-run with study-report/mistake-photo = 4 green) + streaming-chat + shell-smoke green.
 - Deferred (code-noted, external-gated): real hosted endpoint/auth/payments/vendor-fanout (G-B/G-C); UserMenu 账户/积分 balance surfacing (delta 4); managed vision; provider-path token auto-refresh (only the settings-read client auto-refreshes; the provider reads `getSessionToken()` synchronously — documented, not silently shipped).
 
-## M-001 — 插件市场 M2 + M3 + mock remote source (2026-07-05, 6 commits 88ba890→c2ee0ea)
+## M-001 — 插件市场 M2 + M3 + source-aware market list (2026-07-05, 6 commits 88ba890→c2ee0ea)
 Plan (code-grounded, self-verified) found **F4/F5/M1/MH-0 ALREADY SHIPPED** — the backlog's "M needs F4/F5 refactors first" was a stale docs-vs-code trap (the THIRD track this session where the foundation was more complete than the backlog claimed; F4/F5 have in fact evolved PAST the spec into a FLAT capability-group model — the local `CatalogSource` lists KITS only, members = internal capability groups). Verified: F4=effective-installed (`activation.ts:7-9`, `isPluginEffectiveInstalled` `installState.ts:427`), F5=plugin==kit 1:1 (`KitMemberPlugin`+`members[]` `types.ts:116`, locked by `catalogAgreement.test.tsx`), M1+MH-0 (catalog/installState/catalogSource + two-tab `pluginManagerViews.tsx` + server PUT). Foundation NOT rebuilt (empty diff on installState/activation/types/app.ts; `catalog.ts` = additive `setPreviewFixtures` seam only; no schema migration). Remaining local slice built:
 - **M2a** (`catalogPreview.ts` + `setPreviewFixtures` seam): `previewFixtures` on kit entries (union of members' `provides` types + a schema-VALID `sampleContent`, REUSING the kits' shipped `KitPrompt.mockContent` — one source of truth) + a pure `previewsFor(entryId)`. Every `sampleContent` validates against its core `NoteContentSpec` (the `plugin-viewer-model.md:122` invariant, locked in CI).
 - **M2b** (`pluginManagerViews.tsx` MarketTab): a `<details>` drill-in rendering each preview via `getNoteType(contentType).render({mode:"card"})` + InertNote fallback; classes in `kitManager.css`. **MH-0 preserved** — preview data flows through a new `CatalogListing.previews` field (`catalogSource.ts`); the VIEW imports ONLY the `catalogSource` seam (no `catalog.ts`/`providerOf` import — the guard `pluginManagerViews.test.tsx:363-370` is even stricter than spec, kept green).
 - **M2c** (`NewKitComposer`): `+ New kit` — pick member plugin ids from the installed read model, name `user:`-prefixed, persist via `putPluginCatalog({catalogState, userKits})` (the `UserKitDef`/`userKitSchema`/`kitGroupsFor` data model already existed; only the compose UI was missing).
 - **M3a** (`importHints.ts`): pure `resolveImportHints(contentTypes, {state})` via `providerOf` + `isPluginEffectiveInstalled` + `groupOwnerOf` → per-type {provider, installed} rows.
 - **M3b** (`InertNote`, `builtinNoteTypes.tsx`): additive `contentType` prop → cataloged-but-uninstalled → "安装 X 以完整查看" + a click that installs the OWNING KIT (FLAT: install is kit-granular via `groupOwnerOf`, fallback to a direct plugin hold) via `withKitInstalled`; unknown → "unsupported". Threaded into FocusOverlay + practiceViews.
-- **M.6** (`remoteMockCatalogSource` + typed `NotAvailableInV1Error`, dev-flag gated): registered via `registerCatalogSource`; the market list merges `local` + registered sources (deduped, MH-0 preserved) — the CI-verifiable proof a real remote registry slots in unchanged (`fetchArtifact` throws the typed stub = the future-402/remote boundary).
-- CORE-vs-KIT: catalog/installState/catalogSource = CORE ORGAN; the market UI = CORE-CLIENT (host for ALL kits, NOT codex-owned); preview/import-hint = CORE-CLIENT reusing `getNoteType().render`/InertNote; the mock remote source = a mock of EXTERNAL infra behind `registerCatalogSource`. No new entity/type/kit.
+- **M.6** (`registerCatalogSource` + merged source-aware listing): the market list can merge `local` + explicitly registered sources (deduped, MH-0 preserved), but the app no longer ships demo registry listings.
+- CORE-vs-KIT: catalog/installState/catalogSource = CORE ORGAN; the market UI = CORE-CLIENT (host for ALL kits, NOT codex-owned); preview/import-hint = CORE-CLIENT reusing `getNoteType().render`/InertNote; future external registries attach behind `registerCatalogSource`. No new entity/type/kit.
 - Deviations (minimal, invariant-preserving): (1) previews in a React-free `catalogPreview.ts` via a seam (reuse prompt mocks, keep `catalog.ts` prompt-free); (2) dedicated test files (`catalogPreview.test.ts`/`InertNote.test.tsx`) to avoid pulling prompt-packs/React into the pure catalog test; (3) M3b installs the provider's OWNING KIT (FLAT install granularity) not a bare plugin.
 - Gates: tsc 0 · full vitest 268f/2736t (baseline 265/2705, +3f/+31t) · build · MH-0 guard + `catalogAgreement.test.tsx` green. Doc reconcile: `architecture-review.md` F4/F5 + `roadmap.md:41-42` marked ✅ SHIPPED.
 - Deferred (external): hosted kit registry (MH-1/2/3); kit packaging/distribution/signing; third-party upload / code sandbox (locked out V1); paid kits/entitlements/payments (the 402 lives in remote `fetchArtifact`).
@@ -763,3 +763,64 @@ The FINAL Slice-7 sub-slice: extracted the AGENT domain out of `WorkspaceContext
 - **THE ACCEPTANCE PROOF (grep on the finished provider body):** `grep -c useState WorkspaceContext.tsx` = **0** (all 16 bare useState now live in the 7a/7b/7c domain hooks); `entityClient.<method>(` call sites in the provider body = **0**. The ONLY surviving `entityClient` reference is `client: entityClient` at commandContext (:782) — the by-design reference handed to the command registry (commands do their own IO), NOT a provider-body call → does not block GREEN. Spec row flipped GREEN with this exact evidence.
 - **Tests (the R2 net + the carried 7b NIT):** NEW `agentDomain.characterization.test.tsx` (5 tests, real WorkspaceProvider + stubbed entityClient): the aiProviders mount effect sets agentAvailable/visionAvailable/offlineMock for BOTH the available and offline-mock shapes; runAgentTurn records the user turn once + folds agentStream + persists the final assistant message (+ empty no-op + rejection→error-turn edges). Carried 7b NIT added to `composerDomain.characterization.test.tsx`: an ACTIVE-SOURCE SWITCH (setActiveSourceId → docs' load effect → loadSourceWorkspace → the resetReaderDraftInputs trampoline) clears patchHtml + chatInput end-to-end (pins the highest-value 7b seam, previously unpinned). All 3 liveness-probed (break→RED→revert): the availability read, the agentStream persist, and the reset trampoline.
 - Gates: `npm run check` (tsc 0 + §5.2 guard GREEN) · full vitest **285f/2861t** (baseline 284/2855 → +1 file, +6 tests) · build ✓. Render guard 3/3 + the agent view tests (studyViewAgent/mistakeCapture/offlineMockBanner/AgentTranscript) stay green (public value fields unchanged). SKIPPED codex files; no electron:rebuild/commit.
+
+## EXT-PLAT-001 - extension/platform optimization branch (2026-07-06)
+Status: Complete. Created branch `codex/extension-platform-optimizations` and completed the first low-risk server modularization slice. `/api/health` and `/api/about` now live in `src/server/routes/appInfo.ts` and are mounted from `createApp` via `registerAppInfoRoutes(app, { appVersion, isPackaged })`. Response shapes are unchanged. Gates: focused server tests 3 files / 72 tests passed; `tsc --noEmit` passed.
+
+## ANCHOR-FOCUS-PANE-001 - anchor focus as document-pane mode (2026-07-07)
+Status: Complete. User clarified that Anchor Focus is not a popup: it should occupy the opened document column, and Notes Overlay should switch that column back to the reader/notes overlay. Removed the shell backdrop mount, routed the existing `anchor.focus.board` view through the center slot, and restyled the board as pane-filling chrome. Added shell regression coverage proving Anchor Focus renders without `.anchor-board-backdrop` and switches back through the Notes Overlay tab. Gates: focused workspace tests 3 files / 12 tests passed; `tsc --noEmit` passed after a no-output transient retry; `npm run check` passed including Rule C.
+
+## KIT-TOOLBAR-001 - foreground kit filtering and visible kit switcher (2026-07-07)
+Status: Complete. User reported that all kit/plugin actions appear in the anchor toolbar even when a Math toolkit is active, the Product Kit selector is hidden in the overflow menu, and many toolkit buttons collapse to the same wand icon. Defined foreground kits now filter kit-owned toolbar actions to the active kit and its runtime/catalog members, while undefined foreground remains the all-actions mode for manager/listing surfaces. Product Kit selection is visible in the reader toolbar with the kit icon, and subject/toolkit lucide icon names resolve instead of falling back to the wand. Gates: focused kit activation/subject/icon tests passed; slash surface tests passed; `npm run check` passed.
+
+## LIB-TABS-SPLIT-001 - Library folder rows and default multi-tab opening (2026-07-07)
+Status: Complete. Mounted-folder sources are now filtered out of the Documents section while remaining available in the folder tree and Recent Read. Library rows, created sources, and imported local/web sources now open/focus tabs by default through `openSourceInNewPane`. Source split no longer blocks PDF/PDF or PDF/image pairings, so any two open panes can be shown side by side. Parallelization stayed serial because Library source rows, document opening, and SourceTabs share the same open-pane model and tests.
+# 2026-07-07 - SOURCE-GROUPS-001
+
+Current phase: complete.
+
+Active task: none.
+
+Completed:
+
+- Identified current limitation: `SourceTabs` has one global tab strip plus a single detached side pane, so split panes are not real editor groups.
+- Confirmed right sidebar data follows `activeSourceId`, which follows `focusedPaneId`; the fix should make pane focus reliable instead of special-casing `NoteListPanel`.
+- Replaced the single detached side pane with left/right source tab groups.
+- Added source-tab drag/drop between groups and old `sidePaneId` persistence migration.
+- Routed reader-side pane focus through the grouped `focusPane` wrapper so the right sidebar can follow the right editor group.
+- Added focused tests for group rendering, drag/drop, and right-pane focus.
+- Added per-source Product Kit helpers and switched reader header Kit selectors to resolve/write against each pane's own source.
+- Added a close-path regression so closing left-group tabs preserves the right-group document; when the left group empties, the remaining right document is promoted into the single main group.
+- Added pane-id replacement reconciliation for rapid multi-file switching so a right/left editor group keeps its membership when the focused pane is switched to another document.
+- Moved source split reconciliation to layout timing to avoid a visible one-frame collapse from split to single-pane while heavy PDF readers remount.
+- Tightened PDF reader teardown so stale resize/pdf.js event callbacks exit after unmount and the viewer detaches before its loading task is destroyed.
+- Verified in a real Edge smoke run that repeated multi-PDF opens/splits keep the app frame mounted, keep two reader panels visible, and no longer emit destroyed-transport page errors.
+
+Constraints:
+
+- Avoid `markerOverlay`, `annotations`, `anchorViews`, `webview-preload`, `sourceEditor`, `library*`, `readerForSource`, `sources` services, `playwright.electron*`, and e2e infrastructure.
+
+Next action: product review in the running app.
+
+# 2026-07-07 - REGION-ANCHOR-001
+
+Current phase: complete.
+
+Active task: none.
+
+Completed:
+
+- Confirmed stored PDF/image region anchors already flow through the server schema and readers can paint `.pdf-region-box` / `.image-region-box`.
+- Identified the current break: the right Anchor panel uses non-empty quote text as the focus gate, so region anchors/drafts fall into the empty state.
+- Identified the second break: `convertSelectionToRegion()` only changes `focus.draft`; paint inputs only include saved anchors plus `focus.anchor`, so a converted region draft has no visible box.
+- Updated the Anchor panel to treat `focus.anchor || focus.draft` as context, with a localized "Region anchor" excerpt when quote text is empty.
+- Added a paint selector helper that converts the active PDF/image region draft into a temporary paint-only anchor.
+- Merged that temporary region anchor into the focused source paint pipeline so existing PDF/image region-box rendering handles the visible frame.
+- Added focused regressions for right-panel region draft state and active-source draft painting.
+
+Constraints:
+
+- Preserve lazy materialization: selecting or converting a region should not write a stored anchor until a note/action actually needs one.
+- Keep the fix out of the active source-tab grouping files unless a focused paint hook is required.
+
+Next action: user review in the desktop app.

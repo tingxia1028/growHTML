@@ -31,6 +31,7 @@ import { TerminalPanel } from "../TerminalPanel";
 import { getPlatformOptional } from "../platform/platformSingleton";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
 import { PanelMenu } from "./PanelMenu";
+import { namedActionIcon } from "./actionIcons";
 import { assetUrl } from "../data/assetUrl";
 import { resolveText, t } from "../i18n";
 import { libraryMessages } from "./libraryMessages";
@@ -46,9 +47,9 @@ import "./libraryBuiltins";
 import "./library.css";
 import { readerForSource } from "./readerForSource";
 import { BookmarkIndex } from "./BookmarkIndex";
-// N6/§D12: the Anchor Focus board — a read-only surface over the active source's
-// anchors+notes (document-order rows / stage-layer columns), registered as a view and
-// mounted in the shell overlay via AnchorBoardMount. Board logic lives in the new file.
+// N6/D12: the Anchor Focus board is a read-only surface over the active source's
+// anchors+notes (document-order rows / stage-layer columns), registered as a center-slot
+// view so it occupies the document pane instead of popup chrome.
 import { AnchorFocusBoard } from "./AnchorFocusBoard";
 import { setAnchorBoardOpen } from "./anchorFocusBoardStore";
 // N5/§10: per-source hide-all (D11) + notes/anchors export (D10) reader-toolbar
@@ -312,23 +313,23 @@ function SourceViewerView({
   const {
     activeSource,
     anchors,
-    status,
     error,
     paintAnchors,
     revealAnchors,
     focus,
     renderedHtml,
     annotationMode,
-    activeKitIds,
+    kitIdsForSource,
     installedKits,
-    setActiveKit,
+    setSourceKit,
     setActiveSourceId,
     canForkActiveSource,
     forkActiveSource,
     sourceForPane,
     paintAnchorsForPane,
     renderedHtmlForPane,
-    focusPane
+    focusPane,
+    openLocalFile
   } = ctx;
 
   // P-A2 per-pane binding: when `pane` is given, resolve THAT source's data; otherwise the
@@ -377,7 +378,12 @@ function SourceViewerView({
         return;
       }
       const onNoteCardAction = (event: Event) => {
-        const detail = (event as CustomEvent<{ action?: string; noteId?: string; anchorId?: string }>).detail;
+        const detail = (event as CustomEvent<{ action?: string; noteId?: string; anchorId?: string; filePath?: string }>).detail;
+        if (detail?.action === "file-link-open" && detail.filePath) {
+          if (paneId) focusPane(paneId);
+          void openLocalFile(detail.filePath);
+          return;
+        }
         if (detail?.action !== "edit" || !detail.noteId) return;
         if (paneId) focusPane(paneId);
         const anchor = detail.anchorId ? anchors.find((item) => item.id === detail.anchorId) : undefined;
@@ -392,7 +398,7 @@ function SourceViewerView({
       if (frame) cancelAnimationFrame(frame);
       cleanup?.();
     };
-  }, [anchors, focus, focusPane, paneId, paneSource?.id]);
+  }, [anchors, focus, focusPane, openLocalFile, paneId, paneSource?.id]);
 
   // The built-in single-document tab (file icon + title + close) — the pre-F1 chrome.
   const singleTabStrip = (
@@ -418,6 +424,10 @@ function SourceViewerView({
       )}
     </div>
   );
+  const paneKitIds = paneSource ? kitIdsForSource(paneSource) : [];
+  const activeKitId = paneKitIds[0] ?? "core";
+  const activeKit = installedKits.find((kit) => kit.id === activeKitId);
+  const ActiveKitIcon = namedActionIcon(activeKit?.icon ?? "layers") ?? namedActionIcon("layers");
 
   return (
     <main className="reader-panel">
@@ -425,33 +435,48 @@ function SourceViewerView({
         {/* Tab strip — the built-in single tab, or the multi-pane host's per-pane strip. */}
         {tabStrip ?? singleTabStrip}
 
-        {/* Toolbar — ghost icon affordances + the ⋯ overflow holding the kit selector
-            and status. Page/zoom controls live in the per-reader body toolbar (PdfReader),
-            left as-is this pass. */}
+        {/* Toolbar — primary document affordances. Less-common document actions live in
+            the ⋯ menu so narrow tab strips do not crush the icon row. */}
         <div className="reader-toolbar">
           {paneSource ? <BookmarkIndex /> : null}
-          {/* D11 hide-all + D10 export (§10) — per-source reader controls (this pane's source). */}
-          {paneSource ? <HideAllNotesToggle sourceId={paneSource.id} /> : null}
-          {paneSource ? <ExportNotesButton ctx={ctx} /> : null}
+          {paneSource && ActiveKitIcon ? (
+            <label
+              className="kit-toolbar-select"
+              title="Apply a Product Kit to this document (gates create actions; Core = none)"
+            >
+              <ActiveKitIcon size={15} aria-hidden="true" />
+              <select
+                className="kit-select kit-toolbar-native-select"
+                aria-label="Product Kit"
+                value={activeKitId}
+                onChange={(event) => {
+                  if (pane) focusPane(pane.paneId);
+                  void setSourceKit(paneSource.id, event.target.value);
+                }}
+              >
+                <option value="core">Core</option>
+                {installedKits.map((kit) => (
+                  <option key={kit.id} value={kit.id}>
+                    {kit.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <PanelMenu label="Reader actions">
             {paneSource ? (
-              <div className="panel-menu-field">
-                <span className="panel-menu-label">Product Kit</span>
-                <select
-                  className="kit-select"
-                  aria-label="Product Kit"
-                  title="Apply a Product Kit to this document (gates create actions; Core = none)"
-                  value={activeKitIds[0] ?? "core"}
-                  onChange={(event) => void setActiveKit(event.target.value)}
-                >
-                  <option value="core">Core</option>
-                  {installedKits.map((kit) => (
-                    <option key={kit.id} value={kit.id}>
-                      {kit.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <>
+                <div className="panel-menu-label">Document tools</div>
+                <div className="panel-menu-row reader-menu-tool-row">
+                  <span className="panel-menu-label">Hide notes</span>
+                  <HideAllNotesToggle sourceId={paneSource.id} />
+                </div>
+                <div className="panel-menu-row reader-menu-tool-row">
+                  <span className="panel-menu-label">Export notes</span>
+                  <ExportNotesButton ctx={ctx} />
+                </div>
+                <div className="panel-menu-sep" />
+              </>
             ) : null}
             {/* SRC-3: imported html/markdown are read-only in place; fork to an
                 editable authored copy (notes/anchors stay on the original). */}
@@ -466,11 +491,6 @@ function SourceViewerView({
                 复制为可编辑副本
               </button>
             ) : null}
-            <div className="panel-menu-sep" />
-            <div className="panel-menu-row">
-              <span className="panel-menu-label">Status</span>
-              <span className={`status-pill status-${status}`}>{status}</span>
-            </div>
           </PanelMenu>
         </div>
       </header>
@@ -953,6 +973,6 @@ registerView({ kind: "source.viewer", render: (_node, ctx) => <SourceViewerView 
 // renders it without a second strip.
 export { SourceViewerView };
 registerView({ kind: "study", render: (_node, ctx) => <StudyView ctx={ctx} /> });
-// N6/§D12: the Anchor Focus board as a registered view (a preset MAY dock it directly);
-// the primary entry is the TopBar's Anchor Focus tab → AnchorBoardMount shell overlay.
+// N6/D12: the Anchor Focus board as a registered view. The primary entry is the TopBar's
+// Anchor Focus tab, which asks WorkspaceShell to swap this view into the center slot.
 registerView({ kind: "anchor.focus.board", render: (_node, _ctx) => <AnchorFocusBoard onClose={() => setAnchorBoardOpen(false)} /> });

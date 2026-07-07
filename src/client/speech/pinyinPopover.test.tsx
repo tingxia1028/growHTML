@@ -13,6 +13,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { PinyinPopover, PINYIN_POPOVER_MAX_CHARS } from "./PinyinPopover";
 import { GlobalSpeakSelection } from "./GlobalSpeakSelection";
 import { resetSpeechStatusCacheForTests } from "./useSpeakText";
@@ -126,6 +129,17 @@ function clearSelection() {
 const popover = () => document.querySelector(".pinyin-popover") as HTMLElement | null;
 const pinyinBtn = () => document.querySelector(".pinyin-btn") as HTMLButtonElement | null;
 const speakChip = () => document.querySelector(".global-speak-chip") as HTMLButtonElement | null;
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+function zIndexFromRule(source: string, selector: string): number {
+  const start = source.indexOf(selector);
+  expect(start).toBeGreaterThanOrEqual(0);
+  const end = source.indexOf("}", start);
+  expect(end).toBeGreaterThan(start);
+  const match = source.slice(start, end).match(/z-index:\s*(\d+)/);
+  expect(match).toBeTruthy();
+  return Number(match![1]);
+}
 
 beforeEach(() => {
   document.body.innerHTML = "";
@@ -146,6 +160,16 @@ afterEach(() => {
 });
 
 describe("PinyinPopover — ruby rendering", () => {
+  it("keeps the modal above reader note cards and the global speak chip", () => {
+    const pinyinCss = readFileSync(resolve(HERE, "pinyinPopover.css"), "utf8");
+    const speakCss = readFileSync(resolve(HERE, "globalSpeakSelection.css"), "utf8");
+    const annotationLayer = readFileSync(resolve(HERE, "../annotationLayer.ts"), "utf8");
+
+    const pinyinModalZ = zIndexFromRule(pinyinCss, ".pinyin-popover-backdrop");
+    expect(pinyinModalZ).toBeGreaterThan(zIndexFromRule(annotationLayer, "#sv-note-card"));
+    expect(pinyinModalZ).toBeGreaterThan(zIndexFromRule(speakCss, ".global-speak-chip-row"));
+  });
+
   it("renders one <ruby>字<rt>zì</rt></ruby> per CJK char with context-resolved 多音字", async () => {
     stubFetch();
     const { cleanup } = mount(<PinyinPopover text="他长大了 well done，长度" onClose={vi.fn()} />);

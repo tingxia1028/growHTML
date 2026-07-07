@@ -169,54 +169,87 @@
   font-weight: 600;
 }
 .new-kit-composer {
-  border: 1px solid var(--border, #2a2f3a);
+  border: 1px solid var(--sv-border, #d9e0eb);
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 12px;
   margin-bottom: 12px;
-  background: var(--panel-2, rgba(255, 255, 255, 0.03));
+  background: #ffffff;
 }
 .new-kit-title {
   font-weight: 600;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
+  color: var(--sv-text-heading, #1f2937);
 }
 .new-kit-field {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  margin-bottom: 8px;
+  gap: 5px;
+  margin-bottom: 10px;
 }
 .new-kit-label {
   font-size: 11px;
-  opacity: 0.7;
+  color: var(--sv-text-muted, #6b7280);
 }
 .new-kit-name-input,
 .new-kit-desc-input {
   width: 100%;
-  padding: 5px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--border, #2a2f3a);
-  background: var(--panel, rgba(0, 0, 0, 0.2));
-  color: inherit;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--sv-border, #d9e0eb);
+  background: #ffffff;
+  color: var(--sv-text, #1f2937);
   font-size: 13px;
 }
+.new-kit-name-input:focus,
+.new-kit-desc-input:focus {
+  border-color: var(--sv-accent-border, #bdd2fb);
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(52, 116, 230, 0.1);
+}
 .new-kit-members {
-  margin-bottom: 8px;
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
 }
 .new-kit-member-list {
   list-style: none;
-  margin: 4px 0 0;
+  margin: 0;
   padding: 0;
   display: grid;
-  gap: 3px;
+  gap: 6px;
   max-height: 180px;
   overflow: auto;
 }
-.new-kit-member-row label {
+.new-kit-member-row-label.sv-check {
   display: flex;
   align-items: center;
-  gap: 6px;
+  width: 100%;
+  min-height: 32px;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--sv-border, #d9e0eb);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--sv-text, #1f2937);
   font-size: 13px;
   cursor: pointer;
+}
+.new-kit-member-row-label.sv-check:hover {
+  border-color: var(--sv-accent-border, #bdd2fb);
+  background: var(--sv-accent-weak, #eef5ff);
+}
+.new-kit-member-row-label.sv-check:has(.new-kit-member-check:checked) {
+  border-color: var(--sv-accent-border, #bdd2fb);
+  background: var(--sv-accent-weak, #eef5ff);
+  color: var(--sv-accent-text, #2454a6);
+}
+.new-kit-member-name {
+  min-width: 0;
+  overflow: hidden;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .new-kit-error {
   margin-bottom: 8px;

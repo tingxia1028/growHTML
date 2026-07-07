@@ -40,6 +40,8 @@ export type ToolbarSlashButtonProps = {
   disabled?: boolean;
 };
 
+const TOOLBAR_POPOVER_EVENT = "sv:toolbar-popover-open";
+
 // A printable single character (the keys that GROW the query). Modifier chords, function
 // keys, arrows, Enter, Escape, Backspace all have multi-char `key`s and are handled
 // separately, so a length-1 key that isn't one of those is a query character.
@@ -60,6 +62,7 @@ export function ToolbarSlashButton({ surface, disabled }: ToolbarSlashButtonProp
   const [index, setIndex] = useState(0);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const ownerIdRef = useRef(`slash-${surface}`);
 
   // The FULL palette list (note types + operations, active-kit-first), rebuilt only when
   // the operation set / prefs / active kit change — the per-keystroke work is the resolve.
@@ -96,6 +99,18 @@ export function ToolbarSlashButton({ surface, disabled }: ToolbarSlashButtonProp
     document.addEventListener("mousedown", onDocMouseDown);
     return () => document.removeEventListener("mousedown", onDocMouseDown);
   }, [open]);
+
+  useEffect(() => {
+    const onToolbarPopoverOpen = (event: Event) => {
+      const owner = (event as CustomEvent<{ owner?: string }>).detail?.owner;
+      if (owner === ownerIdRef.current) return;
+      setOpen(false);
+      setQuery("");
+      setIndex(0);
+    };
+    document.addEventListener(TOOLBAR_POPOVER_EVENT, onToolbarPopoverOpen);
+    return () => document.removeEventListener(TOOLBAR_POPOVER_EVENT, onToolbarPopoverOpen);
+  }, []);
 
   const close = () => {
     setOpen(false);
@@ -165,7 +180,16 @@ export function ToolbarSlashButton({ surface, disabled }: ToolbarSlashButtonProp
         title="/ 命令"
         disabled={disabled}
         onMouseDown={(event) => event.preventDefault()}
-        onClick={() => (open ? close() : setOpen(true))}
+        onClick={() => {
+          if (open) {
+            close();
+            return;
+          }
+          document.dispatchEvent(
+            new CustomEvent(TOOLBAR_POPOVER_EVENT, { detail: { owner: ownerIdRef.current } })
+          );
+          setOpen(true);
+        }}
       >
         /
       </button>

@@ -508,8 +508,13 @@ export type WorkspaceContextValue = {
   // workspace default). Gates CREATION entry-points only — selection/source toolbars,
   // the composer type picker, kit commands, language — never rendering.
   activeKitIds: string[];
-  /** Installed kits (id + display name) for the activation dropdown. */
-  installedKits: { id: string; name: string }[];
+  /** Resolve effective kit ids for any source. Split reader headers use this for their
+      own pane source instead of borrowing the globally focused source's kit. */
+  kitIdsForSource(source: SourceRecord | null): string[];
+  /** Installed kits (id + display name + optional icon) for the activation dropdown. */
+  installedKits: { id: string; name: string; icon?: string }[];
+  /** Apply a kit to a specific source id ("core" = none). */
+  setSourceKit(sourceId: string, kitId: string): Promise<void>;
   /** Apply a kit to the active source ("core" = none); persists to its metadata. */
   setActiveKit(kitId: string): Promise<void>;
 

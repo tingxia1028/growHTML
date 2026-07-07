@@ -491,6 +491,29 @@ describe("card open-state persistence (D10)", () => {
     expect(seen).toEqual([{ action: "edit", noteId: "n-edit", anchorId: "k-edit" }]);
   });
 
+  it("clicking a static file-link action dispatches the file path for the host workspace", () => {
+    const doc = freshReaderDocument();
+    doc.body.innerHTML = '<p id="t">file link note</p>';
+    ensureAnnotationLayer(doc);
+    const el = doc.getElementById("t")!;
+    applyHighlight(el, "note", "k-file", {
+      noteHtml:
+        '<div class="sv-annotation-preview sv-annotation-preview-card" data-note-id="n-file">' +
+        '<div class="sv-annotation-preview-head">file link</div>' +
+        '<button type="button" class="sv-file-link-open" data-file-link-path="C:\\docs\\paper.pdf">打开</button>' +
+        "</div>",
+      noteCount: 1
+    });
+    const seen: unknown[] = [];
+    doc.addEventListener("sv:note-card-action", (event) => seen.push((event as CustomEvent).detail));
+
+    el.dispatchEvent(new doc.defaultView!.MouseEvent("mouseover", { bubbles: true }));
+    const open = doc.querySelector(".sv-file-link-open")!;
+    open.dispatchEvent(new doc.defaultView!.MouseEvent("click", { bubbles: true, cancelable: true }));
+
+    expect(seen).toEqual([{ action: "file-link-open", filePath: "C:\\docs\\paper.pdf", anchorId: "k-file" }]);
+  });
+
   it("does NOT restore a note-hidden (N1a) anchor, and none while hide-all (D11) is on", () => {
     const doc = freshReaderDocument();
     doc.body.innerHTML = '<p id="t">hello</p>';

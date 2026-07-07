@@ -1,136 +1,239 @@
-// SourceTabs — the multi-document reader host (F1 / P-A1 + P-A2). ONE dock leaf renders a
-// tab strip over the open panes + the focused pane's reader body, mirroring
-// RightSidebarTabs' "one host view hosting N sub-panes" precedent (NOT a new `tabs`
-// DockNode variant — deferred to keep the layout engine untouched, per the build spec).
-//
-// The tab strip renders one `.reader-tab` per OpenPane; clicking a tab focuses its pane
-// (focus-follows-pane), the × closes it. It is handed to SourceViewerView as its
-// `tabStrip` so it renders in the SAME `.reader-header > .reader-tabs` slot the built-in
-// single tab used — a SINGLE open pane therefore produces the SAME
-// `.reader-tab`/`.reader-tab-title`/`.reader-tab-close` chrome (e2e selectors unchanged).
-//
-// 分屏 (P-A2): a split button pops a SECOND pane to the side (a self-contained row split
-// with a resize divider, mirroring rightSplit.ts — the global dock engine is untouched).
-// Both bodies are SourceViewerViews bound to their own pane's source (per-pane paint). The
-// HOST-REALM GATE (delta 3) forbids two host-realm bodies (pdfjs/image) side by side.
+// SourceTabs: the multi-document reader host. One dock leaf renders VS-Code-like
+// editor groups: an unsplit tab strip, or left/right tab groups with draggable tabs.
+// The global dock model stays unchanged; split view is local to this source.tabs view.
 
 import { Columns2, FileText, X } from "lucide-react";
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type DragEvent as ReactDragEvent,
+  type PointerEvent as ReactPointerEvent
+} from "react";
 import { registerView, type WorkspaceContext } from "./viewRegistry";
+import type { OpenPane } from "./panes";
 import { SourceViewerView } from "./views";
 import {
   canSplitConcurrently,
   clampSplitRatio,
+  isSourceSplitActive,
   loadSourceSplit,
+  movePaneToSourceGroup,
+  normalizeSourceSplit,
+  paneIdsForSourceGroup,
+  reconcileSourceSplitPaneIds,
   saveSourceSplit,
+  sourceGroupOfPane,
+  type SourceGroup,
   type SourceSplitState
 } from "./sourceSplit";
-import { isHostRealmSource } from "../viewers";
+
+const SOURCE_PANE_DRAG_TYPE = "text/sv-source-pane";
+
+function sameSplit(a: SourceSplitState, b: SourceSplitState): boolean {
+  return a.ratio === b.ratio && a.rightPaneIds.join("\u0001") === b.rightPaneIds.join("\u0001");
+}
+
+function panesForIds(openPanes: readonly OpenPane[], ids: readonly string[]): OpenPane[] {
+  const byId = new Map(openPanes.map((pane) => [pane.paneId, pane]));
+  return ids.map((id) => byId.get(id)).filter((pane): pane is OpenPane => !!pane);
+}
+
+function activePaneInGroup(panes: readonly OpenPane[], focusedPaneId: string): OpenPane | null {
+  return panes.find((pane) => pane.paneId === focusedPaneId) ?? panes[0] ?? null;
+}
+
+function dragHasSourcePane(event: ReactDragEvent): boolean {
+  return Array.from(event.dataTransfer.types).includes(SOURCE_PANE_DRAG_TYPE);
+}
 
 function SourceTabs({ ctx }: { ctx: WorkspaceContext }) {
   const { openPanes, focusedPaneId, focusPane, closePane, sourceForPane, activeLayoutId } = ctx;
 
-  // The currently-focused pane (highlights a tab; targets toolbar/commandContext).
   const focusedPane = openPanes.find((p) => p.paneId === focusedPaneId) ?? openPanes[0] ?? null;
-
-  // Split state ({ sidePaneId, ratio }) — restored per layout from localStorage on mount.
   const paneIds = openPanes.map((p) => p.paneId);
+  const paneIdsKey = paneIds.join("\u0001");
+  const previousPaneIdsRef = useRef<string[]>(paneIds);
+  const activeGroupRef = useRef<SourceGroup>("left");
+  const [dragOverGroup, setDragOverGroup] = useState<SourceGroup | null>(null);
   const [split, setSplit] = useState<SourceSplitState>(() => loadSourceSplit(activeLayoutId, paneIds));
-  useEffect(() => {
-    setSplit(loadSourceSplit(activeLayoutId, paneIds));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-restore per layout
+  const splitRef = useRef<HTMLDivElement | null>(null);
+  const ratioRef = useRef(split.ratio);
+
+  useLayoutEffect(() => {
+    const restored = loadSourceSplit(activeLayoutId, paneIds);
+    setSplit(restored);
+    previousPaneIdsRef.current = paneIds;
+    activeGroupRef.current = "left";
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- restore split state per layout
   }, [activeLayoutId]);
 
+  useLayoutEffect(() => {
+    const previousPaneIds = previousPaneIdsRef.current;
+    previousPaneIdsRef.current = paneIds;
+    setSplit((prev) => {
+      const next = reconcileSourceSplitPaneIds(prev, previousPaneIds, paneIds, activeGroupRef.current);
+      if (sameSplit(prev, next)) return prev;
+      saveSourceSplit(activeLayoutId, next);
+      return next;
+    });
+  }, [activeLayoutId, paneIdsKey]);
+
+  const normalizedSplit = normalizeSourceSplit(split, paneIds);
+  const leftPaneIds = paneIdsForSourceGroup(paneIds, normalizedSplit, "left");
+  const rightPaneIds = paneIdsForSourceGroup(paneIds, normalizedSplit, "right");
+  const isSplit = isSourceSplitActive(normalizedSplit, paneIds);
+  const leftPanes = panesForIds(openPanes, leftPaneIds);
+  const rightPanes = panesForIds(openPanes, rightPaneIds);
+  const leftActivePane = activePaneInGroup(leftPanes, focusedPaneId);
+  const rightActivePane = activePaneInGroup(rightPanes, focusedPaneId);
+  const rightPaneIdsKey = rightPaneIds.join("\u0001");
+  ratioRef.current = normalizedSplit.ratio;
+
+  useEffect(() => {
+    if (!isSplit) {
+      activeGroupRef.current = "left";
+      return;
+    }
+    if (focusedPaneId) activeGroupRef.current = sourceGroupOfPane(normalizedSplit, focusedPaneId);
+  }, [focusedPaneId, isSplit, rightPaneIdsKey]);
+
   function commitSplit(next: SourceSplitState) {
-    setSplit(next);
-    saveSourceSplit(activeLayoutId, next);
+    const normalized = normalizeSourceSplit(next, paneIds);
+    setSplit((prev) => (sameSplit(prev, normalized) ? prev : normalized));
+    saveSourceSplit(activeLayoutId, normalized);
   }
 
-  // A split PINS two panes: the side pane (`sidePaneId`, shown RIGHT) + the "main" pane
-  // (the first open pane that isn't the side, shown LEFT). Focus can sit on EITHER without
-  // collapsing the split (it only highlights the tab). Drop a stale split whose side pane
-  // closed, or when fewer than two panes remain, so the divider never strands an empty pane.
-  const sidePane = split.sidePaneId ? openPanes.find((p) => p.paneId === split.sidePaneId) ?? null : null;
-  const mainPane = sidePane ? openPanes.find((p) => p.paneId !== sidePane.paneId) ?? null : null;
-  const isSplit = !!sidePane && !!mainPane;
+  function focusPaneInGroup(paneId: string, group: SourceGroup) {
+    activeGroupRef.current = group;
+    focusPane(paneId);
+  }
 
-  // The candidate pane the 分屏 button would pop to the side: the first open pane that
-  // isn't the focused one. Enabling is gated on the host-realm rule (delta 3): the split
-  // is refused when both the focused body and the candidate are host-realm surfaces.
+  function focusGroup(group: SourceGroup) {
+    const pane = group === "right" ? rightActivePane : leftActivePane;
+    if (pane) focusPaneInGroup(pane.paneId, group);
+  }
+
+  function focusPaneFromReader(paneId: string) {
+    activeGroupRef.current = sourceGroupOfPane(normalizedSplit, paneId);
+    focusPane(paneId);
+  }
+
+  const groupedCtx: WorkspaceContext = {
+    ...ctx,
+    focusPane: focusPaneFromReader
+  };
+
   const splitCandidate = openPanes.find((p) => p.paneId !== focusedPane?.paneId) ?? null;
   const focusedSourceType = focusedPane ? sourceForPane(focusedPane.paneId)?.sourceType : undefined;
   const candidateSourceType = splitCandidate ? sourceForPane(splitCandidate.paneId)?.sourceType : undefined;
   const splitAllowed =
     !isSplit && !!splitCandidate && canSplitConcurrently(focusedSourceType, candidateSourceType);
-  const hostRealmBlocked =
-    !isSplit && !!splitCandidate && !canSplitConcurrently(focusedSourceType, candidateSourceType);
-  const splitTitle = hostRealmBlocked
-    ? "PDF/图片文档只能单开一个分屏(用网页/HTML 文档分屏)"
-    : "分屏并排(打开第二个文档)";
 
   function onSplit() {
     if (!splitAllowed || !splitCandidate) return;
-    commitSplit({ sidePaneId: splitCandidate.paneId, ratio: split.ratio });
-  }
-  function mergeBack() {
-    commitSplit({ sidePaneId: null, ratio: split.ratio });
+    const next = movePaneToSourceGroup(normalizedSplit, splitCandidate.paneId, "right", paneIds);
+    activeGroupRef.current = "right";
+    commitSplit(next);
+    focusPane(splitCandidate.paneId);
   }
 
-  // —— divider resize (pointer based, mirrors RightSidebarTabs.onDividerDown) ——
-  const splitRef = useRef<HTMLDivElement | null>(null);
-  const ratioRef = useRef(split.ratio);
-  ratioRef.current = split.ratio;
+  function onTabDragStart(event: ReactDragEvent, paneId: string, group: SourceGroup) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData(SOURCE_PANE_DRAG_TYPE, paneId);
+    activeGroupRef.current = group;
+    focusPane(paneId);
+  }
+
+  function onTabDragEnd() {
+    setDragOverGroup(null);
+  }
+
+  function onGroupDragOver(event: ReactDragEvent, group: SourceGroup) {
+    if (!dragHasSourcePane(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (dragOverGroup !== group) setDragOverGroup(group);
+  }
+
+  function onGroupDrop(event: ReactDragEvent, group: SourceGroup) {
+    const paneId = event.dataTransfer.getData(SOURCE_PANE_DRAG_TYPE);
+    setDragOverGroup(null);
+    if (!paneId || !paneIds.includes(paneId)) return;
+    event.preventDefault();
+    const next = movePaneToSourceGroup(normalizedSplit, paneId, group, paneIds);
+    activeGroupRef.current = group;
+    commitSplit(next);
+    focusPane(paneId);
+  }
+
   function onDividerDown(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.button !== 0) return;
     event.preventDefault();
     const el = splitRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
+    const rightAtDragStart = normalizedSplit.rightPaneIds;
     event.currentTarget.setPointerCapture?.(event.pointerId);
     const onMove = (e: PointerEvent) => {
       const raw = rect.width > 0 ? (e.clientX - rect.left) / rect.width : ratioRef.current;
-      setSplit((prev) => ({ ...prev, ratio: clampSplitRatio(raw) }));
+      const ratio = clampSplitRatio(raw);
+      ratioRef.current = ratio;
+      setSplit((prev) => normalizeSourceSplit({ ...prev, rightPaneIds: rightAtDragStart, ratio }, paneIds));
     };
     const onUp = () => {
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", onUp);
       document.removeEventListener("pointercancel", onUp);
-      setSplit((prev) => {
-        saveSourceSplit(activeLayoutId, prev);
-        return prev;
-      });
+      commitSplit({ rightPaneIds: rightAtDragStart, ratio: ratioRef.current });
     };
     document.addEventListener("pointermove", onMove);
     document.addEventListener("pointerup", onUp);
     document.addEventListener("pointercancel", onUp);
   }
 
-  // One tab per open pane (single pane ⇒ exactly the old chrome). No pane → the same
-  // `.reader-tab-empty` placeholder the built-in strip renders. The 分屏 button trails the
-  // tabs when a split is available (≥2 panes) — hidden while already split.
-  const tabStrip =
-    openPanes.length === 0 ? (
-      <div className="reader-tabs" role="tablist">
-        <div className="reader-tab reader-tab-empty">
-          <span className="reader-tab-title">Open or import a source</span>
+  function renderTabStrip(group: SourceGroup, panes: readonly OpenPane[], showSplitButton = false) {
+    if (panes.length === 0) {
+      return (
+        <div className="reader-tabs" role="tablist">
+          <div className="reader-tab reader-tab-empty">
+            <span className="reader-tab-title">Open or import a source</span>
+          </div>
         </div>
-      </div>
-    ) : (
-      <div className="reader-tabs" role="tablist">
-        {openPanes.map((pane) => {
+      );
+    }
+
+    return (
+      <div
+        className={`reader-tabs source-tabs-group source-tabs-group-${group}${dragOverGroup === group ? " drag-over" : ""}`}
+        role="tablist"
+        aria-label={group === "right" ? "Right editor group" : "Left editor group"}
+        onDragOver={(event) => onGroupDragOver(event, group)}
+        onDragLeave={() => setDragOverGroup((value) => (value === group ? null : value))}
+        onDrop={(event) => onGroupDrop(event, group)}
+      >
+        {panes.map((pane) => {
           const source = sourceForPane(pane.paneId);
-          const title = source?.title ?? "…";
+          const title = source?.title ?? "-";
           const isActive =
             pane.paneId === focusedPaneId ||
             (focusedPaneId === "" && openPanes[0]?.paneId === pane.paneId);
-          const isSide = sidePane?.paneId === pane.paneId;
           return (
             <div
               key={pane.paneId}
-              className={`reader-tab${isActive ? " active" : ""}${isSide ? " reader-tab-side" : ""}`}
+              className={`reader-tab${isActive ? " active" : ""}`}
               role="tab"
+              draggable
               aria-selected={isActive}
-              onMouseDown={() => focusPane(pane.paneId)}
+              data-pane-id={pane.paneId}
+              onMouseDown={(event) => {
+                if (event.button !== 0) return;
+                focusPaneInGroup(pane.paneId, group);
+              }}
+              onDragStart={(event) => onTabDragStart(event, pane.paneId, group)}
+              onDragEnd={onTabDragEnd}
             >
               <FileText size={14} className="reader-tab-icon" />
               <span className="reader-tab-title" title={title}>
@@ -141,6 +244,7 @@ function SourceTabs({ ctx }: { ctx: WorkspaceContext }) {
                 type="button"
                 aria-label="Close document"
                 title="Close document"
+                onMouseDown={(event) => event.stopPropagation()}
                 onClick={(event) => {
                   event.stopPropagation();
                   closePane(pane.paneId);
@@ -151,14 +255,13 @@ function SourceTabs({ ctx }: { ctx: WorkspaceContext }) {
             </div>
           );
         })}
-        {!isSplit && openPanes.length > 1 ? (
+        {showSplitButton && openPanes.length > 1 ? (
           <button
             type="button"
             className="reader-split-btn"
             aria-label="Split view"
-            title={splitTitle}
+            title="Split view"
             disabled={!splitAllowed}
-            data-host-realm-blocked={hostRealmBlocked ? "true" : undefined}
             onClick={onSplit}
           >
             <Columns2 size={14} />
@@ -166,55 +269,36 @@ function SourceTabs({ ctx }: { ctx: WorkspaceContext }) {
         ) : null}
       </div>
     );
+  }
 
-  // No split → the single focused-pane body (the pre-split path), strip in its header.
-  if (!isSplit || !mainPane || !sidePane) {
+  if (!isSplit || !leftActivePane || !rightActivePane) {
     return (
       <SourceViewerView
-        ctx={ctx}
-        tabStrip={tabStrip}
+        ctx={groupedCtx}
+        tabStrip={renderTabStrip("left", openPanes, true)}
         pane={focusedPane ? { paneId: focusedPane.paneId, sourceId: focusedPane.sourceId } : undefined}
       />
     );
   }
 
-  // Split → two bodies side by side, each bound to its OWN pane's source (per-pane paint).
-  // The LEFT (main) body carries the multi-tab strip; the RIGHT (side) body carries a small
-  // "merge back" affordance. Focus can sit on EITHER pane (it just highlights the tab).
-  // `ratio` is the LEFT pane's width fraction.
-  const leftPct = clampSplitRatio(split.ratio) * 100;
+  const leftPct = clampSplitRatio(normalizedSplit.ratio) * 100;
   const splitStyle = {
     "--source-split-left": `calc(${leftPct}% - 3px)`,
     "--source-split-right": `calc(${100 - leftPct}% - 3px)`
   } as CSSProperties;
-  const mergeStrip = (
-    <div className="reader-tabs reader-tabs-side" role="tablist">
-      <div
-        className={`reader-tab reader-tab-side${focusedPaneId === sidePane.paneId ? " active" : ""}`}
-        role="tab"
-        aria-selected={focusedPaneId === sidePane.paneId}
-      >
-        <FileText size={14} className="reader-tab-icon" />
-        <span className="reader-tab-title" title={sourceForPane(sidePane.paneId)?.title ?? "…"}>
-          {sourceForPane(sidePane.paneId)?.title ?? "…"}
-        </span>
-        <button
-          type="button"
-          className="reader-tab-close reader-split-merge"
-          aria-label="Merge split"
-          title="合并分屏"
-          onClick={mergeBack}
-        >
-          <X size={13} />
-        </button>
-      </div>
-    </div>
-  );
 
   return (
     <div className="source-split" ref={splitRef} style={splitStyle}>
-      <div className="source-split-pane source-split-left" onMouseDown={() => focusPane(mainPane.paneId)}>
-        <SourceViewerView ctx={ctx} tabStrip={tabStrip} pane={{ paneId: mainPane.paneId, sourceId: mainPane.sourceId }} />
+      <div
+        className="source-split-pane source-split-left"
+        onMouseDownCapture={() => focusGroup("left")}
+        onFocusCapture={() => focusGroup("left")}
+      >
+        <SourceViewerView
+          ctx={groupedCtx}
+          tabStrip={renderTabStrip("left", leftPanes)}
+          pane={{ paneId: leftActivePane.paneId, sourceId: leftActivePane.sourceId }}
+        />
       </div>
       <div
         className="source-split-divider"
@@ -222,8 +306,16 @@ function SourceTabs({ ctx }: { ctx: WorkspaceContext }) {
         aria-orientation="vertical"
         onPointerDown={onDividerDown}
       />
-      <div className="source-split-pane source-split-right" onMouseDown={() => focusPane(sidePane.paneId)}>
-        <SourceViewerView ctx={ctx} tabStrip={mergeStrip} pane={{ paneId: sidePane.paneId, sourceId: sidePane.sourceId }} />
+      <div
+        className="source-split-pane source-split-right"
+        onMouseDownCapture={() => focusGroup("right")}
+        onFocusCapture={() => focusGroup("right")}
+      >
+        <SourceViewerView
+          ctx={groupedCtx}
+          tabStrip={renderTabStrip("right", rightPanes)}
+          pane={{ paneId: rightActivePane.paneId, sourceId: rightActivePane.sourceId }}
+        />
       </div>
     </div>
   );
@@ -232,5 +324,3 @@ function SourceTabs({ ctx }: { ctx: WorkspaceContext }) {
 registerView({ kind: "source.tabs", render: (_node, ctx) => <SourceTabs ctx={ctx} /> });
 
 export { SourceTabs };
-// Re-export for tests that assert the gate at the SourceTabs boundary.
-export { isHostRealmSource };

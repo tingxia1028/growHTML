@@ -1,12 +1,9 @@
 // TopBar (R1) — the full-width chrome bar above the dock. Three segments:
 //   • Left: anchor logo + "Growte" wordmark (the brand moved here from LibraryView).
-//   • Center: a 2-way segmented control — Notes Overlay / Anchor Focus. The overlay IS
-//     the document (user decision 2026-07-04): the old "Document" tab (annotationMode
-//     "floating", a notes-less reading mode) is gone; annotationMode stays "margin".
-//       - Notes Overlay → the default reading surface (gutter / margin cards).
-//       - Anchor Focus  → opens the Anchor Focus BOARD (N6/§D12): a full anchors+notes
-//         surface (document-order rows / stage-layer columns), replacing the old weak
-//         one-anchor reveal. Presentation mode is untouched.
+//   • Center: a 2-way segmented control — Notes Overlay / Anchor Focus.
+//       - Notes Overlay → the opened document reader with note overlay/gutter cards.
+//       - Anchor Focus  → the same document column swaps to the Anchor Focus board
+//         (document-order rows / stage-layer columns). Presentation mode is untouched.
 //   • Right: native desktop window controls only.
 
 import {
@@ -20,9 +17,8 @@ import {
 import { defineMessages, t, useLocale } from "../i18n";
 import { getPlatformOptional } from "../platform/platformSingleton";
 import type { WorkspaceContext } from "./viewRegistry";
-// N6/§D12: the "Anchor Focus" tab now opens the Anchor Focus BOARD (a real anchors+notes
-// surface), replacing the weak one-anchor reveal. The board mounts in the shell overlay;
-// this store is the open-state seam both share (keeps WorkspaceContext untouched).
+// The Anchor Focus tab switches the center document slot to a real anchors+notes board.
+// The store stays outside WorkspaceContext because this is transient view chrome.
 import { useAnchorBoardOpen, setAnchorBoardOpen } from "./anchorFocusBoardStore";
 
 export type TopBarProps = {
@@ -47,12 +43,10 @@ export function TopBar({ ctx }: TopBarProps) {
   useLocale();
   const { setAnnotationMode } = ctx;
 
-  // Two tabs, one presentation mode: the overlay (annotationMode "margin") is the
-  // document. Anchor Focus now OPENS THE BOARD (§D12) — a full anchors+notes surface,
-  // not the old one-anchor reveal. The active tab follows the board's open-state (shared
-  // store), so opening/closing the board flips the segmented control without local state.
+  // Two tabs, one document slot: Notes Overlay shows the reader, Anchor Focus swaps the
+  // same slot to the board. The active tab follows the shared open-state.
   const boardOpen = useAnchorBoardOpen();
-  const overlayActive = !boardOpen;
+  const notesOverlayActive = !boardOpen;
   const focusActive = boardOpen;
 
   // Custom window chrome: present only in the desktop shell (capabilities.windowChrome).
@@ -75,11 +69,9 @@ export function TopBar({ ctx }: TopBarProps) {
         <button
           type="button"
           role="tab"
-          aria-selected={overlayActive}
-          className={`topbar-tab${overlayActive ? " active" : ""}`}
+          aria-selected={notesOverlayActive}
+          className={`topbar-tab${notesOverlayActive ? " active" : ""}`}
           onClick={() => {
-            // The overlay is the document; close the board and keep the presentation mode
-            // pinned to margin (self-heals any stale "floating" state).
             setAnchorBoardOpen(false);
             setAnnotationMode("margin");
           }}
@@ -94,8 +86,6 @@ export function TopBar({ ctx }: TopBarProps) {
           className={`topbar-tab${focusActive ? " active" : ""}`}
           title={t(topBarMessages.anchorFocusTitle)}
           onClick={() => {
-            // Open the Anchor Focus board (§D12) — the anchors+notes surface. Presentation
-            // mode is untouched; the shell-mounted board reads the shared open-state.
             setAnchorBoardOpen(true);
           }}
         >

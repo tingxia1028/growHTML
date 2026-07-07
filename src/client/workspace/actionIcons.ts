@@ -17,26 +17,38 @@
 
 import {
   BookOpen,
+  BookOpenCheck,
   Bookmark,
   Brain,
+  Camera,
   Check,
   FileText,
   Flag,
+  FlaskConical,
   Hash,
   Highlighter,
+  History,
   Layers,
   Lightbulb,
   Link,
   ListChecks,
+  ListOrdered,
+  Languages,
   MessageSquare,
   Pencil,
   Quote,
   ScanLine,
   Scissors,
+  Scale,
+  ScrollText,
+  Sigma,
+  SpellCheck,
   Sparkles,
   Star,
   TriangleAlert,
+  UserRound,
   Wand2,
+  Waypoints,
   type LucideIcon
 } from "lucide-react";
 import { noteTypeIcon } from "../notes/noteTypeIcon";
@@ -59,6 +71,8 @@ export const ICON_CHOICES: { name: string; Icon: LucideIcon }[] = [
   { name: "pencil", Icon: Pencil },
   { name: "file-text", Icon: FileText },
   { name: "book-open", Icon: BookOpen },
+  { name: "book-open-check", Icon: BookOpenCheck },
+  { name: "camera", Icon: Camera },
   { name: "message-square", Icon: MessageSquare },
   { name: "quote", Icon: Quote },
   { name: "brain", Icon: Brain },
@@ -67,7 +81,17 @@ export const ICON_CHOICES: { name: string; Icon: LucideIcon }[] = [
   { name: "scan-line", Icon: ScanLine },
   { name: "link", Icon: Link },
   { name: "hash", Icon: Hash },
-  { name: "layers", Icon: Layers }
+  { name: "layers", Icon: Layers },
+  { name: "languages", Icon: Languages },
+  { name: "spell-check", Icon: SpellCheck },
+  { name: "sigma", Icon: Sigma },
+  { name: "history", Icon: History },
+  { name: "list-ordered", Icon: ListOrdered },
+  { name: "scroll-text", Icon: ScrollText },
+  { name: "scale", Icon: Scale },
+  { name: "user-round", Icon: UserRound },
+  { name: "waypoints", Icon: Waypoints },
+  { name: "flask-conical", Icon: FlaskConical }
 ];
 
 // Name → icon lookup over the curated set (the override + picker share this).

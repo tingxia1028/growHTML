@@ -18,6 +18,7 @@ import { WorkspaceShell } from "./WorkspaceShell";
 import { RAIL_ENTRIES } from "./IconRail";
 import { threePane } from "./presets";
 import { navigateShell } from "./shellNav";
+import { setAnchorBoardOpen } from "./anchorFocusBoardStore";
 
 // The shell renders the threePane preset's DOCK TREE through the ViewRegistry. We assert
 // it produces the three pane containers in order, inside the `.app-shell` flex dock —
@@ -27,6 +28,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  setAnchorBoardOpen(false);
   // The dock engine auto-collapses SECONDARY panes (library, …) to a rail below the
   // responsive breakpoint (1280px). jsdom defaults innerWidth to 1024, which would hide
   // the `.library-panel` behind a rail — so force a wide viewport for these structural
@@ -46,6 +48,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setAnchorBoardOpen(false);
   act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
@@ -158,5 +161,35 @@ describe("WorkspaceShell", () => {
       return panel?.className ?? "";
     });
     expect(panelClasses).toEqual(["library-panel", "reader-panel", "study-panel"]);
+  });
+
+  it("renders Anchor Focus inside the document pane instead of a backdrop popup", async () => {
+    setAnchorBoardOpen(true);
+
+    await act(async () => {
+      root.render(
+        <FocusProvider>
+          <WorkspaceProvider>
+            <WorkspaceShell layout={threePane} />
+          </WorkspaceProvider>
+        </FocusProvider>
+      );
+    });
+
+    expect(container.querySelector(".anchor-board")).not.toBeNull();
+    expect(container.querySelector(".anchor-board-backdrop")).toBeNull();
+    expect(container.querySelector(".reader-panel")).toBeNull();
+    expect(container.querySelector(".library-panel")).not.toBeNull();
+    expect(container.querySelector(".study-panel")).not.toBeNull();
+
+    const notesOverlayTab = container.querySelector<HTMLButtonElement>(".topbar-tab");
+    expect(notesOverlayTab).not.toBeNull();
+
+    await act(async () => {
+      notesOverlayTab!.click();
+    });
+
+    expect(container.querySelector(".anchor-board")).toBeNull();
+    expect(container.querySelector(".reader-panel")).not.toBeNull();
   });
 });

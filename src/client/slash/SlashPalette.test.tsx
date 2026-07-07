@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // SlashPalette component tests (SC-0) — a CONTROLLED dumb list: rows render
-// icon+title+id+kit badge, the parent-owned activeIndex highlights, arrows report
+// icon+title, the parent-owned activeIndex highlights, arrows report
 // onNavigate (wrapping), Enter/click report onPick. No registry, no state.
 import { describe, expect, it, vi } from "vitest";
 import { act } from "react";
@@ -53,12 +53,14 @@ const keydown = (el: Element, key: string) =>
   el.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
 
 describe("SlashPalette — rows", () => {
-  it("renders one row per entry: title + id, active row highlighted (aria-selected)", () => {
+  it("renders one row per entry: title only, active row highlighted (aria-selected)", () => {
     const { container, unmount } = mount({ activeIndex: 1 });
     const rows = Array.from(container.querySelectorAll(".slash-palette-row"));
     expect(rows.length).toBe(ENTRIES.length);
     expect(rows[0]!.querySelector(".slash-palette-title")!.textContent).toBe("小测");
-    expect(rows[0]!.querySelector(".slash-palette-id")!.textContent).toBe("quiz");
+    expect(rows[0]!.getAttribute("data-entry-id")).toBe("quiz");
+    expect(rows[0]!.querySelector(".slash-palette-id")).toBeNull();
+    expect(rows[0]!.querySelector(".slash-palette-kit")).toBeNull();
     // The parent-owned activeIndex is the single highlight.
     expect(rows[1]!.classList.contains("active")).toBe(true);
     expect(rows[1]!.getAttribute("aria-selected")).toBe("true");
@@ -66,11 +68,14 @@ describe("SlashPalette — rows", () => {
     unmount();
   });
 
-  it("shows a kit badge only for kit-owned entries", () => {
+  it("keeps technical ids and kit badges out of the visible row chrome", () => {
     const { container, unmount } = mount();
     const rows = Array.from(container.querySelectorAll(".slash-palette-row"));
-    expect(rows[2]!.querySelector(".slash-palette-kit")!.textContent).toBe("textbook-learning");
-    expect(rows[0]!.querySelector(".slash-palette-kit")).toBeNull();
+    expect(rows[2]!.getAttribute("data-entry-id")).toBe("textbook.exercise");
+    for (const row of rows) {
+      expect(row.querySelector(".slash-palette-id")).toBeNull();
+      expect(row.querySelector(".slash-palette-kit")).toBeNull();
+    }
     unmount();
   });
 

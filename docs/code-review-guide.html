@@ -1,0 +1,1312 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Growte Code Review Guide</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f7f4;
+      --panel: #ffffff;
+      --ink: #1f2933;
+      --muted: #667085;
+      --line: #d9ded8;
+      --soft: #eef4f8;
+      --accent: #2563eb;
+      --accent-soft: #eaf1ff;
+      --warn: #9a3412;
+      --warn-soft: #fff4e6;
+      --ok: #166534;
+      --ok-soft: #eef8ee;
+      --danger: #b42318;
+      --danger-soft: #fff0f0;
+      --code: #f3f4f6;
+      --shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    code,
+    pre {
+      font-family: "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    code {
+      border: 1px solid #e5e7eb;
+      border-radius: 5px;
+      background: var(--code);
+      padding: 1px 5px;
+      font-size: 0.92em;
+    }
+
+    pre {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #101828;
+      color: #f8fafc;
+      padding: 14px 16px;
+      line-height: 1.55;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    nav {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow: auto;
+      border-right: 1px solid var(--line);
+      background: #ffffff;
+      padding: 20px 16px;
+    }
+
+    nav h1 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      line-height: 1.35;
+    }
+
+    nav p {
+      margin: 0 0 16px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    nav a {
+      display: block;
+      border-radius: 6px;
+      padding: 7px 8px;
+      color: #344054;
+      font-size: 14px;
+    }
+
+    nav a:hover {
+      background: var(--soft);
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    main {
+      width: min(1180px, 100%);
+      padding: 36px 40px 64px;
+    }
+
+    header.hero {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      padding: 28px 32px;
+      margin-bottom: 22px;
+    }
+
+    .eyebrow {
+      margin: 0 0 6px;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+
+    h2,
+    h3,
+    h4 {
+      line-height: 1.35;
+    }
+
+    h2 {
+      margin: 34px 0 12px;
+      font-size: 24px;
+    }
+
+    h3 {
+      margin: 24px 0 8px;
+      font-size: 18px;
+    }
+
+    h4 {
+      margin: 18px 0 6px;
+      font-size: 15px;
+    }
+
+    .hero h2 {
+      margin: 0 0 12px;
+      font-size: 30px;
+    }
+
+    section {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel);
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
+      padding: 24px 28px;
+      margin: 18px 0;
+    }
+
+    .lead {
+      max-width: 880px;
+      color: #475467;
+      font-size: 16px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .grid.two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .grid.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px 16px;
+    }
+
+    .card h3,
+    .card h4 {
+      margin-top: 0;
+    }
+
+    .note,
+    .warning,
+    .danger,
+    .success {
+      border-radius: 8px;
+      border: 1px solid;
+      padding: 12px 14px;
+      margin: 12px 0;
+    }
+
+    .note {
+      border-color: #c7d7fe;
+      background: var(--accent-soft);
+    }
+
+    .warning {
+      border-color: #fed7aa;
+      background: var(--warn-soft);
+      color: var(--warn);
+    }
+
+    .danger {
+      border-color: #fecaca;
+      background: var(--danger-soft);
+      color: var(--danger);
+    }
+
+    .success {
+      border-color: #bbf7d0;
+      background: var(--ok-soft);
+      color: var(--ok);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      vertical-align: top;
+      border: 1px solid var(--line);
+      padding: 9px 10px;
+    }
+
+    th {
+      background: #f8fafc;
+      text-align: left;
+    }
+
+    ul,
+    ol {
+      padding-left: 22px;
+    }
+
+    li {
+      margin: 4px 0;
+    }
+
+    .flow {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfd;
+      padding: 12px;
+      overflow-x: auto;
+      white-space: pre;
+      font-family: "Cascadia Code", Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .pill {
+      display: inline-block;
+      border: 1px solid #c7d7fe;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: #1d4ed8;
+      padding: 1px 8px;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .checklist label {
+      display: block;
+      margin: 7px 0;
+    }
+
+    .checklist input {
+      margin-right: 8px;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 920px) {
+      .layout {
+        display: block;
+      }
+
+      nav {
+        position: static;
+        height: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      main {
+        padding: 24px 18px 48px;
+      }
+
+      .grid.two,
+      .grid.three {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <nav aria-label="目录">
+      <h1>Growte Review Guide</h1>
+      <p>给不熟前端的人看的代码评审路线图。建议开着这个文档，再开编辑器按路径跳文件。</p>
+      <a href="#quick-start">1. 先从哪里看</a>
+      <a href="#mental-model">2. 产品和数据模型</a>
+      <a href="#runtime">3. 启动和运行时</a>
+      <a href="#storage">4. 存储层</a>
+      <a href="#server">5. 后端服务层</a>
+      <a href="#frontend-basics">6. 前端扫盲</a>
+      <a href="#frontend-architecture">7. 前端架构</a>
+      <a href="#ai">8. AI 链路</a>
+      <a href="#plugins">9. Kit / Plugin</a>
+      <a href="#electron">10. Electron</a>
+      <a href="#review-by-change">11. 按改动类型 review</a>
+      <a href="#checklists">12. Checklist</a>
+      <a href="#tests">13. 测试怎么选</a>
+      <a href="#known-risks">14. 已知风险</a>
+      <a href="#file-map">15. 文件地图</a>
+      <a href="#terms">16. 术语表</a>
+    </nav>
+
+    <main>
+      <header class="hero">
+        <p class="eyebrow">Code Review Companion</p>
+        <h2>Growte / growHTML 代码评审对照文档</h2>
+        <p class="lead">
+          这个项目的核心不是“页面怎么排版”，而是一个本地优先的学习资料系统：
+          用户打开资料，选中原文位置，创建锚点和笔记，再让 AI 围绕这些上下文解释、出题、复习。
+          评审时最重要的是守住对象边界、数据流、持久化兼容和前端注册式扩展点。
+        </p>
+        <div class="note">
+          <strong>使用方式：</strong>先读第 1 节和第 2 节，再根据 PR 类型跳到第 11 节。
+          每个路径都是相对 <code>growHTML/</code> 的路径，可以在编辑器里直接搜索。
+        </div>
+      </header>
+
+      <section id="quick-start">
+        <h2>1. 先从哪里看</h2>
+        <p>不要从随机组件开始看。这个仓库层次多、注册点多，正确起步是先判断 PR 属于哪条主链路。</p>
+
+        <div class="grid two">
+          <div class="card">
+            <h3>先看 4 个入口文件</h3>
+            <ol>
+              <li><code>src/server/start.ts</code>：服务如何启动、打开 vault、迁移、创建 API。</li>
+              <li><code>src/server/app.ts</code>：HTTP API 如何接到 service。</li>
+              <li><code>src/client/App.tsx</code>：前端组合根。</li>
+              <li><code>src/client/workspace/WorkspaceShell.tsx</code>：工作台布局如何渲染。</li>
+            </ol>
+          </div>
+          <div class="card">
+            <h3>再按改动类型追链路</h3>
+            <ul>
+              <li>改数据：schema -> store -> service -> route -> entityClient -> UI。</li>
+              <li>改 UI：view registry -> WorkspaceContext domain hook -> entityClient。</li>
+              <li>改 AI：command -> server AI service -> provider -> structured output。</li>
+              <li>改 Electron：main/preload IPC -> renderer platform adapter。</li>
+            </ul>
+          </div>
+        </div>
+
+        <h3>一个标准 review 顺序</h3>
+        <ol>
+          <li>读 PR 描述，判断它是在加“对象、视图、命令、AI operation”，还是在改底层机制。</li>
+          <li>看测试先行不先行：有没有贴近改动范围的单测或 e2e。</li>
+          <li>从 schema/API 边界开始，看输入是否被 zod 校验，错误是否是 typed error。</li>
+          <li>追到持久化，看是否兼容旧数据、软删除、导入导出、SQLite/JSONL 回退。</li>
+          <li>追到前端，看是否通过 registry/context/command 接入，而不是组件互相硬连。</li>
+          <li>最后看 UI 文案、状态、空态、失败态、加载态、可访问性。</li>
+        </ol>
+
+        <div class="warning">
+          <strong>评审重点：</strong>这个仓库已经有很多“扩展点”。如果一个 PR 为了加新功能到处改核心文件，
+          优先怀疑它没有用已有注册机制。
+        </div>
+      </section>
+
+      <section id="mental-model">
+        <h2>2. 产品和数据模型</h2>
+        <p>你只要先记住这条链路，很多代码就能对上：</p>
+
+        <div class="flow">Source 原始资料
+  -> Anchor 原文位置
+  -> Note 学习记录
+  -> Layer 可开关、可分享的学习层
+  -> Viewer 不同资料类型的显示和定位
+  -> AI 围绕 source/anchor/note 做解释、生成、复习</div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>对象</th>
+              <th>含义</th>
+              <th>关键文件</th>
+              <th>review 关注点</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>Source</code></td>
+              <td>原始学习资料。可以是 HTML、PDF、图片、网页、代码等。</td>
+              <td><code>src/core/schema/source.ts</code><br><code>src/server/services/sources.ts</code></td>
+              <td>不要复制出第二套“真相”；文件路径、hash、origin、revision 是否正确。</td>
+            </tr>
+            <tr>
+              <td><code>Anchor</code></td>
+              <td>资料里的一个位置：文本选区、PDF 页码和 rect、图片区域、网页 text quote。</td>
+              <td><code>src/core/schema/anchor.ts</code><br><code>src/server/services/anchors.ts</code></td>
+              <td>定位信息是否足够恢复；quote/rect/page 是否按类型校验；是否避免孤儿 anchor。</td>
+            </tr>
+            <tr>
+              <td><code>Note</code></td>
+              <td>挂在 anchor/source/concept 上的学习记录。内容形状由 contentType 决定。</td>
+              <td><code>src/core/schema/note.ts</code><br><code>src/core/notes/contentTypes.ts</code><br><code>src/server/services/notes.ts</code></td>
+              <td>content 是否按 spec 校验；新增 note 类型是否无需改核心 schema。</td>
+            </tr>
+            <tr>
+              <td><code>Layer</code></td>
+              <td>学习层，用来开关、组织、分享一组 note/anchor。</td>
+              <td><code>src/core/schema/study-layer.ts</code><br><code>src/core/study-layer/layers.ts</code></td>
+              <td>可见性是否按 layerIds 计算；不要把某个 kit 的分类硬编码到 core。</td>
+            </tr>
+            <tr>
+              <td><code>Concept / Relation</code></td>
+              <td>概念和概念关系，用于图谱、双链、AI 自动标注。</td>
+              <td><code>src/core/schema/concept.ts</code><br><code>src/core/schema/relation.ts</code></td>
+              <td>名称归一化、去重、merge、删除对关系图的影响。</td>
+            </tr>
+            <tr>
+              <td><code>MemoryEvent</code></td>
+              <td>学习行为事件，例如 review 结果，用于学习画像。</td>
+              <td><code>src/core/schema/memory.ts</code><br><code>src/server/memory.ts</code></td>
+              <td>是否泄露隐私；managed AI 是否禁止默认带出 profileContext。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>最重要的设计规则</h3>
+        <ul>
+          <li>新增能力优先是一个 <code>contentType</code>、一个 view、一个 command、一个 AI operation，而不是新增核心对象。</li>
+          <li><code>note.content</code> 是 <code>unknown</code>，必须由 <code>NoteContentSpec</code> 按 contentType 校验。</li>
+          <li>Anchor painting 是从 note/layer 可见性推导出来的，不应该只看 anchor 自己的 layer 字段。</li>
+          <li>AI 输出不要变成平行数据模型；它最终应该落到 Note、Patch、Concept、Relation、Layer 或 MemoryEvent。</li>
+        </ul>
+      </section>
+
+      <section id="runtime">
+        <h2>3. 启动和运行时</h2>
+
+        <h3>Web/dev 模式</h3>
+        <div class="flow">npm run dev
+  -> concurrently
+      -> npm run dev:server  (tsx watch src/server/index.ts, API 默认 4177)
+      -> npm run dev:client  (vite, client 默认 5173)
+  -> Vite 代理 /api 到 API server</div>
+
+        <h3>生产 / Electron 模式</h3>
+        <div class="flow">electron/main.ts
+  -> resolveStartUrl()
+  -> startServer({ clientDir: dist, vaultRoot: userData/vault })
+  -> BrowserWindow.loadURL(started.url)
+  -> renderer 加载 React app
+  -> renderer 通过 HTTP / IPC 访问本地能力</div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>文件</th>
+              <th>作用</th>
+              <th>review 关注点</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>src/server/index.ts</code></td>
+              <td>CLI/dev server 入口。</td>
+              <td>端口、clientDir、自动备份开关。</td>
+            </tr>
+            <tr>
+              <td><code>src/server/start.ts</code></td>
+              <td>打开 vault、迁移、创建 Express app、启动 HTTP server。</td>
+              <td>是否关闭 sqlite handle；测试是否注入临时 vault。</td>
+            </tr>
+            <tr>
+              <td><code>electron/main.ts</code></td>
+              <td>桌面主进程，创建窗口、IPC、启动本地 server。</td>
+              <td>renderer 是否无 Node 权限；openPath 是否只允许本地绝对路径。</td>
+            </tr>
+            <tr>
+              <td><code>electron/preload.ts</code></td>
+              <td>安全暴露少量 IPC 给 renderer。</td>
+              <td>不要把任意 Node API 暴露给前端。</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="storage">
+        <h2>4. 存储层</h2>
+        <p>
+          数据层的关键是 <code>SnapshotStore</code>。业务代码不直接写 SQLite 或 JSONL，只用统一接口。
+        </p>
+
+        <pre><code>type SnapshotStore&lt;T&gt; = {
+  list(): Promise&lt;T[]&gt;             // live records only
+  listTrashed(): Promise&lt;T[]&gt;      // deletedAt records
+  readWithIssues(): Promise&lt;...&gt;   // all records + parse issues
+  get(id): Promise&lt;T | null&gt;       // live record
+  getAny(id): Promise&lt;T | null&gt;    // live or trashed
+  upsert(record): Promise&lt;T&gt;
+  delete(id): Promise&lt;boolean&gt;     // real purge, not soft delete
+}</code></pre>
+
+        <h3>默认引擎</h3>
+        <p>
+          当前代码里 <code>STORE_ENGINE=jsonl</code> 才回退 JSONL；未设置时默认 SQLite。
+          这点和少数旧注释不完全一致，review 时以 <code>src/core/store/entities.ts</code> 的
+          <code>resolveDefaultEngine()</code> 为准。
+        </p>
+
+        <h3>SQLite 怎么做</h3>
+        <ul>
+          <li>每个实体一个表，基本 envelope 是 <code>id / updatedAt / deletedAt / json</code>。</li>
+          <li>完整 record 保存在 <code>json</code> blob 里，所以 schema 改动不一定需要 SQL migration。</li>
+          <li>常用字段会抽成索引列，例如 note 的 <code>sourceId</code>、<code>contentType</code>。</li>
+          <li>多对多关系走 junction 表，例如 <code>note_anchors</code>、<code>note_concepts</code>、<code>note_layers</code>。</li>
+          <li>搜索走 FTS 预过滤，再由服务层代码做 ranking。</li>
+        </ul>
+
+        <h3>软删除规则</h3>
+        <div class="warning">
+          <strong>软删除不是调用 store.delete。</strong>
+          软删除是给记录加 <code>deletedAt</code> 后 <code>upsert</code>；
+          <code>store.delete()</code> 是真实清除，一般只给回收站 purge 用。
+        </div>
+
+        <h3>review 存储改动时问这些问题</h3>
+        <ul>
+          <li>新增字段是否有默认值，旧数据能不能 parse？</li>
+          <li>新增 entity 是否进了 <code>entityFileNames</code>、<code>EntityStores</code>、schema、服务层？</li>
+          <li>SQLite 和 JSONL 两条路径行为是否一致？</li>
+          <li>导入/导出/备份是否需要 dump/load SQLite 到 JSONL？</li>
+          <li>删除是软删除还是 purge？restore 怎么办？</li>
+          <li>如果是搜索字段，FTS document 是否要更新？关联 anchor quote 改动是否会刷新 note FTS？</li>
+        </ul>
+      </section>
+
+      <section id="server">
+        <h2>5. 后端服务层</h2>
+        <p>
+          服务层大体是：route 负责 HTTP 细节，service 负责业务逻辑，store 负责持久化。
+          评审时要防止业务逻辑直接堆在 route 里。
+        </p>
+
+        <div class="flow">HTTP request
+  -> src/server/app.ts route
+  -> zod parse request body / query
+  -> src/server/services/*.ts
+  -> vault.stores.*
+  -> response JSON</div>
+
+        <h3>典型例子：创建笔记</h3>
+        <ol>
+          <li><code>POST /api/notes</code> 在 <code>src/server/app.ts</code>。</li>
+          <li>body 用 <code>createNoteRequestSchema</code> 校验。</li>
+          <li>调用 <code>src/server/services/notes.ts:createNote()</code>。</li>
+          <li>service 检查 <code>contentType</code> 是否注册。</li>
+          <li>用 <code>parseNoteContent()</code> 按 note 类型校验 content。</li>
+          <li>默认把 source note 放进 owned layer。</li>
+          <li>写入 <code>vault.stores.notes.upsert(note)</code>。</li>
+        </ol>
+
+        <h3>典型例子：创建 anchor</h3>
+        <ol>
+          <li><code>POST /api/anchors</code> 在 <code>src/server/app.ts</code>。</li>
+          <li>不同 <code>anchorKind</code> 要求不同字段：HTML 要 studyId 和 quote；PDF 要 page；图片要 rect。</li>
+          <li>service 会 ensure source 存在，并给 anchor stamped owned layer。</li>
+          <li>孤儿 anchor 会在 note 删除或 listSourceAnchors 时被清理/软删除。</li>
+        </ol>
+
+        <h3>错误处理</h3>
+        <p>
+          优先使用 <code>src/server/services/errors.ts</code> 里的 typed errors，例如
+          <code>NotFoundError</code>、<code>ValidationError</code>、<code>ForbiddenError</code>。
+          这样 direct transport、HTTP route 和 UI 都能得到稳定的 status/code。
+        </p>
+
+        <div class="danger">
+          <strong>高风险点：</strong><code>src/server/app.ts</code> 仍然很大，route 很多。
+          如果 PR 又往里面加一大段业务逻辑，建议要求抽到 <code>src/server/services/*</code>
+          或按已有 <code>registerXRoutes(app, deps)</code> 模式拆。
+        </div>
+      </section>
+
+      <section id="frontend-basics">
+        <h2>6. 前端扫盲</h2>
+        <p>如果你不太懂前端，先把 React 的几个概念建立起来。这个项目用的是 React + TypeScript + Vite。</p>
+
+        <div class="grid two">
+          <div class="card">
+            <h3>组件是什么</h3>
+            <p>
+              组件就是一个函数，返回一段 UI。比如 <code>WorkspaceShell</code> 返回整个工作台布局。
+              组件会根据 props、state、context 重新渲染。
+            </p>
+          </div>
+          <div class="card">
+            <h3>state 是什么</h3>
+            <p>
+              <code>useState</code> 保存组件内部状态。状态变了，React 会重新跑组件函数并更新 DOM。
+              review 时要看状态是否属于这个组件，还是应该上移到 domain hook/context。
+            </p>
+          </div>
+          <div class="card">
+            <h3>effect 是什么</h3>
+            <p>
+              <code>useEffect</code> 用来做副作用，比如加载数据、注册事件、启动定时器。
+              review 时重点看依赖数组是否正确、是否清理监听器/定时器。
+            </p>
+          </div>
+          <div class="card">
+            <h3>context 是什么</h3>
+            <p>
+              <code>WorkspaceContext</code> 像一个全局工作台状态包。所有 view 通过
+              <code>useWorkspace()</code> 读写共享状态。好处是清楚，坏处是过宽会让耦合和重渲染增加。
+            </p>
+          </div>
+        </div>
+
+        <h3>React review 常见问题</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>问题</th>
+              <th>怎么识别</th>
+              <th>应该怎么做</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>effect 依赖错</td>
+              <td><code>useEffect(..., [])</code> 里读了会变化的变量。</td>
+              <td>补依赖，或用 ref/trampoline 说明为什么稳定。</td>
+            </tr>
+            <tr>
+              <td>状态放错地方</td>
+              <td>兄弟组件互相传很多 props，或组件直接操作 sibling。</td>
+              <td>放进 context/domain hook/registry command。</td>
+            </tr>
+            <tr>
+              <td>异步竞态</td>
+              <td>用户切换 source 后，旧请求回来覆盖新 source 状态。</td>
+              <td>用 cancelled flag、request id，或按 sourceId 检查。</td>
+            </tr>
+            <tr>
+              <td>重复提交</td>
+              <td>Save 按钮连点会创建两条 note。</td>
+              <td>先清 pending state，再发异步；或禁用按钮。</td>
+            </tr>
+            <tr>
+              <td>UI 状态不可恢复</td>
+              <td>布局/打开状态只存在组件 state，刷新丢失。</td>
+              <td>明确哪些是 ephemeral，哪些应该持久化到 note/display/prefs。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>前端文件后缀</h3>
+        <ul>
+          <li><code>.ts</code>：纯 TypeScript，没有 JSX UI。</li>
+          <li><code>.tsx</code>：React 组件，里面可以写 JSX。</li>
+          <li><code>.css</code>：样式。</li>
+          <li><code>.test.ts(x)</code>：Vitest 单测。</li>
+          <li><code>.spec.ts</code>：通常是 Playwright e2e。</li>
+        </ul>
+      </section>
+
+      <section id="frontend-architecture">
+        <h2>7. 前端架构</h2>
+
+        <h3>整体结构</h3>
+        <div class="flow">src/client/main.tsx
+  -> inject themes, detect platform
+  -> App
+      -> PlatformProvider
+      -> LocaleProvider
+      -> FocusProvider
+      -> WorkspaceProvider
+      -> WorkspaceShell(layout preset)
+          -> dock tree
+          -> renderNode(node, ctx)
+          -> registered view component</div>
+
+        <h3>WorkspaceShell 和 ViewRegistry</h3>
+        <p>
+          工作台不是固定写死三栏。<code>presets.ts</code> 定义 layout tree，
+          <code>WorkspaceShell</code> 遍历 tree，遇到 leaf 就按 <code>node.kind</code>
+          去 <code>viewRegistry</code> 找 view。
+        </p>
+
+        <pre><code>registerView({
+  kind: "review.panel",
+  render: (node, ctx) =&gt; &lt;ReviewPanel ctx={ctx} /&gt;
+});</code></pre>
+
+        <p>
+          这意味着新增一个面板时，正常路径应该是注册 view，然后把 node 加到 preset 或导航入口。
+          不应该直接去 <code>App.tsx</code> 或 <code>WorkspaceShell.tsx</code> 硬插 JSX。
+        </p>
+
+        <h3>WorkspaceContext 和 domain hooks</h3>
+        <p>
+          <code>WorkspaceContext.tsx</code> 曾经是一个大对象，现在已经拆成多个 domain hook：
+        </p>
+        <ul>
+          <li><code>useDocumentsDomain.ts</code>：source、open panes、reader bundle、anchors、notes、layers。</li>
+          <li><code>useGenerationDomain.ts</code>：AI draft preview、regenerate、auto-materialize。</li>
+          <li><code>useComposerDomain.ts</code>：右侧输入框、图片附件、提交。</li>
+          <li><code>useAgentDomain.ts</code>：agent 工具调用、chat context、provider 能力。</li>
+          <li><code>useOperationDomain.ts</code>：自定义 AI action、toolbar action 顺序。</li>
+          <li><code>usePluginDomain.ts</code>：插件偏好、贡献开关。</li>
+          <li><code>useConceptDomain.ts</code>：概念标注反馈、undo。</li>
+          <li><code>useLayoutDomain.ts</code> / <code>useThemeDomain.ts</code>：布局和主题。</li>
+        </ul>
+
+        <div class="warning">
+          <strong>review 提醒：</strong>domain hook 拆出来不代表没有耦合。看新增字段是否真的属于该 domain；
+          不要把所有新状态又塞回 <code>WorkspaceContextValue</code>，除非多个 view 确实需要。
+        </div>
+
+        <h3>Reader / Viewer</h3>
+        <p>
+          Source 类型通过 <code>src/client/viewers.ts</code> 映射到 viewer：
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>sourceType</th>
+              <th>viewer kind</th>
+              <th>典型组件</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>html</code>, <code>markdown</code></td>
+              <td><code>html</code></td>
+              <td><code>LocalHtmlReader</code>, DOM reader pipeline</td>
+            </tr>
+            <tr>
+              <td><code>webpage</code></td>
+              <td><code>web</code></td>
+              <td>snapshot + live web tabs</td>
+            </tr>
+            <tr>
+              <td><code>web_live</code></td>
+              <td><code>webview</code></td>
+              <td>Electron/webview guest preload</td>
+            </tr>
+            <tr>
+              <td><code>pdf</code></td>
+              <td><code>pdfjs</code></td>
+              <td><code>PdfReader</code></td>
+            </tr>
+            <tr>
+              <td><code>image</code></td>
+              <td><code>image</code></td>
+              <td><code>ImageReader</code></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>CommandRegistry</h3>
+        <p>
+          用户动作不是散落在按钮里直接写逻辑，而是注册为 command。
+          按钮、快捷命令、toolbar、AI action 都可以 dispatch 同一个 command。
+        </p>
+
+        <div class="flow">button click
+  -> ctx.dispatch("anchor.add-note", payload)
+  -> runCommand(commandId, commandContext)
+  -> command uses entityClient / focus / actions
+  -> actions callback updates UI state</div>
+
+        <p>评审 command 时重点看：</p>
+        <ul>
+          <li><code>isAvailable()</code> 是否正确禁用无效状态。</li>
+          <li>是否只通过 <code>CommandContext</code> 访问外部世界。</li>
+          <li>是否重复 materialize anchor。</li>
+          <li>异步后是否调用 <code>onNoteCreated</code>、<code>onLayersChanged</code> 等刷新回调。</li>
+        </ul>
+      </section>
+
+      <section id="ai">
+        <h2>8. AI 链路</h2>
+        <p>
+          AI 层分两部分：底层 provider 只负责模型能力；上层 command/operation/kit 负责业务 prompt。
+          重要原则是 <code>src/ai</code> 不应该 import kit。
+        </p>
+
+        <h3>Provider 能力</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>能力</th>
+              <th>含义</th>
+              <th>review 点</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>chat</code></td>
+              <td>能普通对话。</td>
+              <td>chat route 是否 fallback 正确。</td>
+            </tr>
+            <tr>
+              <td><code>streaming</code></td>
+              <td>能增量输出。</td>
+              <td>没有 stream 的 provider 是否单 chunk fallback。</td>
+            </tr>
+            <tr>
+              <td><code>structured</code></td>
+              <td>能原生 JSON 输出。</td>
+              <td>否则走 extractJson + retry，必须 schema parse。</td>
+            </tr>
+            <tr>
+              <td><code>tools</code></td>
+              <td>能跑 app-defined tools。</td>
+              <td>agent 按钮必须 capability gated。</td>
+            </tr>
+            <tr>
+              <td><code>vision</code></td>
+              <td>能看图片。</td>
+              <td>服务端必须在调用前 gate，不支持时返回干净 400。</td>
+            </tr>
+            <tr>
+              <td><code>kind</code></td>
+              <td><code>mock / cli-agent / http / managed</code>。</td>
+              <td>managed 默认不能带出 learner profile。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>普通聊天链路</h3>
+        <div class="flow">UI composer
+  -> dispatch("anchor.ask-ai")
+  -> command builds ChatRequest + ChatContext
+  -> entityClient.chatStream() or chat()
+  -> POST /api/chat/stream or /api/chat
+  -> src/server/services/ai.ts
+  -> provider.stream() or complete()
+  -> UI appends assistant chunks/message</div>
+
+        <h3>结构化生成链路</h3>
+        <div class="flow">toolbar action / kit command / operation.run
+  -> entityClient.generateStructured()
+  -> POST /api/kits/generate
+  -> generateKitContent()
+  -> composeAutoContext()
+  -> generateOperationContent()
+  -> src/ai/structured.ts generateStructured()
+  -> zod schema parse
+  -> pending draft preview
+  -> user Save
+  -> create note</div>
+
+        <h3>AI review 必查</h3>
+        <ul>
+          <li>AI 返回内容是否必须经过 zod schema 校验再保存。</li>
+          <li>图片是否只传 assetId 到后端，后端按 provider vision 能力解析 bytes。</li>
+          <li>managed provider 是否剥离 <code>profileContext</code>。</li>
+          <li>CLI provider 是否 strip 可能导致计费的 API key。</li>
+          <li>mock provider 是否保持 deterministic，测试不应依赖真实模型。</li>
+          <li>生成结果是否先进入 preview，除非明确是 auto-materialize draft 流程。</li>
+        </ul>
+      </section>
+
+      <section id="plugins">
+        <h2>9. Kit / Plugin</h2>
+        <p>
+          Kit 是一组学习场景能力，Plugin 是更小的贡献单位。当前代码里很多 kit 是 register-only：
+          它们注册 command、view、note type、prompt，但不一定出现在市场里。
+        </p>
+
+        <h3>服务端 kit 注册</h3>
+        <p>
+          <code>installServerKits()</code> 在 <code>createApp()</code> 时运行，注册 React-free 的内容：
+          <code>NoteContentSpec</code>、prompt、layer policy、subject detection。
+        </p>
+
+        <h3>客户端 kit 注册</h3>
+        <p>
+          <code>src/kits/clientKits.tsx</code> 导入产品 kit，并调用 <code>installClientKits(productKits)</code>。
+          客户端注册 React renderer、command、view 等。
+        </p>
+
+        <h3>review kit/plugin 时问这些问题</h3>
+        <ul>
+          <li>这个能力应该是 core 还是普通 kit？垂直场景通常不该进 core。</li>
+          <li>新增 note type 是否同时有服务端 content spec 和客户端 renderer。</li>
+          <li>contentType id 是否稳定；如果改名，是否提供 alias。</li>
+          <li>插件启用/禁用是否通过 contribution prefs，而不是到处 if kitId。</li>
+          <li>市场安装状态是否只影响“可创建/可见入口”，不应让旧 note 无法渲染。</li>
+        </ul>
+      </section>
+
+      <section id="electron">
+        <h2>10. Electron</h2>
+        <p>
+          Electron 有两个世界：main process 有 Node 权限，renderer 是网页。安全 review 的核心是：
+          renderer 不直接拿 Node；需要本地能力时走 preload 暴露的窄 IPC。
+        </p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>文件</th>
+              <th>作用</th>
+              <th>review 点</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>electron/main.ts</code></td>
+              <td>窗口、server、dialog、shell、updater。</td>
+              <td><code>nodeIntegration:false</code>、<code>contextIsolation:true</code> 是否保持。</td>
+            </tr>
+            <tr>
+              <td><code>electron/preload.ts</code></td>
+              <td>暴露 <code>window.studyVault</code>。</td>
+              <td>暴露 API 是否窄、参数是否校验。</td>
+            </tr>
+            <tr>
+              <td><code>electron/webview-preload.ts</code></td>
+              <td>webview guest 内选择文本和注入标记。</td>
+              <td>不要扩大到任意页面脚本能力。</td>
+            </tr>
+            <tr>
+              <td><code>electron/pty-bridge.ts</code></td>
+              <td>终端/PTY 桥。</td>
+              <td>进程生命周期、测试 fake spawner、API key strip。</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="review-by-change">
+        <h2>11. 按改动类型 review</h2>
+
+        <h3>新增 Note 类型</h3>
+        <ol>
+          <li>服务端：是否注册 <code>NoteContentSpec</code>，包含 zod schema、default、toSearchText。</li>
+          <li>客户端：是否注册 renderer/editor，不改核心 Note schema。</li>
+          <li>搜索：<code>toSearchText</code> 是否提取真正可搜索文本。</li>
+          <li>旧数据：contentType 改名是否有 alias。</li>
+          <li>UI：是否复用统一 note card 外壳。</li>
+          <li>测试：schema parse、render、create/update API。</li>
+        </ol>
+
+        <h3>新增 Source / Viewer</h3>
+        <ol>
+          <li><code>sourceTypeSchema</code> 是否新增类型。</li>
+          <li>ingest/import 是否生成 source record 和原始内容。</li>
+          <li><code>src/client/viewers.ts</code> 是否注册 viewer。</li>
+          <li>reader 是否能产出 Anchor draft。</li>
+          <li>已有 anchors 是否能 paint 回原文。</li>
+          <li>跳转 anchor 是否能定位。</li>
+        </ol>
+
+        <h3>改 Anchor / Note 可见性</h3>
+        <ol>
+          <li>确认 anchor painting 是从 note + layer 推导，而不是直接 paint 全部 anchors。</li>
+          <li>删除 note 时是否处理 orphan anchors。</li>
+          <li>多 layer membership 是否用 OR 逻辑。</li>
+          <li>sealed/imported content 是否只读。</li>
+          <li>PDF/image/html/web 四类 reader 是否都覆盖。</li>
+        </ol>
+
+        <h3>新增 AI action / operation</h3>
+        <ol>
+          <li>prompt 是否在 kit prompt registry 或 operation store 里，而不是写死 UI。</li>
+          <li>输入变量是否来自 anchorText、sourceTitle、existingNotes 等声明来源。</li>
+          <li>输出 contentType 是否固定或走 form router。</li>
+          <li>输出是否 zod 校验。</li>
+          <li>是否进入 preview/save 流程。</li>
+          <li>managed provider 的隐私 gate 是否覆盖。</li>
+        </ol>
+
+        <h3>改工作台 UI</h3>
+        <ol>
+          <li>新增面板是否走 <code>registerView</code>。</li>
+          <li>新增按钮是否走 command 或已有 domain action。</li>
+          <li>是否支持 loading/error/empty 状态。</li>
+          <li>是否避免把业务逻辑塞进 JSX。</li>
+          <li>是否有 title/aria-label，尤其是 icon button。</li>
+          <li>是否对移动/窄屏有基本约束。</li>
+        </ol>
+
+        <h3>改后端 route</h3>
+        <ol>
+          <li>route 是否只做 parse、调用 service、返回 response。</li>
+          <li>service 是否可被 directTransport 或测试复用。</li>
+          <li>是否使用 typed error。</li>
+          <li>是否有权限/只读保护，例如 sealed notes。</li>
+          <li>是否有输入大小限制，特别是图片/音频/base64。</li>
+        </ol>
+      </section>
+
+      <section id="checklists">
+        <h2>12. Checklist</h2>
+
+        <div class="grid two">
+          <div class="card checklist">
+            <h3>通用 review checklist</h3>
+            <label><input type="checkbox" />PR 的改动边界清楚，没有顺手大重构。</label>
+            <label><input type="checkbox" />新增能力接入了已有 registry/command/service seam。</label>
+            <label><input type="checkbox" />输入有 zod 校验，错误是用户可理解的 4xx。</label>
+            <label><input type="checkbox" />旧数据能 parse，不需要隐式破坏性 migration。</label>
+            <label><input type="checkbox" />删除语义明确：软删除还是 purge。</label>
+            <label><input type="checkbox" />异步流程有 loading/error/取消或防竞态处理。</label>
+            <label><input type="checkbox" />测试覆盖了正常路径和至少一个失败路径。</label>
+          </div>
+
+          <div class="card checklist">
+            <h3>前端 checklist</h3>
+            <label><input type="checkbox" />组件没有直接 fetch，数据走 entityClient 或 IO seam。</label>
+            <label><input type="checkbox" />兄弟 view 没有互相调用，只通过 context/command。</label>
+            <label><input type="checkbox" />useEffect 依赖数组合理，有 cleanup。</label>
+            <label><input type="checkbox" />按钮不会重复提交导致重复记录。</label>
+            <label><input type="checkbox" />icon button 有 title 和 aria-label。</label>
+            <label><input type="checkbox" />文字不会挤出按钮/卡片，窄屏可用。</label>
+            <label><input type="checkbox" />没有裸用浏览器默认 checkbox，应使用统一控件。</label>
+          </div>
+
+          <div class="card checklist">
+            <h3>存储/API checklist</h3>
+            <label><input type="checkbox" />schema 默认值能兼容历史记录。</label>
+            <label><input type="checkbox" />SQLite/JSONL 行为一致或差异有测试说明。</label>
+            <label><input type="checkbox" />FTS/search 的文本来源正确。</label>
+            <label><input type="checkbox" />导入/导出/备份不会丢字段。</label>
+            <label><input type="checkbox" />sealed/imported/read-only 内容不可被修改。</label>
+            <label><input type="checkbox" />route 没有吞掉 service error 变 500。</label>
+          </div>
+
+          <div class="card checklist">
+            <h3>AI checklist</h3>
+            <label><input type="checkbox" />provider capability 和真实能力一致。</label>
+            <label><input type="checkbox" />结构化输出经过 schema parse。</label>
+            <label><input type="checkbox" />vision 非支持 provider 不会收到图片 bytes。</label>
+            <label><input type="checkbox" />managed provider 不会默认带出 learner profile。</label>
+            <label><input type="checkbox" />CLI provider 不会被环境 API key 切到计费模式。</label>
+            <label><input type="checkbox" />mock 路径 deterministic，测试不依赖外部网络。</label>
+          </div>
+        </div>
+      </section>
+
+      <section id="tests">
+        <h2>13. 测试怎么选</h2>
+        <p>不要每次都盲跑最重的测试。先按改动范围选。</p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>改动范围</th>
+              <th>建议命令</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>类型、导入、边界、移动端禁用规则</td>
+              <td><code>npm run check</code></td>
+              <td><code>tsc --noEmit</code> + mobile import guard。</td>
+            </tr>
+            <tr>
+              <td>纯函数、service、schema、store、domain hook</td>
+              <td><code>npm test -- path-or-pattern</code><br><code>npm test</code></td>
+              <td>优先跑聚焦测试，再决定是否全量 Vitest。</td>
+            </tr>
+            <tr>
+              <td>reader、selection、anchor painting、普通 UI 流程</td>
+              <td><code>npm run e2e</code></td>
+              <td>Playwright web e2e，使用临时 vault 和 mock AI。</td>
+            </tr>
+            <tr>
+              <td>Electron、preload、webview、pty、窗口能力</td>
+              <td><code>npm run e2e:electron</code></td>
+              <td>会先 build Electron main/preload/client。</td>
+            </tr>
+            <tr>
+              <td>打包或生产启动</td>
+              <td><code>npm run electron:build</code><br><code>npm run dist:dir</code></td>
+              <td>关注 native deps、external、asarUnpack、userData vault。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>测试失败时怎么判断</h3>
+        <ul>
+          <li>先看是不是改动范围内的失败，不要被无关 flaky 带偏。</li>
+          <li>如果是类型失败，通常是 registry 类型、schema 默认值、capability 字段没有补全。</li>
+          <li>如果是 e2e 失败，优先看 UI 文案/selector 是否变化、异步等待是否不稳定。</li>
+          <li>如果 Electron e2e 失败，先区分 renderer 错、preload IPC 错、main process 启动错。</li>
+        </ul>
+      </section>
+
+      <section id="known-risks">
+        <h2>14. 已知风险</h2>
+
+        <table>
+          <thead>
+            <tr>
+              <th>风险</th>
+              <th>现状</th>
+              <th>review 时怎么防</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>服务端 <code>app.ts</code> 过大</td>
+              <td>仍有大量 inline routes。</td>
+              <td>新增复杂逻辑要求进 service 或 route module。</td>
+            </tr>
+            <tr>
+              <td><code>WorkspaceContext</code> 仍然很宽</td>
+              <td>已拆 domain hooks，但最终 context value 仍大。</td>
+              <td>新增字段先问是否只属于一个 view/domain。</td>
+            </tr>
+            <tr>
+              <td>Reader 层未完全统一</td>
+              <td>PDF/Image/HTML/Web 有各自 selection/paint 逻辑。</td>
+              <td>改 anchor painting 必须跨 reader 检查。</td>
+            </tr>
+            <tr>
+              <td>文档漂移</td>
+              <td>部分设计文档里的行数、默认引擎说明可能旧。</td>
+              <td>以当前代码为准，必要时要求更新文档。</td>
+            </tr>
+            <tr>
+              <td>AI provider 能力复杂</td>
+              <td>mock、CLI、HTTP BYOK、managed 行为不同。</td>
+              <td>capability gate 和隐私 gate 必须服务端兜底。</td>
+            </tr>
+            <tr>
+              <td>Electron 权限边界</td>
+              <td>需要本地文件、webview、pty 等强能力。</td>
+              <td>任何新 IPC 都要窄接口、参数校验、不可暴露任意 shell。</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="file-map">
+        <h2>15. 文件地图</h2>
+
+        <h3>必须常看的文件</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>路径</th>
+              <th>为什么重要</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>design.md</code></td>
+              <td>总设计约束：对象边界、UI 原则、本地优先。</td>
+            </tr>
+            <tr>
+              <td><code>docs/design/product-kernel.md</code></td>
+              <td>判断新功能是否应该进入核心。</td>
+            </tr>
+            <tr>
+              <td><code>src/core/schema/*.ts</code></td>
+              <td>实体形状和兼容性。</td>
+            </tr>
+            <tr>
+              <td><code>src/core/store/*</code></td>
+              <td>持久化、SQLite/JSONL、FTS、软删除。</td>
+            </tr>
+            <tr>
+              <td><code>src/server/services/*.ts</code></td>
+              <td>业务逻辑应该在这里，而不是 UI 或 route。</td>
+            </tr>
+            <tr>
+              <td><code>src/client/data/entityClient.ts</code></td>
+              <td>前端访问后端的统一门面。</td>
+            </tr>
+            <tr>
+              <td><code>src/client/workspace/WorkspaceContext.tsx</code></td>
+              <td>工作台共享状态组合点。</td>
+            </tr>
+            <tr>
+              <td><code>src/client/workspace/use*Domain.ts</code></td>
+              <td>前端各领域状态和 IO 的实际所在地。</td>
+            </tr>
+            <tr>
+              <td><code>src/client/workspace/viewRegistry.tsx</code></td>
+              <td>工作台 view 插件 seam。</td>
+            </tr>
+            <tr>
+              <td><code>src/client/commands/registry.ts</code></td>
+              <td>用户动作和 AI action 的统一入口。</td>
+            </tr>
+            <tr>
+              <td><code>src/ai/provider.ts</code></td>
+              <td>AI provider 能力边界。</td>
+            </tr>
+            <tr>
+              <td><code>electron/main.ts</code></td>
+              <td>桌面权限、窗口、server 启动、IPC。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>按目录理解</h3>
+        <ul>
+          <li><code>src/core</code>：纯领域模型、schema、store、算法。尽量不要依赖 React、window、Electron。</li>
+          <li><code>src/server</code>：Express routes、services、本地文件、data trust、trash、memory。</li>
+          <li><code>src/client</code>：React UI、workspace、reader、commands、platform adapter。</li>
+          <li><code>src/ai</code>：模型 provider、结构化生成、agent tools 机制。</li>
+          <li><code>src/kits</code>：教材、复习、错题、报告等上层组合能力。</li>
+          <li><code>electron</code>：桌面壳、preload、webview preload、pty bridge。</li>
+          <li><code>e2e</code> / <code>e2e-electron</code>：端到端测试。</li>
+        </ul>
+      </section>
+
+      <section id="terms">
+        <h2>16. 术语表</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>术语</th>
+              <th>解释</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>Vault</code></td>
+              <td>本地资料库，包含 .study 元数据、source 文件、assets、exports。</td>
+            </tr>
+            <tr>
+              <td><code>Envelope</code></td>
+              <td>每条记录都有的公共字段：id、type、schemaVersion、createdAt、updatedAt、deletedAt 等。</td>
+            </tr>
+            <tr>
+              <td><code>ContentType</code></td>
+              <td>Note 内容类型，例如 markdown、quiz、flashcard、mistake。每个类型有自己的 schema 和 renderer。</td>
+            </tr>
+            <tr>
+              <td><code>Anchor draft</code></td>
+              <td>用户刚选中原文但还没保存成正式 anchor 的临时选择。</td>
+            </tr>
+            <tr>
+              <td><code>PaintAnchor</code></td>
+              <td>前端 reader 用来绘制高亮/图标的统一 anchor 表示。</td>
+            </tr>
+            <tr>
+              <td><code>Sealed content</code></td>
+              <td>受保护导入的 svpack 内容，通常只读。</td>
+            </tr>
+            <tr>
+              <td><code>Operation</code></td>
+              <td>用户可自定义的 AI action，prompt 和变量作为数据存储。</td>
+            </tr>
+            <tr>
+              <td><code>Provider</code></td>
+              <td>AI 模型接入，例如 mock、Claude/Codex CLI、DeepSeek、managed gateway。</td>
+            </tr>
+            <tr>
+              <td><code>DirectTransport</code></td>
+              <td>不用 HTTP、直接调用 service 的传输 seam，面向移动/嵌入场景。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="success">
+          <strong>最终判断标准：</strong>一个好 PR 应该让新功能接入已有对象和扩展点；
+          数据能迁移，UI 能解释失败，AI 输出可验证，本地优先和隐私边界不被破坏。
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

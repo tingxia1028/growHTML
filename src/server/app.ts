@@ -18,6 +18,7 @@ import { createTrashPurgeScheduler, createTrashService, registerTrashRoutes } fr
 import { createMemoryConsolidationScheduler, registerMemoryRoutes } from "./memory";
 import { registerAgentRoutes } from "./agent";
 import { registerChatRoutes } from "./chatSessions";
+import { registerAppInfoRoutes } from "./routes/appInfo";
 import type { StudyVault } from "../core/vault";
 import { deleteSource, listSources } from "../core/store/sources";
 import { handleServiceError, NotFoundError } from "./services/errors";
@@ -156,18 +157,7 @@ export function createApp({ vault, modelProvider, clientDir, identityDir, now, a
 
   app.use(express.json({ limit: "50mb" }));
 
-  app.get("/api/health", (_req, res) => {
-    res.json({ ok: true, app: "ai-study-vault" });
-  });
-
-  // App identity for the 关于 surfaces (user menu / Settings Hub) — the version is
-  // the package.json version, resolved at build/require time. 检查更新 stays a
-  // disabled stub until the desktop update channel (X1) wires electron-updater.
-  // `isPackaged` (Electron main → startServer → here) lets the client degrade
-  // features whose native deps aren't shipped packaged (e.g. the codex provider).
-  app.get("/api/about", (_req, res) => {
-    res.json({ app: "ai-study-vault", version: packageJson.version, isPackaged: isPackaged === true });
-  });
+  registerAppInfoRoutes(app, { appVersion: packageJson.version, isPackaged });
 
   // —— AI providers (A3b, docs/design/multi-provider-ai-agent.md §4.2/§5 Phase 1) ——
   // The A1 read-only readout, EXTENDED (same route, additive fields): which provider

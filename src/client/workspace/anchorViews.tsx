@@ -71,6 +71,9 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
   const { focus, activeSource, visibleNotes, anchorBarActions, runAction, generating } = ctx;
   const anchor = focus.anchor;
   const quote = anchor?.quote ?? draftQuoteText(focus.draft);
+  const hasAnchorContext = Boolean(anchor || focus.draft);
+  const isRegionContext = Boolean((anchor && "rect" in anchor && anchor.rect) || focus.draft?.mode === "region");
+  const excerptText = quote || (isRegionContext ? resolveText({ zh: "区域锚点", en: "Region anchor" }) : "");
   const page =
     (anchor && "page" in anchor ? anchor.page : undefined) ??
     (focus.draft && "page" in focus.draft ? focus.draft.page : undefined);
@@ -93,7 +96,7 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
 
   return (
     <aside className="anchor-panel">
-      {quote ? (
+      {hasAnchorContext ? (
         <>
           {/* —— Context —— */}
           <div className="anchor-context">
@@ -126,8 +129,8 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
           </div>
 
           {/* —— Excerpt —— blue highlight box */}
-          <div className="anchor-excerpt-card">
-            <p className="anchor-excerpt-quote">{quote}</p>
+          <div className={`anchor-excerpt-card${isRegionContext && !quote ? " region" : ""}`}>
+            <p className="anchor-excerpt-quote">{excerptText}</p>
             {formula ? <p className="anchor-excerpt-formula">{formula}</p> : null}
           </div>
 
@@ -142,7 +145,7 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
             <ActionGrid
               items={anchorBarActions}
               onRun={runAction}
-              disabled={!anchor && !focus.draft}
+              disabled={!hasAnchorContext}
               busy={generating}
               density="row"
             />
@@ -150,7 +153,7 @@ function AnchorExcerptView({ ctx }: { ctx: WorkspaceContext }) {
                 focus.anchor || focus.draft (mirrors the ActionGrid disabled above): a
                 pick materializes short-circuits to the existing anchor when one is
                 focused, else to the live draft. No instruction from a toolbar. */}
-            <ToolbarSlashButton surface="anchor" disabled={!anchor && !focus.draft} />
+            <ToolbarSlashButton surface="anchor" disabled={!hasAnchorContext} />
           </div>
 
           {/* —— Linked notes (visible layers) —— note-type icons focus the Notes viewer

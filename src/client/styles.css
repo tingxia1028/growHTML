@@ -548,7 +548,7 @@ button {
      escapes the overflow:hidden ancestor panes (.anchor-panel, .right-tabs, .dock-pane …)
      that previously CLIPPED the popover on the Anchor surface. z-index sits above panes. */
   position: fixed;
-  z-index: 1000;
+  z-index: 1400;
   display: grid;
   gap: 6px;
   /* Explicit width: the menu is portaled out of the 32px inline-flex trigger box, so without
@@ -3351,6 +3351,40 @@ textarea {
   border-color: var(--sv-warn-accent);
 }
 
+.kit-toolbar-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius-pill);
+  background: var(--sv-select-bg);
+  color: var(--sv-select-text);
+}
+
+.kit-toolbar-select:hover {
+  border-color: var(--sv-warn-accent);
+}
+
+.kit-toolbar-select svg {
+  flex: 0 0 auto;
+  color: var(--sv-text-muted);
+}
+
+.kit-toolbar-native-select {
+  width: auto;
+  max-width: 150px;
+  height: 28px;
+  padding: 0 18px 0 0;
+  border: 0;
+  background: transparent;
+}
+
+.kit-toolbar-native-select:hover {
+  border-color: transparent;
+}
+
 /* The snapshot sub-mode renders a DomReader iframe inside the tab host; fill it. */
 .webview-host > iframe {
   width: 100%;
@@ -4779,6 +4813,7 @@ button.sv-quiz-option:not(:disabled):hover {
   border-radius: var(--sv-radius);
   background: var(--sv-surface-card);
   color: var(--sv-text);
+  cursor: default;
 }
 
 .reader-tab.active {
@@ -4823,6 +4858,20 @@ button.sv-quiz-option:not(:disabled):hover {
 .reader-tab-close:hover {
   background: var(--sv-surface-muted);
   color: var(--sv-text);
+}
+
+.source-tabs-group {
+  position: relative;
+  padding-top: 2px;
+}
+
+.source-tabs-group.drag-over::after {
+  content: "";
+  position: absolute;
+  inset: 2px 0 0;
+  border: 1px solid var(--sv-accent-border);
+  border-radius: 10px 10px 0 0;
+  pointer-events: none;
 }
 
 /* F1 (P-A2): the 分屏 split button in the tab strip + the two-body row split. */
@@ -6907,12 +6956,21 @@ select {
 .reader-header {
   min-height: 42px;
   padding: 0 2px;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.reader-tabs {
+  min-width: 0;
+  overflow: hidden;
 }
 
 .reader-tab,
 .reader-tab.active {
   height: 40px;
-  min-width: 244px;
+  flex: 1 1 clamp(132px, 24vw, 244px);
+  min-width: 128px;
   max-width: 320px;
   padding: 0 12px;
   border-color: var(--sv-border);
@@ -6934,6 +6992,43 @@ select {
 .reader-tab.active .reader-tab-icon,
 .reader-tab-close {
   color: #717a87;
+}
+
+.reader-toolbar {
+  flex: 0 1 auto;
+  gap: 8px;
+  margin-left: auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.reader-toolbar > .bookmark-index,
+.reader-toolbar > .panel-menu {
+  flex: 0 0 auto;
+}
+
+.kit-toolbar-select {
+  flex: 0 1 190px;
+  min-width: 0;
+  max-width: 190px;
+  overflow: hidden;
+}
+
+.kit-toolbar-native-select {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  text-overflow: ellipsis;
+}
+
+.reader-menu-tool-row {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.reader-menu-tool-row .panel-menu-label {
+  margin: 0;
 }
 
 .pdf-reader-toolbar {
@@ -8832,42 +8927,18 @@ select {
 }
 
 .slash-palette-main {
-  display: flex;
+  display: block;
   flex: 1 1 auto;
   min-width: 0;
-  align-items: baseline;
-  gap: 6px;
 }
 
 .slash-palette-title {
-  flex: 0 1 auto;
+  display: block;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 500;
   color: inherit;
-  white-space: nowrap;
-}
-
-.slash-palette-id {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  color: var(--sv-text-muted-soft);
-}
-
-.slash-palette-kit {
-  flex: none;
-  font-size: 10px;
-  line-height: 1.6;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--sv-accent-weak);
-  border: 1px solid var(--sv-accent-border);
-  color: var(--sv-accent-text);
   white-space: nowrap;
 }
 

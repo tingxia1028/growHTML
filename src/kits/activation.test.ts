@@ -44,11 +44,11 @@ describe("effectiveKitIds", () => {
   });
 });
 
-// F4 — effective-installed replaces the single-active-kit GATE. Availability of a
-// surface item is decided by the marketplace install state (installState.ts); the
-// per-source active kit ids only FOREGROUND (order) the list. Install two tiny fake
-// kits: one CATALOGED (so install state governs it), one UNCATALOGED (always
-// available — core/test registrations are outside install state).
+// F4 — effective-installed replaces the old single-kit install gate. A caller without a
+// foreground asks for the full configurable pool; a caller with per-source active kit ids
+// gets the document-scoped tool surface. Install two tiny fake kits: one CATALOGED (so
+// install state governs it), one UNCATALOGED (always available when no foreground filter
+// is requested — core/test registrations are outside install state).
 const surfacedKit = (id: string, commandId: string, priority: number): ProductKit => ({
   id,
   name: `Kit ${id}`,
@@ -83,7 +83,7 @@ const fakeKit: ProductKit = {
   }
 };
 
-describe("kit surface filtering (F4: effective-installed, foreground-not-filter)", () => {
+describe("kit surface filtering (F4: effective-installed, foreground filter)", () => {
   // Catalog the two surfaced kits + their members so install state governs them.
   registerCatalogEntry({ id: "kit-a", kind: "kit", name: "Kit A", description: "", members: ["kit-a-member"], defaultInstalled: true, source: "bundled" });
   registerCatalogEntry({ id: "kit-a-member", kind: "plugin", name: "Kit A member", description: "", defaultInstalled: true, source: "bundled" });
@@ -99,20 +99,14 @@ describe("kit surface filtering (F4: effective-installed, foreground-not-filter)
 
   const ids = (kitIds?: string[]) => kitSurfaceItems("selection-toolbar", kitIds).map((i) => i.commandId);
 
-  it("default install state (null = default-installed): every installed kit's items are AVAILABLE regardless of the active kit", () => {
-    // Core active ([]) no longer hides kit items — creation is governed by install
-    // state, not per-source activation (the F4 flip; migration story: a previously
-    // active kit is defaultInstalled, so existing vaults keep their toolbar).
-    expect(ids([])).toEqual(expect.arrayContaining(["a.cmd", "b.cmd", "test.cmd"]));
-    expect(ids(["kit-a"])).toEqual(expect.arrayContaining(["a.cmd", "b.cmd", "test.cmd"]));
-    expect(ids(undefined)).toEqual(expect.arrayContaining(["a.cmd", "b.cmd", "test.cmd"]));
+  it("default install state (null = default-installed): no foreground returns the full configurable pool", () => {
+    expect(ids(undefined)).toEqual(["b.cmd", "test.cmd", "a.cmd"]);
   });
 
-  it("the active kit FOREGROUNDS its items (first), priority ordering within groups", () => {
-    // kit-a active: its item leads even though kit-b has higher priority.
-    expect(ids(["kit-a"])[0]).toBe("a.cmd");
-    // No foreground set: plain priority order (kit-b 90 > test-kit 50 > kit-a 10).
-    expect(ids(undefined)).toEqual(["b.cmd", "test.cmd", "a.cmd"]);
+  it("the active kit filters to its own member-owned surface items", () => {
+    expect(ids(["kit-a"])).toEqual(["a.cmd"]);
+    expect(ids(["kit-b"])).toEqual(["b.cmd"]);
+    expect(ids([])).toEqual([]);
   });
 
   it("uninstalling a kit removes its items everywhere — even when it is the source's active kit", () => {
@@ -120,16 +114,18 @@ describe("kit surface filtering (F4: effective-installed, foreground-not-filter)
       catalogState: { installedPlugins: [], installedKits: ["kit-b"] },
       userKits: []
     });
-    expect(ids(["kit-a"])).not.toContain("a.cmd"); // active but NOT installed → gone
-    expect(ids(["kit-a"])).toContain("b.cmd"); // installed → stays
+    expect(ids(["kit-a"])).toEqual([]);
+    expect(ids(["kit-b"])).toEqual(["b.cmd"]);
   });
 
-  it("uncataloged (test/core) registrations are OUTSIDE install state — always available", () => {
+  it("uncataloged (test/core) registrations are outside install state but still obey foreground filters", () => {
     syncInstallState({
       catalogState: { installedPlugins: [], installedKits: [] },
       userKits: []
     });
     expect(ids(undefined)).toEqual(["test.cmd"]); // only the uncataloged kit's item survives
+    expect(ids(["test-kit"])).toEqual(["test.cmd"]);
+    expect(ids(["kit-a"])).toEqual([]);
   });
 
   it("a directly-installed member keeps its items after its kit is uninstalled (§8.5.2 direct hold)", () => {
@@ -139,6 +135,8 @@ describe("kit surface filtering (F4: effective-installed, foreground-not-filter)
     });
     expect(ids(undefined)).toContain("a.cmd");
     expect(ids(undefined)).not.toContain("b.cmd");
+    expect(ids(["kit-a"])).toEqual(["a.cmd"]);
+    expect(ids(["kit-b"])).toEqual([]);
   });
 
   it("tags kit note types with their owning plugin; core/built-in types have no owner", () => {

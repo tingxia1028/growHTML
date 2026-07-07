@@ -30,6 +30,25 @@ function matchesQuery(title: string, query: string): boolean {
   return !query || title.toLowerCase().includes(query);
 }
 
+function normalizeLocalPath(value: string): string {
+  return value.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLocaleLowerCase();
+}
+
+function sourceOriginalPath(source: SourceRecord): string | null {
+  const originalPath = source.metadata?.originalPath;
+  return typeof originalPath === "string" && originalPath.trim() ? originalPath : null;
+}
+
+function isSourceUnderFolderRoot(source: SourceRecord, folderRoots: readonly string[]): boolean {
+  const originalPath = sourceOriginalPath(source);
+  if (!originalPath) return false;
+  const sourcePath = normalizeLocalPath(originalPath);
+  return folderRoots.some((root) => {
+    const rootPath = normalizeLocalPath(root);
+    return rootPath.length > 0 && sourcePath.startsWith(`${rootPath}/`);
+  });
+}
+
 // —— shared source row (ported verbatim from the old Recent Read markup) ————————————
 
 function SourceRow({
@@ -51,12 +70,10 @@ function SourceRow({
       <button
         className="source-item-open"
         type="button"
-        title="点击打开(Ctrl/Cmd+点击 在新分屏标签中打开)"
+        title="点击打开"
         onClick={(event) => {
-          // Plain click SWITCHES the focused pane (single-document behavior unchanged);
-          // Ctrl/Cmd-click opens the doc in a NEW pane (the multi-document entry).
-          if (event.metaKey || event.ctrlKey) ctx.openSourceInNewPane(source.id);
-          else ctx.setActiveSourceId(source.id);
+          event.preventDefault();
+          ctx.openSourceInNewPane(source.id);
         }}
       >
         <File size={15} className="source-item-icon" />
@@ -126,15 +143,20 @@ function chipLabel(key: string): string {
 
 function documentRows(ctx: LibrarySectionContext): SourceRecord[] {
   const dismissed = new Set(ctx.dismissedSourceIds ?? []);
-  return ctx.workspace.sources.filter((source) => !dismissed.has(source.id) && matchesQuery(source.title, ctx.query));
+  return ctx.workspace.sources.filter(
+    (source) =>
+      !dismissed.has(source.id) &&
+      !isSourceUnderFolderRoot(source, ctx.workspace.folderRoots) &&
+      matchesQuery(source.title, ctx.query)
+  );
 }
 
 function DocumentsSectionBody({ ctx }: { ctx: LibrarySectionContext }) {
   const [chip, setChip] = useState("all");
   const docs = documentRows(ctx);
-  // Chips reflect the whole library (not the current search), in first-seen order.
+  // Chips reflect the visible document list, not mounted-folder files.
   const chipKeys: string[] = [];
-  for (const source of ctx.workspace.sources) {
+  for (const source of docs) {
     const key = chipKeyFor(source.sourceType);
     if (!chipKeys.includes(key)) chipKeys.push(key);
   }
@@ -354,7 +376,7 @@ function registerCreateAuthoredAction(input: {
           sourceType: input.sourceType
         });
         await ctx.loadSources();
-        ctx.setActiveSourceId(source.id);
+        ctx.openSourceInNewPane(source.id);
       } catch (error) {
         // The menu fire-and-forgets; surface create failures like other view-level IO.
         console.error("Failed to create document", error);

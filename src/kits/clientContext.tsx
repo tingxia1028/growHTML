@@ -13,10 +13,10 @@
 // F4 (effective-installed replaces the single-active-kit gate): availability of the
 // CREATE affordances is decided by the marketplace effective-installed set
 // (src/kits/installState.ts) — a surface item shows iff its owning plugin is
-// effective-installed AND its contribution is not disabled. The per-source active kit
-// ids DEMOTE from filter to FOREGROUND: they only float the active kit's items to the
-// front ("foreground not filter", subject-kits M-B). Rendering was never gated and
-// still isn't — getNoteType() stays global (the adaptive-note contract).
+// effective-installed AND its contribution is not disabled. A caller that passes
+// per-source active kit ids gets that document's filtered tool surface; callers that need
+// the full configurable pool omit foreground ids. Rendering is never gated:
+// getNoteType() stays global (the adaptive-note contract).
 
 import { registerNoteContentSpec } from "../core/notes/contentTypes";
 import { registerKitDetection } from "../core/subject/detectSubject";
@@ -62,7 +62,8 @@ export const kitNoteTypeOwners = new Map<string, string>();
 // Installed KITS (id + display name) — the source for the activation (foreground)
 // dropdown. Standalone `unit:"plugin"` registrations (e.g. the review loop) are NOT
 // listed here: they are market plugins, not activation choices.
-export const installedKits: { id: string; name: string }[] = [];
+export const installedKits: { id: string; name: string; icon?: string }[] = [];
+const runtimeKitMembers = new Map<string, string[]>();
 
 // The DISABLED contribution set (namespaced ids) — the register-only enforcement seam.
 // WorkspaceContext loads it from plugin-prefs.json and pushes it here via
@@ -95,33 +96,35 @@ function isSurfaceDisabled(entry: { pluginId: string; kitId: string }, commandId
   );
 }
 
-// The plugin ids an ACTIVE kit set foregrounds: the kits themselves + their catalog
-// members (so member-owned items float when their kit is the source's active kit).
+// The plugin ids an ACTIVE kit set matches: the kits themselves + their catalog/runtime
+// members, so member-owned items are retained when their kit is the document context.
 function foregroundPluginIds(kitIds: readonly string[]): Set<string> {
   const ids = new Set<string>(kitIds);
-  for (const kitId of kitIds) for (const member of catalogKitMembers(kitId)) ids.add(member);
+  for (const kitId of kitIds) {
+    for (const member of catalogKitMembers(kitId)) ids.add(member);
+    for (const member of runtimeKitMembers.get(kitId) ?? []) ids.add(member);
+  }
   return ids;
 }
 
 /**
- * Surface items contributed to a slot — the F4 seam. AVAILABILITY = the marketplace
- * effective-installed set (an item shows iff its owning plugin is effective-installed
- * and not disabled); the per-source active kits (`foregroundKitIds`) only ORDER the
- * result — the active kit's items first, then the rest, priority-sorted within each
- * group ("foreground not filter"). Omit `foregroundKitIds` for the plain
- * priority-sorted list (workspace-wide surfaces, back-compat callers).
+ * Surface items contributed to a slot. AVAILABILITY = marketplace effective-installed
+ * plus user-disabled contribution filters. When `foregroundKitIds` is defined, it is
+ * the current document context and filters to that kit and its members. Omit it for
+ * manager/listing surfaces that need the full configurable pool.
  */
 export function kitSurfaceItems(slot: string, foregroundKitIds?: readonly string[]): KitSurfaceItem[] {
-  const foreground = foregroundKitIds ? foregroundPluginIds(foregroundKitIds) : null;
+  const foreground = foregroundKitIds ? foregroundPluginIds(foregroundKitIds) : undefined;
   const entries = kitSurfaceContributions
     .filter((entry) => entry.slot === slot && isPluginEffectiveInstalled(entry.pluginId))
+    .filter((entry) => !foreground || foreground.has(entry.pluginId) || foreground.has(entry.kitId))
     .flatMap((entry) =>
       entry.items
         .filter((item) => !isSurfaceDisabled(entry, item.commandId))
-        .map((item) => ({ item, fg: foreground ? foreground.has(entry.pluginId) || foreground.has(entry.kitId) : true }))
+        .map((item) => ({ item }))
     );
   return entries
-    .sort((a, b) => Number(b.fg) - Number(a.fg) || (b.item.priority ?? 0) - (a.item.priority ?? 0))
+    .sort((a, b) => (b.item.priority ?? 0) - (a.item.priority ?? 0))
     .map((entry) => entry.item);
 }
 
@@ -217,8 +220,9 @@ export function installClientKits(kits: ProductKit[]): void {
   for (const kit of kits) {
     const isKitUnit = (kit.unit ?? "kit") === "kit";
     if (isKitUnit && !installedKits.some((entry) => entry.id === kit.id)) {
-      installedKits.push({ id: kit.id, name: kit.name });
+      installedKits.push({ id: kit.id, name: kit.name, icon: kit.icon ?? getCatalogEntry(kit.id)?.icon });
     }
+    runtimeKitMembers.set(kit.id, (kit.members ?? []).map((member) => member.id));
     // F5: register + install each MEMBER plugin under its own id (contributions attach
     // to the member's PluginRecord; kitId groups it under the kit in the manager).
     for (const member of kit.members ?? []) {

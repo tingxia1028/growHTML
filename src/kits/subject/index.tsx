@@ -291,6 +291,7 @@ const experimentMember: KitMemberPlugin = {
 export const subjectEnglishKit: ProductKit = {
   id: "subject-english",
   name: "英语 Kit",
+  icon: "languages",
   description: "生词卡、语法点、摘抄赏析——把英语材料变成可复习的卡片。",
   // PART 2 members: subject-vocab, subject-grammar, subject-excerpt, flashcard.
   // subject-excerpt is shared with 语文 (its home kit for install is 英语 here).
@@ -316,6 +317,7 @@ export const subjectEnglishKit: ProductKit = {
 export const subjectMathKit: ProductKit = {
   id: "subject-math",
   name: "数学 Kit",
+  icon: "sigma",
   description: "公式卡、推导步骤、定理卡——LaTeX 优先的数学学习类型。",
   // PART 2 members: subject-formula, subject-derivation, subject-theorem, mistake, quiz.
   // subject-formula is shared with 理化生 (its home kit for install is 数学).
@@ -341,6 +343,7 @@ export const subjectMathKit: ProductKit = {
 export const subjectHistoryGeoKit: ProductKit = {
   id: "subject-history-geo",
   name: "史地 Kit",
+  icon: "history",
   description: "时间线、人物卡、因果链——面向历史/地理材料的结构化笔记。",
   // PART 2 members: subject-timeline, subject-figure, subject-cause-effect.
   // subject-figure is shared with 语文 (its home kit for install is 史地).
@@ -372,6 +375,7 @@ export const subjectHistoryGeoKit: ProductKit = {
 export const subjectChineseKit: ProductKit = {
   id: "subject-chinese",
   name: "语文 Kit",
+  icon: "quote",
   description: "摘抄赏析、论证结构、人物卡——面向语文阅读/写作材料的结构化笔记。",
   // PART 2 members: subject-excerpt, subject-argument, subject-figure. Only argument
   // is installed here (its home kit); excerpt/figure are installed by 英语/史地.
@@ -395,6 +399,7 @@ export const subjectChineseKit: ProductKit = {
 export const subjectScienceKit: ProductKit = {
   id: "subject-science",
   name: "理化生 Kit",
+  icon: "flask-conical",
   description: "实验记录、公式卡、概念图——面向物理/化学/生物材料的学习类型。",
   // PART 2 members: subject-experiment, subject-formula, quiz, diagrams(=concept-map).
   // Only experiment is installed here; formula is installed by 数学 (shared, §8.5.2).

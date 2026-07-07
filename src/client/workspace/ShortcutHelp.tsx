@@ -7,18 +7,14 @@ const m = defineMessages({
   commandSearch: { zh: "全库搜索 / 命令", en: "Vault search / commands" },
   close: { zh: "关闭弹窗 / 面板", en: "Close dialog / panel" },
   help: { zh: "打开快捷键帮助", en: "Open shortcuts help" },
-  read: { zh: "朗读当前文本按钮", en: "Speak current text button" },
-  pinyin: { zh: "选中文本后的拼音按钮", en: "Pinyin button after selecting text" },
-  note: { zh: "Enter 发送，Shift+Enter 换行", en: "Enter sends, Shift+Enter inserts a line" }
+  chatSend: { zh: "AI 对话发送，Shift+Enter 换行", en: "AI chat send, Shift+Enter inserts a line" }
 });
 
 const rows = [
   { key: "Ctrl / Cmd + K", label: m.commandSearch },
   { key: "Esc", label: m.close },
   { key: "?", label: m.help },
-  { key: "朗读 / Speak", label: m.read },
-  { key: "拼 / Pinyin", label: m.pinyin },
-  { key: "Enter", label: m.note }
+  { key: "Enter", label: m.chatSend }
 ] as const;
 
 export function ShortcutHelp() {

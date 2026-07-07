@@ -59,6 +59,14 @@ const SOURCE_B: SourceRecord = {
   path: "/b",
   contentHash: "hash-b"
 };
+const SOURCE_C: SourceRecord = {
+  id: "src-C",
+  title: "Source C",
+  sourceType: "pdf",
+  path: "/c",
+  contentHash: "hash-c",
+  metadata: { originalPath: "C:\\study\\c.pdf" }
+};
 
 type Fixture = {
   rendered: string;
@@ -110,6 +118,21 @@ vi.mock("../data/entityClient", () => ({
     // Mount IO: both sources exist from the start (loadSources' first-load auto-open will
     // open the first one; the tests then drive explicit open/focus).
     sources: vi.fn(() => Promise.resolve({ sources: liveSources })),
+    ingestLocalFile: vi.fn((filePath: string) => {
+      const source: SourceRecord = {
+        ...SOURCE_C,
+        metadata: { ...(SOURCE_C.metadata ?? {}), originalPath: filePath }
+      };
+      liveSources = liveSources.some((item) => item.id === source.id) ? liveSources : [...liveSources, source];
+      fixtures[source.id] = fixtures[source.id] ?? {
+        rendered: "",
+        anchors: [],
+        notes: [],
+        patches: [],
+        layers: []
+      };
+      return Promise.resolve({ source });
+    }),
     operations: vi.fn(() => Promise.resolve({ operations: [] })),
     operationPrefs: vi.fn(() => Promise.resolve({ prefs: { order: [], disabled: [], params: {} } })),
     // Bundle IO — keyed by sourceId so A and B are distinguishable.
@@ -333,5 +356,21 @@ describe("documents domain — panes ↔ bundles ↔ activeSourceId ↔ top-leve
     } finally {
       confirmSpy.mockRestore();
     }
+  });
+
+  it("#5 opening a local file adds/focuses a pane instead of replacing the current one", async () => {
+    await mount();
+
+    await focusSource(SOURCE_A.id);
+    expect(ctx.openPanes.map((pane) => pane.sourceId)).toEqual([SOURCE_A.id]);
+
+    await act(async () => {
+      await ctx.openLocalFile("C:\\study\\c.pdf");
+    });
+    await flush();
+
+    expect(entityClient.ingestLocalFile).toHaveBeenCalledWith("C:\\study\\c.pdf");
+    expect(ctx.openPanes.map((pane) => pane.sourceId)).toEqual([SOURCE_A.id, SOURCE_C.id]);
+    expect(ctx.activeSourceId).toBe(SOURCE_C.id);
   });
 });

@@ -26,6 +26,7 @@ export const TTS_MAX_TEXT_LENGTH = 2000;
 
 /** Neural voice the 朗读 button uses when the caller names none (roundtable's pick). */
 export const DEFAULT_TTS_VOICE = "zh-CN-XiaoxiaoNeural";
+export const ENGLISH_TTS_VOICE = "en-US-JennyNeural";
 
 // The curated shortlist (roundtable tts.py absorbed the same idea: a small, GOOD set
 // the UI mirrors, not the full Azure catalog). zh voices lead — the target users are
@@ -34,10 +35,19 @@ export const TTS_VOICES = [
   { id: "zh-CN-XiaoxiaoNeural", label: "晓晓（女声·温暖）", locale: "zh-CN" },
   { id: "zh-CN-YunxiNeural", label: "云希（男声·少年）", locale: "zh-CN" },
   { id: "zh-CN-XiaoyiNeural", label: "晓伊（女声·活泼）", locale: "zh-CN" },
-  { id: "en-US-JennyNeural", label: "Jenny (English)", locale: "en-US" }
+  { id: ENGLISH_TTS_VOICE, label: "Jenny (English)", locale: "en-US" }
 ] as const;
 
 export type TtsVoice = (typeof TTS_VOICES)[number];
+
+const CJK_RE = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/u;
+const LATIN_RE = /[A-Za-z]/g;
+
+export function chooseDefaultTtsVoice(text: string): string {
+  if (CJK_RE.test(text)) return DEFAULT_TTS_VOICE;
+  const latinLetters = text.match(LATIN_RE)?.length ?? 0;
+  return latinLetters >= 3 ? ENGLISH_TTS_VOICE : DEFAULT_TTS_VOICE;
+}
 
 /** Body for POST /api/speech/tts. */
 export const ttsRequestSchema = z.object({
@@ -273,7 +283,7 @@ export function createSpeechService(options: SpeechServiceOptions = {}): SpeechS
 
   return {
     async synthesize({ text, voice, rate }) {
-      const voiceId = voice ?? DEFAULT_TTS_VOICE;
+      const voiceId = voice ?? chooseDefaultTtsVoice(text);
       // The voice goes into the SSML template verbatim — restrict it to the curated
       // list (a 400: the caller named a voice we don't offer, not an upstream fault).
       if (!TTS_VOICES.some((candidate) => candidate.id === voiceId)) {

@@ -31,6 +31,7 @@ const teachbackMember: KitMemberPlugin = {
 export const teachbackKit: ProductKit = {
   id: "teachback",
   name: "Teach-back Kit",
+  icon: "brain",
   description: "教回/费曼模式:把你学过的东西讲给装不懂的 AI,它专挑你的薄弱处追问,最后成一条小结笔记。",
   contentSpecs: teachbackContentSpecs,
   prompts: teachbackPrompts,

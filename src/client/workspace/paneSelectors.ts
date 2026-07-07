@@ -11,10 +11,46 @@
 // WorkspaceContext.
 
 import type { AnyAnchor, NoteRecord, StudyLayerRecord } from "../data/entityClient";
+import type { AnchorDraft } from "../focus/FocusContext";
 import type { PaintAnchor, PaintAnchorStyle } from "../surfaces/types";
 import { BOOKMARK_CONTENT_TYPE } from "../../core/notes/contentTypes";
 import { noteText } from "./WorkspaceContext";
 import { renderAnnotationNotePreview } from "./annotationNotePreview";
+
+export const DRAFT_REGION_ANCHOR_ID = "__draft_region_anchor__";
+
+export function regionDraftToAnchor(draft: AnchorDraft | null | undefined, activeSourceId: string): AnyAnchor | null {
+  if (!draft || draft.mode !== "region" || !activeSourceId || draft.sourceId !== activeSourceId) return null;
+  if (draft.kind === "pdf") {
+    return {
+      id: DRAFT_REGION_ANCHOR_ID,
+      sourceId: draft.sourceId,
+      anchorKind: "pdf_selection",
+      page: draft.page ?? 1,
+      quote: "",
+      contextBefore: "",
+      contextAfter: "",
+      rect: draft.rect
+    };
+  }
+  return {
+    id: DRAFT_REGION_ANCHOR_ID,
+    sourceId: draft.sourceId,
+    anchorKind: "image_region",
+    rect: draft.rect,
+    quote: ""
+  };
+}
+
+export function mergeFocusedRegionDraft(
+  anchors: AnyAnchor[],
+  draft: AnchorDraft | null | undefined,
+  activeSourceId: string
+): AnyAnchor[] {
+  const draftAnchor = regionDraftToAnchor(draft, activeSourceId);
+  if (!draftAnchor) return anchors;
+  return [...anchors.filter((anchor) => anchor.id !== DRAFT_REGION_ANCHOR_ID), draftAnchor];
+}
 
 // D3a (note-presentation-unified §D3) — resolve the PAINT style for one anchor from its
 // NOTES' enabled layers. An anchor has no layer of its own; its lens membership is the

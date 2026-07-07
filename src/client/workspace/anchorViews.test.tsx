@@ -100,6 +100,30 @@ describe("anchor.excerpt linked notes", () => {
     expect(container.querySelector(".anchor-linked-card")).toBeNull();
     cleanup();
   });
+
+  it("treats a region draft as focused anchor context even without quote text", () => {
+    const plugin = getView("anchor.excerpt");
+    expect(plugin).toBeTruthy();
+    const { ctx } = ctxWithLinkedNote();
+    const draft = {
+      mode: "region" as const,
+      sourceId: "source_1",
+      kind: "pdf" as const,
+      page: 6,
+      rect: [0.1, 0.2, 0.3, 0.4] as [number, number, number, number]
+    };
+    (ctx.focus as unknown as FocusContextValue).anchor = null;
+    (ctx.focus as unknown as FocusContextValue).draft = draft;
+    (ctx.focus as unknown as FocusContextValue).focus = { type: "anchor-draft", draft };
+    const node = { id: "anchor", kind: "anchor.excerpt" } as WorkspaceNode;
+    const { container, cleanup } = mount(<>{plugin!.render(node, ctx)}</>);
+
+    expect(container.querySelector(".anchor-excerpt-empty")).toBeNull();
+    expect(container.querySelector(".anchor-excerpt-card.region")).toBeTruthy();
+    expect(container.querySelector(".anchor-excerpt-quote")?.textContent).toBe("区域锚点");
+    expect((container.querySelector(".anchor-context-jump") as HTMLButtonElement).disabled).toBe(true);
+    cleanup();
+  });
 });
 
 // The global 显示锚点标记 switch (D2 amendment) lives INSIDE the Anchor panel

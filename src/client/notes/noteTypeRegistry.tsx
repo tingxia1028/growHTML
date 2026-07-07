@@ -49,6 +49,8 @@ export type NoteRenderMode = "card" | "full";
 export type NoteRenderCtx = {
   /** The face an interactive flip-card should OPEN on. Absent = its natural front. */
   initialFace?: "front" | "back";
+  /** Host action: open/import a local file path inside Growte when available. */
+  openLocalFile?: (filePath: string) => Promise<void> | void;
 };
 
 export type NoteRenderInput = {

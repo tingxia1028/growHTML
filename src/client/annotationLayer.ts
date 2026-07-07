@@ -937,6 +937,21 @@ function wireNoteCard(doc: Document): void {
     }
   });
 
+  card.addEventListener("click", (event) => {
+    const fileOpen = closestMatch(event.target, ".sv-file-link-open[data-file-link-path]");
+    const filePath = fileOpen?.getAttribute("data-file-link-path");
+    if (!filePath) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const EventCtor = doc.defaultView?.CustomEvent ?? CustomEvent;
+    doc.dispatchEvent(
+      new EventCtor("sv:note-card-action", {
+        bubbles: true,
+        detail: { action: "file-link-open", filePath, anchorId: currentKey }
+      })
+    );
+  });
+
   card.addEventListener("dblclick", (event) => {
     const preview = closestMatch(event.target, ".sv-annotation-preview[data-note-id]");
     const noteId = preview?.getAttribute("data-note-id");

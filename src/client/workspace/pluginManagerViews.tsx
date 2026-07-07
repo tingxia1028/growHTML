@@ -33,7 +33,6 @@ import { InertNote } from "../notes/builtinNoteTypes";
 import {
   catalogSource,
   listCatalogSources,
-  registerRemoteMockIfEnabled,
   type CatalogListing,
   type CatalogPreview
 } from "../../kits/catalogSource";
@@ -128,12 +127,11 @@ function KitManagerView({ ctx }: { ctx: WorkspaceContext }) {
 
   // MH-0: market listings come ONLY through the CatalogSource contract (never a direct
   // catalog import). The LOCAL source (bundled kits, FLAT §2) is always listed via
-  // catalogSource("local").list(...); any registered EXTRA sources (M6 — the mock remote,
-  // gated behind a dev flag; a real registry later) merge their listings through the SAME
+  // catalogSource("local").list(...); any registered EXTRA sources (a real registry later)
+  // merge their listings through the SAME
   // call shape + type, deduped by id (local wins on collision). Re-queried on search.
   useEffect(() => {
     let live = true;
-    registerRemoteMockIfEnabled();
     const query = { search: search || undefined };
     const local = catalogSource("local").list(query);
     const extras = listCatalogSources()
@@ -352,15 +350,16 @@ function NewKitComposer({
           <ul className="new-kit-member-list">
             {pickable.map((plugin) => (
               <li key={plugin.id} className="new-kit-member-row">
-                <label>
+                <label className="new-kit-member-row-label sv-check">
                   <input
                     type="checkbox"
-                    className="new-kit-member-check"
+                    className="new-kit-member-check sv-check-input"
                     data-member-id={plugin.id}
                     checked={members.includes(plugin.id)}
                     onChange={() => toggle(plugin.id)}
                   />
-                  {plugin.name}
+                  <span className="sv-check-box" aria-hidden="true" />
+                  <span className="new-kit-member-name">{plugin.name}</span>
                 </label>
               </li>
             ))}

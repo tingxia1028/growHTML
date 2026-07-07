@@ -15,7 +15,7 @@ import type { PluginRecord } from "../../kits/plugin";
 import type { PluginPrefs } from "../data/entityClient";
 import { registerCatalogEntry, resetCatalog } from "../../kits/catalog";
 import { resetInstallState, syncInstallState, type CatalogState, type UserKitDef } from "../../kits/installState";
-import { registerCatalogSource, remoteMockCatalogSource, unregisterCatalogSource } from "../../kits/catalogSource";
+import { registerCatalogSource, unregisterCatalogSource } from "../../kits/catalogSource";
 import { getNoteType, registerNoteType, resetNoteTypes } from "../notes/noteTypeRegistry";
 import { setLocale } from "../i18n";
 import "./pluginManagerViews";
@@ -128,9 +128,7 @@ afterEach(() => {
   resetInstallState();
   resetCatalog();
   resetNoteTypes();
-  // M6: the market effect self-registers the mock remote source under a dev flag (vitest
-  // runs in DEV) — drop it so no registry listing leaks into a test that assumes local-only.
-  unregisterCatalogSource("remote-mock");
+  unregisterCatalogSource("remote-test");
   document.body.innerHTML = "";
 });
 
@@ -334,6 +332,10 @@ describe("+ New kit composer (M2c — §8.5.4)", () => {
     expect(memberIds).toContain("m2");
     expect(memberIds).not.toContain("core");
     expect(memberIds).not.toContain("kit-a"); // kit-a's only contribution is a layout
+    const memberRows = Array.from(container.querySelectorAll(".new-kit-member-row-label"));
+    expect(memberRows.length).toBeGreaterThan(0);
+    expect(memberRows.every((row) => row.classList.contains("sv-check"))).toBe(true);
+    expect(memberRows.every((row) => row.querySelector(".sv-check-box") && row.querySelector(".new-kit-member-name"))).toBe(true);
     cleanup();
   });
 
@@ -524,19 +526,47 @@ describe("市场 (browse) tab — merged remote source (M6, §8.9)", () => {
   it("merges a registered source's source:'registry' listings, rendered IDENTICALLY to bundled", async () => {
     catalogFixture();
     wireInstallState({ installedPlugins: [], installedKits: ["kit-a"] });
-    registerCatalogSource(remoteMockCatalogSource); // the merge picks up any extra source
+    registerCatalogSource({
+      id: "remote-test",
+      list: () =>
+        Promise.resolve([
+          {
+            id: "registry:test-kit",
+            kind: "kit" as const,
+            title: "Remote Test Kit",
+            description: "External listing under test",
+            memberCount: 1,
+            groupCount: 1,
+            source: "registry" as const
+          }
+        ]),
+      get: (id) =>
+        Promise.resolve(
+          id === "registry:test-kit"
+            ? {
+                id: "registry:test-kit",
+                kind: "kit" as const,
+                title: "Remote Test Kit",
+                description: "External listing under test",
+                memberCount: 1,
+                groupCount: 1,
+                source: "registry" as const
+              }
+            : null
+        )
+    }); // the merge picks up any extra source
     const { container, cleanup } = await renderPanel(ctxWith({}));
 
     await click(container.querySelector(".market-tab-market"));
     // A bundled card and a registry card coexist in the SAME list, same markup.
     const bundled = container.querySelector('.market-card[data-source="bundled"]');
-    const registry = container.querySelector('.market-card[data-entry-id="registry:exam-cram"]');
+    const registry = container.querySelector('.market-card[data-entry-id="registry:test-kit"]');
     expect(bundled).toBeTruthy();
     expect(registry).toBeTruthy();
     expect(registry!.getAttribute("data-source")).toBe("registry");
     expect(registry!.getAttribute("data-kind")).toBe("kit");
     // Identical rendering: same title/desc/install-button structure as a bundled card.
-    expect(registry!.querySelector(".market-card-title")!.textContent).toContain("Exam Cram");
+    expect(registry!.querySelector(".market-card-title")!.textContent).toContain("Remote Test Kit");
     expect(registry!.querySelector(".market-card-desc")).toBeTruthy();
     expect(registry!.querySelector(".market-install-btn")).toBeTruthy();
     cleanup();
@@ -545,7 +575,7 @@ describe("市场 (browse) tab — merged remote source (M6, §8.9)", () => {
   it("every bundled listing carries data-source='bundled' (identical card, provenance-tagged)", async () => {
     catalogFixture();
     wireInstallState({ installedPlugins: [], installedKits: ["kit-a"] });
-    unregisterCatalogSource("remote-mock"); // isolate: assert the local slice's provenance
+    unregisterCatalogSource("remote-test"); // isolate: assert the local slice's provenance
     const { container, cleanup } = await renderPanel(ctxWith({}));
     await click(container.querySelector(".market-tab-market"));
     // The local (bundled) cards — kit-a / textbook-learning — are all tagged "bundled".

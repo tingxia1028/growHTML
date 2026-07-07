@@ -27,8 +27,13 @@ import "./views";
 
 const COLLAPSED_KEY = "sv-library-collapsed";
 
-function source(id: string, title: string, sourceType: string): SourceRecord {
-  return { id, title, sourceType, path: `${id}.dat`, contentHash: `hash_${id}` };
+function source(
+  id: string,
+  title: string,
+  sourceType: string,
+  metadata?: Record<string, unknown>
+): SourceRecord {
+  return { id, title, sourceType, path: `${id}.dat`, contentHash: `hash_${id}`, metadata };
 }
 
 const fixtureSources = [
@@ -44,6 +49,7 @@ function makeCtx(overrides: Record<string, unknown> = {}): WorkspaceContext {
     recentSources: fixtureSources,
     activeSourceId: "source_2",
     setActiveSourceId: vi.fn(),
+    openSourceInNewPane: vi.fn(),
     deleteSourceItem: vi.fn().mockResolvedValue(undefined),
     removeRecentSourceId: vi.fn(),
     loadSources: vi.fn().mockResolvedValue(undefined),
@@ -236,6 +242,35 @@ describe("文档 — the full sources list + type filter chips", () => {
     expect(rows[1].classList.contains("active")).toBe(true);
   });
 
+  it("keeps files from mounted folders out of Documents while Recent still shows them", async () => {
+    const folderSource = source("folder_pdf", "Folder PDF", "pdf", {
+      originalPath: "C:\\study\\testinput\\paper.pdf"
+    });
+    const looseSource = source("loose_pdf", "Loose PDF", "pdf", {
+      originalPath: "C:\\downloads\\paper.pdf"
+    });
+    await mountLibrary(
+      makeCtx({
+        sources: [folderSource, looseSource],
+        recentSources: [folderSource, looseSource],
+        folderRoots: ["C:\\study\\testinput"],
+        activeSourceId: "loose_pdf"
+      })
+    );
+
+    const docTitles = Array.from(sectionEl("core.documents")!.querySelectorAll(".library-doc-list .source-item")).map(
+      (row) => row.querySelector(".source-item-text span")!.textContent
+    );
+    expect(docTitles).toEqual(["Loose PDF"]);
+    expect(sectionCount("core.documents")).toBe("1");
+
+    const recentTitles = Array.from(sectionEl("core.recent")!.querySelectorAll(".source-item")).map(
+      (row) => row.querySelector(".source-item-text span")!.textContent
+    );
+    expect(recentTitles).toEqual(["Folder PDF", "Loose PDF"]);
+    expect(sectionCount("core.recent")).toBe("2");
+  });
+
   it("derives the chip set from the sourceTypes present and filters on click", async () => {
     await mountLibrary(makeCtx());
     const chips = Array.from(sectionEl("core.documents")!.querySelectorAll(".library-chip"));
@@ -261,7 +296,7 @@ describe("文档 — the full sources list + type filter chips", () => {
     await mountLibrary(ctx);
     const rows = sectionEl("core.documents")!.querySelectorAll(".library-doc-list .source-item");
     await click(rows[0].querySelector(".source-item-open"));
-    expect(ctx.setActiveSourceId).toHaveBeenCalledWith("source_1");
+    expect(ctx.openSourceInNewPane).toHaveBeenCalledWith("source_1");
     await click(rows[2].querySelector(".source-item-remove"));
     expect(ctx.deleteSourceItem).not.toHaveBeenCalled();
     const remainingTitles = Array.from(sectionEl("core.documents")!.querySelectorAll(".library-doc-list .source-item"))
@@ -457,7 +492,7 @@ describe("文件夹 + header behaviors (ported)", () => {
     await mountLibrary(ctx);
     const rows = sectionEl("core.recent")!.querySelectorAll(".source-item");
     await click(rows[0].querySelector(".source-item-open"));
-    expect(ctx.setActiveSourceId).toHaveBeenCalledWith("source_1");
+    expect(ctx.openSourceInNewPane).toHaveBeenCalledWith("source_1");
   });
 });
 

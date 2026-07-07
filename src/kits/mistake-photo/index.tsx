@@ -25,6 +25,7 @@ const mistakePhotoMember: KitMemberPlugin = {
 export const mistakePhotoKit: ProductKit = {
   id: "mistake-photo",
   name: "Mistake Photo Kit",
+  icon: "camera",
   description: "拍错题:拍一张错题照片,AI 抽取题目/错误答案/正确解法/错因/订正,预览后存进错题本。",
   // React-free prompt pack (the server registers it) — the extract prompt. NO contentSpecs:
   // the output is the core `mistake` type.

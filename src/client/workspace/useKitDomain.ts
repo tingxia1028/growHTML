@@ -35,8 +35,14 @@ export interface KitDomain {
   /** Effective kit ids for the active source (per-source activation). Recomputed from the
       active source's metadata; rendering is never gated by this. */
   activeKitIds: string[];
-  /** Installed kits (id + display name) for the activation dropdown. */
-  installedKits: { id: string; name: string }[];
+  /** Resolve effective kit ids for an arbitrary source. Split panes use this so each
+      reader header reflects its own document rather than the globally focused one. */
+  kitIdsForSource(source: SourceRecord | null): string[];
+  /** Installed kits (id + display name + optional icon) for the activation dropdown. */
+  installedKits: { id: string; name: string; icon?: string }[];
+  /** Apply a kit to an explicit source id. Split panes use this instead of relying on
+      focus having re-rendered before the select change handler runs. */
+  setSourceKit(sourceId: string, kitId: string): Promise<void>;
   /** Apply a kit to the active source ("core" = none); persists to its metadata then
       reloads sources so the foreground gate recomputes. */
   setActiveKit(kitId: string): Promise<void>;
@@ -60,30 +66,40 @@ export function useKitDomain({
 }): KitDomain {
   // Effective kit ids for the active source (per-source activation). Recomputed from
   // the active source's metadata; rendering is never gated by this.
-  const activeKitIds = useMemo(() => activeKitIdsForSource(activeSource), [activeSource]);
+  const kitIdsForSource = useCallback((source: SourceRecord | null) => activeKitIdsForSource(source), []);
+  const activeKitIds = useMemo(() => kitIdsForSource(activeSource), [activeSource, kitIdsForSource]);
 
-  // Apply a Product Kit to the active source ("core" = none). Persists to
-  // source.metadata.activeKitIds, then reloads sources so the gate recomputes.
-  const setActiveKit = useCallback(
-    async (kitId: string) => {
-      if (!activeSourceId) return;
+  const setSourceKit = useCallback(
+    async (sourceId: string, kitId: string) => {
+      if (!sourceId) return;
       const nextKitIds = kitId === CORE_KIT_ID ? [] : [kitId];
       try {
-        await entityClient.updateSourceMetadata(activeSourceId, { activeKitIds: nextKitIds });
+        await entityClient.updateSourceMetadata(sourceId, { activeKitIds: nextKitIds });
         await loadSources();
       } catch (err) {
         onError(err instanceof Error ? err.message : "Failed to set kit");
       }
     },
-    [activeSourceId, loadSources, onError]
+    [loadSources, onError]
+  );
+
+  // Apply a Product Kit to the active source ("core" = none). Persists to
+  // source.metadata.activeKitIds, then reloads sources so the gate recomputes.
+  const setActiveKit = useCallback(
+    async (kitId: string) => {
+      await setSourceKit(activeSourceId, kitId);
+    },
+    [activeSourceId, setSourceKit]
   );
 
   return useMemo<KitDomain>(
     () => ({
       activeKitIds,
+      kitIdsForSource,
       installedKits,
+      setSourceKit,
       setActiveKit
     }),
-    [activeKitIds, setActiveKit]
+    [activeKitIds, kitIdsForSource, setSourceKit, setActiveKit]
   );
 }

@@ -172,6 +172,16 @@ describe("ToolbarSlashButton (SC-2)", () => {
     expect(docEscape).not.toHaveBeenCalled(); // propagation stopped → no selection clear
   });
 
+  it("closes when another toolbar popover opens", () => {
+    mount();
+    act(() => btn().click());
+    expect(popover()).toBeTruthy();
+    act(() => {
+      document.dispatchEvent(new CustomEvent("sv:toolbar-popover-open", { detail: { owner: "more-inline" } }));
+    });
+    expect(popover()).toBeNull();
+  });
+
   it("gated closed when `disabled` (the anchor-bar empty-state gate)", () => {
     mount({ surface: "anchor", disabled: true });
     expect(btn().disabled).toBe(true);

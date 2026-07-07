@@ -159,6 +159,10 @@ describe("M1/F4 × FLAT — availability follows the capability-group switchboar
     expect(items).toContain("subject.generate-formula");
     // The other subject groups stay off → their items stay gated.
     expect(items).not.toContain("subject.generate-vocab");
+
+    const mathItems = kitSurfaceItems("selection-toolbar", ["subject-math"]).map((i) => i.commandId);
+    expect(mathItems).toContain("subject.generate-formula");
+    expect(mathItems).not.toContain("subject.generate-vocab");
   });
 
   it("LEGACY persisted subject-kit installs migrate: the old id still activates its group", () => {
